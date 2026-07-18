@@ -141,6 +141,19 @@ pkgs.stdenv.mkDerivation {
       sed -i 's/-Werror/-Wno-error/g' "$HOME_PATH/boot/bl1/$m/Makefile"
     done
 
+    # SD-boot SPL size fix: the sd/ variant links FatFS + the SD mmc driver on
+    # top of the normal SPL, so under gcc13 its raw binary is 51448 B -- 248 B
+    # over the sign tool's hard 50K (51200 B) slot (spl_AX620E_sign.py:
+    # max_img_size = 128K - 77K(fw) - 1K(header) = 51200; do_spl() returns False
+    # on overflow but the script still exits 0, so `make install` would SILENTLY
+    # emit no signed SD SPL). Turn on dead-code elimination -- unused FatFS/gzipd/
+    # DDR-training/secure paths get GC'd -- which drops the raw binary to 48460 B
+    # (2740 B headroom). Purely a link-size change; the boot logic is untouched.
+    sed -i 's/-fno-builtin -s/-fno-builtin -s -ffunction-sections -fdata-sections/' \
+      "$HOME_PATH/boot/bl1/sd/Makefile"
+    sed -i 's/^LDFLAGS  := --entry=_start$/LDFLAGS  := --entry=_start --gc-sections/' \
+      "$HOME_PATH/boot/bl1/sd/Makefile"
+
     # OP-TEE build scripts carry /bin/bash shebangs.
     patchShebangs "$HOME_PATH/boot/optee"
 
@@ -161,12 +174,16 @@ pkgs.stdenv.mkDerivation {
 
     echo "=== [3/4] FSBL/SPL + DDR init (bl1) ==="
     ( cd boot/bl1 && $mk all )
-    # Install only fdl (FDL1) + spl (produces spl/ddrinit signed images). We skip
-    # the sd/ subdir's install: it signs an SD-card-boot SPL that overflows its
-    # 50K SD slot under gcc13's slightly larger codegen -- irrelevant to the eMMC
-    # boot path, and its sign script exits 0 regardless, so it is simply omitted.
+    # Install fdl (FDL1), spl (eMMC SPL + ddrinit signed images) AND the SD-boot
+    # SPL. The sd/ variant now fits its 50K sign slot (see the gc-sections fix in
+    # configurePhase), so it signs cleanly to spl_<project>_sd_signed.bin -- the
+    # `boot.bin` the AX620E BootROM loads from the FAT partition of an SD card
+    # (consumed by pkgs/sd-image.nix). A hard size guard in installPhase fails the
+    # build LOUDLY if the raw SD SPL ever creeps back over 51200 B (which would
+    # make the sign tool silently drop its output).
     ( cd boot/bl1/fdl && $mk install CONFIG_PROJECT=AX620E_CFG )
     ( cd boot/bl1/spl && $mk install CONFIG_PROJECT=AX620E_CFG )
+    ( cd boot/bl1/sd  && $mk install CONFIG_PROJECT=AX620E_CFG )
 
     echo "=== [4/4] U-Boot 2020.04 (bl33) + FDL2 ==="
     # Native HOSTCC (gcc, from the native stdenv) for u-boot's build-time host
@@ -182,10 +199,26 @@ pkgs.stdenv.mkDerivation {
     imgs="$HOME_PATH/build/out/${project}/images"
     mkdir -p "$out/images"
 
+    # SD-boot SPL raw-size guard: the sign tool's slot is a hard 51200 B (50K);
+    # over it the tool silently emits nothing. Assert here so a size regression
+    # fails IN-BUILD, never on an SD card that won't boot.
+    sdRaw="$imgs/spl_${project}_sd.bin"
+    if [ -f "$sdRaw" ]; then
+      sdSz=$(stat -c %s "$sdRaw")
+      echo "SD SPL raw size: $sdSz B (limit 51200)"
+      if [ "$sdSz" -gt 51200 ]; then
+        echo "ERROR: SD SPL ($sdSz B) exceeds the 50K/51200 B sign slot -- shrink it" >&2
+        exit 1
+      fi
+    fi
+
     # Signed per-partition images (what the image/.axp layer consumes).
+    # spl_<project>_sd_signed.bin is the SD-card boot SPL (pkgs/sd-image.nix).
     for f in \
       spl_${project}_signed.bin \
       spl_${project}_enc_signed.bin \
+      spl_${project}_sd_signed.bin \
+      spl_${project}_enc_sd_signed.bin \
       ddrinit_${project}_signed.bin \
       atf_bl31_signed.bin \
       atf_b_bl31_signed.bin \

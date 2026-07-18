@@ -147,6 +147,14 @@
         firmware-image = callPkg ./pkgs/image.nix {
           inherit base-axp boot kernel-slot-image dtb-slot-image rootfs;
         };
+
+        # NON-DESTRUCTIVE microSD boot image (dd-able .img): boots the whole
+        # from-source stack from an SD/TF card via the AX620E BootROM's FAT SD
+        # path, leaving eMMC untouched (pull the card to revert). MBR/FAT32+ext4;
+        # the SD-variant SPL (boot/bl1/sd) now fits its 50K slot -- see boot.nix.
+        sd-image = callPkg ./pkgs/sd-image.nix {
+          inherit boot kernel-slot-image dtb-slot-image rootfs;
+        };
       in
       {
         packages = {
@@ -156,7 +164,7 @@
             boot boot-fsbl boot-atf boot-optee boot-uboot
             kernel dtb dtb-slot-image kernel-slot-image
             kvm-encoder nanokvm-server nanokvm-web
-            base-axp rootfs firmware-image;
+            base-axp rootfs firmware-image sd-image;
 
           # Top-level default = the flashable firmware image (currently a stub
           # that documents the 17-partition layout; see pkgs/image.nix).

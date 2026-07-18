@@ -138,6 +138,58 @@ nix build .#nanokvm-server
 nix develop
 ```
 
+## SD-card boot (non-destructive test path)
+
+`nix build .#sd-image` produces a **`dd`-able raw microSD image**
+(`<out>/AX630C_..._sipeed_nanokvm-sdcard.img`) that boots the **entire
+from-source stack** (SD SPL + DDR-init + ATF + OP-TEE + U-Boot + kernel + dtb +
+overlaid rootfs) **from the SD/TF slot, leaving eMMC untouched**. To boot it you
+**hold the `User` button while applying power** (see caveat below); revert by
+powering on normally. See `pkgs/sd-image.nix` for the full derivation notes.
+
+**How SD boot works on the AX630C (from SDK source):** the BootROM's SD path is
+*file-based*, not raw-offset. It reads an MBR table, mounts the first **FAT32**
+partition and loads **`boot.bin`** (the `boot/bl1/sd` SPL variant, which links
+FatFS + the SD mmc driver). That SPL then loads each later stage as a *named
+file* from the same FAT partition — the names are the SPL's own table
+(`boot/bl1/core/boot/boot.c` `sd_img_name[]`): `ddrinit.img`, `atf.img`,
+`uboot.bin`, `optee.img`, `dtb.img`, `kernel.img`; rootfs is p2 (ext4). This
+mirrors the vendor's own `gen_sd_image.sh` for this exact board (MBR: 1 MiB gap,
+p1 FAT32 128 MiB boot, p2 ext4 rootfs), rebuilt with **no root** (mtools + the
+raw ext4 from `rootfs.nix` + `sfdisk`).
+
+**SD SPL size fix (from source):** the `boot/bl1/sd` SPL links FatFS on top of
+the normal SPL and under gcc13 overflowed the sign tool's hard **50 K (51200 B)**
+slot by 248 B (51448 B). `pkgs/boot.nix` now compiles it with
+`-ffunction-sections -fdata-sections --gc-sections`, dropping it to **48460 B**
+(2740 B headroom) — **no vendor blob needed**; a build-time guard fails loudly if
+it ever creeps back over 51200 B.
+
+```bash
+nix build .#sd-image
+# Write it (PICK THE RIGHT DEVICE — destructive to the CARD only):
+lsblk                                   # find the removable card, e.g. /dev/sdX
+sudo dd if=result/AX630C_emmc_arm64_k419_sipeed_nanokvm-sdcard.img \
+        of=/dev/sdX bs=4M oflag=direct conv=fsync status=progress
+sync
+# Insert card, then HOLD the `User` button while applying power, release it
+# right away -> boots self-built firmware from SD.
+# Revert: power on WITHOUT holding `User` (and/or remove card) -> stock eMMC.
+```
+
+> **Gating caveat — SD boot needs a button hold, it is NOT auto-on-insert**
+> (HIGH confidence: [Sipeed NanoKVM-Pro wiki](https://wiki.sipeed.com/hardware/en/kvm/NanoKVM_Pro/faq.html)).
+> The AX630C latches its boot source from the `CHIP_MODE` strap at reset; on the
+> NanoKVM-Pro that strap is the **`User` button**. **Hold `User` while applying
+> power, then release** to boot the SD card. A normal power-on **always** boots
+> eMMC regardless of card presence — so revert is just a normal power-on (and/or
+> pull the card); **eMMC is never written**. (Holding `User` *longer* enters USB
+> download mode, so release it right after power comes on.) This matches the SPL
+> source: `spl_main.c` only trusts a ROM-set `is_sd_boot` flag from
+> `chip_mode[0]` (`USB_DL_SD_BOOT`); it never probes mmc1-vs-mmc0. Consequence:
+> this is a **manually-triggered** SD boot/recovery path, not an unattended
+> insert-and-go appliance boot.
+
 ## What a follow-up pass must do
 
 - **kernel.nix**: locate the `*nanokvm*` arm64 defconfig, build `Image`+`dtbs`+
