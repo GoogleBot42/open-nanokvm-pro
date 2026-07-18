@@ -9,13 +9,27 @@
  * frees via kvmv_free_data. Pipeline auto-inits on first read_img at the
  * requested WxH; type 0 -> MJPEG, else H.264.
  *
- * Audio is a stub (returns empty) this pass -- ALSA+Opus is out of scope.
+ * Audio: REAL HDMI-audio capture+encode. The LT6911UXC HDMI-RX de-embeds the
+ * HDMI audio onto an I2S link exposed as ALSA capture card "Lt6911UXC". We
+ * open it (S16_LE / 48kHz / stereo / 960-frame period), Opus-encode each 20ms
+ * period (matching the stock libkvm's params, reverse-engineered from its
+ * AudioCapturer: opus_encoder_create(48000,2,AUDIO) + bitrate 128k, complexity
+ * 4, FULLBAND, SIGNAL_MUSIC), and return the encoded packet. Ownership: the Go
+ * server copies the bytes (C.GoBytes) and never frees audio, so the returned
+ * buffer is LIBRARY-OWNED (a persistent static, valid until the next call).
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
+#ifdef KVM_AUDIO_SELFTEST
+#include <math.h>
+#endif
+
+#include <opus/opus.h>
+#include <alsa/asoundlib.h>
 
 #include "ax_base_type.h"
 #include "ax_global_type.h"
@@ -259,12 +273,157 @@ int kvmv_hdmi_control(uint8_t _en)
     return 0;
 }
 
+/* ---- HDMI audio: ALSA(LT6911UXC) capture + Opus encode --------------------
+ * All params below are the stock libkvm's, recovered from its AudioCapturer. */
+#define KVM_AUD_RATE     48000
+#define KVM_AUD_CH       2
+#define KVM_AUD_FRAME    960      /* samples/ch per Opus frame == 20ms @48k */
+#define KVM_AUD_BITRATE  128000
+#define KVM_AUD_MAXPKT   1500     /* stock caps the encoded packet at 1500 B */
+
+static pthread_mutex_t s_alock = PTHREAD_MUTEX_INITIALIZER;
+static OpusEncoder *s_opus = NULL;
+static snd_pcm_t   *s_pcm  = NULL;
+static int          s_audio_ready = 0;
+static int          s_audio_fail_logged = 0;
+static opus_int16   s_apcm[KVM_AUD_FRAME * KVM_AUD_CH];  /* interleaved S16 */
+static uint8_t      s_aout[KVM_AUD_MAXPKT];              /* library-owned */
+
+static void audio_teardown_locked(void)
+{
+    if (s_pcm)  { snd_pcm_close(s_pcm); s_pcm = NULL; }
+    if (s_opus) { opus_encoder_destroy(s_opus); s_opus = NULL; }
+    s_audio_ready = 0;
+}
+
+/* Open the HDMI-audio capture PCM. Prefer the exact device the stock lib picks
+ * (enumerate hints, match the "Lontium Lt6911UXC" DESC, open its NAME); fall
+ * back to well-known names for the same card. */
+static snd_pcm_t *audio_open_capture(void)
+{
+    static const char *cands[] = {
+        "hw:CARD=Lt6911UXC,DEV=0", "plughw:CARD=Lt6911UXC,DEV=0",
+        "hw:0,0", "plughw:0,0", "default", NULL
+    };
+    snd_pcm_t *pcm = NULL;
+    void **hints = NULL;
+
+    if (snd_device_name_hint(-1, "pcm", &hints) == 0 && hints) {
+        for (void **h = hints; *h && !pcm; ++h) {
+            char *desc = snd_device_name_get_hint(*h, "DESC");
+            char *name = snd_device_name_get_hint(*h, "NAME");
+            if (desc && name && strstr(desc, "Lt6911")) {
+                if (snd_pcm_open(&pcm, name, SND_PCM_STREAM_CAPTURE, 0) < 0) pcm = NULL;
+            }
+            free(desc); free(name);
+        }
+        snd_device_name_free_hint(hints);
+    }
+    for (int i = 0; !pcm && cands[i]; ++i)
+        if (snd_pcm_open(&pcm, cands[i], SND_PCM_STREAM_CAPTURE, 0) < 0) pcm = NULL;
+    return pcm;
+}
+
+/* Bring up the Opus encoder + ALSA capture once. Caller holds s_alock. */
+static int audio_init_locked(void)
+{
+    int err = 0;
+    s_opus = opus_encoder_create(KVM_AUD_RATE, KVM_AUD_CH, OPUS_APPLICATION_AUDIO, &err);
+    if (!s_opus || err != OPUS_OK) { s_opus = NULL; return -1; }
+    opus_encoder_ctl(s_opus, OPUS_SET_BITRATE(KVM_AUD_BITRATE));
+    opus_encoder_ctl(s_opus, OPUS_SET_COMPLEXITY(4));
+    opus_encoder_ctl(s_opus, OPUS_SET_MAX_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND));
+    opus_encoder_ctl(s_opus, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
+
+#ifdef KVM_AUDIO_SELFTEST
+    /* Test-only build: skip the ALSA capture open and synthesize PCM in the
+     * read loop, so the real encode+ownership path can be validated when the
+     * HDMI input carries no audio. NEVER defined in the shipped library. */
+    s_audio_ready = 1;
+    return 0;
+#endif
+
+    s_pcm = audio_open_capture();
+    if (!s_pcm) { opus_encoder_destroy(s_opus); s_opus = NULL; return -1; }
+
+    snd_pcm_hw_params_t *hw = NULL;
+    snd_pcm_hw_params_alloca(&hw);
+    unsigned int rate = KVM_AUD_RATE;
+    snd_pcm_uframes_t period = KVM_AUD_FRAME;
+    if (snd_pcm_hw_params_any(s_pcm, hw) < 0) goto fail;
+    if (snd_pcm_hw_params_set_access(s_pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED) < 0) goto fail;
+    if (snd_pcm_hw_params_set_format(s_pcm, hw, SND_PCM_FORMAT_S16_LE) < 0) goto fail;
+    if (snd_pcm_hw_params_set_channels(s_pcm, hw, KVM_AUD_CH) < 0) goto fail;
+    if (snd_pcm_hw_params_set_rate_near(s_pcm, hw, &rate, 0) < 0) goto fail;
+    if (rate != KVM_AUD_RATE) goto fail;   /* Opus needs an exact 48k source */
+    if (snd_pcm_hw_params_set_period_size_near(s_pcm, hw, &period, 0) < 0) goto fail;
+    if (snd_pcm_hw_params(s_pcm, hw) < 0) goto fail;
+    if (snd_pcm_prepare(s_pcm) < 0) goto fail;
+
+    s_audio_ready = 1;
+    return 0;
+fail:
+    audio_teardown_locked();
+    return -1;
+}
+
 int kvmv_read_audio(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 {
-    /* stub: audio (ALSA capture + Opus encode) not implemented this pass */
     if (_pp_kvm_data) *_pp_kvm_data = NULL;
     if (_p_kvmv_data_size) *_p_kvmv_data_size = 0;
-    return IMG_NOT_EXIST;
+
+    pthread_mutex_lock(&s_alock);
+
+    if (!s_audio_ready && audio_init_locked() != 0) {
+        if (!s_audio_fail_logged) {
+            fprintf(stderr, "OPEN-KVM: audio capture init failed "
+                    "(no LT6911 HDMI-audio PCM available yet)\n");
+            fflush(stderr);
+            s_audio_fail_logged = 1;
+        }
+        pthread_mutex_unlock(&s_alock);
+        return IMG_NOT_EXIST;
+    }
+    s_audio_fail_logged = 0;
+
+#ifdef KVM_AUDIO_SELFTEST
+    /* Synthesize a 440Hz + 660Hz stereo tone so we can validate the encode +
+     * ownership path without a live HDMI audio source. */
+    {
+        static double ph = 0.0;
+        for (int i = 0; i < KVM_AUD_FRAME; i++) {
+            double t = ph + (double)i / KVM_AUD_RATE;
+            s_apcm[i*2+0] = (opus_int16)(9000.0 * sin(2*3.14159265*440.0*t));
+            s_apcm[i*2+1] = (opus_int16)(9000.0 * sin(2*3.14159265*660.0*t));
+        }
+        ph += (double)KVM_AUD_FRAME / KVM_AUD_RATE;
+        int enc0 = opus_encode(s_opus, s_apcm, KVM_AUD_FRAME, s_aout, KVM_AUD_MAXPKT);
+        if (enc0 < 0) { pthread_mutex_unlock(&s_alock); return IMG_NOT_EXIST; }
+        if (_pp_kvm_data) *_pp_kvm_data = s_aout;
+        if (_p_kvmv_data_size) *_p_kvmv_data_size = (uint32_t)enc0;
+        pthread_mutex_unlock(&s_alock);
+        return 0;
+    }
+#endif
+
+    /* Read exactly one 960-frame stereo period; recover from xruns like stock. */
+    snd_pcm_uframes_t got = 0;
+    while (got < KVM_AUD_FRAME) {
+        snd_pcm_sframes_t n = snd_pcm_readi(s_pcm, s_apcm + got * KVM_AUD_CH,
+                                            KVM_AUD_FRAME - got);
+        if (n == -EPIPE) { snd_pcm_prepare(s_pcm); continue; }
+        if (n < 0) { audio_teardown_locked(); pthread_mutex_unlock(&s_alock); return IMG_NOT_EXIST; }
+        got += (snd_pcm_uframes_t)n;
+    }
+
+    int enc = opus_encode(s_opus, s_apcm, KVM_AUD_FRAME, s_aout, KVM_AUD_MAXPKT);
+    if (enc < 0) { pthread_mutex_unlock(&s_alock); return IMG_NOT_EXIST; }
+
+    /* Library-owned buffer (server copies via C.GoBytes, never frees audio). */
+    if (_pp_kvm_data) *_pp_kvm_data = s_aout;
+    if (_p_kvmv_data_size) *_p_kvmv_data_size = (uint32_t)enc;
+    pthread_mutex_unlock(&s_alock);
+    return 0;
 }
 
 void kvmv_deinit(void)
@@ -275,4 +434,8 @@ void kvmv_deinit(void)
     free(s_pps); s_pps = NULL; s_pps_len = 0;
     free(s_pend); s_pend = NULL; s_pend_cap = s_pend_len = 0; s_pend_num = s_pend_idx = 0;
     pthread_mutex_unlock(&s_lock);
+
+    pthread_mutex_lock(&s_alock);
+    audio_teardown_locked();
+    pthread_mutex_unlock(&s_alock);
 }

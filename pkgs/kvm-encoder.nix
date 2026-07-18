@@ -39,7 +39,8 @@
 # LINK LINE (from the on-hardware PoC build.sh / PLAN.md):
 #   gcc -shared -fPIC libkvm.c kvm_pipeline.c -Iinclude \
 #     -L/opt/lib -lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps \
-#     -ldl -lpthread -Wl,-rpath,/opt/lib -o libkvm.so
+#     -lopus -lasound -ldl -lpthread -Wl,-rpath,/opt/lib -o libkvm.so
+#   (-lopus/-lasound back kvmv_read_audio: ALSA HDMI-audio capture + Opus encode.)
 #   QUIRKS resolved here:
 #     - libax_proton.so has a DT_NEEDED on libax_engine.so; the link-time search
 #       path (axera-libs/lib) must contain it so the transitive dep resolves.
@@ -61,7 +62,12 @@ crossPkgs.stdenv.mkDerivation {
 
   # axera-libs supplies BOTH the Axera SDK headers (-I) and the import .so's (-L)
   # plus the RUNPATH so libax_engine (transitive via libax_proton) resolves.
-  buildInputs = [ axera-libs ];
+  # libopus + alsa-lib back the REAL HDMI-audio path in kvmv_read_audio (ALSA
+  # capture off the LT6911UXC card -> Opus encode). Their headers (<opus/opus.h>,
+  # <alsa/asoundlib.h>) and cross libs are injected by the cc-wrapper via
+  # buildInputs; on-device the .so's (libopus.so.0 / libasound.so.2) resolve
+  # from the standard multiarch path.
+  buildInputs = [ axera-libs crossPkgs.libopus crossPkgs.alsa-lib ];
 
   # patchelf: pin the RUNPATH deterministically (see buildPhase). The nix
   # ld-wrapper rewrites -rpath and drops our /opt/lib entry, so we set it by hand.
@@ -80,6 +86,7 @@ crossPkgs.stdenv.mkDerivation {
       libkvm.c kvm_pipeline.c \
       -L${axera-libs}/lib \
       -lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps \
+      -lopus -lasound \
       -ldl -lpthread \
       -Wl,-rpath,${axera-libs}/lib \
       -o libkvm.so
