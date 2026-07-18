@@ -1,0 +1,133 @@
+{
+  "nodes": {
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "maix_ax620e_sdk": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784260670,
+        "narHash": "sha256-6CY2Ov+umw4YnpNxyfu+m0Fet93oN9nLZNa91umNt48=",
+        "owner": "sipeed",
+        "repo": "maix_ax620e_sdk",
+        "rev": "45ebcc32dfcfade1f8cfd1d8f70da67b86ea2902",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sipeed",
+        "repo": "maix_ax620e_sdk",
+        "rev": "45ebcc32dfcfade1f8cfd1d8f70da67b86ea2902",
+        "type": "github"
+      }
+    },
+    "maix_ax620e_sdk_kernel": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783058575,
+        "narHash": "sha256-jMJtvQ0LPBpiXhjJbLerUDS37Kipd5gmqjOF68i9OSE=",
+        "owner": "sipeed",
+        "repo": "maix_ax620e_sdk_kernel",
+        "rev": "ee5d79590ba85c1fd08eed587ba13c6f98da862c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sipeed",
+        "repo": "maix_ax620e_sdk_kernel",
+        "rev": "ee5d79590ba85c1fd08eed587ba13c6f98da862c",
+        "type": "github"
+      }
+    },
+    "maix_ax620e_sdk_msp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784203097,
+        "narHash": "sha256-GMIICaCtUOf4y42h0/++xo7FI3Iq3EfoCtticESuiRM=",
+        "owner": "sipeed",
+        "repo": "maix_ax620e_sdk_msp",
+        "rev": "1bd333bc5ec074b868107102889044e79209771d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sipeed",
+        "repo": "maix_ax620e_sdk_msp",
+        "rev": "1bd333bc5ec074b868107102889044e79209771d",
+        "type": "github"
+      }
+    },
+    "nanokvm-pro-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781229305,
+        "narHash": "sha256-pznjUWOn2Ledlk2d3DzlwbeYbHpQbLOLfD3dsW71XXg=",
+        "owner": "sipeed",
+        "repo": "NanoKVM-Pro",
+        "rev": "8d0557b400e20d18590b780df3b7faddb2a5588c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sipeed",
+        "repo": "NanoKVM-Pro",
+        "rev": "8d0557b400e20d18590b780df3b7faddb2a5588c",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1784120854,
+        "narHash": "sha256-KesHgItiZPgGX740axSiQLcIQ8D24MDqNpkKYWIek8k=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "maix_ax620e_sdk": "maix_ax620e_sdk",
+        "maix_ax620e_sdk_kernel": "maix_ax620e_sdk_kernel",
+        "maix_ax620e_sdk_msp": "maix_ax620e_sdk_msp",
+        "nanokvm-pro-src": "nanokvm-pro-src",
+        "nixpkgs": "nixpkgs"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

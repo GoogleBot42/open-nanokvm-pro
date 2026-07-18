@@ -1,0 +1,172 @@
+{
+  description = ''
+    Open, self-built firmware image for the Sipeed NanoKVM-Pro (Axera AX630C,
+    ARM Cortex-A53 aarch64). Boot chain / kernel / app layer are built from
+    source; Axera's redistributable media libraries (libax_*.so, BSD-3) and the
+    prebuilt ax_*.ko media kernel modules are pinned as binary inputs.
+
+    See README.md for architecture and PLAN.md (repo root, one level up) for the
+    authoritative video-path / on-device recon notes. This flake is a STRUCTURE
+    pass: light derivations build; heavy ones (kernel, boot chain, image) are
+    documented stubs with correct sources + TODOs.
+  '';
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+
+    # ------------------------------------------------------------------
+    # Upstream Sipeed / Axera source repositories.
+    #
+    # Rev pins are the HEAD of each repo's `main` branch as of 2026-07-17
+    # (looked up via the GitHub API). ASSUMPTION / TODO: these are moving
+    # `main` HEADs, not release tags. Before a real build, re-pin to a tagged
+    # SDK release that matches the on-device V3.0.0_20250319 SDK (the msp repo
+    # HEAD is what matches the device today). Treat each as `flake = false`
+    # (plain source tree, no flake.nix of its own).
+    # ------------------------------------------------------------------
+
+    # Boot chain (bl1/SPL, TF-A 2.7, OP-TEE 3.21, U-Boot 2020.04) + image
+    # pipeline (build/projects/AX630C_emmc_arm64_k419_sipeed_nanokvm) + rootfs
+    # scripts + tools (axp-tools shims). GPL/BSD mix, buildable from source.
+    maix_ax620e_sdk = {
+      url = "github:sipeed/maix_ax620e_sdk/45ebcc32dfcfade1f8cfd1d8f70da67b86ea2902";
+      flake = false;
+    };
+
+    # Kernel: Linux 4.19.125 + AX630C..._sipeed_nanokvm DTS + open
+    # lt6911_manage.c. NOTE: the ax_*.ko media modules under osdrv/out/*/ko/
+    # are PREBUILT BLOBS living in THIS repo (pinned via ax-ko-blobs.nix).
+    maix_ax620e_sdk_kernel = {
+      url = "github:sipeed/maix_ax620e_sdk_kernel/ee5d79590ba85c1fd08eed587ba13c6f98da862c";
+      flake = false;
+    };
+
+    # Axera userspace media libraries (libax_*.so, libsns_dummy.so, BSD-3,
+    # redistributable) + matching V3.0.0 headers. out/arm64_glibc/{lib,include}.
+    maix_ax620e_sdk_msp = {
+      url = "github:sipeed/maix_ax620e_sdk_msp/1bd333bc5ec074b868107102889044e79209771d";
+      flake = false;
+    };
+
+    # App layer (GPL-3.0): server/ (Go + cgo -> libkvm.so), web/ (React/pnpm).
+    nanokvm-pro-src = {
+      url = "github:sipeed/NanoKVM-Pro/8d0557b400e20d18590b780df3b7faddb2a5588c";
+      flake = false;
+    };
+  };
+
+  outputs =
+    { self
+    , nixpkgs
+    , flake-utils
+    , ...
+    }@inputs:
+    let
+      # This firmware only targets aarch64-linux, but the flake is meant to be
+      # driven (cross-built) from an x86_64-linux dev box. We therefore key
+      # outputs off the *build/dev* system and construct an aarch64 cross set
+      # (pkgsCross) inside each system's package set.
+      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+    in
+    flake-utils.lib.eachSystem supportedSystems (
+      localSystem:
+      let
+        pkgs = import nixpkgs { system = localSystem; };
+
+        # Cross package set: aarch64, glibc (rootfs is Ubuntu 22.04 arm64).
+        # When the dev box is already aarch64-linux this is a no-op native set.
+        # Stock aarch64 GCC is sufficient (NO exotic toolchain, unlike the
+        # SG2002/T-Head RISC-V case). See pkgs/toolchain.nix for the
+        # 4.19-kernel / boot GCC-version caveats.
+        crossPkgs =
+          if localSystem == "aarch64-linux"
+          then pkgs
+          else pkgs.pkgsCross.aarch64-multiplatform;
+
+        # Shared arguments handed to every derivation file.
+        callArgs = {
+          inherit pkgs crossPkgs inputs;
+          inherit (inputs)
+            maix_ax620e_sdk
+            maix_ax620e_sdk_kernel
+            maix_ax620e_sdk_msp
+            nanokvm-pro-src;
+        };
+
+        callPkg = path: extra: import path (callArgs // extra);
+
+        # ---- individual component derivations ----
+        toolchain = callPkg ./pkgs/toolchain.nix { };
+
+        axera-libs = callPkg ./pkgs/axera-libs.nix { };
+        ax-ko-blobs = callPkg ./pkgs/ax-ko-blobs.nix { };
+
+        # Whole AX630C boot chain (SPL/DDR-init + ATF + OP-TEE + U-Boot), one
+        # shared from-source build; the boot-* selectors below expose subsets.
+        boot = callPkg ./pkgs/boot.nix { };
+        boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { };
+        boot-atf = callPkg ./pkgs/boot-atf.nix { };
+        boot-optee = callPkg ./pkgs/boot-optee.nix { };
+        boot-uboot = callPkg ./pkgs/boot-uboot.nix { };
+
+        kernel = callPkg ./pkgs/kernel.nix { };
+
+        # Board device tree, CORRECTLY built: the vendor reserved-memory /
+        # bootargs patch (scripts/axera/patch_reserve_mem.sh) is applied before
+        # `make dtbs`, so the atf/optee reserved regions and the real kernel
+        # cmdline are present (the plain `make dtbs` in kernel.nix omits them).
+        dtb = callPkg ./pkgs/dtb.nix { };
+
+        # Vendor-format DTB PARTITION image (dtb/dtb_b, p12/p13): ax_gzip -9 the
+        # patched dtb + the 1KB RSA-signed header, exactly as Makefile.kernel's
+        # install_dtb does. Ready to `dd` / to feed build_image.py --dtb.
+        dtb-slot-image = callPkg ./pkgs/dtb-fip.nix { inherit dtb; };
+
+        # Vendor-format kernel PARTITION image for the A/B slot B (kernel_b/p15):
+        # ax_gzip -9 the source-built Image + prepend the 1KB RSA-signed header,
+        # exactly as kernel/linux/Makefile.kernel does. x86_64-linux only
+        # (prebuilt ax_gzip codec). Ready to `dd` to /dev/mmcblk0p15.
+        kernel-slot-image = callPkg ./pkgs/kernel-fip.nix { inherit kernel; };
+
+        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; };
+        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs; };
+        nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
+
+        # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
+        base-axp = callPkg ./pkgs/base-axp.nix { };
+
+        # Rootfs = vendor Ubuntu base (from base-axp) OVERLAID with our libkvm.so
+        # + merged/depmod'd kernel modules (no-root debugfs surgery).
+        rootfs = callPkg ./pkgs/rootfs.nix {
+          inherit base-axp kvm-encoder kernel ax-ko-blobs;
+        };
+
+        # Final flashable .axp: swap our dtb/kernel/u-boot/rootfs into a copy of
+        # the base .axp (build_image.py's file-swap surface), pure zip rewrite.
+        firmware-image = callPkg ./pkgs/image.nix {
+          inherit base-axp boot kernel-slot-image dtb-slot-image rootfs;
+        };
+      in
+      {
+        packages = {
+          inherit
+            toolchain
+            axera-libs ax-ko-blobs
+            boot boot-fsbl boot-atf boot-optee boot-uboot
+            kernel dtb dtb-slot-image kernel-slot-image
+            kvm-encoder nanokvm-server nanokvm-web
+            base-axp rootfs firmware-image;
+
+          # Top-level default = the flashable firmware image (currently a stub
+          # that documents the 17-partition layout; see pkgs/image.nix).
+          default = firmware-image;
+        };
+
+        devShells.default = callPkg ./pkgs/devshell.nix { inherit toolchain; };
+
+        # Formatter for `nix fmt`.
+        formatter = pkgs.nixpkgs-fmt;
+      }
+    );
+}

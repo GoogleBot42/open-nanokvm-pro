@@ -1,0 +1,5 @@
+
+# nix build result symlinks (any name)
+*-result
+result
+result-*
