@@ -118,10 +118,26 @@
         # cmdline are present (the plain `make dtbs` in kernel.nix omits them).
         dtb = callPkg ./pkgs/dtb.nix { };
 
+        # SD-card variant of the board dtb: identical reserved-memory patch, but
+        # chosen/bootargs carries root=/dev/mmcblk1p2 (the card's ext4 rootfs =
+        # MBR p2) instead of the eMMC's mmcblk0p17. Wired into sd-image below so
+        # an SD boot mounts the CARD's rootfs, not eMMC. See pkgs/dtb.nix header
+        # for why the DTB (not just the U-Boot BOOTARGS_SD env) must carry this.
+        dtb-sd = callPkg ./pkgs/dtb.nix {
+          rootDev = "/dev/mmcblk1p2";
+          nameSuffix = "-sd";
+        };
+
         # Vendor-format DTB PARTITION image (dtb/dtb_b, p12/p13): ax_gzip -9 the
         # patched dtb + the 1KB RSA-signed header, exactly as Makefile.kernel's
         # install_dtb does. Ready to `dd` / to feed build_image.py --dtb.
         dtb-slot-image = callPkg ./pkgs/dtb-fip.nix { inherit dtb; };
+
+        # Same packaging, SD-root dtb -> the dtb.img placed on the microSD card.
+        dtb-slot-image-sd = callPkg ./pkgs/dtb-fip.nix {
+          dtb = dtb-sd;
+          nameSuffix = "-sd";
+        };
 
         # Vendor-format kernel PARTITION image for the A/B slot B (kernel_b/p15):
         # ax_gzip -9 the source-built Image + prepend the 1KB RSA-signed header,
@@ -153,7 +169,9 @@
         # path, leaving eMMC untouched (pull the card to revert). MBR/FAT32+ext4;
         # the SD-variant SPL (boot/bl1/sd) now fits its 50K slot -- see boot.nix.
         sd-image = callPkg ./pkgs/sd-image.nix {
-          inherit boot kernel-slot-image dtb-slot-image rootfs;
+          inherit boot kernel-slot-image rootfs;
+          # Use the SD-root dtb (root=/dev/mmcblk1p2) as the card's dtb.img.
+          dtb-slot-image = dtb-slot-image-sd;
         };
       in
       {
@@ -162,7 +180,7 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
-            kernel dtb dtb-slot-image kernel-slot-image
+            kernel dtb dtb-sd dtb-slot-image dtb-slot-image-sd kernel-slot-image
             kvm-encoder nanokvm-server nanokvm-web
             base-axp rootfs firmware-image sd-image;
 

@@ -1,4 +1,4 @@
-{ pkgs, maix_ax620e_sdk, dtb, ... }:
+{ pkgs, maix_ax620e_sdk, dtb, nameSuffix ? "", ... }:
 
 # ===========================================================================
 # NanoKVM-Pro AX630C DTB-PARTITION packaging (dtb / dtb_b, p12 / p13).
@@ -45,7 +45,7 @@ let
   dtbLoadAddr = "0x40001000"; # AXERA_DTB_IMG_ADDR
 in
 pkgs.stdenvNoCC.mkDerivation {
-  pname = "nanokvm-pro-dtb-slot-image";
+  pname = "nanokvm-pro-dtb-slot-image${nameSuffix}";
   version = "ax630c-dtb";
 
   dontUnpack = true;
@@ -143,7 +143,7 @@ pkgs.stdenvNoCC.mkDerivation {
     CONTENT: the board dtb now carries the vendor reserved-memory regions
       atf_memreserved  = <0x0 0x40040000 0x0 0x40000>   (256K)
       optee_memserved  = <0x0 0x44200000 0x0 0x2000000> (32M)
-    plus the real kernel bootargs (root=/dev/mmcblk0p17 ... blkdevparts=...).
+    plus the real kernel bootargs (root=<eMMC mmcblk0p17 | SD mmcblk1p2> ... blkdevparts=...).
     This is the dtb gap that kernel-fip.nix flagged -- now closed (pkgs/dtb.nix).
     EOF
 

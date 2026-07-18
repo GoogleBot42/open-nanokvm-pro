@@ -1,4 +1,19 @@
-{ pkgs, crossPkgs, maix_ax620e_sdk, maix_ax620e_sdk_kernel, maix_ax620e_sdk_msp, ... }:
+{ pkgs, crossPkgs, maix_ax620e_sdk, maix_ax620e_sdk_kernel, maix_ax620e_sdk_msp
+, # ---- root device baked into chosen/bootargs -------------------------------
+  # eMMC (default): rootfs is p17 of the 17-partition A/B eMMC layout = mmcblk0p17.
+  # SD card:        rootfs is MBR partition 2 of the card           = mmcblk1p2.
+  #   (DTB aliases: mmc0 = eMMC sdhc@1B40000, mmc1 = SD sdhc@104E0000 -> the SD
+  #    card always enumerates as mmcblk1 regardless of boot source.)
+  # The SD variant is wired into pkgs/sd-image.nix so the card's dtb.img carries
+  # the SD root. See the deliverable notes: the vendor SD U-Boot (cmd/axera/
+  # sd_boot/sd_boot.c) sets env bootargs=BOOTARGS_SD (root=/dev/mmcblk1p2) and
+  # booti's fdt_chosen SHOULD overwrite /chosen/bootargs -- but on-hardware the
+  # eMMC root still reached the kernel, so we fix the DTB too. With BOTH the env
+  # and the DTB now naming mmcblk1p2, every boot path agrees; no eMMC-root path
+  # remains.
+  rootDev ? "/dev/mmcblk0p17"
+, nameSuffix ? ""
+, ... }:
 
 # ===========================================================================
 # NanoKVM-Pro AX630C board device tree -- CORRECTLY built (reserved-memory
@@ -77,17 +92,22 @@ let
 
   # KERNEL_BOOTARGS, verbatim from `make print-KERNEL_BOOTARGS` (outer quotes
   # stripped by the shell exactly as the vendor recipe passes `-b $(KERNEL_BOOTARGS)`).
-  # rootfs is partition 17 (p17) in the 17-partition A/B layout.
+  # rootfs is `${rootDev}` (eMMC: p17 = mmcblk0p17 ; SD: mmcblk1p2). Only the
+  # `root=` clause changes between variants -- console/earlycon/mem/rootwait are
+  # identical, and `blkdevparts=mmcblk0:...` describes the (still-present) eMMC
+  # partition layout, so it is accurate and harmless on an SD boot (it only NAMES
+  # eMMC partitions; it does not affect where root is mounted). Kept for both
+  # variants so the two dtbs differ ONLY in `root=`.
   kernelBootargs =
     "mem=256M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 "
     + "board_id=0x0,boot_reason=0x00,initcall_debug=0 loglevel=8 "
-    + "usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait "
+    + "usbcore.autosuspend=-1 root=${rootDev} rootfstype=ext4 rw rootwait "
     + "blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),"
     + "1536K(uboot),1536K(uboot_b),1M(env),6M(logo),6M(logo_b),1M(optee),"
     + "1M(optee_b),1M(dtb),1M(dtb_b),64M(kernel),64M(kernel_b),128M(boot),-(rootfs)";
 in
 pkgs.stdenv.mkDerivation {
-  pname = "nanokvm-pro-dtb";
+  pname = "nanokvm-pro-dtb${nameSuffix}";
   version = release;
 
   src = maix_ax620e_sdk_kernel;
@@ -207,8 +227,8 @@ pkgs.stdenv.mkDerivation {
       echo "ERROR: bootargs still the placeholder -- DTB patch did not apply" >&2
       exit 1
     fi
-    if ! grep -q 'root=/dev/mmcblk0p17' dump.dts; then
-      echo "ERROR: bootargs missing root=/dev/mmcblk0p17" >&2
+    if ! grep -q 'root=${rootDev}' dump.dts; then
+      echo "ERROR: bootargs missing root=${rootDev}" >&2
       exit 1
     fi
     echo "VERIFY OK: atf + optee reserved-memory regions present, bootargs patched."
