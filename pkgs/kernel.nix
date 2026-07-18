@@ -109,10 +109,31 @@ pkgs.stdenv.mkDerivation {
 
   # Build in a writable copy of the WHOLE repo: the nix store src is read-only,
   # a few Kbuild steps write generated headers, and the OSAL built-in reaches
-  # the repo-root `osal/` sibling of the kernel tree (see note above). Also, the
-  # vendor defconfig bakes an SDK-relative CONFIG_INITRAMFS_SOURCE that only
-  # exists in the vendor build tree -- our rootfs is a separate derivation, so
-  # build with an empty embedded initramfs.
+  # the repo-root `osal/` sibling of the kernel tree (see note above).
+  #
+  # EMBEDDED INITRAMFS -- load-bearing, MUST be present (see below).
+  # The vendor defconfig bakes CONFIG_INITRAMFS_SOURCE=
+  #   "../../../../images/initramfs_rootfs.cpio"
+  # i.e. it EMBEDS a busybox initramfs into the kernel Image. That initramfs's
+  # /init is what actually reaches userspace: it parses root= from /proc/cmdline,
+  # selects eMMC (mmcblk0p17) vs SD (mmcblk1p2), mounts the real rootfs at
+  # /realroot, (optionally resizes it / runs e2fsck), then
+  #   exec switch_root /realroot /sbin/init
+  # The kernel does NOT mount root= directly -- there is no root=-driven mount;
+  # switch_root from the initramfs is the ONLY path to the real rootfs. Zeroing
+  # CONFIG_INITRAMFS_SOURCE (a prior workaround, because the SDK-relative cpio
+  # path does not resolve in the nix sandbox) therefore left the kernel with an
+  # empty rootfs and no /init -> it never mounts the SD/eMMC root (matches the
+  # observed "mount count stays 0, no logs" symptom).
+  #
+  # The initramfs content is a VENDOR ARTIFACT checked into the SDK build repo at
+  #   build/projects/${project}/initramfs/  (init + show_iostat + busybox tree +
+  #   e2fsck + libc/ld/libuuid). We reproduce the vendor gen_initramfs.sh exactly
+  # (create proc/sys/dev, chmod +x init, pack newc cpio, force root:root
+  # ownership to match CONFIG_INITRAMFS_ROOT_UID/GID=0), then point
+  # CONFIG_INITRAMFS_SOURCE at the generated .cpio (uncompressed, matching the
+  # defconfig's CONFIG_INITRAMFS_COMPRESSION_NONE). gen_initramfs_list.sh uses a
+  # single *.cpio source directly, so the archive is embedded byte-for-byte.
   configurePhase = ''
     runHook preConfigure
 
@@ -146,11 +167,38 @@ pkgs.stdenv.mkDerivation {
     export PROJECT=${project}
     export LIBC=glibc
     export KROOT="$TMPDIR/sdk/kernel/${kernelSubdir}"
+
+    # ---- Reproduce the vendor initramfs cpio (load-bearing, see note above) --
+    # build/projects/${project}/gen_initramfs.sh does exactly this: cd into the
+    # prebuilt initramfs/ tree, ensure proc/sys/dev exist, chmod +x init, then
+    # `find . | cpio -o --format=newc`. We add `-R 0:0` so archive ownership is
+    # root:root (the vendor builds as root; CONFIG_INITRAMFS_ROOT_UID/GID=0).
+    initramfsSrc="${maix_ax620e_sdk}/build/projects/${project}/initramfs"
+    initramfsDir="$TMPDIR/initramfs"
+    initramfsCpio="$TMPDIR/initramfs_rootfs.cpio"
+    cp -a "$initramfsSrc" "$initramfsDir"
+    chmod -R u+w "$initramfsDir"
+    mkdir -p "$initramfsDir"/proc "$initramfsDir"/sys "$initramfsDir"/dev
+    chmod +x "$initramfsDir/init"
+    ( cd "$initramfsDir" && find . -print0 \
+        | cpio --null -o --format=newc -R 0:0 ) > "$initramfsCpio"
+    echo "initramfs cpio: $(stat -c%s "$initramfsCpio") bytes"
+
     cd "$KROOT"
 
     make O=build ${defconfig}
-    bash ./scripts/config --file build/.config --set-str INITRAMFS_SOURCE ""
+    # Point the embedded initramfs at the cpio we just built (the defconfig's
+    # SDK-relative path does not resolve in the sandbox). A single *.cpio source
+    # is embedded directly, uncompressed (CONFIG_INITRAMFS_COMPRESSION_NONE).
+    bash ./scripts/config --file build/.config \
+      --set-str INITRAMFS_SOURCE "$initramfsCpio"
     make O=build olddefconfig
+
+    # Guard: the embedded initramfs is required to reach userspace (switch_root).
+    grep -qx "CONFIG_BLK_DEV_INITRD=y" build/.config \
+      || { echo "ERROR: CONFIG_BLK_DEV_INITRD off -- no embedded initramfs." >&2; exit 1; }
+    grep -q "^CONFIG_INITRAMFS_SOURCE=\"$initramfsCpio\"" build/.config \
+      || { echo "ERROR: CONFIG_INITRAMFS_SOURCE not set to our cpio." >&2; exit 1; }
 
     # Fail LOUDLY here (not on-device) if a future kernel/config bump would
     # break ax_*.ko loading by changing the vermagic inputs.
