@@ -80,7 +80,12 @@ crossPkgs.stdenv.mkDerivation {
 
     echo "Cross-building REAL libkvm.so (capture+encode) for aarch64"
 
-    ${cc} -shared -fPIC -O2 -Wall \
+    # -std=gnu17: keep fscanf/scanf-family on their classic symbols. The default
+    # (C23) mode on newer gcc/glibc redirects fscanf -> __isoc23_fscanf, which is
+    # GLIBC_2.38 and does NOT exist on the target Ubuntu 22.04 rootfs (glibc 2.35),
+    # so the Go server fails to load libkvm.so ("GLIBC_2.38 not found"). gnu17
+    # drops the only >2.35 symbol; the rest are <= 2.34 and load fine on 2.35.
+    ${cc} -shared -fPIC -O2 -Wall -std=gnu17 \
       -I. -I${axera-libs}/include \
       -Wl,-soname,libkvm.so.0 \
       libkvm.c kvm_pipeline.c \
@@ -91,12 +96,23 @@ crossPkgs.stdenv.mkDerivation {
       -Wl,-rpath,${axera-libs}/lib \
       -o libkvm.so
 
-    # RUNPATH decision: keep axera-libs/lib (so libax_* -- incl. libax_engine,
+    # RPATH decision: keep axera-libs/lib (so libax_* -- incl. libax_engine,
     # pulled in transitively by libax_proton -- resolve in the nix sandbox / CI /
     # dev box), and prepend /opt/lib, which is where the rootfs/image layer stages
     # the media libs ON-DEVICE (the nix store paths do not exist there). Both are
     # harmless when the other is authoritative: the loader takes the first match.
-    patchelf --set-rpath "/opt/lib:${axera-libs}/lib" libkvm.so
+    #
+    # --force-rpath is LOAD-BEARING: it emits DT_RPATH (transitive) instead of the
+    # modern default DT_RUNPATH (non-transitive). libkvm's direct deps include
+    # libax_proton, which itself DT_NEEDEDs libax_engine.so. DT_RUNPATH is searched
+    # ONLY for an object's *own* direct deps, so libkvm's RUNPATH would resolve
+    # libax_proton but NOT the transitive libax_engine -- the Go server then dies
+    # at load with "libax_engine.so: cannot open shared object file" UNLESS the
+    # process happens to have /opt/lib on LD_LIBRARY_PATH or in ld.so.cache. Under
+    # systemd (nanokvm.service) it has neither, so the web server crash-looped.
+    # DT_RPATH is inherited down the whole dependency chain, so /opt/lib resolves
+    # libax_engine for libax_proton too -- self-contained, no ldconfig/env needed.
+    patchelf --force-rpath --set-rpath "/opt/lib:${axera-libs}/lib" libkvm.so
 
     cp libkvm.so libkvm.so.0
 
