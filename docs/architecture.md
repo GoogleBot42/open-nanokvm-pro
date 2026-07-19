@@ -162,11 +162,24 @@ with no reachable web UI (this was the "web interface is down" symptom during
 bring-up).
 
 `pkgs/rootfs.nix` fixes this: it drops the `kvmcomm.service` symlink from
-`multi-user.target.wants` and adds `nanokvm.service`. **Trade-off:** disabling
-`kvmcomm` also stops `kvm_ui`, so the on-device mini-display preview goes dark.
-That's closed vendor code outside our from-source path; reclaiming it would mean
-porting our open capture into the newer `kvm_vin`/`kvmd` architecture (a much
-larger effort). For an open, from-source web KVM, `nanokvm` is the correct stack.
+`multi-user.target.wants` and adds `nanokvm.service`. For an open, from-source web
+KVM, `nanokvm` is the correct stack.
+
+### The built-in mini-display
+
+Running `kvmcomm` also means running `kvm_ui`, which drives the small on-device
+screen. **`kvm_ui` (and its `frameforge` helper) are closed-source vendor
+binaries** — no source is published in Sipeed's repo — so we deliberately do
+**not** ship or run them. Consequently the mini-display is dark on our firmware.
+
+This is a decision about the closed *app*, not a hardware limitation. The panel
+itself is open and standard: a **JD9853 SPI TFT** driven by mainline Linux
+**`fbtft`** (+ a small `fb_jd9853` panel module, in `/kvmcomm/ko/`), exposed as an
+ordinary **`/dev/fb0`** framebuffer — Sipeed even ships an open Python framebuffer
+API + demo apps for it. So the screen can be reclaimed by *our own* open code
+(load the two `fb` modules, draw to `/dev/fb0`; feed it `libkvm` frames for a live
+preview) without the closed `kvm_ui`. That's future work, tracked as a
+possibility, not something the current image does.
 
 ---
 

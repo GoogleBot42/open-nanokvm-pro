@@ -64,6 +64,12 @@ Axera blobs** — not a blob-free build. See
 [docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs) for the
 rationale and the full blob audit.
 
+> **Deliberately excluded:** the vendor's on-device **mini-display app `kvm_ui`**
+> is a closed-source binary (no source published), so we don't ship or run it —
+> the built-in screen is dark on our firmware. The panel is a standard `/dev/fb0`
+> framebuffer, so open code could reclaim it later
+> ([details](docs/architecture.md#the-built-in-mini-display)).
+
 ---
 
 ## How it's put together
