@@ -122,6 +122,28 @@ pkgs.stdenvNoCC.mkDerivation {
       emit_file "$stage/$f" "/$f" "$mode"
     done
 
+    # 5c. systemd stack selection.
+    # The pinned vendor base ships TWO independent KVM app stacks and enables the
+    # WRONG one for our purposes:
+    #   * kvmapp  (nanokvm.service)  -> NanoKVM-Server serves the web KVM and loads
+    #     OUR open libkvm.so for capture/encode. This is our from-source deliverable.
+    #   * kvmcomm (kvmcomm.service)  -> the vendor's newer kvm_vin + kvm_ui pipeline
+    #     that talks to the Axera libs directly (no libkvm) and tries to hand the
+    #     web UI to PiKVM's kvmd. On this base kvmd is disabled+inactive, so kvmcomm
+    #     serves NO web interface, and its kvm_vin/kvm_ui contend with our libkvm for
+    #     the single MIPI_RX/VENC pipeline. The vendor enables kvmcomm by default.
+    # So: disable kvmcomm, enable nanokvm (symlink in multi-user.target.wants). This
+    # is what makes a FRESH FLASH boot straight into our open stack with a working
+    # web KVM -- without it the device comes up on kvmcomm with no web UI.
+    wants="/etc/systemd/system/multi-user.target.wants"
+    {
+      echo "rm $wants/kvmcomm.service"     # disable vendor stack (ignore-if-absent)
+      echo "rm $wants/nanokvm.service"     # clear any stale link before re-creating
+      echo "symlink $wants/nanokvm.service /etc/systemd/system/nanokvm.service"
+      echo "sif $wants/nanokvm.service uid 0"
+      echo "sif $wants/nanokvm.service gid 0"
+    } >> "$script"
+
     # ---- 6. apply overlay in a single debugfs -w pass ----
     echo "=== [6] apply overlay (debugfs -w) ==="
     debugfs -w -f "$script" rootfs.ext4 > debugfs.log 2>&1 || {
@@ -132,6 +154,14 @@ pkgs.stdenvNoCC.mkDerivation {
     cmp -s /tmp/chk.so "${kvm-encoder}/lib/libkvm.so.0" \
       || { echo "ERROR: libkvm.so.0 in image != our build" >&2; exit 1; }
     echo "  libkvm.so.0 verified in image."
+
+    # Sanity: OUR stack is enabled and the vendor kvmcomm stack is disabled.
+    debugfs -R "stat $wants/nanokvm.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
+      || { echo "ERROR: nanokvm.service not enabled (symlink missing) in image" >&2; exit 1; }
+    if debugfs -R "stat $wants/kvmcomm.service" rootfs.ext4 >/dev/null 2>&1; then
+      echo "ERROR: kvmcomm.service still enabled in image (should be disabled)" >&2; exit 1
+    fi
+    echo "  systemd stack: nanokvm enabled, kvmcomm disabled -- verified in image."
 
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="
