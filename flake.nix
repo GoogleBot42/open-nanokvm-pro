@@ -80,13 +80,13 @@
       #
       # `updateBaseUrl` is baked into NanoKVM-Server so its "update" button pulls
       # from OUR GitHub Releases instead of Sipeed's CDN. `releases/latest/
-      # download` always resolves to the newest release's assets.
-      # >>> SET OWNER/REPO to the repo that hosts the Releases. <<<
+      # download` always resolves to the newest release's assets. Change this if
+      # the repo/host that publishes the Releases moves.
       # ------------------------------------------------------------------
       version =
         let m = builtins.match "[[:space:]]*([^[:space:]]+).*" (builtins.readFile ./VERSION);
         in if m == null then "0.0.0-dev" else builtins.head m;
-      updateBaseUrl = "https://github.com/OWNER/REPO/releases/latest/download";
+      updateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
     in
     flake-utils.lib.eachSystem supportedSystems (
       localSystem:

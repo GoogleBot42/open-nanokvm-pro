@@ -1,4 +1,4 @@
-# nix-nanokvm-pro
+# open-nanokvm-pro
 
 An **open, self-built firmware for the Sipeed NanoKVM-Pro** (Axera **AX630C**,
 dual Cortex-A53, aarch64/glibc), packaged as a Nix flake. The boot chain, Linux

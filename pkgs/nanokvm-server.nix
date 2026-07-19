@@ -2,7 +2,7 @@
 , # Base URL the on-device updater fetches from. Point at the GitHub repo that
   # hosts the Releases; `releases/latest/download` always resolves to the newest
   # release's assets. See flake.nix (updateBaseUrl) and docs/updates.md.
-  updateBaseUrl ? "https://github.com/OWNER/REPO/releases/latest/download"
+  updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
 , ...
 }:
 
@@ -109,7 +109,7 @@ buildGoModule {
 
   ldflags = [
     "-X" "main.Version=nix"
-    "-X" "main.GitBranch=nix-nanokvm-pro"
+    "-X" "main.GitBranch=open-nanokvm-pro"
   ];
 
   nativeBuildInputs = [ pkgs.patchelf ];

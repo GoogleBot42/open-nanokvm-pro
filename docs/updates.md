@@ -46,12 +46,13 @@ Publishing a release **is** the OTA push.
 
 ## One-time setup
 
-1. **Create the GitHub repo** that will host the code + Releases, and push this
-   flake to it.
-2. **Set the update URL.** In `flake.nix`, set `updateBaseUrl` to
-   `https://github.com/<owner>/<repo>/releases/latest/download`. This is baked
-   into `NanoKVM-Server` at build time, so **images built before you set it will
-   still point at the placeholder** — set it, then build/flash.
+1. **Create the GitHub repo** that hosts the code + Releases, and push this flake
+   to it. This project targets
+   [`GoogleBot42/open-nanokvm-pro`](https://github.com/GoogleBot42/open-nanokvm-pro).
+2. **The update URL is already set.** `flake.nix` `updateBaseUrl` points at
+   `https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download`,
+   baked into `NanoKVM-Server` at build time. If you fork/move the repo, change it
+   there and rebuild (images built against the old URL keep pointing at it).
 3. **Actions permissions.** The workflow needs `contents: write` (already declared
    in `.github/workflows/release.yml`). Ensure Settings → Actions → Workflow
    permissions allows it (default `GITHUB_TOKEN` is sufficient).
