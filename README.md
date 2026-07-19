@@ -39,6 +39,7 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
 | [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL USB flashing, the `User`-button recovery path, full backup/restore, non-destructive SD-card boot |
 | [docs/updates.md](docs/updates.md) | **Our own OTA/update system**: CI builds images + web-update packages; the web-UI "update" button pulls from **our** GitHub Releases, not Sipeed |
+| [docs/mini-display.md](docs/mini-display.md) | The built-in screen: why it's excluded (closed `kvm_ui`) and a verified recipe to reclaim it openly if the display `.ko` blobs are later accepted |
 
 > The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
 > findings, the resolved MIPI/VIN/VENC capture config, per-test results) lives in

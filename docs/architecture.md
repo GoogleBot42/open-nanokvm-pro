@@ -177,9 +177,11 @@ itself is open and standard: a **JD9853 SPI TFT** driven by mainline Linux
 **`fbtft`** (+ a small `fb_jd9853` panel module, in `/kvmcomm/ko/`), exposed as an
 ordinary **`/dev/fb0`** framebuffer — Sipeed even ships an open Python framebuffer
 API + demo apps for it. So the screen can be reclaimed by *our own* open code
-(load the two `fb` modules, draw to `/dev/fb0`; feed it `libkvm` frames for a live
-preview) without the closed `kvm_ui`. That's future work, tracked as a
-possibility, not something the current image does.
+(load the `fb` modules, draw to `/dev/fb0`; feed it `libkvm` frames for a live
+preview) without the closed `kvm_ui`. This was verified on hardware — the panel
+lit and drew while the web KVM kept running. It's future work, not something the
+current image does; the full findings and a step-by-step reclaim recipe are in
+[mini-display.md](mini-display.md).
 
 ---
 
