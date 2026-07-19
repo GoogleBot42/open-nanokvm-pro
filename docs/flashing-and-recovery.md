@@ -127,6 +127,48 @@ Two SD-specific build details, both handled in the flake:
 > confidence, [Sipeed wiki](https://wiki.sipeed.com/hardware/en/kvm/NanoKVM_Pro/faq.html)).
 > This is a manually-triggered test/recovery path, not an appliance boot.
 
+### If the card does not boot
+
+> **Status:** our `sd-image` has not yet been verified to boot on hardware — the
+> first attempt produced no output on UART1. The design matches the SDK's own SD
+> path (the SPL's `sd_img_name[]` file table, the vendor `gen_sd_image.sh`
+> MBR/FAT32 layout), so the failure is likely procedural or environmental. Key
+> fact for diagnosis: **everything before our SPL — the mask ROM — prints only on
+> UART0**, so a silent UART1 just means our SPL never ran.
+
+Diagnose in this order:
+
+1. **Dual-UART capture.** Watch UART0 (`0x4880000`, hidden pads) *and* UART1
+   (`0x4881000`, header pin) simultaneously during the button-boot, ideally with
+   an FT232 (CH340 adapters may not lock the SPL's non-standard early baud).
+   - Stock eMMC log on UART0 → the ROM never entered the SD channel: refine the
+     button timing (hold at power-apply, release the instant power is up; too
+     long = USB download mode).
+   - `enter spl` on UART1 then silence → the SD SPL's built-in DDR auto-training
+     is the suspect (SD boot skips the board-tuned `ddrinit` parameters).
+   - Garbled earliest lines but clean 115200 text later → adapter baud issue.
+2. **Control test: the official Sipeed SD image.** Write the released
+   "NanoKVM Pro SD image" from
+   [sipeed/NanoKVM-Pro releases](https://github.com/sipeed/NanoKVM-Pro/releases)
+   to a card and repeat the identical procedure. If the vendor image boots but
+   ours doesn't, the fault is in our image; if it also fails, the fault is
+   procedure, adapter, or the unit itself. When the vendor image boots, compare
+   its geometry and file set against ours before changing anything:
+
+   ```bash
+   sfdisk -l vendor.img                       # partition offsets/types vs ours
+   minfo -i vendor.img@@1M | head -30         # FAT32 boot-sector parameters
+   mdir -i vendor.img@@1M ::/                 # file set (does it carry uboot.bin?)
+   # same three commands against result/AX630C_..._sdcard.img
+   ```
+3. ~~**Secure-boot check.**~~ **Ruled out (2026-07):** the dev-key-signed
+   `.#firmware-image` flashes over AXDL and boots from eMMC on this unit, so the
+   `SECURE_BOOT_EN` efuse is open and signing cannot be what blocks the SD path.
+4. **De-risk the console redirect.** Build an SD variant without the UART1
+   redirect (drop `sdConsoleUart1` / use the plain `dtb`) and probe the UART0
+   pads — this removes every UART1 uncertainty while checking whether the chain
+   itself boots.
+
 ---
 
 ## First boot & the web UI

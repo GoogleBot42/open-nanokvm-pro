@@ -1,72 +1,50 @@
 { pkgs, maix_ax620e_sdk, boot, dtb-slot-image, kernel-slot-image, rootfs, ... }:
 
 # ===========================================================================
-# NON-DESTRUCTIVE microSD BOOT IMAGE  (`.#sd-image`)  -- REAL derivation.
+# Non-destructive microSD boot image (`.#sd-image`): a single `dd`-able raw
+# .img that boots the from-source boot chain + kernel + dtb + rootfs from an
+# SD/TF card, leaving eMMC untouched. SD boot is an officially supported path
+# (Sipeed FAQ: wiki.sipeed.com/hardware/en/kvm/NanoKVM_Pro/faq.html) and is
+# manually triggered: hold `User` while applying power, release immediately.
+# A normal power-on always boots eMMC, card present or not.
 #
-# Produces a single `dd`-able raw .img that boots the NanoKVM-Pro (AX630C) from
-# a microSD/TF card using our FROM-SOURCE boot chain + kernel + dtb + rootfs,
-# WITHOUT touching eMMC. Insert the card to test; pull it to revert to the
-# stock eMMC firmware. eMMC is never written.
+# LAYOUT (mirrors the vendor gen_sd_image.sh for this board):
+#   MBR: 1 MiB gap
+#     p1  FAT32 (type 0x0c, boot flag), 128 MiB: boot.bin + chain images
+#     p2  ext4, rest: our overlaid rootfs
+# built with no root: mtools/mkfs.vfat for the FAT, sfdisk for the MBR, and the
+# prebuilt raw ext4 from pkgs/rootfs.nix as p2.
 #
-# ---------------------------------------------------------------------------
-# WHY THIS IS THE RIGHT LAYOUT  (derived from SDK source, not guessed)
-#
-# The AX620E BootROM's SD path is FILE-based, not raw-offset. When the ROM
-# boots from the SD slot (mmc1 @ 0x104E0000) it reads an MBR partition table,
-# mounts the FIRST FAT32 partition and loads the file `boot.bin` from its root
-# -- there is NO SPL at a raw LBA. `boot.bin` is the SD-variant SPL
-# (boot/bl1/sd, which links FatFS + the SD mmc driver). That SD SPL then loads
-# every later stage as a NAMED FILE from the same FAT32 partition. The exact
-# filenames are the SPL's own table, boot/bl1/core/boot/boot.c `sd_img_name[]`:
+# The AX620E BootROM's SD path is FILE-based, not raw-offset: the ROM mounts the
+# first FAT32 partition and loads `boot.bin` (the boot/bl1/sd SPL variant, which
+# links FatFS + the SD mmc driver). It records the SD channel by writing
+# DL_CHAN_SD (0x6) into COMM_SYS_DUMMY_SW5; the SPL's setup_boot_mode()
+# (boot/bl1/spl/spl_main.c) trusts that flag and never probes for a card. The
+# SPL then loads each later stage as a named file from the same FAT partition --
+# the names are the SPL's own table, boot/bl1/core/boot/boot.c sd_img_name[]:
 #     [DDRINIT]="0:ddrinit.img" [ATF]="0:atf.img"   [UBOOT]="0:uboot.bin"
-#     [OPTEE]  ="0:optee.img"   [DTB]="0:dtb.img"    [KERNEL]="0:kernel.img"
-# (drive "0:" = the FAT32 partition). We name our files to match that table
-# EXACTLY -- this is the authoritative reader, more reliable than the vendor's
-# generic tools/mkaxp/sd_upgrade_pack.py which has a known naming mismatch
-# (it calls u-boot "boot.bin" and never emits uboot.bin / ddrinit.img).
+#     [OPTEE]  ="0:optee.img"   [DTB]="0:dtb.img"   [KERNEL]="0:kernel.img"
+# We name our files to match that table exactly. (The vendor's generic
+# tools/mkaxp/sd_upgrade_pack.py has a naming mismatch -- it calls u-boot
+# "boot.bin" and never emits uboot.bin -- so the SPL table, not that tool, is
+# the authoritative reference.) Notes:
+#   - The SD SPL is built with AX620E_SUPPORT_SD: DDR init is compiled in
+#     (mc20e_ddr_init) and OPTEE_BOOT is off, so ddrinit.img / optee.img are
+#     never actually read on the SD path; they are kept to match the vendor
+#     recipe and cost nothing.
+#   - The SPL's FatFS has LFN disabled (ffconf.h FF_USE_LFN=0): every file on
+#     the FAT partition must have an 8.3 name. 512-byte sectors; no exFAT.
 #
-# The overall MBR layout mirrors the vendor's own SD recipe for THIS board,
-# build/projects/AX630C_..._sipeed_nanokvm/gen_sd_image.sh:
-#     MBR (msdos):
-#       gap   : 1 MiB
-#       p1    : FAT32, 128 MiB, boot flag  -> boot.bin + the chain .img files
-#       p2    : ext4, rest               -> our overlaid rootfs
-# gen_sd_image.sh needs root (losetup/mount); we build the identical bytes with
-# NO root: mtools (FAT), the prebuilt raw ext4 from pkgs/rootfs.nix (p2), and
-# sfdisk writing the MBR onto a plain file.
+# CONSOLE: the flake wires in the UART1 variants (boot-sd, dtb-slot-image-sd)
+# so every stage from the SPL on logs to ttyS1 (0x4881000, the exposed header
+# pin). Everything BEFORE our SPL -- the mask ROM -- prints only on UART0, so a
+# card that never reaches our SPL is silent on UART1 by construction.
 #
-# ---------------------------------------------------------------------------
-# FROM SOURCE (our derivations, dropped into the FAT partition):
-#   boot.bin    <- ${boot}/images/spl_<project>_sd_signed.bin  (SD SPL, gc-sec)
-#   ddrinit.img <- ${boot}/images/ddrinit_<project>_signed.bin
-#   atf.img     <- ${boot}/images/atf_bl31_signed.bin
-#   uboot.bin   <- ${boot}/images/u-boot_signed.bin
-#   optee.img   <- ${boot}/images/optee_signed.bin
-#   dtb.img     <- ${dtb-slot-image}/<project>_signed.dtb   (reserved-mem patched)
-#   kernel.img  <- ${kernel-slot-image}/kernel_b.bin        (ax_gzip + signed)
-#   (p2 rootfs) <- ${rootfs}/ubuntu_rootfs.ext4  (Ubuntu base + libkvm + modules)
-# plus the vendor bootfs helper files (configs / ver / first_time_boot) copied
-# verbatim from the SDK project, exactly as gen_sd_image.sh does.
-#
-# The whole boot chain is signed with the SDK's committed repo dev keys; it
-# boots on OPEN boards (SECURE_BOOT_EN efuse unburned) -- see pkgs/boot.nix.
-#
-# ---------------------------------------------------------------------------
-# BOOT-FLOW -- REQUIRES A BUTTON HOLD (confirmed: Sipeed NanoKVM-Pro wiki).
-# SD boot is NOT automatic card-detect. The AX630C latches its boot source from
-# the CHIP_MODE strap at reset; on the NanoKVM-Pro that strap is the `User`
-# button. To boot THIS card you MUST hold `User` while applying power, then
-# release -- a normal power-on ALWAYS boots eMMC, card present or not. This
-# matches the SPL source (spl_main.c only trusts a ROM-set is_sd_boot flag from
-# chip_mode[0]=USB_DL_SD_BOOT; it never probes mmc1-vs-mmc0). So revert is
-# trivial and non-destructive: power on WITHOUT holding `User` (or pull the
-# card) => stock eMMC, never written. (Holding `User` LONGER instead enters USB
-# download mode, so release it right after power-on.)
-#   Ref: https://wiki.sipeed.com/hardware/en/kvm/NanoKVM_Pro/faq.html
-#
-# STATUS: real derivation. The FAT assembly + MBR pipeline is validated no-root.
-# Realising it builds pkgs/rootfs.nix (base-axp 1.4 GB fetch + multi-GB ext4) --
-# heavy, same caveat as pkgs/image.nix; not exercised end-to-end in the sandbox.
+# STATUS: not yet verified on hardware -- the first attempt produced no boot
+# (no UART1 output). Secure boot is ruled out (the dev-key-signed
+# .#firmware-image boots from eMMC on the same unit); remaining suspects are
+# strap timing, ROM FAT parsing, and SD-SPL DDR auto-training. See
+# docs/flashing-and-recovery.md "If the card does not boot".
 # ===========================================================================
 
 let
@@ -89,7 +67,6 @@ pkgs.stdenvNoCC.mkDerivation {
   nativeBuildInputs = with pkgs; [
     mtools        # mformat / mcopy  (no-root FAT32)
     dosfstools    # mkfs.vfat
-    e2fsprogs     # (rootfs ext4 already built; kept for e2fsck sanity)
     util-linux    # sfdisk
     coreutils
   ];
@@ -181,11 +158,11 @@ pkgs.stdenvNoCC.mkDerivation {
 
     imgSz=$(stat -c %s "$out/${project}-sdcard.img")
     cat > "$out/SD-CARD-INSTRUCTIONS.txt" <<EOF
-    NanoKVM-Pro AX630C -- NON-DESTRUCTIVE self-built microSD boot image.
+    NanoKVM-Pro AX630C -- non-destructive self-built microSD boot image.
 
     file : ${project}-sdcard.img   ($imgSz bytes)
     boots: our from-source SPL/DDR/ATF/OP-TEE/U-Boot + kernel + dtb + rootfs,
-           entirely from the microSD. eMMC is NEVER written -- pull the card to
+           entirely from the microSD. eMMC is never written -- pull the card to
            revert to stock.
 
     LAYOUT (MBR):
@@ -202,21 +179,22 @@ pkgs.stdenvNoCC.mkDerivation {
          (macOS: of=/dev/rdiskN  bs=4m ; use 'diskutil list' + 'diskutil unmountDisk')
       4) sync, then remove the card.
 
-    TEST -- the button hold is REQUIRED (SD boot is not auto-on-insert):
+    BOOT -- the button hold is REQUIRED (SD boot is not auto-on-insert):
       - Power OFF the NanoKVM-Pro, insert this card.
       - HOLD the \`User\` button while applying power, then RELEASE it right away.
         (A normal power-on always boots eMMC. Holding \`User\` too long enters USB
          download mode instead -- release it just after power comes on.)
-      - It boots the self-built firmware from SD.
+      - Console: ttyS1 / UART1 on the exposed header pin, 115200 8N1. Everything
+        BEFORE our SPL (the mask ROM) prints only on UART0, so if the ROM never
+        loads boot.bin the UART1 line stays silent.
 
     REVERT (non-destructive -- eMMC is never written):
       - Power on again WITHOUT holding \`User\` (and/or remove the card)
         -> stock eMMC firmware, untouched.
 
-    WHY THE BUTTON: the AX630C latches its boot source from the CHIP_MODE strap
-    at reset; on the NanoKVM-Pro that strap is the \`User\` button (Sipeed wiki:
-    wiki.sipeed.com/hardware/en/kvm/NanoKVM_Pro/faq.html). SD boot is a manually
-    -triggered path, NOT automatic card detection.
+    STATUS: this image has not yet been verified to boot on hardware. If it does
+    not boot, see docs/flashing-and-recovery.md "If the card does not boot"
+    (dual-UART capture + the official Sipeed SD image as a control).
     EOF
     echo "Installed:"; ls -l "$out"
     runHook postInstall
@@ -224,7 +202,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
   meta = {
     description = "NanoKVM-Pro AX630C non-destructive microSD boot image (dd-able): from-source SD SPL + boot chain + kernel + dtb + overlaid rootfs, MBR/FAT32+ext4";
-    # Depends on boot.nix / kernel-fip / dtb-fip (ax_gzip x86-64 host tool).
+    # Inherits the x86-64-only ax_gzip constraint via boot / slot-image.
     platforms = [ "x86_64-linux" ];
   };
 }
