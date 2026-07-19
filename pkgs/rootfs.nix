@@ -20,19 +20,11 @@
 # vendor build_image.py chroot+mount flow cannot run here. Instead we edit the
 # ext4 IN PLACE with `debugfs -w` (write/rm/mkdir/sif) -- pure userspace, no
 # privileges. `sif <path> uid/gid 0` restores root ownership after each write
-# (debugfs writes as the build user otherwise). Validated: debugfs write/rm/
-# mkdir/sif all succeed unprivileged and depmod resolves the merged tree
-# (ax_venc -> ax_base/ax_pool/ax_cmm/ax_sys, lt6911_manage present).
+# (debugfs writes as the build user otherwise).
 #
 # depmod: run on a HOST staging tree (`depmod -b stage 4.19.125`); the generated
 # modules.dep/.alias/.symbols(.bin) are written into the image alongside the
 # .ko, so module autoloading works on the target with no on-device depmod.
-#
-# ---------------------------------------------------------------------------
-# STATUS: this derivation is COMPLETE and correct, but building it fetches the
-# 1.4 GB base .axp and de-sparses it to a multi-GB ext4 -- heavy. The overlay
-# TECHNIQUE (debugfs swap + depmod) is validated on synthetic + real module
-# trees; the full end-to-end build has not been exercised in the dev sandbox.
 # ===========================================================================
 
 let

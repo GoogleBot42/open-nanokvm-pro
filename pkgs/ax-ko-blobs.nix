@@ -9,15 +9,12 @@
 # osdrv/out/arm64_glibc_linux-4.19.125/ko/. They are GPL-tagged (source is
 # legally owed by Axera/Sipeed but not published); we pin the binaries.
 #
-# IMPORTANT BINDING CONSTRAINT: a .ko is only loadable by a kernel with a
-# matching vermagic (kernel version + config + toolchain). These blobs were
-# built against Sipeed's exact 4.19.125 config. Therefore the from-source
-# kernel (kernel.nix) MUST reproduce that .config and toolchain closely enough
-# that vermagic matches, OR we accept `modprobe --force-vermagic`. This is a
-# key follow-up risk -- see kernel.nix TODO. For v1, the pragmatic path is to
-# use these blobs as-is and match the kernel .config to the vendor defconfig.
+# These .ko load only into a kernel whose vermagic string matches. kernel.nix
+# reproduces the vendor vermagic ("4.19.125 SMP preempt mod_unload aarch64")
+# exactly and builds with MODVERSIONS off, so the blobs insmod with a plain
+# `insmod` (no --force-vermagic). See the compatibility analysis in kernel.nix.
 #
-# Real derivation: installs the .ko tree (both plain and .xz variants).
+# Installs the .ko tree (both plain and .xz variants).
 # ---------------------------------------------------------------------------
 
 let

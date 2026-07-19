@@ -4,13 +4,11 @@
   # SD card:        rootfs is MBR partition 2 of the card           = mmcblk1p2.
   #   (DTB aliases: mmc0 = eMMC sdhc@1B40000, mmc1 = SD sdhc@104E0000 -> the SD
   #    card always enumerates as mmcblk1 regardless of boot source.)
-  # The SD variant is wired into pkgs/sd-image.nix so the card's dtb.img carries
-  # the SD root. See the deliverable notes: the vendor SD U-Boot (cmd/axera/
-  # sd_boot/sd_boot.c) sets env bootargs=BOOTARGS_SD (root=/dev/mmcblk1p2) and
-  # booti's fdt_chosen SHOULD overwrite /chosen/bootargs -- but on-hardware the
-  # eMMC root still reached the kernel, so we fix the DTB too. With BOTH the env
-  # and the DTB now naming mmcblk1p2, every boot path agrees; no eMMC-root path
-  # remains.
+  # The SD variant is wired into pkgs/sd-image.nix. The vendor SD U-Boot sets env
+  # bootargs=BOOTARGS_SD (root=/dev/mmcblk1p2) and booti's fdt_chosen should
+  # overwrite /chosen/bootargs, but on-hardware the eMMC root still reached the
+  # kernel, so we fix the DTB too. With both the env and the DTB naming
+  # mmcblk1p2, every boot path agrees.
   rootDev ? "/dev/mmcblk0p17"
 , # ---- console UART baked into chosen/bootargs -----------------------------
   # Default (eMMC): UART0 = ttyS0 = MMIO 0x4880000 (the hidden debug pads).
@@ -25,33 +23,22 @@
 , ... }:
 
 # ===========================================================================
-# NanoKVM-Pro AX630C board device tree -- CORRECTLY built (reserved-memory
-# patched in).  This closes the gap documented in kernel-fip.nix / PLAN.md.
+# NanoKVM-Pro AX630C board device tree, built with the vendor reserved-memory /
+# bootargs injection that a plain `make dtbs` omits.
 #
-# ---------------------------------------------------------------------------
-# THE GAP (proven):  kernel.nix runs a PLAIN `make dtbs`, which compiles the
-# board dts *without* the vendor's reserved-memory / bootargs injection. The
-# board dts (AX630C_emmc_arm64_k419_sipeed_nanokvm.dts) references CPP macros
-# that come from
+# A plain `make dtbs` compiles the board dts
+# (AX630C_emmc_arm64_k419_sipeed_nanokvm.dts) without running the vendor's
+# patch_reserve_mem.sh over
 #     include/dt-bindings/memory/AX620E_reserve_mem_define.h
-# and ship EMPTY by default:
-#     #define ATF_RESERVED_START_HI            (empty)
-#     ...
-#     #define BOOTARGS "bootargs"
-#     #ifdef OPTEE_BOOT ... #endif           (OPTEE_BOOT undefined)
-# so a plain build yields a BROKEN dtb:
-#     atf_memreserved { reg; no-map; };      <-- EMPTY reg cell!
-#     (no optee_memserved node at all)
-#     chosen { bootargs = "bootargs"; };     <-- placeholder, not the cmdline
+# whose macros ship EMPTY by default (ATF_RESERVED_* blank, BOOTARGS "bootargs",
+# OPTEE_BOOT undefined). The result is a broken dtb: atf_memreserved with an
+# empty reg cell, no optee_memreserved node, and chosen/bootargs = "bootargs"
+# instead of the real cmdline.
 #
-# ---------------------------------------------------------------------------
-# THE FIX:  reproduce EXACTLY what kernel/linux/Makefile.kernel's `dtbs` target
-# does before it calls the inner `make dtbs`: run scripts/axera/
-# patch_reserve_mem.sh over that header to substitute the real addresses/sizes
-# (driven by build/projects/.../{project,partition_ab}.mak), THEN `make dtbs`.
-#
-# The exact make-var values were resolved by evaluating the vendor makefiles
-# (make -f project.mak print-<VAR>):
+# This derivation reproduces Makefile.kernel's dtbs target: run
+# patch_reserve_mem.sh over that header to substitute the real addresses/sizes,
+# THEN `make dtbs`. The make-var values below were resolved by evaluating the
+# vendor makefiles (make -f project.mak print-<VAR>):
 #     SUPPORT_ATF               = TRUE
 #     ATF_IMG_ADDR              = 0x40040000   (-> ATF reserved start)
 #     ATF_IMG_PKG_SIZE          = 0x40000      (-> ATF reserved size, 256K)
@@ -59,26 +46,19 @@
 #     OPTEE_IMAGE_ADDR          = 0x44200000   (-> OPTEE reserved start)
 #     OPTEE_RESERVED_SIZE       = 0x2000000    (-> OPTEE reserved size, 32M)
 #     AX630C_DDR4_RETRAIN       = TRUE         (0x40000000 / 0x1000; no-op for
-#                                               this board -- dts hardcodes the
-#                                               axera_ddr_retrain node -- run for
-#                                               vendor fidelity)
+#                                               this board, run for fidelity)
 #     CMM_POOL_PARAM            = (empty)      (no-op: board dts has no cmmpool)
 #     SUPPORT_KERNEL_BOOTARGS   = TRUE
 #     KERNEL_BOOTARGS           = the full cmdline below (rootfs = mmcblk0p17)
+# The patch-then-build ordering mirrors Makefile.kernel:dtbs (ATF, TEE,
+# -p SUPPORT_ATF, DTB bootargs, DDR_RETRAIN, CMM).
 #
-# The patch-then-build sequence and its ordering mirror Makefile.kernel:dtbs
-# (ATF, TEE, -p SUPPORT_ATF, DTB bootargs, DDR_RETRAIN, CMM).
-#
-# ---------------------------------------------------------------------------
-# WHY a separate derivation (not folded into kernel.nix):  the correct dtb only
-# needs `make dtbs` (dtc + cpp), not Image/modules, so this is a light build and
-# it keeps the already-built kernel derivation's hash stable. kernel.nix's own
-# $out/dtb/*.dtb remains the (unpatched) raw artifact for reference; THIS is the
-# one that gets packaged + flashed. See dtb-fip.nix for the signed partition.
-#
-# The SDK-tree setup (writable kernel copy, msp/build siblings, HOME_PATH/
-# PROJECT/LIBC, gcc13, empty INITRAMFS) is identical to kernel.nix -- see the
-# long rationale there.
+# This is a separate derivation from kernel.nix because the correct dtb only
+# needs `make dtbs` (dtc + cpp), not Image/modules -- a light build that keeps
+# the kernel derivation's hash stable. kernel.nix's own $out/dtb/*.dtb remains
+# the unpatched raw artifact; THIS is the one packaged + flashed (see
+# dtb-fip.nix for the signed partition). The SDK-tree setup (writable kernel
+# copy, msp/build siblings, HOME_PATH/PROJECT/LIBC, gcc13) mirrors kernel.nix.
 # ===========================================================================
 
 let
@@ -262,7 +242,7 @@ pkgs.stdenv.mkDerivation {
   dontPatchELF = true;
 
   meta = {
-    description = "NanoKVM-Pro AX630C board dtb, CORRECTLY built with the vendor reserved-memory / bootargs patch (closes the kernel.nix dtb gap)";
+    description = "NanoKVM-Pro AX630C board dtb, built with the vendor reserved-memory / bootargs patch";
     license = pkgs.lib.licenses.gpl2Only;
     platforms = pkgs.lib.platforms.linux;
   };

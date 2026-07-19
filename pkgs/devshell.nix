@@ -1,8 +1,7 @@
 { pkgs, crossPkgs, toolchain, axdl, ... }:
 
 # Dev shell for working on the NanoKVM-Pro flake: cross toolchain + the native
-# tools the vendor SDK / image pipeline expect. axp-tools (pip) is NOT in
-# nixpkgs -- install into a venv if you need to repack .axp (see notes below).
+# tools the vendor SDK / image pipeline expect.
 
 pkgs.mkShell {
   name = "nanokvm-pro-dev";
@@ -15,26 +14,19 @@ pkgs.mkShell {
     # kernel / boot build deps
     gnumake bison flex bc ncurses openssl ubootTools dtc perl
 
-    # app layer
+    # app layer (server / web)
     go_1_25 nodejs_22 pnpm_10 patchelf
 
     # image / rootfs tooling
     android-tools        # img2simg / simg2img (sparse ext4)
     e2fsprogs dosfstools mtools
-    qemu-user            # qemu-aarch64-static for rootfs chroot / debootstrap
-    debootstrap
     zip unzip python3
 
     # audio dep for the Go server cgo build
     crossPkgs.libopus
 
-    # ---- flashing ----
-    # Prebuilt AXDL USB flasher (axdl-cli). `nix run .#axdl` uses this same
-    # build; it's on PATH in the shell too.
+    # AXDL USB flasher (same build `nix run .#axdl` uses)
     axdl
-    # Fallback: rebuild axdl-rs (or any rusb/serialport Rust tool) from source.
-    # axdl-cli needs pkg-config + libusb1 (rusb) + udev/libudev (serialport).
-    cargo rustc pkg-config libusb1 udev
   ];
 
   shellHook = ''
@@ -42,13 +34,7 @@ pkgs.mkShell {
     echo "  cross prefix : ${crossPkgs.stdenv.cc.targetPrefix}"
     echo "  vendor triple: aarch64-none-linux-gnu-  (pass CROSS_COMPILE to SDK)"
     echo ""
-    echo "axp-tools is not packaged in nixpkgs. If you need to repack a .axp:"
-    echo "    python3 -m venv .venv && . .venv/bin/activate && pip install axp-tools"
-    echo ""
-    echo "Vendor one-shot build (in a writable maix_ax620e_sdk clone):"
-    echo "    cd build && make p=AX630C_emmc_arm64_k419_sipeed_nanokvm clean all install axp -j8"
-    echo ""
-    echo "Flash workflow (host <-USB-> AX630C in BootROM download mode):"
+    echo "Build + flash (host <-USB-> AX630C in BootROM download mode):"
     echo "    nix build .#base-axp        # stock recovery .axp (or grab from Sipeed releases)"
     echo "    nix build .#firmware-image  # our from-source .axp"
     echo "    nix run .#axdl -- --file result/*.axp --wait-for-device"

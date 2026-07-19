@@ -16,7 +16,7 @@
 #       => VIN dev (MIPI_RAW/RAW16/BGGR) => VIN pipe (ISP_BYPASS_MODE 12, dummy
 #       sensor via dlopen libsns_dummy.so) => VIN chn (YUV420 SP)
 #       => AX_VENC (H.264 chn7 / MJPEG chn6).
-#   Sources (snapshot -- see below):
+#   Sources (./kvm-encoder/src):
 #     libkvm.c        implements the kvm_vision.h ABI over the pipeline
 #     kvm_pipeline.c  the shared capture+encode pipeline (documented AX MPI only)
 #     kvm_pipeline.h  pipeline API (ours)
@@ -24,19 +24,7 @@
 #   The Axera SDK headers (ax_*.h) come from `axera-libs` so header and .so
 #   versions stay in lockstep (V3.0.0 msp snapshot, matches on-device libs).
 #
-# SNAPSHOT / RE-SYNC TODO:
-#   ./kvm-encoder/src/ is a POINT-IN-TIME SNAPSHOT of scratchpad/capture-poc/
-#   (libkvm.c, kvm_pipeline.{c,h}) + server/include/kvm_vision.h, taken while a
-#   concurrent agent is fixing a CMM-teardown bug in capture-poc/. We build from
-#   the snapshot so this derivation is hermetic and does not race the edits.
-#   >>> RE-SYNC once the CMM fix lands:
-#         cp scratchpad/capture-poc/{libkvm.c,kvm_pipeline.c,kvm_pipeline.h} \
-#            pkgs/kvm-encoder/src/
-#         cp NanoKVM-Pro/server/include/kvm_vision.h pkgs/kvm-encoder/src/
-#       then `nix build .#kvm-encoder` to reconfirm. (kvm_vision.h is the frozen
-#       ABI and rarely changes; the two pipeline files carry the CMM fix.)
-#
-# LINK LINE (from the on-hardware PoC build.sh / PLAN.md):
+# LINK LINE (from the on-hardware PoC build.sh):
 #   gcc -shared -fPIC libkvm.c kvm_pipeline.c -Iinclude \
 #     -L/opt/lib -lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps \
 #     -lopus -lasound -ldl -lpthread -Wl,-rpath,/opt/lib -o libkvm.so
@@ -57,7 +45,7 @@ crossPkgs.stdenv.mkDerivation {
   pname = "libkvm";
   version = "0.1.0";
 
-  # Build from the in-tree snapshot (see SNAPSHOT / RE-SYNC note above).
+  # Our in-tree libkvm source.
   src = ./kvm-encoder/src;
 
   # axera-libs supplies BOTH the Axera SDK headers (-I) and the import .so's (-L)

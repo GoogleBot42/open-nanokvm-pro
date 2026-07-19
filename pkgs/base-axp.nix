@@ -16,14 +16,10 @@
 # it and swaps in our libkvm + kernel modules; pkgs/image.nix swaps in our
 # boot/kernel/dtb partition images and the overlaid rootfs (build_image.py flow).
 #
-# ---------------------------------------------------------------------------
-# PIN: fixed-output derivation. The URL is the pinned v1.0.15 release asset and
-# the sha256 was computed by streaming the asset through sha256sum
-# (curl -sL <url> | sha256sum), NOT stored in-tree (it is 1.4 GB).
-#
+# PIN: fixed-output derivation. The sha256 was computed by streaming the asset
+# (curl -sL <url> | sha256sum); the 1.4 GB file is not stored in-tree.
 #   asset : 20260529_NanoKVMPro_1_0_15.axp   (1428 MB)
 #   sha256: 201d9404e37224a6533e85d7d8e585f69259955f867ce0f7371d03d969ab5f30
-#
 # To re-pin a different release:
 #   nix-prefetch-url <url>            # or: curl -sL <url> | sha256sum
 #   nix hash convert --to sri --hash-algo sha256 <hex>

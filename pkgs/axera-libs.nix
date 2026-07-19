@@ -3,23 +3,20 @@
 # ---------------------------------------------------------------------------
 # Axera userspace media libraries (libax_*.so) + matching V3.0.0 headers.
 #
-# These are PREBUILT aarch64/glibc binaries, BSD-3-licensed and redistributable
-# (this is the accepted "pinned binary input" of the whole design -- the goal
-# is an open, self-built firmware that *links* these, not a blob-free build).
+# PREBUILT aarch64/glibc binaries, BSD-3-licensed and redistributable -- the
+# accepted pinned binary input of this design (the goal is an open, self-built
+# firmware that *links* these, not a blob-free build).
 #
 # Source: sipeed/maix_ax620e_sdk_msp, out/arm64_glibc/{lib,include}. This is the
 # SAME SDK snapshot that matches the on-device V3.0.0_20250319 libraries, so the
-# ABI matches (verified in the PoCs: headers here compile against and link the
-# on-device libax_venc/sys/proton/mipi/ivps).
+# ABI matches (headers here compile against and link the on-device
+# libax_venc/sys/proton/mipi/ivps).
 #
-# This is a REAL derivation: it just installs the prebuilt tree. No compiler
-# runs. We deliberately do NOT strip or autoPatchelf -- these are target
-# (aarch64) binaries that must reach the device byte-for-byte; the runtime
-# rpath on-device is /opt/lib (see PoC build.sh), which the rootfs/image layer
-# is responsible for populating from this derivation.
-#
-# The flake input already pins the source rev, so provenance is reproducible
-# without a separate fixed-output hash.
+# Installs the prebuilt tree; no compiler runs. We deliberately do NOT strip or
+# autoPatchelf -- these are target (aarch64) binaries that must reach the device
+# byte-for-byte; their runtime rpath on-device is /opt/lib, which the
+# rootfs/image layer populates from this derivation. The flake input pins the
+# source rev, so provenance is reproducible without a separate FOD hash.
 # ---------------------------------------------------------------------------
 
 pkgs.stdenvNoCC.mkDerivation {

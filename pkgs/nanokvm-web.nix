@@ -4,18 +4,12 @@
 # NanoKVM-Pro web frontend (React + Vite + TypeScript, pnpm workspace).
 # Source: NanoKVM-Pro/web (GPL-3.0). Build: `pnpm build` == `tsc && vite build`.
 #
-# This is ARCHITECTURE-INDEPENDENT (pure JS/static assets) and is the intended
-# QUICK WIN to validate the skeleton. Output = static dist/ served by the Go
-# server (or nginx in the PiKVM layout).
+# Architecture-independent (pure JS/static assets); output = static dist/ served
+# by the Go server (or nginx in the PiKVM layout).
 #
 # pnpm: lockfile is v9.0 (pnpm 9/10). We use pnpm_10 + pnpmConfigHook, which
 # reads v9 locks. The dependency set is fetched by a fixed-output derivation
-# (pnpm.fetchDeps) -- its hash is pinned below.
-#
-# ASSUMPTION / FLAG: pnpmDeps.hash is a PLACEHOLDER on first write. Run
-#   nix build .#nanokvm-web
-# once; Nix prints the real hash -- paste it into `hash` below. Evaluation
-# (nix flake check) succeeds regardless.
+# (pnpm.fetchDeps); its hash is pinned below.
 # ---------------------------------------------------------------------------
 
 let

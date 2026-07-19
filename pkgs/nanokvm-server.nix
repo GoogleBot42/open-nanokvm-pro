@@ -17,19 +17,8 @@
 # So this binary hard-links libkvm.so (kvm-encoder) and libopus. Upstream copies
 # the built libkvm.so into server/dl_lib/ and patchelf-adds rpath $ORIGIN/dl_lib;
 # we instead stage libkvm.so into dl_lib/ pre-build and let Nix set rpath.
-#
-# ASSUMPTIONS / FLAGS:
-#   - vendorHash is a PLACEHOLDER (lib.fakeHash). It evaluates fine (nix flake
-#     check passes) but `nix build` will fail at the vendor FOD and print the
-#     REAL hash to paste back. Computing it needs a network fetch of the full
-#     module graph (pion/webrtc, gin, viper, ...). TODO: run once, pin it.
-#   - Go 1.25 required (go.mod `go 1.25.0`); using go_1_25 from nixpkgs.
-#   - GOEXPERIMENT=boringcrypto (upstream build.sh) -- kept for parity; drop if
-#     it fights the cross build.
-#   - libkvm is now the REAL capture+encode backend (kvm-encoder.nix): the server
-#     binary links it and its full AX_VENC dependency graph. The video path is
-#     functional on-device (subject to the capture-poc CMM re-sync noted in
-#     kvm-encoder.nix).
+# libkvm (kvm-encoder.nix) is the capture+encode backend; the server binary
+# links it and its full AX_VENC dependency graph.
 # ---------------------------------------------------------------------------
 
 let
@@ -134,7 +123,7 @@ buildGoModule {
   dontStrip = true;
 
   meta = {
-    description = "NanoKVM-Server (Go+cgo, aarch64) linking libkvm + libopus -- builds pending real vendorHash";
+    description = "NanoKVM-Server (Go+cgo, aarch64) with updates redirected to our releases";
     license = pkgs.lib.licenses.gpl3Only;
     platforms = pkgs.lib.platforms.linux;
   };

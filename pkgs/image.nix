@@ -1,59 +1,34 @@
-{ pkgs, nanokvm-pro-src, base-axp, boot, kernel-slot-image, dtb-slot-image, rootfs, ... }:
+{ pkgs, base-axp, boot, kernel-slot-image, dtb-slot-image, rootfs, ... }:
 
 # ===========================================================================
-# Firmware image assembly (REAL) -- OVERLAY approach, via Sipeed's own tool flow.
+# Firmware image assembly -- OVERLAY on the vendor base .axp.
 #
-# Sipeed ship support/scripts/build_image/build_image.py, whose replace_axp()
-# opens a release .axp (a ZIP) and swaps in custom --dtb / --boot / --uboot, plus
-# rewrites the rootfs. We use the same PURE zip-rewrite mechanism (no sudo/mount/
-# chroot) but a WIDER swap surface: build_image.py only touches dtb/kernel/u-boot,
-# whereas the base .axp is packed by the SDK's own make_axp_v2.py from EVERY signed
-# partition image (SPL, DDR-init, ATF, OP-TEE, U-Boot, dtb, kernel, rootfs, ...),
-# each ZIP member named by that image's basename. Since pkgs/boot.nix emits those
-# exact basenames, we member-swap the whole from-source boot chain, not just the
-# build_image.py subset. The rootfs modifications build_image.py does via chroot are
-# already baked into our overlaid rootfs (pkgs/rootfs.nix). The GPT / partition XML
-# is left byte-for-byte identical (never repartition -- a size change can hard-brick).
+# Sipeed's support/scripts/build_image/build_image.py swaps custom dtb/kernel/
+# u-boot into a release .axp (a ZIP). We use the same pure zip-rewrite mechanism
+# (no sudo/mount/chroot) but a WIDER swap surface. The base .axp is packed by the
+# SDK's tools/mkaxp/make_axp_v2.py, which names each ZIP member by the BASENAME of
+# the signed partition image it packs (build/axp_make.sh: SPL_PATH=spl_<project>_
+# signed.bin, ATF_PATH=atf_bl31_signed.bin, OPTEE_PATH=optee_signed.bin, ...).
+# Those basenames are exactly the files our derivations emit, so we member-swap
+# the whole from-source boot chain, not just build_image.py's dtb/kernel/u-boot
+# subset. A/B slots that share one signed image get a duplicate-basename member
+# with a ".1" suffix (make_axp_v2's dedup): optee A/B share optee_signed.bin[.1];
+# ATF and U-Boot A/B have distinct basenames.
 #
-# ---------------------------------------------------------------------------
-# SWAPPED IN (from source / our derivations)      .axp member(s) replaced
-#   our dtb_signed (reserved-mem patched)  ->  AX630C_..._signed.dtb , .dtb.1
-#   our kernel partition image             ->  boot_signed.bin , boot_signed.bin.1
-#     (kernel-fip.nix "kernel_b.bin" IS the vendor boot_signed.bin format)
-#   our SPL (FSBL)                         ->  spl_<project>_signed.bin
-#   our DDR-init header                    ->  ddrinit_<project>_signed.bin
-#   our ATF bl31 A / B                     ->  atf_bl31_signed.bin , atf_b_bl31_signed.bin
-#   our OP-TEE (bl32) A / B                ->  optee_signed.bin , optee_signed.bin.1
-#   our U-Boot A / B                       ->  u-boot_signed.bin , u-boot_b_signed.bin
-#   our overlaid rootfs                    ->  ubuntu_rootfs_sparse.ext4
+# The GPT / partition XML is left byte-for-byte identical -- never repartition; a
+# size change can hard-brick. Every from-source image fits its partition
+# (partition_ab.mak): SPL 256K<=768K, DDRINIT 1K<=512K, ATF ~20K<=256K, OPTEE
+# ~293K<=1M, U-Boot ~635K<=1536K.
 #
-# The base .axp is built by the SDK's tools/mkaxp/make_axp_v2.py, which names
-# every ZIP member by the BASENAME of the signed partition image it packs (see
-# build/axp_make.sh: SPL_PATH=spl_<project>_signed.bin, ATF_PATH=atf_bl31_signed
-# .bin, OPTEE_PATH=optee_signed.bin, ...). Those basenames are EXACTLY the files
-# pkgs/boot.nix emits under ${boot}/images/, so every from-source boot stage can
-# be landed by the same member-swap mechanism used for u-boot -- no deeper repack
-# needed. A/B duplicate-basename members get a ".1" suffix (make_axp_v2's dedup):
-# optee A/B share optee_signed.bin[.1]; ATF A/B have distinct basenames.
-# Verified against the actual base .axp central directory (all member names present)
-# and against partition_ab.mak sizes (every from-source image fits its partition:
-# SPL 256K<=768K, DDRINIT 1K<=512K, ATF ~20K<=256K, OPTEE ~293K<=1M, U-Boot ~635K
-# <=1536K). The GPT / partition XML is left byte-for-byte identical.
-#
-# KEPT VENDOR (stock images stay in the .axp):
-#   env, logo/logo_b, bootfs.fat32, eip_ax620e.bin, the FDL1/FDL2 download agents,
-#   the rootfs BASE (Ubuntu-arm64; only our libkvm + kernel modules are overlaid),
-#   and the partition XML.
-#   NB: FDL1/FDL2 are the AXDL HOST download agents (not stored partitions); the
-#   vendor copies are kept so the stock flasher table is untouched. pkgs/boot.nix
-#   does build fdl_<project>_signed.bin / fdl2_signed.bin from source, so they
-#   could be swapped too, but they are outside the SPL/DDR/ATF/OP-TEE scope and
-#   changing the download agent is a separate decision -- left vendor.
-#
-# ---------------------------------------------------------------------------
-# STATUS: real derivation. Building it realises base-axp (1.4 GB fetch) and the
-# overlaid rootfs (multi-GB) -- heavy; not exercised end-to-end in the dev
-# sandbox. The pack logic itself is a straightforward streaming zip rewrite.
+# SWAPPED IN (from source):
+#   dtb (reserved-mem patched), kernel partition image, SPL/FSBL, DDR-init header,
+#   ATF bl31 A/B, OP-TEE bl32 A/B, U-Boot A/B, overlaid rootfs.
+# KEPT VENDOR (stock members stay in the .axp):
+#   env, logo/logo_b, bootfs.fat32, eip_ax620e.bin, the FDL1/FDL2 host download
+#   agents, the partition XML, and the rootfs BASE (Ubuntu-arm64 -- only our
+#   libkvm + kernel modules are overlaid). FDL1/FDL2 are AXDL host agents (not
+#   stored partitions); pkgs/boot.nix does build them from source, but swapping
+#   the download agent is a separate decision -- left vendor.
 # ===========================================================================
 
 let
@@ -133,9 +108,6 @@ pkgs.stdenvNoCC.mkDerivation {
 
   nativeBuildInputs = [ pkgs.python3 ];
 
-  # The reference build_image.py (for provenance / the documented alternate path).
-  buildImagePy = "${nanokvm-pro-src}/support/scripts/build_image/build_image.py";
-
   buildPhase = ''
     runHook preBuild
     set -euo pipefail
@@ -164,8 +136,8 @@ pkgs.stdenvNoCC.mkDerivation {
       atf    : atf_bl31_signed.bin / atf_b_bl31_signed.bin  bl31        [pkgs/boot.nix]
       optee  : optee_signed.bin (+ .1)         bl32 secure world        [pkgs/boot.nix]
       u-boot : u-boot_signed.bin / u-boot_b_signed.bin  bl33           [pkgs/boot.nix]
-      dtb    : ${project}_signed.dtb (+ .1)   reserved-memory patched  [pkgs/dtb.nix + dtb-fip.nix]
-      kernel : boot_signed.bin (+ .1)          ax_gzip+signed Image     [pkgs/kernel.nix + kernel-fip.nix]
+      dtb    : ${project}_signed.dtb (+ .1)   reserved-memory patched  [pkgs/dtb.nix + slot-image.nix]
+      kernel : boot_signed.bin (+ .1)          ax_gzip+signed Image     [pkgs/kernel.nix + slot-image.nix]
       rootfs : ubuntu_rootfs_sparse.ext4  (Ubuntu base + our libkvm.so
                + our kernel modules merged with ax_*.ko, depmod'd)      [pkgs/rootfs.nix]
     VENDOR (kept from the base .axp):
@@ -173,7 +145,7 @@ pkgs.stdenvNoCC.mkDerivation {
       partition XML. rootfs BASE is vendor Ubuntu-arm64 (only the overlays above
       are ours). The whole from-source boot chain (SPL/DDR/ATF/OP-TEE/U-Boot) is
       signed with the SDK's committed repo dev keys; boots on OPEN (SECURE_BOOT_EN
-      efuse unburned) boards -- see pkgs/boot.nix VERDICT note.
+      efuse unburned) boards -- see pkgs/boot.nix.
 
     Flash: use the vendor AXDL host flasher with this .axp (same tool/table as stock).
     EOF

@@ -10,45 +10,34 @@
 #              built in-tree by `make modules` -- no external M= build needed.
 #
 # ===========================================================================
-# PREBUILT ax_*.ko COMPATIBILITY -- the load-bearing constraint (RESOLVED)
-# ===========================================================================
-# The prebuilt Axera media modules (see ax-ko-blobs.nix) must insmod into THIS
-# from-source kernel. Two gates were investigated against the actual blobs:
+# Prebuilt ax_*.ko compatibility -- the load-bearing constraint.
+# The prebuilt Axera media modules (see ax-ko-blobs.nix) must insmod into this
+# from-source kernel. Two gates decide loadability:
 #
 #   1. vermagic. Every ax_*.ko carries
 #          vermagic = "4.19.125 SMP preempt mod_unload aarch64"
-#      (read via `readelf -p .modinfo ax_venc.ko`; identical across all 22
-#      blobs). This decodes to: CONFIG_SMP=y, CONFIG_PREEMPT=y,
-#      CONFIG_MODULE_UNLOAD=y, release string exactly "4.19.125" (empty
-#      CONFIG_LOCALVERSION, LOCALVERSION_AUTO off). The vendor defconfig sets
-#      exactly these, so a from-source build with it reproduces the string
-#      byte-for-byte (verified: `make kernelrelease` -> "4.19.125").
+#      (identical across all 22 blobs). This decodes to CONFIG_SMP=y,
+#      CONFIG_PREEMPT=y, CONFIG_MODULE_UNLOAD=y, release string exactly
+#      "4.19.125" (empty CONFIG_LOCALVERSION, LOCALVERSION_AUTO off). The vendor
+#      defconfig sets exactly these, so a from-source build with it reproduces
+#      the string byte-for-byte (`make kernelrelease` -> "4.19.125").
 #
-#   2. MODVERSIONS. The blobs have NO `__versions` ELF section and the
-#      defconfig has `# CONFIG_MODVERSIONS is not set`. => per-symbol CRCs are
-#      NOT checked at load time. Therefore we do NOT need the exact vendor
-#      .config or the exact vendor GCC to match CRCs -- only the vermagic
-#      STRING must match. (Were MODVERSIONS on, we would have to reproduce the
-#      vendor Module.symvers exactly; it is off, so we do not.)
+#   2. MODVERSIONS. The blobs have no `__versions` ELF section and the defconfig
+#      has `# CONFIG_MODVERSIONS is not set`, so per-symbol CRCs are not checked
+#      at load time. We therefore need neither the exact vendor .config nor the
+#      exact vendor GCC to match CRCs -- only the vermagic STRING must match.
 #
-# The blobs' undefined symbols are (a) inter-module AX_OSAL_* (provided among
-# the ax_*.ko set themselves, e.g. defined in ax_cmm.ko) and (b) a small set of
-# standard exported kernel symbols (printk, memcmp, strlen, of_find_compatible_
-# node, of_irq_get, of_node_put, param_array_ops, param_ops_charp, ...) which
-# the vendor defconfig exports. Building with the vendor defconfig is therefore
-# still the right choice (maximises symbol availability), even though CRC-exact
-# matching is not required.
+# So a vermagic-string match suffices and the blobs load with a plain `insmod`
+# (no --force-vermagic). The blobs' undefined symbols are (a) inter-module
+# AX_OSAL_* (provided among the ax_*.ko set themselves, e.g. defined in
+# ax_cmm.ko) and (b) a small set of standard exported kernel symbols (printk,
+# memcmp, of_find_compatible_node, param_array_ops, ...) that the vendor
+# defconfig exports -- a further reason to build with that defconfig.
 #
-# VERDICT: a vermagic-string match SUFFICES; exact vendor GCC/.config is NOT
-# required. The blobs should load with a plain `insmod` (no --force-vermagic).
-# ===========================================================================
-#
-# TOOLCHAIN: nixpkgs-unstable has REMOVED gcc9..gcc12 ("unmaintained/obsolete");
-# only gcc13/gcc14/gcc15 remain. Because MODVERSIONS is off, CRC-exact GCC
-# matching is unnecessary, so we use the oldest still-packaged cross GCC that
-# builds 4.19 cleanly: gcc13 (13.4.0). gcc15 (the pkgsCross default) is too new
-# for 4.19. Validated locally: gcc13 compiles Image + dtbs + modules from this
-# tree.
+# Toolchain: nixpkgs-unstable removed gcc9..gcc12; only gcc13/14/15 remain.
+# Because MODVERSIONS is off, CRC-exact GCC matching is unnecessary, so we use
+# the oldest still-packaged cross GCC that builds 4.19 cleanly: gcc13 (13.4.0).
+# gcc15 (the pkgsCross default) is too new for 4.19.
 # ---------------------------------------------------------------------------
 
 let
@@ -111,22 +100,16 @@ pkgs.stdenv.mkDerivation {
   # a few Kbuild steps write generated headers, and the OSAL built-in reaches
   # the repo-root `osal/` sibling of the kernel tree (see note above).
   #
-  # EMBEDDED INITRAMFS -- load-bearing, MUST be present (see below).
-  # The vendor defconfig bakes CONFIG_INITRAMFS_SOURCE=
-  #   "../../../../images/initramfs_rootfs.cpio"
-  # i.e. it EMBEDS a busybox initramfs into the kernel Image. That initramfs's
-  # /init is what actually reaches userspace: it parses root= from /proc/cmdline,
-  # selects eMMC (mmcblk0p17) vs SD (mmcblk1p2), mounts the real rootfs at
-  # /realroot, (optionally resizes it / runs e2fsck), then
-  #   exec switch_root /realroot /sbin/init
-  # The kernel does NOT mount root= directly -- there is no root=-driven mount;
-  # switch_root from the initramfs is the ONLY path to the real rootfs. Zeroing
-  # CONFIG_INITRAMFS_SOURCE (a prior workaround, because the SDK-relative cpio
-  # path does not resolve in the nix sandbox) therefore left the kernel with an
-  # empty rootfs and no /init -> it never mounts the SD/eMMC root (matches the
-  # observed "mount count stays 0, no logs" symptom).
+  # Embedded initramfs -- load-bearing, must be present. The vendor defconfig
+  # bakes CONFIG_INITRAMFS_SOURCE="../../../../images/initramfs_rootfs.cpio",
+  # embedding a busybox initramfs into the Image. That initramfs's /init is the
+  # only path to userspace: it parses root= from /proc/cmdline, selects eMMC
+  # (mmcblk0p17) vs SD (mmcblk1p2), mounts the real rootfs at /realroot
+  # (optionally resize/e2fsck), then `exec switch_root /realroot /sbin/init`.
+  # The kernel never mounts root= itself, so without the embedded initramfs it
+  # reaches an empty rootfs with no /init and never mounts the SD/eMMC root.
   #
-  # The initramfs content is a VENDOR ARTIFACT checked into the SDK build repo at
+  # The initramfs content is a vendor artifact in the SDK build repo at
   #   build/projects/${project}/initramfs/  (init + show_iostat + busybox tree +
   #   e2fsck + libc/ld/libuuid). We reproduce the vendor gen_initramfs.sh exactly
   # (create proc/sys/dev, chmod +x init, pack newc cpio, force root:root
