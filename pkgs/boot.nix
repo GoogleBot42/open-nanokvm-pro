@@ -11,10 +11,9 @@
 , ... }:
 
 # ===========================================================================
-# AX630C / NanoKVM-Pro boot chain, ALL FOUR STAGES, from source.
+# AX630C / NanoKVM-Pro boot chain, all four stages, from source.
 # Source: maix_ax620e_sdk (boot/{bl1,atf,optee,uboot} + build/ make system +
-# tools/). Driven by the vendor `build/` make system, one writable tree, the
-# same sibling-layout / make-var pattern the kernel derivation established.
+# tools/), driven by the vendor build/ make system in one writable tree.
 #
 # Produces the vendor's per-partition SIGNED images for the 17-partition eMMC
 # A/B layout of project AX630C_emmc_arm64_k419_sipeed_nanokvm:
@@ -30,49 +29,49 @@
 # flasher): fdl_<project>_signed.bin (FDL1) and fdl2_signed.bin (FDL2 = u-boot).
 #
 # *ddrinit: for AX630C the DDR init/training C code (driver/ddr/*.o) is linked
-#  INTO the SPL; the vendor build `touch`es an empty ddrinit.bin and signs it,
-#  so the DDRINIT partition holds only a 1KB signed header. Reproduced exactly.
+#  INTO the SPL; the vendor build touches an empty ddrinit.bin and signs it, so
+#  the DDRINIT partition holds only a 1KB signed header. Reproduced exactly.
 #
-# ===========================================================================
-# SECURE BOOT / SIGNING  (the load-bearing finding -- see notes at bottom)
-# ===========================================================================
-# Every stage is ALWAYS wrapped by the vendor signing tool
-# (build/tools/imgsign/sec_boot_AX620E_sign.py / spl_AX620E_sign.py). The tool
+# Signing / secure boot.
+# Every stage is unconditionally wrapped by the vendor signing tool
+# (build/tools/imgsign/sec_boot_AX620E_sign.py / spl_AX620E_sign.py), which
 # prepends a 1KB header carrying magic 0x55543322, checksums, the RSA-2048
-# PUBLIC key (n,e) and an RSA-2048 signature (SHA-256) over the payload. The
-# signing keys are the repo's COMMITTED dev/test keys (tools/imgsign/{public,
-# private}.pem -- an obvious placeholder key whose modulus is a repeating
-# pattern; aes-256.key is ASCII zeros). Signing is UNCONDITIONAL in the build;
-# it is NOT gated by any "secure boot" flag. Whether the signature is actually
-# ENFORCED is decided AT RUNTIME by the SPL loader (boot/bl1/core/boot/boot.c
-# read_image_data): the RSA pub-key-hash check + signature verify run ONLY when
-# is_secure_enable() reads the efuse SECURE_BOOT_EN bit (1<<26) as set. The SDK
-# only READS that efuse (driver/secure/efuse_drv.c has no write path) -- there
-# is NO efuse-burning step anywhere in the build/flash flow. => On a board
-# whose SECURE_BOOT_EN efuse is unburned (the expected retail state, since the
-# only key available is the public repo test key), these repo-key-signed images
-# boot as-is. See VERDICT note at the bottom of this file.
+# public key (n,e) and an RSA-2048/SHA-256 signature over the payload. The keys
+# are the SDK's committed dev/test keys (tools/imgsign/{public,private}.pem, an
+# obvious placeholder whose modulus is a repeating pattern; aes-256.key is ASCII
+# zeros). Signing is never gated by a secure-boot flag. Enforcement is decided
+# at RUNTIME by the SPL loader (boot/bl1/core/boot/boot.c read_image_data): the
+# pubkey-hash + signature checks run only when is_secure_enable() reads the
+# efuse SECURE_BOOT_EN bit (1<<26) as set. The SDK only READS that efuse
+# (driver/secure/efuse_drv.c has no write path) and there is no efuse-burn step
+# in the build/flash flow. On a retail board -- expected to ship with
+# SECURE_BOOT_EN unburned, since the only available key is the public repo test
+# key -- these repo-key-signed images boot as-is, so a self-built boot chain is
+# flashable. A unit fused to a different key would reject them at
+# public_key_verify; that state is per-unit. Behaviorally confirmed open on at
+# least one retail unit (2026-07): the dev-key-signed .#firmware-image flashes
+# over AXDL and boots from eMMC.
 #
-# ===========================================================================
-# TOOLCHAIN (per stage) -- a SINGLE aarch64 linux-gnu cross gcc13 builds all 4.
+# Toolchain (per stage): a single aarch64 linux-gnu cross gcc13 builds all four.
 # nixpkgs dropped gcc9..12; gcc13 (matching kernel.nix) works for every stage.
-# No bare-metal aarch64-none-elf toolchain is needed: the bare-metal stages
-# (SPL, bl31, OP-TEE core) use their own linker scripts + -ffreestanding.
-#   - ATF/bl31 : cross gcc13. Needs binutils-2.46 fix `--no-warn-rwx-segments`
-#                (old TF-A 2.7 forces -Wl,--fatal-warnings; new binutils emits
-#                a fatal RWX-LOAD-segment warning). Patched below.
-#   - U-Boot   : cross gcc13 + NATIVE HOSTCC (gcc). Needs the `/bin/pwd`->`pwd`
-#                fix (u-boot Makefile hardcodes /bin/pwd, absent on NixOS).
-#   - OP-TEE   : cross gcc13 (CROSS_COMPILE64). Needs python3 cryptography +
-#                pyelftools, bash, and shebang patching (scripts use /bin/bash).
-#   - SPL/bl1  : cross gcc13 bare-metal (incl. open DDR init/training). Needs
-#                `-Werror`->`-Wno-error` (gcc13 array-bounds false positives on
+# No bare-metal aarch64-none-elf toolchain is needed -- the bare-metal stages
+# (SPL, bl31, OP-TEE core) use their own linker scripts + -ffreestanding. The
+# seds in configurePhase fix these toolchain-newness issues:
+#   - ATF/bl31 : binutils-2.46 fix --no-warn-rwx-segments (old TF-A 2.7 forces
+#                -Wl,--fatal-warnings; new binutils emits a fatal RWX-LOAD-
+#                segment warning).
+#   - U-Boot   : cross gcc13 + native HOSTCC (gcc); /bin/pwd -> pwd (u-boot
+#                Makefile hardcodes /bin/pwd, absent on NixOS).
+#   - OP-TEE   : cross gcc13 (CROSS_COMPILE64); needs python3 cryptography +
+#                pyelftools, bash, and /bin/bash shebang patching.
+#   - SPL/bl1  : cross gcc13 bare-metal (incl. open DDR init/training);
+#                -Werror -> -Wno-error (gcc13 array-bounds false positives on
 #                the fixed-address misc_info struct that gcc9 accepted).
 #
 # ax_gzip: install steps compress each stage with the PREBUILT x86-64 host tool
 # tools/ax_gzip_tool/ax_gzip (Axera's LZ77 "axgzip", decompressed by the SPL's
-# gzipd HW). It is an x86-64 static ELF, so THIS derivation only builds on an
-# x86_64-linux builder (the flake's intended dev host). Flagged in meta.
+# gzipd HW). It is an x86-64 static ELF, so this derivation only builds on an
+# x86_64-linux builder (see meta.platforms).
 # ===========================================================================
 
 let
@@ -166,6 +165,37 @@ pkgs.stdenv.mkDerivation {
 
     # OP-TEE build scripts carry /bin/bash shebangs.
     patchShebangs "$HOME_PATH/boot/optee"
+
+    # --- A/B slot support for the WHOLE boot chain (ALL variants) -----------
+    # Enable CONFIG_SUPPORT_AB so U-Boot honors the SPL's slot register
+    # (TOP_CHIPMODE_GLB_BACKUP0) for the kernel/dtb A/B pair. With it,
+    # board_late_init() -> set_slot_ab() (arch/arm/mach-axera/ax620e/ax620e.c)
+    # derives the active slot from that register into env `bootsystem`, and
+    # do_axera_boot() (cmd/axera/boot/axera_boot.c) then loads kernel_b/dtb_b for
+    # slot B. WITHOUT it U-Boot always reads the slot-A kernel/dtb, so the SPL's
+    # checksum-fail + watchdog slot failover could never reach a B-slot kernel --
+    # which is exactly what a dual-slot, power-cut-safe OTA relies on (see
+    # pkgs/update-package.nix / install-override.go.in and docs/updates.md).
+    #
+    # CONFIG_SUPPORT_AB is a real bool in
+    #   arch/arm/mach-axera/ax620e/Kconfig  (depends on TARGET_AX620E_EMMC, which
+    #   this defconfig sets), and the sibling maixcam2 board ships it =y.
+    # The vendor build ALSO derives it: project.mak sets AX_SUPPORT_AB_PART=TRUE
+    # and build/tools/config2defconfig.py (run in the u-boot `prepare` step) maps
+    # that to CONFIG_SUPPORT_AB=y. We still append it explicitly here so the A/B
+    # guarantee cannot silently lapse if that mapping/dump ever changes, and so the
+    # dependency is documented in-tree. config2defconfig only rewrites its OWN
+    # mapped symbols, so this explicit (mapped) line is simply re-affirmed to =y,
+    # never stripped or duplicated in the merged defconfig.
+    ubDefconfig="$HOME_PATH/boot/uboot/u-boot-2020.04/configs/${project}_defconfig"
+    test -f "$ubDefconfig" || \
+      { echo "ERROR: u-boot defconfig not found: $ubDefconfig (path moved?)" >&2; exit 1; }
+    grep -q '^CONFIG_TARGET_AX620E_EMMC=y' "$ubDefconfig" || \
+      { echo "ERROR: $ubDefconfig lacks CONFIG_TARGET_AX620E_EMMC=y (CONFIG_SUPPORT_AB dependency)" >&2; exit 1; }
+    printf '%s\n' 'CONFIG_SUPPORT_AB=y' >> "$ubDefconfig"
+    grep -q '^CONFIG_SUPPORT_AB=y' "$ubDefconfig" || \
+      { echo "ERROR: failed to append CONFIG_SUPPORT_AB=y to $ubDefconfig" >&2; exit 1; }
+    echo "A/B slot support: CONFIG_SUPPORT_AB=y appended to $ubDefconfig"
 ${pkgs.lib.optionalString sdConsoleUart1 ''
     # =======================================================================
     # CONSOLE UART REDIRECT: UART0 (0x4880000 / ttyS0) -> UART1 (0x4881000 /
@@ -336,26 +366,3 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
     platforms = [ "x86_64-linux" ];
   };
 }
-
-# ===========================================================================
-# SECURE-BOOT VERDICT (from SOURCE; on-device efuse NOT read):
-#   (A) Boards are expected to ship OPEN (SECURE_BOOT_EN efuse unburned), so
-#       these built images -- signed with the committed repo keys -- boot and
-#       flashing a self-built boot chain is feasible. HIGH confidence, because:
-#         * the only signing keys in the SDK are the committed dev/test keys
-#           (public modulus is a repeating placeholder pattern); enabling secure
-#           boot would require burning THIS public key's hash into efuse, which
-#           would pin every device to a key whose PRIVATE half is in the repo --
-#           self-defeating, so vendors do not.
-#         * signature/pubkey-hash verification is fully gated by is_secure_enable()
-#           (efuse bit 1<<26) in boot/bl1/core/boot/boot.c; unburned => no check.
-#         * the SDK contains NO efuse-burn step (efuse_drv.c is read-only) -- these
-#           images are stored plaintext (no IMG_CIPHER_ENABLE) with a decorative
-#           signature.
-#   Residual risk -> (C): definitive enforcement state is per-unit and can only be
-#   confirmed by reading the SECURE_BOOT_EN efuse on the actual board. If a unit
-#   were fused to a DIFFERENT key (B), the SPL would reject our-key-signed SPL/ATF/
-#   OP-TEE/U-Boot at public_key_verify, and only images above the trust break
-#   (kernel/rootfs) could be replaced. No evidence in-source that retail units are
-#   fused.
-# ===========================================================================

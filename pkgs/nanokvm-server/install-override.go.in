@@ -1,25 +1,48 @@
 func install(dir string, version string) error {
-	// OPEN-KVM update: our update package is a plain overlay of the /kvmapp app
-	// tree (server binary + web + dl_lib), NOT vendor .deb packages. We copy it
-	// over /kvmapp, stamp the version, and let systemd restart our service --
-	// nanokvm.service's ExecStartPre re-copies /kvmapp -> /dev/shm/kvmapp and the
-	// supervisor relaunches the server. This deliberately replaces the vendor's
-	// dpkg-based installer (which required three .deb packages and would fight
-	// pre-existing dpkg file ownership on our from-source rootfs).
-	_ = sendMessage("install", 10)
+	// OPEN-KVM full-firmware OTA installer. Our update package (pkgs/update-package.nix)
+	// is NOT vendor .deb packages; it is:
+	//   <dir>/rootfs/       an overlay copied verbatim over /  (app + web + libkvm +
+	//                       /kvmapp/version + the full /lib/modules/4.19.125 tree)
+	//   <dir>/partitions/   OPTIONAL vendor-format signed images for the A/B boot
+	//                       chain (U-Boot/ATF/OP-TEE + kernel + dtb), written to
+	//                       BOTH slots.
+	//
+	// This appended file REPLACES the vendor dpkg installer (nanokvm-server.nix
+	// truncates update.go at install()'s signature and appends this). It may add NO
+	// imports beyond update.go's (fmt, os, os/exec, path/filepath, log), so all the
+	// block-device work is done by shelling out to standard tools already present on
+	// the Ubuntu-arm64 rootfs (sh, grep, stat, blockdev, dd, cmp, mktemp, sync).
+	_ = sendMessage("install", 5)
 
-	payload := filepath.Join(dir, "kvmapp")
-	if _, err := os.Stat(payload); err != nil {
-		log.Errorf("update payload missing %s: %s", payload, err)
+	// --- 1. rootfs overlay (always) ---------------------------------------
+	rootfs := filepath.Join(dir, "rootfs")
+	if st, err := os.Stat(rootfs); err != nil || !st.IsDir() {
+		if err == nil {
+			err = fmt.Errorf("%s is not a directory", rootfs)
+		}
+		log.Errorf("update payload missing rootfs: %s", err)
 		return err
 	}
-
-	cmd := fmt.Sprintf("cp -a %s/. %s/", payload, AppDir)
-	if output, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
-		log.Errorf("failed to apply update: %s", string(output))
+	overlayCmd := fmt.Sprintf("cp -a %s/. /", rootfs)
+	if out, err := exec.Command("sh", "-c", overlayCmd).CombinedOutput(); err != nil {
+		log.Errorf("failed to apply rootfs overlay: %s", string(out))
 		return err
 	}
+	_ = sendMessage("install", 25)
 
+	// --- 2. partition update (only if partitions/ is present) -------------
+	partsDir := filepath.Join(dir, "partitions")
+	wroteParts := false
+	if st, err := os.Stat(partsDir); err == nil && st.IsDir() {
+		w, err := installPartitions(partsDir)
+		if err != nil {
+			log.Errorf("partition update failed: %s", err)
+			return err
+		}
+		wroteParts = w
+	}
+
+	// --- 3. stamp the version baseline ------------------------------------
 	versionFile := filepath.Join(AppDir, "version")
 	if err := os.WriteFile(versionFile, []byte(version+"\n"), 0o644); err != nil {
 		log.Errorf("failed to write version: %s", err)
@@ -28,8 +51,143 @@ func install(dir string, version string) error {
 
 	_ = sendMessage("install", 100)
 
-	// Restart asynchronously so systemd can tear down this process' cgroup
-	// without racing the HTTP reply. --no-block returns immediately.
-	_ = exec.Command("systemctl", "--no-block", "restart", "nanokvm").Run()
+	// --- 4. reboot vs restart --------------------------------------------
+	// If any boot-chain/kernel/dtb partition actually changed, a reboot is required
+	// for it to take effect; the update WebSocket UI reconnects after the device
+	// comes back. If only the /kvmapp overlay changed, a service restart suffices
+	// (ExecStartPre re-copies /kvmapp -> /dev/shm/kvmapp and relaunches the server).
+	// --no-block returns immediately so systemd can tear down this cgroup without
+	// racing the HTTP reply.
+	if wroteParts {
+		log.Infof("boot/kernel/dtb partitions updated; rebooting")
+		_ = exec.Command("systemctl", "--no-block", "reboot").Run()
+	} else {
+		_ = exec.Command("systemctl", "--no-block", "restart", "nanokvm").Run()
+	}
 	return nil
+}
+
+// partTarget maps one signed image in partitions/ to one on-device GPT partition
+// (resolved by name). Where an A/B pair shares a single image (optee/dtb/kernel),
+// the same image file appears twice with different partition names.
+type partTarget struct {
+	part string // GPT PARTNAME to resolve via sysfs
+	img  string // filename under partitions/
+}
+
+// installPartitions writes every target in STRICT slot order: ALL B-slot targets
+// first, then ALL A-slot targets. Writing one complete slot before touching the
+// other means a power cut at any instant leaves >= 1 fully self-consistent slot;
+// the SPL/U-Boot checksum verification + watchdog slot-failover (with
+// CONFIG_SUPPORT_AB enabled) then boots that good slot. No slot-register
+// manipulation is needed or wanted. Returns whether any partition was actually
+// written (vs all-skipped by the compare-first check).
+func installPartitions(partsDir string) (bool, error) {
+	targets := []partTarget{
+		// B slot first (image -> partition):
+		{"uboot_b", "uboot_b.img"},
+		{"atf_b", "atf_b.img"},
+		{"optee_b", "optee.img"},
+		{"dtb_b", "dtb.img"},
+		{"kernel_b", "kernel.img"},
+		// then A slot:
+		{"uboot", "uboot_a.img"},
+		{"atf", "atf_a.img"},
+		{"optee", "optee.img"},
+		{"dtb", "dtb.img"},
+		{"kernel", "kernel.img"},
+	}
+
+	wrote := false
+	for i, t := range targets {
+		_ = sendMessage("install", 30+i*6)
+
+		imgPath := filepath.Join(partsDir, t.img)
+		if _, err := os.Stat(imgPath); err != nil {
+			log.Errorf("partition image missing %s: %s", imgPath, err)
+			return wrote, err
+		}
+
+		w, err := writePartition(t.part, imgPath)
+		if err != nil {
+			return wrote, err
+		}
+		if w {
+			wrote = true
+			log.Infof("partition %s: written + verified", t.part)
+		} else {
+			log.Infof("partition %s: already up to date, skipped", t.part)
+		}
+	}
+	return wrote, nil
+}
+
+// partitionScript resolves a GPT partition by PARTNAME via sysfs (no udev/blkid
+// dependency), size-checks the image, and does a compare-first write: if the
+// partition already holds the image bytes it prints "SKIP"; otherwise it writes
+// (oflag=direct conv=fsync), reads back with iflag=direct, cmp-verifies, and
+// prints "WROTE". Both device reads use iflag=direct to bypass the page cache so
+// the verify reflects what actually landed on the eMMC. $1=PARTNAME $2=image.
+const partitionScript = `
+set -eu
+name="$1"; img="$2"
+
+dev=""
+for ue in /sys/block/mmcblk0/mmcblk0p*/uevent; do
+	if grep -qx "PARTNAME=$name" "$ue"; then
+		dev="/dev/$(basename "$(dirname "$ue")")"
+		break
+	fi
+done
+[ -n "$dev" ] || { echo "ERR no partition named $name"; exit 10; }
+[ -b "$dev" ] || { echo "ERR $dev is not a block device"; exit 11; }
+
+imgsize=$(stat -c %s "$img")
+psize=$(blockdev --getsize64 "$dev")
+[ "$imgsize" -le "$psize" ] || { echo "ERR image $imgsize > partition $psize ($name)"; exit 12; }
+
+# whole 1 MiB blocks covering the image (aligned reads for iflag=direct)
+blocks=$(( (imgsize + 1048575) / 1048576 ))
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+
+# compare-first: direct read of the current slot, compare the leading imgsize bytes
+dd if="$dev" of="$tmp" bs=1M count="$blocks" iflag=direct 2>/dev/null
+if cmp -s -n "$imgsize" "$img" "$tmp"; then
+	echo "SKIP $name $dev"
+	exit 0
+fi
+
+# write, flush, then read back (direct) and verify
+dd if="$img" of="$dev" bs=1M oflag=direct conv=fsync 2>/dev/null
+sync
+dd if="$dev" of="$tmp" bs=1M count="$blocks" iflag=direct 2>/dev/null
+if cmp -s -n "$imgsize" "$img" "$tmp"; then
+	echo "WROTE $name $dev"
+	exit 0
+fi
+echo "ERR verify mismatch $name $dev"
+exit 13
+`
+
+// writePartition runs partitionScript for one target and reports whether it wrote
+// (true) or skipped (false). Any non-zero exit or unexpected status is an error.
+func writePartition(part string, imgPath string) (bool, error) {
+	out, err := exec.Command("sh", "-c", partitionScript, "sh", part, imgPath).CombinedOutput()
+	if err != nil {
+		log.Errorf("write partition %s failed: %s", part, string(out))
+		return false, err
+	}
+	var status string
+	_, _ = fmt.Sscanf(string(out), "%s", &status)
+	switch status {
+	case "WROTE":
+		return true, nil
+	case "SKIP":
+		return false, nil
+	default:
+		err := fmt.Errorf("unexpected status for %s: %q", part, string(out))
+		log.Errorf("%s", err)
+		return false, err
+	}
 }

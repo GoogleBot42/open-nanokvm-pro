@@ -26,9 +26,11 @@ build the server **from source**, so we patch two things (in
    (`flake.nix` `updateBaseUrl`). `releases/latest/download/<name>` always
    resolves to the newest release's assets, so the manifest URL is stable.
 2. **The apply step** → instead of the vendor's three-`.deb` + `dpkg -i` flow, our
-   `install()` (see `pkgs/nanokvm-server/install-override.go.in`) unpacks a plain
-   tarball over `/kvmapp` and restarts the service. No dpkg, no package-ownership
-   conflicts with the from-source rootfs.
+   `install()` (see `pkgs/nanokvm-server/install-override.go.in`) applies a
+   **full-firmware** payload: a `rootfs/` overlay copied over `/` (app + web +
+   libkvm + the whole kernel-modules tree) plus, optionally, signed A/B
+   **partition** images for the boot chain, kernel and dtb. No dpkg, no
+   package-ownership conflicts with the from-source rootfs.
 
 Everything else in the vendor update path — manifest fetch, SHA-512 verification,
 WebSocket progress, the web UI, the client-side semver check — is untouched.
@@ -99,17 +101,71 @@ web UI compares  ─► semver.gt(latest, /kvmapp/version)?  → offer "update"
 user clicks      ─► POST /api/application/update (server)
    server        ─► download releases/latest/download/<name>   (WS progress)
                  ─► verify base64 SHA-512 == manifest.sha512
-                 ─► untar; cp -a <dir>/kvmapp/. /kvmapp/
-                 ─► write /kvmapp/version; systemctl --no-block restart nanokvm
-   nanokvm.service restart ─► ExecStartPre copies /kvmapp → /dev/shm/kvmapp
-                            ─► supervisor relaunches the new NanoKVM-Server
-web UI           ─► reloads after ~20 s
+                 ─► untar → install(dir):
+                       1. cp -a <dir>/rootfs/. /            (app+web+libkvm+modules)
+                       2. if <dir>/partitions/: write BOTH slots (B first, then A),
+                          compare-first, dd oflag=direct + read-back verify
+                       3. write /kvmapp/version
+                       4. any partition written? systemctl --no-block reboot
+                          else                    systemctl --no-block restart nanokvm
+   app-only update ─► ExecStartPre copies /kvmapp → /dev/shm/kvmapp, relaunches server
+   full update     ─► reboot; new boot chain / kernel / dtb take effect
+web UI           ─► reconnects after the restart / reboot
 ```
 
-The payload contains only the app tree (`server/NanoKVM-Server`, `server/web/`,
-`server/dl_lib/libkvm.so{,.0}`, `version`) — the boot chain, kernel, and modules
-are **not** touched by an OTA. Those ship only in the `.axp` and change only by
-re-flashing.
+### What a full OTA now covers
+
+| Shipped by OTA (`rootfs/` + `partitions/`) | AXDL-only (re-flash the `.axp`) |
+|---|---|
+| app server, web UI, `libkvm.so{,.0}` | SPL (p1), ddrinit (p2) |
+| `/lib/modules/4.19.125/` (our modules + `ax_*.ko`, pre-`depmod`'d) | env (p7), logo (p10/11) |
+| kernel (p14/p15), dtb (p12/p13) | base Ubuntu rootfs (p17) |
+| U-Boot (p5/p6), ATF (p3/p4), OP-TEE (p8/p9) | repartitioning / GPT layout |
+
+So an OTA can now roll forward the entire runtime **and** the boot chain; only the
+first-stage loader, the base filesystem, and the partition table remain AXDL-only.
+
+### Dual-slot write strategy (why it is power-cut-safe)
+
+The A/B partition layout carries two copies of the U-Boot/ATF/OP-TEE trio and of
+the kernel/dtb. `install()` writes them in **strict slot order — every B-slot
+target first, then every A-slot target** — and each target is written completely
+(`dd oflag=direct conv=fsync`) and read back + `cmp`-verified before moving on.
+
+Because one whole slot is finished before the other is touched, **at every instant
+at least one slot is fully self-consistent.** If power is cut mid-update:
+
+- The SPL picks the U-Boot/ATF/OP-TEE slot from a hardware register
+  (`TOP_CHIPMODE_GLB_BACKUP0`), verifies each stage's header magic + checksums,
+  and on a bad load hangs so the watchdog resets and the register flips to the
+  other slot — genuine passive failover.
+- **`CONFIG_SUPPORT_AB` is now enabled** in our U-Boot (`pkgs/boot.nix`), so U-Boot
+  follows that same slot register for the kernel/dtb pair (`bootsystem` env →
+  `kernel_b`/`dtb_b`). Without it U-Boot would always read slot-A kernel/dtb and
+  the failover could never complete. (The vendor `project.mak` also derives this
+  from `AX_SUPPORT_AB_PART=TRUE` via `config2defconfig.py`; we set it explicitly so
+  the guarantee cannot silently lapse.)
+
+No slot-register manipulation is done or wanted — the update just writes both
+slots and lets the SPL/U-Boot verification + watchdog machinery choose a good one.
+
+### Idempotency and the app-only fast path
+
+Each partition write is **compare-first**: `install()` reads the current slot
+(`iflag=direct`, bypassing the page cache) and skips the write if it already
+matches the image. Re-running the same update is a no-op on the partitions.
+
+`partitions/` is **optional**. A release that changes only the app/web/modules
+ships just `rootfs/`; `install()` then does the overlay + version stamp and a plain
+`systemctl --no-block restart nanokvm` — **no reboot**. A reboot happens only when
+a boot-chain/kernel/dtb partition actually changed.
+
+> **Hardware validation TODO.** The SPL→U-Boot slot-B failover path has been
+> reasoned from source but **not yet exercised on hardware**. Before trusting
+> rollback, deliberately corrupt one slot (or write a known-bad kernel to
+> `kernel_b`) on a test unit and confirm the device fails over to the good slot and
+> recovers. Until then, treat dual-slot writes as belt-and-suspenders, not a proven
+> rollback guarantee.
 
 ---
 
@@ -126,10 +182,21 @@ NanoKVM-Server to accept it:
   `sha512` is base64 of the raw digest, **not** hex — the server enforces it.
   `size` is informational.
 - **Payload** `nanokvm_pro_<ver>.tar.gz`: a single top-level dir
-  `nanokvm_pro_<ver>/` containing `kvmapp/…`. The server's `UnTarGz` returns that
-  dir; our `install()` copies `<dir>/kvmapp/.` over `/kvmapp`.
+  `nanokvm_pro_<ver>/` containing:
+  - `rootfs/` — copied verbatim over `/`
+    (`kvmapp/server/{NanoKVM-Server,web/…,dl_lib/libkvm.so{,.0}}`, `kvmapp/version`,
+    `lib/modules/4.19.125/…`);
+  - `partitions/` *(optional)* — vendor-format signed images with a fixed naming
+    contract: `uboot_a.img`, `uboot_b.img`, `atf_a.img`, `atf_b.img`, `optee.img`,
+    `dtb.img`, `kernel.img` (each carries header magic `0x55543322` at offset 4).
 
-Both are produced deterministically by `pkgs/update-package.nix`.
+  The server's `UnTarGz` returns that dir; our `install()` consumes `<dir>/rootfs`
+  and `<dir>/partitions`.
+
+Both are produced deterministically by `pkgs/update-package.nix`, which also
+asserts at build time: every `partitions/` image has the boot-header magic, the
+shipped modules' `vermagic` matches the `4.19.125` modules directory, and
+`modules.dep` resolves `ax_venc`/`lt6911_manage`.
 
 > **Preview channel:** the vendor supports a `preview` channel gated by the file
 > `/etc/kvm/preview_updates`; our base URL keeps a `/preview` sub-path but it is
