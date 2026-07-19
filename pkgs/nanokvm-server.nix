@@ -62,6 +62,42 @@ buildGoModule {
     #    which Go permits (only unused imports / locals are errors).
     sed -i '/^func install(dir string, version string) error {/,$d' service/application/update.go
     cat ${./nanokvm-server/install-override.go.in} >> service/application/update.go
+
+    # 4. Strip the kvmadmin + assistant extension endpoints. Both fetch and run
+    #    third-party closed code on user action: /kvmadmin/install pulls the
+    #    closed NanoKVM-Admin binary from cdn.sipeed.com, and /assistant pipes to
+    #    Alibaba dashscope + assorted CDNs. See docs/provenance.md. We keep only
+    #    tailscale. Overwriting extensions.go and DROPPING the assistant/kvmadmin
+    #    imports leaves those packages simply uncompiled (no importer references
+    #    them -- only extensions.go did), which Go permits; leaving the imports in
+    #    would be an unused-import compile error.
+    cat > router/extensions.go <<'EOF'
+package router
+
+import (
+	"NanoKVM-Server/middleware"
+	"NanoKVM-Server/service/extensions/tailscale"
+
+	"github.com/gin-gonic/gin"
+)
+
+func extensionsRouter(r *gin.Engine) {
+	api := r.Group("/api/extensions").Use(middleware.CheckToken())
+
+	ts := tailscale.NewService()
+
+	api.POST("/tailscale/install", ts.Install)     // install tailscale
+	api.POST("/tailscale/uninstall", ts.Uninstall) // uninstall tailscale
+	api.GET("/tailscale/status", ts.GetStatus)     // get tailscale status
+	api.POST("/tailscale/up", ts.Up)               // run tailscale up
+	api.POST("/tailscale/down", ts.Down)           // run tailscale down
+	api.POST("/tailscale/login", ts.Login)         // tailscale login
+	api.POST("/tailscale/logout", ts.Logout)       // tailscale logout
+	api.POST("/tailscale/start", ts.Start)         // tailscale start
+	api.POST("/tailscale/stop", ts.Stop)           // tailscale stop
+	api.POST("/tailscale/restart", ts.Restart)     // tailscale restart
+}
+EOF
   '';
 
   # cgo on for the kvm_vision + opus bindings.
@@ -123,7 +159,7 @@ buildGoModule {
   dontStrip = true;
 
   meta = {
-    description = "NanoKVM-Server (Go+cgo, aarch64) with updates redirected to our releases";
+    description = "NanoKVM-Server (Go+cgo, aarch64) with updates redirected to our releases and the kvmadmin/assistant extensions removed (tailscale kept)";
     license = pkgs.lib.licenses.gpl3Only;
     platforms = pkgs.lib.platforms.linux;
   };

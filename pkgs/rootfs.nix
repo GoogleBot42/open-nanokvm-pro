@@ -17,6 +17,14 @@
 #       modprobe lt6911_manage at boot (nothing on the vendor rootfs loads it
 #       for the kvmapp/nanokvm stack, yet libkvm polls /proc/lt6911_info/*).
 #   Everything else stays vendor (app server + web already live in /kvmapp).
+# Also hardened in the overlay:
+#   - motd-news DISABLED: /etc/default/motd-news ENABLED=0 kills the Ubuntu
+#       motd.ubuntu.com news beacon (50-motd-news phones home on login/timer).
+#   - inert CLOSED vendor binaries REMOVED: the disabled kvmcomm stack's closed
+#       kvm_ui/kvm_vin/frameforge + its display .ko, and the vendor swupdate
+#       self-updater. Exact paths only (debugfs has no recursive rm); the live
+#       kvmcomm scripts/edid/lt6911_manage.ko and swupdate fw_printenv/fw_setenv
+#       are KEPT. See docs/provenance.md.
 #
 # ---------------------------------------------------------------------------
 # /lib SYMLINK PITFALL (this bug shipped once -- do NOT reintroduce it):
@@ -172,6 +180,16 @@ pkgs.stdenvNoCC.mkDerivation {
       > "$PWD/nanokvm-modules-load.conf"
     emit_file "$PWD/nanokvm-modules-load.conf" "/etc/modules-load.d/nanokvm.conf" 0100644
 
+    # 5b3. Disable the Ubuntu motd-news beacon. The vendor Ubuntu base ships
+    # /etc/update-motd.d/50-motd-news, which phones home to motd.ubuntu.com on
+    # login/timer to fetch Canonical "news". Drop /etc/default/motd-news with
+    # ENABLED=0 so it never reaches out. /etc/default exists on Ubuntu; mkdir is
+    # belt-and-braces (harmless on an existing dir).
+    echo "mkdir /etc/default" >> "$script"   # existing dir: harmless
+    printf '# Disabled in open-nanokvm-pro: no Canonical motd news beacon (motd.ubuntu.com).\nENABLED=0\n' \
+      > "$PWD/motd-news"
+    emit_file "$PWD/motd-news" "/etc/default/motd-news" 0100644
+
     # 5c. systemd stack selection.
     # The pinned vendor base ships TWO independent KVM app stacks and enables the
     # WRONG one for our purposes:
@@ -193,6 +211,30 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "sif $wants/nanokvm.service uid 0"
       echo "sif $wants/nanokvm.service gid 0"
     } >> "$script"
+
+    # 5d. remove inert closed kvmcomm binaries + vendor swupdate -- see
+    # docs/provenance.md. These belong to the disabled kvmcomm stack (5c: the
+    # vendor's closed kvm_vin/kvm_ui/frameforge pipeline + its display .ko) and to
+    # the vendor swupdate self-updater (we ship our own updater). With kvmcomm
+    # disabled they never run, so drop the closed blobs from the image. debugfs
+    # has no recursive remove, so these are EXACT file paths; `rm` silently
+    # continues if a path is already absent.
+    # KEEP (live deps -- do NOT add here): /kvmcomm/scripts/*, /kvmcomm/edid/*,
+    # /kvmcomm/ko/lt6911_manage.ko, and /opt/swupdate/bin/fw_printenv|fw_setenv
+    # (used by S99checkboot).
+    for dead in \
+      /kvmcomm/ui/kvm_ui \
+      /kvmcomm/ui/frameforge \
+      /kvmcomm/vin/kvm_vin \
+      /kvmcomm/ko/fbtft.ko \
+      /kvmcomm/ko/fb_jd9853.ko \
+      /kvmcomm/ko/f_udisp_drv.ko \
+      /kvmcomm/ko/gpio_keys.ko \
+      /kvmcomm/ko/rotary_encoder.ko \
+      /kvmcomm/ko/wireguard.ko \
+      /opt/swupdate/bin/swupdate ; do
+      echo "rm $dead" >> "$script"
+    done
 
     # ---- 6. apply overlay in a single debugfs -w pass ----
     echo "=== [6] apply overlay (debugfs -w) ==="
@@ -243,6 +285,22 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: /etc/modules-load.d/nanokvm.conf missing/differs in image" >&2; exit 1; }
     echo "  modules-load: /etc/modules-load.d/nanokvm.conf -- verified in image."
 
+    # Sanity: the inert closed kvmcomm/swupdate binaries are GONE (5d). debugfs
+    # `stat` exits 0 even for a missing path, so test the OUTPUT -- an "Inode:"
+    # line only appears when the entry still exists (same idiom as the
+    # kvmcomm.service check above).
+    for dead in /kvmcomm/ui/kvm_ui /kvmcomm/vin/kvm_vin /opt/swupdate/bin/swupdate; do
+      if debugfs -R "stat $dead" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+        echo "ERROR: $dead still present in image (should be removed)" >&2; exit 1
+      fi
+    done
+    echo "  removed closed binaries: kvm_ui/kvm_vin/swupdate -- verified absent in image."
+
+    # Sanity: the motd-news beacon is disabled (file present with ENABLED=0).
+    debugfs -R "cat /etc/default/motd-news" rootfs.ext4 2>/dev/null | grep -qx "ENABLED=0" \
+      || { echo "ERROR: /etc/default/motd-news missing or not ENABLED=0 in image" >&2; exit 1; }
+    echo "  motd-news: /etc/default/motd-news ENABLED=0 -- verified in image."
+
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="
     e2fsck -fy rootfs.ext4 || true
@@ -266,6 +324,14 @@ pkgs.stdenvNoCC.mkDerivation {
                                                 lt6911_manage.ko) + prebuilt
                                                 ax_*.ko, depmod-regenerated
       /etc/modules-load.d/nanokvm.conf       <- autoloads lt6911_manage at boot
+      /etc/default/motd-news (ENABLED=0)     <- disables the Ubuntu motd-news
+                                                beacon (no motd.ubuntu.com phone-home)
+    removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack
+                      (kvm_ui, frameforge, kvm_vin, and its display .ko:
+                      fbtft/fb_jd9853/f_udisp_drv/gpio_keys/rotary_encoder/wireguard)
+                      plus the vendor swupdate self-updater (/opt/swupdate/bin/swupdate).
+                      KEPT: /kvmcomm/scripts, /kvmcomm/edid, lt6911_manage.ko, and
+                      swupdate fw_printenv/fw_setenv. See docs/provenance.md.
     method          : debugfs -w in-place edit (no root), sif uid/gid 0 to keep
                       root ownership; depmod -b on a host staging tree.
     /lib PITFALL    : /lib is a SYMLINK to usr/lib and debugfs cannot traverse
