@@ -126,6 +126,23 @@ enter it, then re-flash any `.axp` (ours or the stock vendor image) with
 
 ## License
 
-The Nix expressions and our `libkvm` reimplementation are ours; per-component
-upstream licenses are listed above and in each `pkgs/*.nix` header. The pinned
-Axera libraries/modules retain their upstream terms.
+**[GPL-3.0](LICENSE).** This isn't a free choice — it follows from what the
+firmware is built from. The project modifies and redistributes Sipeed's
+**GPL-3.0** NanoKVM-Server + web UI (the update-URL patch, the `install()`
+override, our `libkvm` linked into the Go server via cgo), on top of a
+**GPL-2.0** Linux kernel, U-Boot and OP-TEE. A combined, distributable work that
+includes GPL-3.0 code must itself be GPL-3.0, so everything original here — the
+Nix expressions and our `libkvm` reimplementation — is released under GPL-3.0 too.
+
+```
+Copyright (C) 2026 the open-nanokvm-pro contributors
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3. See LICENSE. No warranty; see the license for details.
+```
+
+The **pinned binary inputs retain their own upstream terms** and are not
+relicensed by this repo: `libax_*.so` / `libsns_dummy.so` are **BSD-3**
+(redistributable), the `ax_*.ko` modules are GPL-tagged (source unpublished by
+Axera), and the Ubuntu rootfs base is its own mix. Per-component provenance is in
+the [table above](#whats-from-source-vs-pinned) and each `pkgs/*.nix` header.
