@@ -11,9 +11,23 @@
 #         .axp (pkgs/base-axp.nix). This IS vendor Ubuntu -- not from-source.
 # Swap-in (from source / our derivations):
 #   - libkvm.so / libkvm.so.0  -> /kvmapp/server/dl_lib/   (our HW encoder)
-#   - /lib/modules/4.19.125/   -> our from-source kernel modules (incl.
+#   - /usr/lib/modules/4.19.125/ -> our from-source kernel modules (incl.
 #       lt6911_manage.ko) MERGED with the prebuilt ax_*.ko blobs, then depmod'd.
+#   - /etc/modules-load.d/nanokvm.conf -> makes systemd-modules-load.service
+#       modprobe lt6911_manage at boot (nothing on the vendor rootfs loads it
+#       for the kvmapp/nanokvm stack, yet libkvm polls /proc/lt6911_info/*).
 #   Everything else stays vendor (app server + web already live in /kvmapp).
+#
+# ---------------------------------------------------------------------------
+# /lib SYMLINK PITFALL (this bug shipped once -- do NOT reintroduce it):
+# On the vendor Ubuntu-arm64 rootfs, `/lib` is a SYMLINK to `usr/lib` and
+# debugfs CANNOT traverse symlinks. Writing the modules tree under `/lib/...`
+# therefore fails SILENTLY (debugfs continues past per-command errors), leaving
+# NO /lib/modules on the target -> lt6911_manage.ko never loads -> HDMI capture
+# dead. So we write to the REAL path `/usr/lib/modules/...` (which /lib->usr/lib
+# resolves to at runtime, so modprobe/depmod still find it), we `mkdir` every
+# missing ancestor (`/usr/lib/modules`) parent-first (debugfs never creates
+# ancestors on its own), and step [6] now cmp-verifies the modules tree lands.
 #
 # ---------------------------------------------------------------------------
 # NO-ROOT ext4 SURGERY:  a Nix build sandbox has no sudo / mount / loop, so the
@@ -29,8 +43,9 @@
 
 let
   release = "4.19.125";
-  # /lib/modules/<rel>/kernel/axera/ -- where we drop the prebuilt ax_*.ko so the
+  # modules/<rel>/kernel/axera/ -- where we drop the prebuilt ax_*.ko so the
   # regenerated modules.dep references a single, self-consistent location.
+  # (Staged under lib/modules on the host; written to /usr/lib/modules in the image.)
   axSubdir = "kernel/axera";
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -121,17 +136,41 @@ pkgs.stdenvNoCC.mkDerivation {
     printf '%s\n' "${version}" > "$PWD/kvmapp-version"
     emit_file "$PWD/kvmapp-version" "/kvmapp/version" 0100644
 
-    # 5b. modules tree: mkdir all dirs (parent-first), then write every file.
+    # 5b. modules tree -> REAL path /usr/lib/modules (NOT /lib: /lib is a symlink
+    # to usr/lib and debugfs cannot traverse symlinks -- writing under /lib fails
+    # SILENTLY; see the /lib SYMLINK PITFALL note in the header). At runtime
+    # /lib->usr/lib resolves so modprobe/depmod still find these.
+    # debugfs never creates missing ancestors, so mkdir them parent-first:
+    # /usr and /usr/lib already exist on the vendor rootfs; /usr/lib/modules does
+    # not -- create it, then every staged dir (find order is already parent-first).
+    echo "mkdir /usr/lib/modules" >> "$script"   # existing dir: harmless
     ( cd "$stage" && find lib/modules/${release} -type d ) | while read -r d; do
-      echo "mkdir /$d" >> "$script"       # errors on existing dirs are harmless
+      echo "mkdir /usr/$d" >> "$script"   # errors on existing dirs are harmless
     done
     ( cd "$stage" && find lib/modules/${release} -type f ) | while read -r f; do
       case "$f" in
         *.ko) mode=0100644 ;;
         *)    mode=0100644 ;;             # modules.dep/.alias/.symbols(.bin)
       esac
-      emit_file "$stage/$f" "/$f" "$mode"
+      emit_file "$stage/$f" "/usr/$f" "$mode"
     done
+
+    # 5b2. autoload lt6911_manage at boot. NOTHING on the vendor rootfs loads it
+    # for the kvmapp/nanokvm stack (the vendor loads ax_*.ko from /soc/ko via init
+    # scripts; lt6911_manage only appears under /kvmcomm/ko for the disabled
+    # kvmcomm stack) -- yet libkvm polls /proc/lt6911_info/*. Drop a
+    # modules-load.d entry so systemd-modules-load.service modprobes it at boot;
+    # modprobe now works because modules.dep landed under /usr/lib/modules above.
+    # /etc/modules-load.d exists on Ubuntu -- assert it (like dl_lib) and mkdir
+    # belt-and-braces (mkdir on an existing dir is harmless).
+    if ! debugfs -R "stat /etc/modules-load.d" rootfs.ext4 >/dev/null 2>&1; then
+      echo "ERROR: /etc/modules-load.d missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    echo "mkdir /etc/modules-load.d" >> "$script"   # existing dir: harmless
+    printf '# NanoKVM-Pro: load HDMI-capture bridge driver at boot (libkvm needs it).\nlt6911_manage\n' \
+      > "$PWD/nanokvm-modules-load.conf"
+    emit_file "$PWD/nanokvm-modules-load.conf" "/etc/modules-load.d/nanokvm.conf" 0100644
 
     # 5c. systemd stack selection.
     # The pinned vendor base ships TWO independent KVM app stacks and enables the
@@ -184,6 +223,26 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: /kvmapp/version in image != ${version}" >&2; exit 1; }
     echo "  app: our NanoKVM-Server + /kvmapp/version=${version} -- verified in image."
 
+    # Sanity: the MODULES TREE actually landed (this is the check whose absence let
+    # the /lib-symlink bug ship). Dump from the image at the REAL path and compare
+    # byte-for-byte against the staged copies. A silent debugfs failure -> the dump
+    # is empty/absent -> cmp fails -> build fails (instead of a dead HDMI on-device).
+    debugfs -R "dump /usr/lib/modules/${release}/modules.dep /tmp/chk.dep" rootfs.ext4 2>/dev/null
+    cmp -s /tmp/chk.dep "$stage/lib/modules/${release}/modules.dep" \
+      || { echo "ERROR: /usr/lib/modules/${release}/modules.dep missing/differs in image" >&2; exit 1; }
+    ltrel=$( cd "$stage" && find lib/modules/${release} -name lt6911_manage.ko | head -1 )
+    test -n "$ltrel" || { echo "ERROR: lt6911_manage.ko not in staging tree" >&2; exit 1; }
+    debugfs -R "dump /usr/$ltrel /tmp/chk.ko" rootfs.ext4 2>/dev/null
+    cmp -s /tmp/chk.ko "$stage/$ltrel" \
+      || { echo "ERROR: lt6911_manage.ko missing/differs in image (/usr/$ltrel)" >&2; exit 1; }
+    echo "  modules: /usr/lib/modules/${release} modules.dep + lt6911_manage.ko -- verified in image."
+
+    # Sanity: the boot-time module loader config landed.
+    debugfs -R "dump /etc/modules-load.d/nanokvm.conf /tmp/chk.conf" rootfs.ext4 2>/dev/null
+    cmp -s /tmp/chk.conf "$PWD/nanokvm-modules-load.conf" \
+      || { echo "ERROR: /etc/modules-load.d/nanokvm.conf missing/differs in image" >&2; exit 1; }
+    echo "  modules-load: /etc/modules-load.d/nanokvm.conf -- verified in image."
+
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="
     e2fsck -fy rootfs.ext4 || true
@@ -203,11 +262,17 @@ pkgs.stdenvNoCC.mkDerivation {
     base            : ubuntu_rootfs_sparse.ext4 from vendor .axp (pkgs/base-axp.nix)
     swapped in:
       /kvmapp/server/dl_lib/libkvm.so{,.0}   <- our kvm-encoder (from source)
-      /lib/modules/${release}/               <- our kernel modules (incl.
+      /usr/lib/modules/${release}/           <- our kernel modules (incl.
                                                 lt6911_manage.ko) + prebuilt
                                                 ax_*.ko, depmod-regenerated
+      /etc/modules-load.d/nanokvm.conf       <- autoloads lt6911_manage at boot
     method          : debugfs -w in-place edit (no root), sif uid/gid 0 to keep
                       root ownership; depmod -b on a host staging tree.
+    /lib PITFALL    : /lib is a SYMLINK to usr/lib and debugfs cannot traverse
+                      symlinks, so the modules tree MUST be written to the real
+                      /usr/lib/modules (writing under /lib fails silently -> no
+                      modules -> dead HDMI capture). Ancestors are mkdir'd
+                      parent-first; step [6] cmp-verifies the tree landed.
     outputs         : ubuntu_rootfs_sparse.ext4 (for the .axp), ubuntu_rootfs.ext4 (raw)
     EOF
     echo "Installed:"; ls -l "$out"

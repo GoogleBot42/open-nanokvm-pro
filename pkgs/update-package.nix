@@ -22,13 +22,19 @@
 #     kvmapp/server/dl_lib/libkvm.so{,.0}       our HW capture/encode backend
 #     kvmapp/server/web/...                      our web UI bundle
 #     kvmapp/version                             the OTA baseline stamp
-#     lib/modules/4.19.125/...                   FULL modules tree: our from-source
+#     usr/lib/modules/4.19.125/...               FULL modules tree: our from-source
 #                                                modules MERGED with the prebuilt
 #                                                ax_*.ko (under kernel/axera/), then
 #                                                depmod'd at BUILD time so
 #                                                modules.dep/.alias/.symbols(.bin)
 #                                                ship pre-generated (no on-device
-#                                                depmod). Mirrors pkgs/rootfs.nix [4].
+#                                                depmod). Under usr/lib/modules (NOT
+#                                                lib/modules) to match the device's
+#                                                real path -- /lib is a symlink to
+#                                                usr/lib. Mirrors pkgs/rootfs.nix [4].
+#     etc/modules-load.d/nanokvm.conf            autoloads lt6911_manage at boot
+#                                                (systemd-modules-load) -- libkvm
+#                                                needs it; nothing else loads it.
 #
 #   partitions/      vendor-format SIGNED partition images (magic 0x55543322 @ off 4),
 #                    fixed naming contract consumed by install()'s image->partition map:
@@ -57,7 +63,7 @@
 
 let
   release = "4.19.125";
-  # /lib/modules/<rel>/kernel/axera/ -- where the prebuilt ax_*.ko land so the
+  # usr/lib/modules/<rel>/kernel/axera/ -- where the prebuilt ax_*.ko land so the
   # regenerated modules.dep references one self-consistent location (same as rootfs.nix).
   axSubdir = "kernel/axera";
   # dtb-slot-image artifact filename (pkgs/slot-image.nix `artifact` for the dtb call).
@@ -95,19 +101,22 @@ pkgs.stdenvNoCC.mkDerivation {
     printf '%s\n' "${version}"             > "$app/version"
 
     # ===================================================================
-    # 2. rootfs/lib/modules/${release} -- merged, depmod'd at BUILD time
-    #    (replicates pkgs/rootfs.nix step [4])
+    # 2. rootfs/usr/lib/modules/${release} -- merged, depmod'd at BUILD time
+    #    (replicates pkgs/rootfs.nix step [4]). Under usr/lib/modules (NOT
+    #    lib/modules) to match the device's real path: /lib is a symlink to
+    #    usr/lib, so this is where modprobe/depmod actually resolve.
     # ===================================================================
     echo "=== merge kernel modules + ax_*.ko, depmod ==="
-    modroot="$rfs/lib/modules/${release}"
+    modroot="$rfs/usr/lib/modules/${release}"
     mkdir -p "$modroot"
     cp -a "${kernel}/lib/modules/${release}/." "$modroot/"
-    chmod -R u+w "$rfs/lib/modules"
+    chmod -R u+w "$rfs/usr/lib/modules"
     mkdir -p "$modroot/${axSubdir}"
     cp "${ax-ko-blobs}"/lib/modules/ax/*.ko "$modroot/${axSubdir}/"
     echo "  merged .ko count: $(find "$modroot" -name '*.ko' | wc -l)"
-    # depmod against the modules PARENT (-b <dir> expects <dir>/lib/modules/<rel>).
-    depmod -b "$rfs" "${release}"
+    # depmod against the modules PARENT (-b <dir> expects <dir>/lib/modules/<rel>);
+    # our tree lives at <rfs>/usr/lib/modules/<rel>, so the base is <rfs>/usr.
+    depmod -b "$rfs/usr" "${release}"
 
     # --- module assertions (fail LOUDLY in-build, never on the device) ---
     # (b) vermagic consistency: the release string in a couple of shipped .ko must
@@ -131,6 +140,14 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: depmod did not resolve ax_venc -> ax_base" >&2; exit 1; }
     grep -q 'lt6911_manage' "$modroot/modules.dep" \
       || { echo "ERROR: lt6911_manage missing from merged modules.dep" >&2; exit 1; }
+
+    # --- autoload lt6911_manage at boot (mirrors pkgs/rootfs.nix step [5b2]).
+    # Nothing on the vendor rootfs loads it for the kvmapp/nanokvm stack, yet
+    # libkvm polls /proc/lt6911_info/*. systemd-modules-load.service modprobes
+    # entries here at boot; modprobe resolves it via the modules.dep above.
+    mkdir -p "$rfs/etc/modules-load.d"
+    printf '# NanoKVM-Pro: load HDMI-capture bridge driver at boot (libkvm needs it).\nlt6911_manage\n' \
+      > "$rfs/etc/modules-load.d/nanokvm.conf"
 
     # ===================================================================
     # 3. partitions/ -- vendor-format signed images, fixed naming contract
