@@ -1,13 +1,25 @@
 name: release
 
-# Build the device firmware image (.axp) and the web-update package with Nix,
-# then publish them as GitHub Release assets. Because NanoKVM-Server is patched
-# to fetch from `releases/latest/download/...` (see flake.nix `updateBaseUrl` and
-# docs/updates.md), publishing a release IS the OTA push: devices' "update"
-# button will offer it whenever the manifest version is semver-greater than the
-# installed /kvmapp/version.
+# Two ways to cut a release:
 #
-# Trigger: push a tag `vX.Y.Z` (or run manually with an explicit version).
+#  1. Actions -> "release" -> Run workflow, enter the version (e.g. 0.0.3).
+#     This commits the VERSION bump to `main`, tags `vX.Y.Z` on that commit,
+#     builds the firmware .axp + OTA package, and publishes the release --
+#     all in one run. The commit keeps `main`'s VERSION in lockstep with the
+#     newest release, so local `nix build` matches too.
+#
+#  2. Push a tag `vX.Y.Z` yourself -> builds + publishes from that tagged
+#     commit (VERSION is stamped from the tag for the build; `main` is not
+#     touched). Handy for one-off / hand-cut tags.
+#
+# Publishing a release IS the OTA push: NanoKVM-Server is patched to poll
+# `releases/latest/download/...` (flake.nix `updateBaseUrl`, docs/updates.md),
+# so devices offer the update whenever the manifest version is semver-greater
+# than the installed /kvmapp/version.
+#
+# No PAT required: the dispatch path does the commit + tag + build + publish in
+# a single run, so it never relies on a tag push triggering a second workflow
+# (which the built-in GITHUB_TOKEN cannot do).
 
 on:
   push:
@@ -16,11 +28,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version without leading v (e.g. 2.0.0). Also used as the release tag vX.Y.Z.'
+        description: 'Version without leading v (e.g. 0.0.3). Commits VERSION to main, tags vX.Y.Z, builds, and publishes.'
         required: true
 
 permissions:
-  contents: write        # create releases + upload assets
+  contents: write        # create releases + upload assets + push the VERSION bump/tag
 
 jobs:
   release:
@@ -38,6 +50,11 @@ jobs:
           df -h /
 
       - uses: actions/checkout@v4
+        with:
+          # On dispatch we commit the VERSION bump onto main, so check main out
+          # (with full history for release notes); on a tag push, use the tag.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
 
       - uses: cachix/install-nix-action@v27
         with:
@@ -49,22 +66,57 @@ jobs:
         id: ver
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V="${{ inputs.version }}"; TAG="v${V#v}"
+            V="${{ inputs.version }}"
           else
-            TAG="${GITHUB_REF_NAME}"; V="${TAG#v}"
+            V="${GITHUB_REF_NAME}"
           fi
-          echo "version=$V"   >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
-          # Stamp VERSION so the flake bakes it into /kvmapp/version + the manifest.
-          printf '%s\n' "$V" > VERSION
-          git add VERSION
-          echo "Building release $TAG (version $V)"
+          V="${V#v}"
+          # Guard against a bad tag/input producing a garbage release.
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
+            || { echo "::error::invalid version '$V' (expected X.Y.Z)"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V"    >> "$GITHUB_OUTPUT"
+          echo "Release v$V (version $V)"
+
+      - name: Prepare VERSION + tag
+        # Dispatch: commit the bump on main and create the tag LOCALLY (pushed
+        # only after a successful build, below, so a build failure leaves no
+        # orphan tag). Tag push: stamp VERSION from the tag for the build.
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::tag $TAG already exists -- pick a new version"; exit 1
+            fi
+            printf '%s\n' "$V" > VERSION
+            git add VERSION
+            git diff --cached --quiet || git commit -m "release: set VERSION to $V"
+            git tag -a "$TAG" -m "Release $TAG"
+          else
+            # Manually pushed tag: make the flake see the tag's version even if
+            # the tagged commit's VERSION file lagged. Not committed to main.
+            printf '%s\n' "$V" > VERSION
+            git add VERSION
+          fi
 
       - name: Build web-update package
         run: nix build .#update-package --print-build-logs --out-link result-update
 
       - name: Build firmware image (.axp)
         run: nix build .#firmware-image --print-build-logs --out-link result-image
+
+      - name: Push VERSION bump + tag
+        # Only after both builds succeed, and only on the dispatch path.
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          git push origin HEAD:main
+          git push origin "$TAG"
 
       - name: Stage release assets
         id: stage
