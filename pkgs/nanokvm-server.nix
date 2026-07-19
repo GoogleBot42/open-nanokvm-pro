@@ -1,4 +1,10 @@
-{ pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder, axera-libs, ... }:
+{ pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder, axera-libs
+, # Base URL the on-device updater fetches from. Point at the GitHub repo that
+  # hosts the Releases; `releases/latest/download` always resolves to the newest
+  # release's assets. See flake.nix (updateBaseUrl) and docs/updates.md.
+  updateBaseUrl ? "https://github.com/OWNER/REPO/releases/latest/download"
+, ...
+}:
 
 # ---------------------------------------------------------------------------
 # NanoKVM-Server (Go + cgo), cross-built for aarch64/glibc.
@@ -44,6 +50,31 @@ buildGoModule {
   # Pinned from the go-modules FOD (2026-07-17); regenerate if go.mod changes.
   vendorHash = "sha256-cPh//bSTnvibkCRqeIwxjWaRI7YQHOK42PZGMcoJhiY=";
 
+  # ---- Redirect application updates from Sipeed's CDN to OUR host -----------
+  # So the web UI "update" button pulls firmware/app updates we publish, not
+  # Sipeed's. Runs in sourceRoot (server/). See docs/updates.md for the protocol.
+  postPatch = ''
+    # 1. Base URL. One fixed-string replace rewrites BOTH consts, because
+    #    PreviewURL == StableURL + "/preview": replacing the StableURL substring
+    #    also fixes the PreviewURL prefix.
+    substituteInPlace service/application/service.go \
+      --replace-fail 'https://cdn.sipeed.com/nanokvm' '${updateBaseUrl}'
+
+    # 2. Drop the ?now= cache-buster. GitHub release-asset URLs 302-redirect and
+    #    a trailing query can interfere; a static manifest needs no cache-bust.
+    substituteInPlace service/application/version.go \
+      --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/nanokvm_pro_latest.json", baseURL'
+    sed -i '/^[[:space:]]*"time"$/d' service/application/version.go
+
+    # 3. Replace the vendor dpkg-based install() with our overlay-copy version
+    #    (see pkgs/nanokvm-server/install-override.go.in for the rationale).
+    #    install() is the LAST function in update.go: truncate at its signature
+    #    and append ours. appNames/getFileInfo become unused package-level decls,
+    #    which Go permits (only unused imports / locals are errors).
+    sed -i '/^func install(dir string, version string) error {/,$d' service/application/update.go
+    cat ${./nanokvm-server/install-override.go.in} >> service/application/update.go
+  '';
+
   # cgo on for the kvm_vision + opus bindings.
   env.CGO_ENABLED = "1";
   env.GOEXPERIMENT = "boringcrypto";
@@ -54,6 +85,7 @@ buildGoModule {
   # able to find the whole AX graph to validate the cgo link (see rpath-link below).
   buildInputs = [
     crossPkgs.libopus
+    crossPkgs.alsa-lib
     kvm-encoder
     axera-libs
   ];
@@ -66,10 +98,13 @@ buildGoModule {
     cp ${kvm-encoder}/lib/libkvm.so dl_lib/libkvm.so
     cp ${kvm-encoder}/lib/libkvm.so dl_lib/libkvm.so.0
     export CGO_CFLAGS="-I$PWD/include -I${crossPkgs.libopus.dev}/include $CGO_CFLAGS"
-    # -rpath-link (NOT -L): resolve libkvm.so's transitive AX deps (libax_engine
-    # via libax_proton, etc.) at link time WITHOUT adding them as DT_NEEDED to the
-    # server binary. On-device those libs load from /opt/lib via libkvm's RUNPATH.
-    export CGO_LDFLAGS="-L$PWD/dl_lib -L${crossPkgs.libopus}/lib -Wl,-rpath-link,${axera-libs}/lib $CGO_LDFLAGS"
+    # -rpath-link (NOT -L): resolve libkvm.so's transitive deps at link time
+    # WITHOUT adding them as DT_NEEDED to the server binary. libkvm DT_NEEDEDs the
+    # AX graph (libax_engine via libax_proton, ...) AND libasound.so.2 (its real
+    # ALSA HDMI-audio path), so ld must be able to find BOTH to validate the cgo
+    # link. On-device the AX libs load from /opt/lib via libkvm's RPATH and
+    # libasound from the standard multiarch path.
+    export CGO_LDFLAGS="-L$PWD/dl_lib -L${crossPkgs.libopus}/lib -Wl,-rpath-link,${axera-libs}/lib -Wl,-rpath-link,${crossPkgs.alsa-lib}/lib $CGO_LDFLAGS"
   '';
 
   ldflags = [
@@ -77,9 +112,25 @@ buildGoModule {
     "-X" "main.GitBranch=nix-nanokvm-pro"
   ];
 
-  # On-device the libs live at /opt/lib + $ORIGIN/dl_lib; the image layer is
-  # responsible for placing libkvm.so/libax_*.so there. Keep binary unstripped
-  # cross-target.
+  nativeBuildInputs = [ pkgs.patchelf ];
+
+  # Make the binary run on the device's Ubuntu userland, NOT in nix. buildGoModule
+  # bakes the nix-store glibc as the ELF interpreter and a nix-store RUNPATH, which
+  # do not exist on the target -- so retarget both to on-device paths (matching the
+  # vendor binary: interpreter /lib/ld-linux-aarch64.so.1, RUNPATH $ORIGIN/dl_lib).
+  # We add /opt/usr/lib (libopus.so.0) and /opt/lib (Axera libs) because, unlike the
+  # vendor server, ours DT_NEEDEDs libopus directly. Device glibc is 2.35 and our
+  # binary's highest required symbol is GLIBC_2.34, so there is no ABI gap.
+  # dontPatchELF stops nix's fixup from shrinking the RUNPATH we set here.
+  dontPatchELF = true;
+  postInstall = ''
+    patchelf \
+      --set-interpreter /lib/ld-linux-aarch64.so.1 \
+      --set-rpath '$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib' \
+      "$out/bin/NanoKVM-Server"
+  '';
+
+  # Keep binary unstripped cross-target.
   dontStrip = true;
 
   meta = {

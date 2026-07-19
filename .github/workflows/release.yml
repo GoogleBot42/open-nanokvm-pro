@@ -1,0 +1,92 @@
+name: release
+
+# Build the device firmware image (.axp) and the web-update package with Nix,
+# then publish them as GitHub Release assets. Because NanoKVM-Server is patched
+# to fetch from `releases/latest/download/...` (see flake.nix `updateBaseUrl` and
+# docs/updates.md), publishing a release IS the OTA push: devices' "update"
+# button will offer it whenever the manifest version is semver-greater than the
+# installed /kvmapp/version.
+#
+# Trigger: push a tag `vX.Y.Z` (or run manually with an explicit version).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without leading v (e.g. 2.0.0). Also used as the release tag vX.Y.Z.'
+        required: true
+
+permissions:
+  contents: write        # create releases + upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150   # the cross kernel + boot chain + multi-GB rootfs are slow
+    steps:
+      - name: Free up runner disk space
+        # The rootfs de-sparses to several GB and the base .axp is ~1.4 GB; the
+        # stock runner image leaves too little headroom. Reclaim the big preinstalled
+        # toolchains we don't use.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -a -f || true
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            system-features = big-parallel kvm
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ inputs.version }}"; TAG="v${V#v}"
+          else
+            TAG="${GITHUB_REF_NAME}"; V="${TAG#v}"
+          fi
+          echo "version=$V"   >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
+          # Stamp VERSION so the flake bakes it into /kvmapp/version + the manifest.
+          printf '%s\n' "$V" > VERSION
+          git add VERSION
+          echo "Building release $TAG (version $V)"
+
+      - name: Build web-update package
+        run: nix build .#update-package --print-build-logs --out-link result-update
+
+      - name: Build firmware image (.axp)
+        run: nix build .#firmware-image --print-build-logs --out-link result-image
+
+      - name: Stage release assets
+        id: stage
+        run: |
+          mkdir -p dist
+          # Web-update: manifest name MUST stay `nanokvm_pro_latest.json` and the
+          # tarball `nanokvm_pro_<version>.tar.gz` so releases/latest/download/<name>
+          # resolves (the server builds those exact URLs).
+          cp result-update/nanokvm_pro_latest.json dist/
+          cp result-update/nanokvm_pro_*.tar.gz     dist/
+          # Device image.
+          cp result-image/*.axp                     dist/
+          echo "--- release assets ---"; ls -l dist
+          # Sanity: manifest version must equal the tag version.
+          grep -q '"version": "${{ steps.ver.outputs.version }}"' dist/nanokvm_pro_latest.json \
+            || { echo "manifest version != ${{ steps.ver.outputs.version }}"; exit 1; }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

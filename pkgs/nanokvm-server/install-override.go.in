@@ -1,0 +1,35 @@
+func install(dir string, version string) error {
+	// OPEN-KVM update: our update package is a plain overlay of the /kvmapp app
+	// tree (server binary + web + dl_lib), NOT vendor .deb packages. We copy it
+	// over /kvmapp, stamp the version, and let systemd restart our service --
+	// nanokvm.service's ExecStartPre re-copies /kvmapp -> /dev/shm/kvmapp and the
+	// supervisor relaunches the server. This deliberately replaces the vendor's
+	// dpkg-based installer (which required three .deb packages and would fight
+	// pre-existing dpkg file ownership on our from-source rootfs).
+	_ = sendMessage("install", 10)
+
+	payload := filepath.Join(dir, "kvmapp")
+	if _, err := os.Stat(payload); err != nil {
+		log.Errorf("update payload missing %s: %s", payload, err)
+		return err
+	}
+
+	cmd := fmt.Sprintf("cp -a %s/. %s/", payload, AppDir)
+	if output, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
+		log.Errorf("failed to apply update: %s", string(output))
+		return err
+	}
+
+	versionFile := filepath.Join(AppDir, "version")
+	if err := os.WriteFile(versionFile, []byte(version+"\n"), 0o644); err != nil {
+		log.Errorf("failed to write version: %s", err)
+		return err
+	}
+
+	_ = sendMessage("install", 100)
+
+	// Restart asynchronously so systemd can tear down this process' cgroup
+	// without racing the HTTP reply. --no-block returns immediately.
+	_ = exec.Command("systemctl", "--no-block", "restart", "nanokvm").Run()
+	return nil
+}

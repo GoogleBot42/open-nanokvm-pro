@@ -1,4 +1,8 @@
-{ pkgs, base-axp, kvm-encoder, kernel, ax-ko-blobs, ... }:
+{ pkgs, base-axp, kvm-encoder, kernel, ax-ko-blobs
+, nanokvm-server, nanokvm-web
+, version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
+, ...
+}:
 
 # ===========================================================================
 # Root filesystem -- OVERLAY approach (vendor Ubuntu-arm64 base + our bits).
@@ -110,6 +114,21 @@ pkgs.stdenvNoCC.mkDerivation {
     emit_file "${kvm-encoder}/lib/libkvm.so"   "/kvmapp/server/dl_lib/libkvm.so"   0100755
     emit_file "${kvm-encoder}/lib/libkvm.so.0" "/kvmapp/server/dl_lib/libkvm.so.0" 0100755
 
+    # 5a2. OUR from-source app: patched NanoKVM-Server + web UI + version stamp.
+    # This makes the flashed image RUN our server (whose update check targets our
+    # host, not Sipeed's CDN -- see pkgs/nanokvm-server.nix + docs/updates.md),
+    # served with our web bundle. /kvmapp/version is the update baseline the web
+    # UI compares against.
+    emit_file "${nanokvm-server}/bin/NanoKVM-Server" "/kvmapp/server/NanoKVM-Server" 0100755
+    ( cd "${nanokvm-web}" && find . -type d ) | while read -r d; do
+      echo "mkdir /kvmapp/server/web/''${d#./}" >> "$script"   # existing dirs: harmless
+    done
+    ( cd "${nanokvm-web}" && find . -type f ) | while read -r f; do
+      emit_file "${nanokvm-web}/''${f#./}" "/kvmapp/server/web/''${f#./}" 0100644
+    done
+    printf '%s\n' "${version}" > "$PWD/kvmapp-version"
+    emit_file "$PWD/kvmapp-version" "/kvmapp/version" 0100644
+
     # 5b. modules tree: mkdir all dirs (parent-first), then write every file.
     ( cd "$stage" && find lib/modules/${release} -type d ) | while read -r d; do
       echo "mkdir /$d" >> "$script"       # errors on existing dirs are harmless
@@ -158,10 +177,20 @@ pkgs.stdenvNoCC.mkDerivation {
     # Sanity: OUR stack is enabled and the vendor kvmcomm stack is disabled.
     debugfs -R "stat $wants/nanokvm.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
       || { echo "ERROR: nanokvm.service not enabled (symlink missing) in image" >&2; exit 1; }
-    if debugfs -R "stat $wants/kvmcomm.service" rootfs.ext4 >/dev/null 2>&1; then
+    # NB: debugfs `stat` exits 0 even for a missing path ("File not found"), so
+    # test the OUTPUT (an "Inode:" line only appears when the entry exists).
+    if debugfs -R "stat $wants/kvmcomm.service" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
       echo "ERROR: kvmcomm.service still enabled in image (should be disabled)" >&2; exit 1
     fi
     echo "  systemd stack: nanokvm enabled, kvmcomm disabled -- verified in image."
+
+    # Sanity: our server binary + version stamp are in the image.
+    debugfs -R "dump /kvmapp/server/NanoKVM-Server /tmp/chk.srv" rootfs.ext4 2>/dev/null
+    cmp -s /tmp/chk.srv "${nanokvm-server}/bin/NanoKVM-Server" \
+      || { echo "ERROR: NanoKVM-Server in image != our build" >&2; exit 1; }
+    debugfs -R "cat /kvmapp/version" rootfs.ext4 2>/dev/null | grep -qx "${version}" \
+      || { echo "ERROR: /kvmapp/version in image != ${version}" >&2; exit 1; }
+    echo "  app: our NanoKVM-Server + /kvmapp/version=${version} -- verified in image."
 
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="

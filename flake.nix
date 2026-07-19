@@ -68,6 +68,25 @@
       # outputs off the *build/dev* system and construct an aarch64 cross set
       # (pkgsCross) inside each system's package set.
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+
+      # ------------------------------------------------------------------
+      # Release identity for the OTA / web-update system (see docs/updates.md).
+      #
+      # `version` is read from the tracked ./VERSION file (first whitespace-
+      # delimited token). It is stamped into /kvmapp/version in the image and
+      # into the update manifest; the web UI offers an update when a published
+      # manifest's version is semver-greater than the device's. CI overwrites
+      # ./VERSION with the git tag (e.g. `v2.0.0` -> `2.0.0`) before building.
+      #
+      # `updateBaseUrl` is baked into NanoKVM-Server so its "update" button pulls
+      # from OUR GitHub Releases instead of Sipeed's CDN. `releases/latest/
+      # download` always resolves to the newest release's assets.
+      # >>> SET OWNER/REPO to the repo that hosts the Releases. <<<
+      # ------------------------------------------------------------------
+      version =
+        let m = builtins.match "[[:space:]]*([^[:space:]]+).*" (builtins.readFile ./VERSION);
+        in if m == null then "0.0.0-dev" else builtins.head m;
+      updateBaseUrl = "https://github.com/OWNER/REPO/releases/latest/download";
     in
     flake-utils.lib.eachSystem supportedSystems (
       localSystem:
@@ -158,8 +177,14 @@
         kernel-slot-image = callPkg ./pkgs/kernel-fip.nix { inherit kernel; };
 
         kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; };
-        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs; };
+        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
+
+        # Web-update package (tarball + manifest) our Releases serve; the device's
+        # patched server downloads + applies this. See docs/updates.md.
+        update-package = callPkg ./pkgs/update-package.nix {
+          inherit nanokvm-server nanokvm-web kvm-encoder version;
+        };
 
         # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
         base-axp = callPkg ./pkgs/base-axp.nix { };
@@ -172,7 +197,8 @@
         # Rootfs = vendor Ubuntu base (from base-axp) OVERLAID with our libkvm.so
         # + merged/depmod'd kernel modules (no-root debugfs surgery).
         rootfs = callPkg ./pkgs/rootfs.nix {
-          inherit base-axp kvm-encoder kernel ax-ko-blobs;
+          inherit base-axp kvm-encoder kernel ax-ko-blobs
+            nanokvm-server nanokvm-web version;
         };
 
         # Final flashable .axp: swap our dtb/kernel/u-boot/rootfs into a copy of
@@ -202,7 +228,7 @@
             axera-libs ax-ko-blobs
             boot boot-sd boot-fsbl boot-atf boot-optee boot-uboot
             kernel dtb dtb-sd dtb-slot-image dtb-slot-image-sd kernel-slot-image
-            kvm-encoder nanokvm-server nanokvm-web
+            kvm-encoder nanokvm-server nanokvm-web update-package
             base-axp rootfs firmware-image sd-image
             axdl;
 

@@ -38,6 +38,7 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | [docs/architecture.md](docs/architecture.md) | Boot chain, partition layout, the video pipeline, our `libkvm`, and the **two vendor app stacks** (why we run `nanokvm`, not `kvmcomm`) |
 | [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
 | [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL USB flashing, the `User`-button recovery path, full backup/restore, non-destructive SD-card boot |
+| [docs/updates.md](docs/updates.md) | **Our own OTA/update system**: CI builds images + web-update packages; the web-UI "update" button pulls from **our** GitHub Releases, not Sipeed |
 
 > The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
 > findings, the resolved MIPI/VIN/VENC capture config, per-test results) lives in
@@ -99,6 +100,18 @@ button while applying power to select it, power on normally to revert. This is t
 safe way to try changes without touching the installed firmware. Details and the
 strap/boot-source caveats are in
 [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md#sd-card-boot).
+
+---
+
+## Updates come from us, not Sipeed
+
+We build `NanoKVM-Server` from source, so it's patched to fetch updates from
+**our** GitHub Releases instead of `cdn.sipeed.com`. Tag a release (`git tag
+v2.0.0 && git push --tags`) and `.github/workflows/release.yml` builds the `.axp`
+image **and** a web-update package, publishing both as Release assets. Every
+device then sees the new version in the web UI's **update** button and pulls it
+from us. Full design + setup (including the one-time `updateBaseUrl` step) is in
+[docs/updates.md](docs/updates.md).
 
 ---
 
