@@ -1,4 +1,4 @@
-{ pkgs, crossPkgs, toolchain, ... }:
+{ pkgs, crossPkgs, toolchain, axdl, ... }:
 
 # Dev shell for working on the NanoKVM-Pro flake: cross toolchain + the native
 # tools the vendor SDK / image pipeline expect. axp-tools (pip) is NOT in
@@ -27,6 +27,14 @@ pkgs.mkShell {
 
     # audio dep for the Go server cgo build
     crossPkgs.libopus
+
+    # ---- flashing ----
+    # Prebuilt AXDL USB flasher (axdl-cli). `nix run .#axdl` uses this same
+    # build; it's on PATH in the shell too.
+    axdl
+    # Fallback: rebuild axdl-rs (or any rusb/serialport Rust tool) from source.
+    # axdl-cli needs pkg-config + libusb1 (rusb) + udev/libudev (serialport).
+    cargo rustc pkg-config libusb1 udev
   ];
 
   shellHook = ''
@@ -39,5 +47,13 @@ pkgs.mkShell {
     echo ""
     echo "Vendor one-shot build (in a writable maix_ax620e_sdk clone):"
     echo "    cd build && make p=AX630C_emmc_arm64_k419_sipeed_nanokvm clean all install axp -j8"
+    echo ""
+    echo "Flash workflow (host <-USB-> AX630C in BootROM download mode):"
+    echo "    nix build .#base-axp        # stock recovery .axp (or grab from Sipeed releases)"
+    echo "    nix build .#firmware-image  # our from-source .axp"
+    echo "    nix run .#axdl -- --file result/*.axp --wait-for-device"
+    echo "  Enter download mode: remove the SD card, then hold User (~10s) while powering on."
+    echo "  Non-root USB access needs the udev rule (VID:PID 32c9:1000): see"
+    echo "  99-axdl.rules in the axdl-rs repo -> /etc/udev/rules.d (or run axdl as root)."
   '';
 }

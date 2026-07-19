@@ -164,6 +164,11 @@
         # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
         base-axp = callPkg ./pkgs/base-axp.nix { };
 
+        # Host-side USB flasher (axdl-cli, ciniml/axdl-rs): pushes a .axp onto an
+        # AX630C in BootROM download mode. Built from source (cargo). This is a
+        # HOST tool -- built for the local/dev system, not cross-compiled.
+        axdl = callPkg ./pkgs/axdl.nix { };
+
         # Rootfs = vendor Ubuntu base (from base-axp) OVERLAID with our libkvm.so
         # + merged/depmod'd kernel modules (no-root debugfs surgery).
         rootfs = callPkg ./pkgs/rootfs.nix {
@@ -198,14 +203,21 @@
             boot boot-sd boot-fsbl boot-atf boot-optee boot-uboot
             kernel dtb dtb-sd dtb-slot-image dtb-slot-image-sd kernel-slot-image
             kvm-encoder nanokvm-server nanokvm-web
-            base-axp rootfs firmware-image sd-image;
+            base-axp rootfs firmware-image sd-image
+            axdl;
 
           # Top-level default = the flashable firmware image (currently a stub
           # that documents the 17-partition layout; see pkgs/image.nix).
           default = firmware-image;
         };
 
-        devShells.default = callPkg ./pkgs/devshell.nix { inherit toolchain; };
+        # `nix run .#axdl -- --file result/*.axp --wait-for-device`
+        apps.axdl = {
+          type = "app";
+          program = "${axdl}/bin/axdl-cli";
+        };
+
+        devShells.default = callPkg ./pkgs/devshell.nix { inherit toolchain axdl; };
 
         # Formatter for `nix fmt`.
         formatter = pkgs.nixpkgs-fmt;
