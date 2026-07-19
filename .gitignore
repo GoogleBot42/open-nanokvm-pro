@@ -3,3 +3,6 @@
 *-result
 result
 result-*
+
+# local .axp copies (1.4 GB firmware bundles)
+*.axp
