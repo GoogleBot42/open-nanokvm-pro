@@ -222,5 +222,6 @@ build that the AX630C doesn't support.
   on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
   long-term north star.
 
-The full per-repo audit, license reasoning, and the SG2002 comparison are in
-`../PLAN.md`.
+The authoritative, enforceable list of every pinned blob (shipped and build-time)
+and every runtime network endpoint — each with an explicit approval status — is
+[provenance.md](provenance.md).
