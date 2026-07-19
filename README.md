@@ -135,7 +135,7 @@ includes GPL-3.0 code must itself be GPL-3.0, so everything original here — th
 Nix expressions and our `libkvm` reimplementation — is released under GPL-3.0 too.
 
 ```
-Copyright (C) 2026 the open-nanokvm-pro contributors
+Copyright (C) 2026 GoogleBot42
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
 Foundation, version 3. See LICENSE. No warranty; see the license for details.
