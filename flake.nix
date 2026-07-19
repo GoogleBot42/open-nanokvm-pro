@@ -105,6 +105,13 @@
         # Whole AX630C boot chain (SPL/DDR-init + ATF + OP-TEE + U-Boot), one
         # shared from-source build; the boot-* selectors below expose subsets.
         boot = callPkg ./pkgs/boot.nix { };
+        # SD debug variant of the whole boot chain: identical build, but the
+        # console of EVERY stage (SPL/bl1 + ATF bl31 + OP-TEE bl32 + U-Boot bl33)
+        # is redirected from UART0 (ttyS0, hidden pads) to UART1 (ttyS1 =
+        # 0x4881000, the exposed header pin). Consumed ONLY by sd-image so the SD
+        # boot is watchable end-to-end; the eMMC firmware-image keeps using `boot`
+        # (UART0) unchanged. See pkgs/boot.nix `sdConsoleUart1`.
+        boot-sd = callPkg ./pkgs/boot.nix { sdConsoleUart1 = true; };
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { };
         boot-atf = callPkg ./pkgs/boot-atf.nix { };
         boot-optee = callPkg ./pkgs/boot-optee.nix { };
@@ -125,6 +132,11 @@
         # for why the DTB (not just the U-Boot BOOTARGS_SD env) must carry this.
         dtb-sd = callPkg ./pkgs/dtb.nix {
           rootDev = "/dev/mmcblk1p2";
+          # SD debug build: redirect the kernel console from UART0 (ttyS0, hidden
+          # pads) to UART1 (ttyS1 = 0x4881000, the accessible header pin) so the
+          # SD boot is watchable end-to-end. eMMC dtb (above) stays on UART0.
+          consoleTty = "ttyS1";
+          earlyconAddr = "0x4881000";
           nameSuffix = "-sd";
         };
 
@@ -169,8 +181,12 @@
         # path, leaving eMMC untouched (pull the card to revert). MBR/FAT32+ext4;
         # the SD-variant SPL (boot/bl1/sd) now fits its 50K slot -- see boot.nix.
         sd-image = callPkg ./pkgs/sd-image.nix {
-          inherit boot kernel-slot-image rootfs;
-          # Use the SD-root dtb (root=/dev/mmcblk1p2) as the card's dtb.img.
+          inherit kernel-slot-image rootfs;
+          # Use the UART1-console boot chain (SPL/ATF/OP-TEE/U-Boot all redirected
+          # to ttyS1/0x4881000) so the SD boot is watchable on the exposed header
+          # pin. eMMC firmware-image (pkgs/image.nix) still uses `boot` (UART0).
+          boot = boot-sd;
+          # Use the SD-root dtb (root=/dev/mmcblk1p2, console=ttyS1) as dtb.img.
           dtb-slot-image = dtb-slot-image-sd;
         };
       in
@@ -179,7 +195,7 @@
           inherit
             toolchain
             axera-libs ax-ko-blobs
-            boot boot-fsbl boot-atf boot-optee boot-uboot
+            boot boot-sd boot-fsbl boot-atf boot-optee boot-uboot
             kernel dtb dtb-sd dtb-slot-image dtb-slot-image-sd kernel-slot-image
             kvm-encoder nanokvm-server nanokvm-web
             base-axp rootfs firmware-image sd-image;

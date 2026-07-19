@@ -12,6 +12,15 @@
   # and the DTB now naming mmcblk1p2, every boot path agrees; no eMMC-root path
   # remains.
   rootDev ? "/dev/mmcblk0p17"
+, # ---- console UART baked into chosen/bootargs -----------------------------
+  # Default (eMMC): UART0 = ttyS0 = MMIO 0x4880000 (the hidden debug pads).
+  # SD debug variant overrides these to UART1 = ttyS1 = MMIO 0x4881000 (the
+  # accessible header pin) so the whole SD boot is watchable on UART1. The dtb
+  # aliases already map serial0->ax_uart@4880000 and serial1->ax_uart@4881000
+  # (both nodes status="okay"), so console=ttyS1 selects UART1 and the matching
+  # earlycon=...,0x4881000 gives early kernel output on the same port.
+  consoleTty ? "ttyS0"
+, earlyconAddr ? "0x4880000"
 , nameSuffix ? ""
 , ... }:
 
@@ -99,7 +108,7 @@ let
   # eMMC partitions; it does not affect where root is mounted). Kept for both
   # variants so the two dtbs differ ONLY in `root=`.
   kernelBootargs =
-    "mem=256M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 "
+    "mem=256M console=${consoleTty},115200n8 earlycon=uart8250,mmio32,${earlyconAddr} "
     + "board_id=0x0,boot_reason=0x00,initcall_debug=0 loglevel=8 "
     + "usbcore.autosuspend=-1 root=${rootDev} rootfstype=ext4 rw rootwait "
     + "blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),"
@@ -231,7 +240,16 @@ pkgs.stdenv.mkDerivation {
       echo "ERROR: bootargs missing root=${rootDev}" >&2
       exit 1
     fi
-    echo "VERIFY OK: atf + optee reserved-memory regions present, bootargs patched."
+    # (d) console must be the selected UART (eMMC: ttyS0/0x4880000 ; SD: ttyS1/0x4881000)
+    if ! grep -q 'console=${consoleTty},115200' dump.dts; then
+      echo "ERROR: bootargs missing console=${consoleTty}" >&2
+      exit 1
+    fi
+    if ! grep -q 'earlycon=uart8250,mmio32,${earlyconAddr}' dump.dts; then
+      echo "ERROR: bootargs missing earlycon=...,${earlyconAddr}" >&2
+      exit 1
+    fi
+    echo "VERIFY OK: atf + optee reserved-memory regions present, bootargs patched (console=${consoleTty}, earlycon=${earlyconAddr})."
 
     mkdir -p "$out/dtb"
     cp "$dtb" "$out/dtb/${project}.dtb"

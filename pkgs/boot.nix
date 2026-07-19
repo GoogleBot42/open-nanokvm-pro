@@ -1,4 +1,14 @@
-{ pkgs, crossPkgs, maix_ax620e_sdk, ... }:
+{ pkgs, crossPkgs, maix_ax620e_sdk
+, # ---- console UART redirect (SD debug variant) -----------------------------
+  # When true, redirect the console of EVERY from-source boot stage (SPL/bl1,
+  # ATF bl31, OP-TEE bl32, U-Boot bl33) from UART0 (0x4880000 = ttyS0, the
+  # hidden debug pads) to UART1 (0x4881000 = ttyS1, the accessible header pin),
+  # keeping 115200 8N1. Used ONLY for the microSD boot image so the whole SD
+  # boot chain is watchable on the exposed UART1; the default (false) keeps the
+  # eMMC boot chain on UART0 exactly as before. See the per-stage sed patches in
+  # configurePhase and pkgs/dtb.nix (kernel side) / flake.nix (wiring).
+  sdConsoleUart1 ? false
+, ... }:
 
 # ===========================================================================
 # AX630C / NanoKVM-Pro boot chain, ALL FOUR STAGES, from source.
@@ -80,7 +90,7 @@ let
   ]);
 in
 pkgs.stdenv.mkDerivation {
-  pname = "nanokvm-pro-boot";
+  pname = "nanokvm-pro-boot${pkgs.lib.optionalString sdConsoleUart1 "-sd-uart1"}";
   version = "ax630c-bootchain";
 
   src = maix_ax620e_sdk;
@@ -156,7 +166,65 @@ pkgs.stdenv.mkDerivation {
 
     # OP-TEE build scripts carry /bin/bash shebangs.
     patchShebangs "$HOME_PATH/boot/optee"
+${pkgs.lib.optionalString sdConsoleUart1 ''
+    # =======================================================================
+    # CONSOLE UART REDIRECT: UART0 (0x4880000 / ttyS0) -> UART1 (0x4881000 /
+    # ttyS1) for EVERY from-source stage. Only the console/debug-UART selection
+    # is touched; the FDL/USB-download UART channel and unrelated 0x4880000 refs
+    # are left alone. Each stage is verified below (grep the sources).
+    # =======================================================================
+    b="$HOME_PATH/boot"
 
+    # ---- 1. SPL / bl1 -----------------------------------------------------
+    # The SPL boot console prints via core/trace/trace.c ax_print_str/ax_print_num
+    # which hardcode uart_putc(UART0_BASE,...). And spl_main.c inits the console
+    # with uart_init(USE_UART) where USE_UART is UART0_BASE. Point both at UART1
+    # (uart_init pin-muxes+configures whichever base it is given).
+    sed -i 's/uart_putc(UART0_BASE,/uart_putc(UART1_BASE,/g' \
+      "$b/bl1/core/trace/trace.c"
+    sed -i 's/^#define USE_UART[[:space:]]\+UART0_BASE/#define USE_UART\t\tUART1_BASE/' \
+      "$b/bl1/driver/include/uart.h"
+
+    # ---- 2. ATF / bl31 ----------------------------------------------------
+    # plat/axera/ax620e uses console_16550_register(UART0_BASE,...) in both
+    # ax620e_bl31_setup.c (boot) and drivers/wakeup/wakeup.c (resume). ax620e_def.h
+    # defines UART0_BASE only; add UART1_BASE and switch the console registrations.
+    # Both UARTs live inside the already-mapped PERIPH_SYS region (0x04800000+56M).
+    atf="$b/atf/arm-trusted-firmware-2.7/plat/axera/ax620e"
+    grep -q 'UART1_BASE' "$atf/include/ax620e_def.h" || \
+      sed -i '/^#define UART0_SIZE/a #define UART1_BASE\t\t0x04881000' \
+        "$atf/include/ax620e_def.h"
+    sed -i 's/console_16550_register(UART0_BASE,/console_16550_register(UART1_BASE,/' \
+      "$atf/ax620e_bl31_setup.c" "$atf/drivers/wakeup/wakeup.c"
+
+    # ---- 3. OP-TEE / bl32 -------------------------------------------------
+    # plat-axera/platform_config.h selects CONSOLE_UART_BASE = UART0_BASE (UART1_BASE
+    # already defined there). Switch the console base (both HAPS/non-HAPS lines).
+    sed -i 's/^#define CONSOLE_UART_BASE[[:space:]]\+UART0_BASE/#define CONSOLE_UART_BASE\tUART1_BASE/' \
+      "$b/optee/optee_os-3.21.0/core/arch/arm/plat-axera/platform_config.h"
+
+    # ---- 4. U-Boot / bl33 -------------------------------------------------
+    # U-Boot uses the LEGACY ns16550 serial driver (CONFIG_SYS_NS16550_SERIAL, no
+    # DM_SERIAL): the console port = serial_ports[CONFIG_CONS_INDEX-1] mapping to
+    # CONFIG_SYS_NS16550_COMn. Defconfig has CONS_INDEX=1 (-> COM1 = 0x4880000).
+    # Set CONS_INDEX=2 (-> COM2 = 0x4881000 = UART1). config2defconfig.py only
+    # overrides its own mapped symbols, so this survives into .config.
+    sed -i 's/^CONFIG_CONS_INDEX=1$/CONFIG_CONS_INDEX=2/' \
+      "$b/uboot/u-boot-2020.04/configs/AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig"
+    # Also redirect the kernel cmdline that SD-boot U-Boot injects (BOOTARGS_SD),
+    # so whichever wins at booti (env bootargs vs dtb /chosen/bootargs) the kernel
+    # console lands on UART1 too. This exact string occurs only in BOOTARGS_SD.
+    sed -i 's#console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 init=/sbin/init#console=ttyS1,115200n8 earlycon=uart8250,mmio32,0x4881000 init=/sbin/init#' \
+      "$b/uboot/u-boot-2020.04/include/configs/ax620e_common.h"
+
+    echo "=== console-redirect (UART0->UART1) applied; verifying sources ==="
+    grep -n 'uart_putc(UART1_BASE' "$b/bl1/core/trace/trace.c"
+    grep -n 'USE_UART' "$b/bl1/driver/include/uart.h"
+    grep -n 'UART1_BASE\|console_16550_register' "$atf/include/ax620e_def.h" "$atf/ax620e_bl31_setup.c"
+    grep -n 'CONSOLE_UART_BASE' "$b/optee/optee_os-3.21.0/core/arch/arm/plat-axera/platform_config.h"
+    grep -n 'CONFIG_CONS_INDEX' "$b/uboot/u-boot-2020.04/configs/AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig"
+    grep -n 'BOOTARGS_SD' "$b/uboot/u-boot-2020.04/include/configs/ax620e_common.h"
+    ''}
     runHook postConfigure
   '';
 
