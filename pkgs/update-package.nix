@@ -1,4 +1,4 @@
-{ pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel, ax-ko-blobs
+{ pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel
 , boot, dtb-slot-image, kernel-slot-image
 , version ? "0.0.0-dev", ... }:
 
@@ -22,15 +22,15 @@
 #     kvmapp/server/dl_lib/libkvm.so{,.0}       our HW capture/encode backend
 #     kvmapp/server/web/...                      our web UI bundle
 #     kvmapp/version                             the OTA baseline stamp
-#     usr/lib/modules/4.19.125/...               FULL modules tree: our from-source
-#                                                modules MERGED with the prebuilt
-#                                                ax_*.ko (under kernel/axera/), then
-#                                                depmod'd at BUILD time so
-#                                                modules.dep/.alias/.symbols(.bin)
-#                                                ship pre-generated (no on-device
-#                                                depmod). Under usr/lib/modules (NOT
-#                                                lib/modules) to match the device's
-#                                                real path -- /lib is a symlink to
+#     usr/lib/modules/4.19.125/...               our from-source modules (incl.
+#                                                lt6911_manage.ko), depmod'd at BUILD
+#                                                time so modules.dep/.alias/.symbols
+#                                                (.bin) ship pre-generated (no
+#                                                on-device depmod). Vendor ax_*.ko
+#                                                NOT merged (they load from /soc/ko;
+#                                                see step 2 guard). Under usr/lib/
+#                                                modules (NOT lib/modules) to match
+#                                                the device's real path -- /lib is a symlink to
 #                                                usr/lib. Mirrors pkgs/rootfs.nix [4].
 #     etc/modules-load.d/nanokvm.conf            autoloads lt6911_manage at boot
 #                                                (systemd-modules-load) -- libkvm
@@ -63,9 +63,6 @@
 
 let
   release = "4.19.125";
-  # usr/lib/modules/<rel>/kernel/axera/ -- where the prebuilt ax_*.ko land so the
-  # regenerated modules.dep references one self-consistent location (same as rootfs.nix).
-  axSubdir = "kernel/axera";
   # dtb-slot-image artifact filename (pkgs/slot-image.nix `artifact` for the dtb call).
   dtbArtifact = "AX630C_emmc_arm64_k419_sipeed_nanokvm_signed.dtb";
 in
@@ -106,40 +103,43 @@ pkgs.stdenvNoCC.mkDerivation {
     #    lib/modules) to match the device's real path: /lib is a symlink to
     #    usr/lib, so this is where modprobe/depmod actually resolve.
     # ===================================================================
-    echo "=== merge kernel modules + ax_*.ko, depmod ==="
+    # ONLY our from-source modules go here (incl. lt6911_manage.ko). The prebuilt
+    # vendor ax_*.ko are NOT merged in -- they ship + load from /soc/ko (vendor
+    # auto_load_all_drv.sh, with their required params like `ax_cmm cmm=<pool>`).
+    # Putting them here makes depmod emit of: aliases that udev autoloads
+    # parameter-less at boot -> ax_cmm strlen(NULL) panic -> boot loop. See
+    # pkgs/rootfs.nix step [4] and docs.
+    echo "=== stage from-source kernel modules, depmod ==="
     modroot="$rfs/usr/lib/modules/${release}"
     mkdir -p "$modroot"
     cp -a "${kernel}/lib/modules/${release}/." "$modroot/"
     chmod -R u+w "$rfs/usr/lib/modules"
-    mkdir -p "$modroot/${axSubdir}"
-    cp "${ax-ko-blobs}"/lib/modules/ax/*.ko "$modroot/${axSubdir}/"
-    echo "  merged .ko count: $(find "$modroot" -name '*.ko' | wc -l)"
+    echo "  .ko count: $(find "$modroot" -name '*.ko' | wc -l)"
     # depmod against the modules PARENT (-b <dir> expects <dir>/lib/modules/<rel>);
     # our tree lives at <rfs>/usr/lib/modules/<rel>, so the base is <rfs>/usr.
     depmod -b "$rfs/usr" "${release}"
 
     # --- module assertions (fail LOUDLY in-build, never on the device) ---
-    # (b) vermagic consistency: the release string in a couple of shipped .ko must
-    #     match the modules directory name (${release}). Guards against ever
-    #     packaging modules built for a different kernel than the dir claims.
-    for ko in \
-      "$(find "$modroot" -name 'lt6911_manage.ko' | head -1)" \
-      "$(find "$modroot" -name 'ax_venc.ko'       | head -1)" \
-      ; do
-      test -n "$ko" && test -f "$ko" || { echo "ERROR: expected module missing for vermagic check" >&2; exit 1; }
-      vm=$(modinfo -F vermagic "$ko")
-      echo "  vermagic($(basename "$ko")) = $vm"
-      case "$vm" in
-        "${release} "*) ;;   # e.g. "4.19.125 SMP preempt mod_unload aarch64"
-        *) echo "ERROR: vermagic '$vm' does not match modules dir ${release}" >&2; exit 1 ;;
-      esac
-    done
-    # (c) modules.dep exists and resolves our two marker modules.
+    # (a) the autoload-panic vendor blobs must NOT be present (regression guard).
+    if find "$modroot" \( -name 'ax_cmm.ko' -o -name 'ax_sys.ko' -o -name 'ax_base.ko' \) | grep -q .; then
+      echo "ERROR: vendor ax_*.ko present in the modules tree -- they autoload-panic (ax_cmm). Load from /soc/ko instead." >&2
+      exit 1
+    fi
+    # (b) vermagic consistency: the shipped modules' release string must match the
+    #     modules directory name (${release}); guards against packaging modules
+    #     built for a different kernel than the dir claims.
+    ko="$(find "$modroot" -name 'lt6911_manage.ko' | head -1)"
+    test -n "$ko" && test -f "$ko" || { echo "ERROR: lt6911_manage.ko missing for vermagic check" >&2; exit 1; }
+    vm=$(modinfo -F vermagic "$ko")
+    echo "  vermagic($(basename "$ko")) = $vm"
+    case "$vm" in
+      "${release} "*) ;;   # e.g. "4.19.125 SMP preempt mod_unload aarch64"
+      *) echo "ERROR: vermagic '$vm' does not match modules dir ${release}" >&2; exit 1 ;;
+    esac
+    # (c) modules.dep exists and resolves our marker module.
     test -f "$modroot/modules.dep" || { echo "ERROR: modules.dep not generated" >&2; exit 1; }
-    grep -Eq 'ax_venc\.ko:.*ax_base' "$modroot/modules.dep" \
-      || { echo "ERROR: depmod did not resolve ax_venc -> ax_base" >&2; exit 1; }
     grep -q 'lt6911_manage' "$modroot/modules.dep" \
-      || { echo "ERROR: lt6911_manage missing from merged modules.dep" >&2; exit 1; }
+      || { echo "ERROR: lt6911_manage missing from modules.dep" >&2; exit 1; }
 
     # --- autoload lt6911_manage at boot (mirrors pkgs/rootfs.nix step [5b2]).
     # Nothing on the vendor rootfs loads it for the kvmapp/nanokvm stack, yet

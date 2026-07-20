@@ -164,7 +164,7 @@
         # images (kernel/dtb/boot chain). See docs/updates.md.
         update-package = callPkg ./pkgs/update-package.nix {
           inherit nanokvm-server nanokvm-web kvm-encoder version
-            kernel ax-ko-blobs boot dtb-slot-image kernel-slot-image;
+            kernel boot dtb-slot-image kernel-slot-image;
         };
 
         # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
@@ -177,7 +177,7 @@
         # Rootfs: vendor Ubuntu base (from base-axp) overlaid with our server,
         # web UI, libkvm.so, and merged/depmod'd kernel modules.
         rootfs = callPkg ./pkgs/rootfs.nix {
-          inherit base-axp kvm-encoder kernel ax-ko-blobs
+          inherit base-axp kvm-encoder kernel
             nanokvm-server nanokvm-web version;
         };
 

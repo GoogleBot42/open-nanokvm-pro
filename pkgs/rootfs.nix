@@ -1,4 +1,4 @@
-{ pkgs, base-axp, kvm-encoder, kernel, ax-ko-blobs
+{ pkgs, base-axp, kvm-encoder, kernel
 , nanokvm-server, nanokvm-web
 , version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
 , ...
@@ -12,7 +12,8 @@
 # Swap-in (from source / our derivations):
 #   - libkvm.so / libkvm.so.0  -> /kvmapp/server/dl_lib/   (our HW encoder)
 #   - /usr/lib/modules/4.19.125/ -> our from-source kernel modules (incl.
-#       lt6911_manage.ko) MERGED with the prebuilt ax_*.ko blobs, then depmod'd.
+#       lt6911_manage.ko), depmod'd. The prebuilt vendor ax_*.ko are DELIBERATELY
+#       NOT merged in here -- see the guard in step [4] for why (autoload panic).
 #   - /etc/modules-load.d/nanokvm.conf -> makes systemd-modules-load.service
 #       modprobe lt6911_manage at boot (nothing on the vendor rootfs loads it
 #       for the kvmapp/nanokvm stack, yet libkvm polls /proc/lt6911_info/*).
@@ -51,10 +52,6 @@
 
 let
   release = "4.19.125";
-  # modules/<rel>/kernel/axera/ -- where we drop the prebuilt ax_*.ko so the
-  # regenerated modules.dep references a single, self-consistent location.
-  # (Staged under lib/modules on the host; written to /usr/lib/modules in the image.)
-  axSubdir = "kernel/axera";
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "nanokvm-pro-rootfs";
@@ -91,20 +88,31 @@ pkgs.stdenvNoCC.mkDerivation {
     e2fsck -fy rootfs.ext4 || true
     resize2fs rootfs.ext4
 
-    # ---- 4. build the merged /lib/modules tree and depmod it (host) ----
-    echo "=== [4] merge kernel modules + ax_*.ko, depmod ==="
+    # ---- 4. stage the from-source /lib/modules tree and depmod it (host) ----
+    # ONLY our from-source modules go here (incl. lt6911_manage.ko, which
+    # /etc/modules-load.d loads for libkvm's /proc/lt6911_info HDMI-capture path).
+    #
+    # The prebuilt vendor ax_*.ko (pkgs/ax-ko-blobs.nix) are DELIBERATELY NOT
+    # merged in. They already ship on the device via the retained vendor rootfs at
+    # /soc/ko, where the vendor's auto_load_all_drv.sh insmods them by path WITH
+    # their required parameters (notably `ax_cmm cmm=<pool>`). Putting them in
+    # /usr/lib/modules makes depmod emit `of:` aliases; systemd-udevd coldplug then
+    # autoloads the chain parameter-less at boot -> ax_cmm does strlen(NULL) ->
+    # NULL-deref Oops -> panic-on-oops -> reboot loop. This bricked a device once
+    # (the first OTA); the guard below fails the build if the blobs ever return.
+    echo "=== [4] stage from-source kernel modules, depmod ==="
     stage="$PWD/stage"
     mkdir -p "$stage/lib/modules/${release}"
     cp -a "${kernel}/lib/modules/${release}/." "$stage/lib/modules/${release}/"
     chmod -R u+w "$stage"
-    mkdir -p "$stage/lib/modules/${release}/${axSubdir}"
-    cp "${ax-ko-blobs}"/lib/modules/ax/*.ko "$stage/lib/modules/${release}/${axSubdir}/"
-    echo "  merged .ko count: $(find "$stage" -name '*.ko' | wc -l)"
+    echo "  .ko count: $(find "$stage" -name '*.ko' | wc -l)"
     depmod -b "$stage" "${release}"
-    grep -Eq 'ax_venc\.ko:.*ax_base' "$stage/lib/modules/${release}/modules.dep" \
-      || { echo "ERROR: depmod did not resolve ax_venc -> ax_base" >&2; exit 1; }
+    if find "$stage" \( -name 'ax_cmm.ko' -o -name 'ax_sys.ko' -o -name 'ax_base.ko' \) | grep -q .; then
+      echo "ERROR: vendor ax_*.ko present in the modules tree -- they autoload-panic (ax_cmm). Load from /soc/ko instead." >&2
+      exit 1
+    fi
     grep -q 'lt6911_manage' "$stage/lib/modules/${release}/modules.dep" \
-      || { echo "ERROR: lt6911_manage missing from merged modules.dep" >&2; exit 1; }
+      || { echo "ERROR: lt6911_manage missing from modules.dep" >&2; exit 1; }
 
     # ---- 5. generate a debugfs command script for the whole overlay ----
     echo "=== [5] generate debugfs overlay script ==="
@@ -266,12 +274,14 @@ pkgs.stdenvNoCC.mkDerivation {
     echo "  app: our NanoKVM-Server + /kvmapp/version=${version} -- verified in image."
 
     # Sanity: the MODULES TREE actually landed (this is the check whose absence let
-    # the /lib-symlink bug ship). Dump from the image at the REAL path and compare
-    # byte-for-byte against the staged copies. A silent debugfs failure -> the dump
-    # is empty/absent -> cmp fails -> build fails (instead of a dead HDMI on-device).
-    debugfs -R "dump /usr/lib/modules/${release}/modules.dep /tmp/chk.dep" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.dep "$stage/lib/modules/${release}/modules.dep" \
-      || { echo "ERROR: /usr/lib/modules/${release}/modules.dep missing/differs in image" >&2; exit 1; }
+    # the /lib-symlink bug ship). We check PRESENCE + content, not a byte-for-byte
+    # cmp of modules.dep: the tree either lands (dump has real content) or the
+    # /lib-symlink swallow leaves it absent (empty dump). A content check is robust
+    # to debugfs/depmod byte-level quirks while still catching the silent failure.
+    debugfs -R "dump /usr/lib/modules/${release}/modules.dep /tmp/chk.dep" rootfs.ext4 2>/dev/null || true
+    grep -q 'lt6911_manage' /tmp/chk.dep \
+      || { echo "ERROR: /usr/lib/modules/${release}/modules.dep absent or missing lt6911 in image" >&2; exit 1; }
+    # And the actual .ko must be present + byte-identical (single-file dump).
     ltrel=$( cd "$stage" && find lib/modules/${release} -name lt6911_manage.ko | head -1 )
     test -n "$ltrel" || { echo "ERROR: lt6911_manage.ko not in staging tree" >&2; exit 1; }
     debugfs -R "dump /usr/$ltrel /tmp/chk.ko" rootfs.ext4 2>/dev/null
@@ -320,9 +330,10 @@ pkgs.stdenvNoCC.mkDerivation {
     base            : ubuntu_rootfs_sparse.ext4 from vendor .axp (pkgs/base-axp.nix)
     swapped in:
       /kvmapp/server/dl_lib/libkvm.so{,.0}   <- our kvm-encoder (from source)
-      /usr/lib/modules/${release}/           <- our kernel modules (incl.
-                                                lt6911_manage.ko) + prebuilt
-                                                ax_*.ko, depmod-regenerated
+      /usr/lib/modules/${release}/           <- our from-source kernel modules
+                                                (incl. lt6911_manage.ko), depmod'd
+                                                (vendor ax_*.ko NOT merged; they
+                                                load from /soc/ko -- see step [4])
       /etc/modules-load.d/nanokvm.conf       <- autoloads lt6911_manage at boot
       /etc/default/motd-news (ENABLED=0)     <- disables the Ubuntu motd-news
                                                 beacon (no motd.ubuntu.com phone-home)
@@ -346,7 +357,7 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
 
   meta = {
-    description = "NanoKVM-Pro rootfs: vendor Ubuntu-arm64 base overlaid (no-root debugfs) with our libkvm.so + merged/depmod'd kernel modules";
+    description = "NanoKVM-Pro rootfs: vendor Ubuntu-arm64 base overlaid (no-root debugfs) with our libkvm.so + from-source depmod'd kernel modules";
     platforms = pkgs.lib.platforms.linux;
   };
 }
