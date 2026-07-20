@@ -103,25 +103,28 @@ sync
 # Revert: power on WITHOUT holding `User` (and/or remove the card) -> stock eMMC.
 ```
 
-**How SD boot works (from the SDK source):** the BootROM's SD path is
-*file-based*, not raw-offset. It reads an MBR table, mounts the first **FAT32**
-partition, and loads **`boot.bin`** (the `boot/bl1/sd` SPL variant, which links
-FatFS + the SD mmc driver). That SPL then loads each later stage as a *named file*
-from the same FAT partition (`ddrinit.img`, `atf.img`, `uboot.bin`, `optee.img`,
-`dtb.img`, `kernel.img`); the rootfs is MBR p2 (ext4). The `sd-image` derivation
-builds this MBR/FAT32+ext4 layout with **no root** (mtools + `sfdisk` + the raw
-ext4 from `rootfs.nix`).
+**How SD boot works (from the SDK source, confirmed against the official image):**
+the BootROM's SD path is *file-based*, not raw-offset. Held at power-on, the
+`User`-button strap makes the ROM read the MBR, mount the first **FAT32**
+partition, and load **`boot.bin`** (the `boot/bl1/sd` SPL variant, which links
+FatFS + the SD mmc driver). That SPL loads `atf.img` and `uboot.bin` as *named
+files*; U-Boot's `sd_boot` command then `fatload`s `dtb.img` + `kernel.img` from
+the same partition and sets `root=/dev/mmcblk1p2` (the card's ext4 p2). The
+`sd-image` derivation is **byte-matched to the official v1.0.15 SD image** and
+built with **no root** (mtools + `sfdisk` + the raw ext4 from `rootfs.nix`).
 
-Two SD-specific build details, both handled in the flake:
+Two things worth knowing:
 
-- **Console on UART1.** `sd-image` uses the `boot-sd` / `dtb-sd` variants that
-  redirect every boot stage + the kernel console to `ttyS1` (`0x4881000`, the
-  exposed header pin), so an SD boot is watchable on serial. The eMMC
-  `firmware-image` stays on `ttyS0`.
-- **SD-SPL size.** The FatFS-linked SD SPL overflowed the sign tool's hard
-  **50 K** slot under newer GCC; `boot.nix` builds it with
-  `-ffunction-sections -fdata-sections --gc-sections` (drops it well under the
-  limit) with a build-time guard if it ever creeps back over 51200 B.
+- **Console on UART0 (like the official image).** Every stage logs to
+  `ttyS0` / `0x4880000`, which is on **hidden pads** — the exposed UART1 header
+  pin is silent by design, even on a *successful* boot. So watch the **network**
+  (DHCP → web UI → SSH), not serial. (An earlier attempt redirected the whole
+  chain to UART1; that hung the SPL — touching UART1 MMIO while its clock is still
+  gated — and produced total silence. That variant was removed; `sd-image` now
+  builds the proven UART0 chain, the same binaries that boot this unit from eMMC.)
+- **`sd_update` is a different thing.** U-Boot's `sd_update` command is an
+  eMMC/flash *writer* — the FAQ's optional "flash eMMC after booting from SD"
+  step — not the live-boot path above.
 
 > **Caveat:** SD boot needs the button hold — it is *not* auto-on-insert (HIGH
 > confidence, [Sipeed wiki](https://wiki.sipeed.com/hardware/en/kvm/NanoKVM_Pro/faq.html)).
@@ -129,45 +132,35 @@ Two SD-specific build details, both handled in the flake:
 
 ### If the card does not boot
 
-> **Status:** our `sd-image` has not yet been verified to boot on hardware — the
-> first attempt produced no output on UART1. The design matches the SDK's own SD
-> path (the SPL's `sd_img_name[]` file table, the vendor `gen_sd_image.sh`
-> MBR/FAT32 layout), so the failure is likely procedural or environmental. Key
-> fact for diagnosis: **everything before our SPL — the mask ROM — prints only on
-> UART0**, so a silent UART1 just means our SPL never ran.
+> **Status:** the `sd-image` was rebuilt to match the official card byte-for-byte
+> on every inspectable axis (MBR, FAT boot sector, file set/names, `boot.bin`
+> format) after the first attempt failed. It has not yet been re-verified on
+> hardware; the one unprovable residue is our from-source SD-SPL binary's first
+> hardware run.
 
 Diagnose in this order:
 
-1. **Dual-UART capture.** Watch UART0 (`0x4880000`, hidden pads) *and* UART1
-   (`0x4881000`, header pin) simultaneously during the button-boot, ideally with
-   an FT232 (CH340 adapters may not lock the SPL's non-standard early baud).
-   - Stock eMMC log on UART0 → the ROM never entered the SD channel: refine the
-     button timing (hold at power-apply, release the instant power is up; too
-     long = USB download mode).
-   - `enter spl` on UART1 then silence → the SD SPL's built-in DDR auto-training
-     is the suspect (SD boot skips the board-tuned `ddrinit` parameters).
-   - Garbled earliest lines but clean 115200 text later → adapter baud issue.
-2. **Control test: the official Sipeed SD image.** Write the released
-   "NanoKVM Pro SD image" from
-   [sipeed/NanoKVM-Pro releases](https://github.com/sipeed/NanoKVM-Pro/releases)
-   to a card and repeat the identical procedure. If the vendor image boots but
-   ours doesn't, the fault is in our image; if it also fails, the fault is
-   procedure, adapter, or the unit itself. When the vendor image boots, compare
-   its geometry and file set against ours before changing anything:
+1. **Confirm the button procedure.** Hold `User` while applying power, release
+   immediately. A normal power-on always boots eMMC; holding too long enters USB
+   download mode. Success = DHCP within ~60 s → web UI at `https://<ip>/` → SSH
+   (`root` / `sipeed`) → `cat /proc/cmdline` shows `root=/dev/mmcblk1p2`.
+2. **Serial is on UART0, not UART1.** If you probe serial, it's the hidden UART0
+   pads (`0x4880000`, 115200 8N1) — an FT232 is more reliable than a CH340 for the
+   SPL's non-standard early baud. `enter spl` then silence → the SD SPL's built-in
+   DDR auto-training is the next suspect.
+3. **Control test: the official Sipeed SD image** (`..._sdcard.img.xz` from
+   [sipeed/NanoKVM-Pro releases](https://github.com/sipeed/NanoKVM-Pro/releases)).
+   If it boots and ours doesn't, re-diff the two (ours is built to match; a
+   remaining difference is a bug):
 
    ```bash
-   sfdisk -l vendor.img                       # partition offsets/types vs ours
-   minfo -i vendor.img@@1M | head -30         # FAT32 boot-sector parameters
-   mdir -i vendor.img@@1M ::/                 # file set (does it carry uboot.bin?)
-   # same three commands against result/AX630C_..._sdcard.img
+   sfdisk -d vendor.img; sfdisk -d result/AX630C_..._sdcard.img   # MBR
+   dd if=vendor.img bs=512 skip=2048 count=1 | xxd                 # FAT boot sector
+   mdir -i vendor.img@@1M ::/                                      # file set
    ```
-3. ~~**Secure-boot check.**~~ **Ruled out (2026-07):** the dev-key-signed
-   `.#firmware-image` flashes over AXDL and boots from eMMC on this unit, so the
-   `SECURE_BOOT_EN` efuse is open and signing cannot be what blocks the SD path.
-4. **De-risk the console redirect.** Build an SD variant without the UART1
-   redirect (drop `sdConsoleUart1` / use the plain `dtb`) and probe the UART0
-   pads — this removes every UART1 uncertainty while checking whether the chain
-   itself boots.
+4. ~~**Secure-boot check.**~~ **Ruled out (2026-07):** the dev-key-signed
+   `.#firmware-image` boots from eMMC on this unit, so the `SECURE_BOOT_EN` efuse
+   is open and signing cannot be what blocks the SD path.
 
 ---
 
@@ -195,10 +188,13 @@ ssh root@<device> 'systemctl status nanokvm; ss -tlnp | grep -E ":(80|443)"; \
 
 ## Serial console
 
-- **UART1 / `ttyS1` @ `0x4881000`** is the exposed header pin (U1) and is what the
-  `sd-image` boot chain logs to.
-- **UART0 / `ttyS0` @ `0x4880000`** is the primary console but on hidden pads; it's
-  what the eMMC `firmware-image` uses.
+- **UART0 / `ttyS0` @ `0x4880000`** is the primary console, on hidden pads. **Both**
+  the eMMC `firmware-image` and the microSD `sd-image` log here (the SD image
+  matches the official card, which is also UART0). This is why a successful SD
+  boot is silent on the exposed header pin — watch the network instead.
+- **UART1 / `ttyS1` @ `0x4881000`** is the exposed header pin (U1) but nothing in
+  the shipped images logs to it (an early attempt to redirect the SD chain here
+  hung the SPL; see the SD-card boot section).
 - The UART clock gives an unusual `base_baud` of 13000000. Boot stages other than
   the SD-SPL run at 115200-8N1 once the 208 MHz clock is up; the very early SD-SPL
   differs. A plain CH340-class adapter may not lock the non-standard early rate —

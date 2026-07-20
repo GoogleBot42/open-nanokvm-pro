@@ -93,9 +93,6 @@
         # Whole AX630C boot chain (SPL/DDR-init + ATF + OP-TEE + U-Boot) from
         # source; the boot-* selectors below expose subsets of its images.
         boot = callPkg ./pkgs/boot.nix { };
-        # SD debug variant: every stage's console redirected from UART0 (hidden
-        # pads) to UART1 (exposed header pin). Consumed only by sd-image.
-        boot-sd = callPkg ./pkgs/boot.nix { sdConsoleUart1 = true; };
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
@@ -104,16 +101,9 @@
         kernel = callPkg ./pkgs/kernel.nix { };
 
         # Board dtb with the vendor reserved-memory / bootargs patch applied
-        # (a plain `make dtbs` would omit it -- see pkgs/dtb.nix).
+        # (a plain `make dtbs` would omit it -- see pkgs/dtb.nix). The SD-root
+        # dtb variant is built internally by pkgs/sd-image.nix.
         dtb = callPkg ./pkgs/dtb.nix { };
-        # SD variant: root on the card (mmcblk1p2) and console on UART1, so an
-        # SD boot mounts the card's rootfs and is watchable on the header pin.
-        dtb-sd = callPkg ./pkgs/dtb.nix {
-          rootDev = "/dev/mmcblk1p2";
-          consoleTty = "ttyS1";
-          earlyconAddr = "0x4881000";
-          nameSuffix = "-sd";
-        };
 
         # Vendor-format signed partition images (ax_gzip -9 + 1KB signed
         # header), ready to `dd` / feed to the .axp; see pkgs/slot-image.nix.
@@ -134,10 +124,6 @@
             plus the real kernel bootargs. Built from pkgs/dtb.nix.'';
         };
         dtb-slot-image = callPkg ./pkgs/slot-image.nix dtbSlotArgs;
-        dtb-slot-image-sd = callPkg ./pkgs/slot-image.nix (dtbSlotArgs // {
-          payload = "${dtb-sd}/dtb/${project}.dtb";
-          nameSuffix = "-sd";
-        });
 
         kernel-slot-image = callPkg ./pkgs/slot-image.nix {
           payload = "${kernel}/Image";
@@ -188,12 +174,11 @@
         };
 
         # Non-destructive microSD boot image (dd-able .img): boots the whole
-        # from-source stack from a card, eMMC untouched. Uses the UART1-console
-        # boot chain + SD-root dtb so the boot is watchable on the header pin.
+        # from-source stack from a card, eMMC untouched. Byte-matched to the
+        # official v1.0.15 SD image; builds its own UART0 boot chain + SD-root
+        # dtb internally (it takes the shared callArgs). See pkgs/sd-image.nix.
         sd-image = callPkg ./pkgs/sd-image.nix {
           inherit kernel-slot-image rootfs;
-          boot = boot-sd;
-          dtb-slot-image = dtb-slot-image-sd;
         };
       in
       {
@@ -201,8 +186,8 @@
           inherit
             toolchain
             axera-libs ax-ko-blobs
-            boot boot-sd boot-fsbl boot-atf boot-optee boot-uboot
-            kernel dtb dtb-sd dtb-slot-image dtb-slot-image-sd kernel-slot-image
+            boot boot-fsbl boot-atf boot-optee boot-uboot
+            kernel dtb dtb-slot-image kernel-slot-image
             kvm-encoder nanokvm-server nanokvm-web update-package
             base-axp rootfs firmware-image sd-image
             axdl;
