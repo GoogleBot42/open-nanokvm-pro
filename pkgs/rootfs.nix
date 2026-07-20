@@ -1,5 +1,5 @@
 { pkgs, base-axp, kvm-encoder, kernel
-, nanokvm-server, nanokvm-web
+, nanokvm-server, nanokvm-web, nanokvm-display
 , version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
 , ...
 }:
@@ -184,9 +184,36 @@ pkgs.stdenvNoCC.mkDerivation {
       exit 1
     fi
     echo "mkdir /etc/modules-load.d" >> "$script"   # existing dir: harmless
-    printf '# NanoKVM-Pro: load HDMI-capture bridge driver at boot (libkvm needs it).\nlt6911_manage\n' \
+    # fb_jd9853 (pulls fbtft via modules.dep) + the knob input drivers are the
+    # mini-display stack -- ALL built from OUR kernel source (the vendor
+    # defconfig already sets FB_TFT_JD9853/KEYBOARD_GPIO/INPUT_GPIO_ROTARY_
+    # ENCODER =m); no /kvmcomm/ko blobs involved. All four are parameter-less-
+    # safe (fb binds the DT panel node; the input drivers bind DT nodes), so
+    # this explicit load cannot re-create the ax_cmm autoload brick (step [4]).
+    # f_udisp_drv (the 5th vendor display .ko) is a USB *gadget* function
+    # (USB-display), not needed for the panel -- built from source but not loaded.
+    printf '%s\n' \
+      '# NanoKVM-Pro: load HDMI-capture bridge driver at boot (libkvm needs it).' \
+      'lt6911_manage' \
+      '# Mini-display stack (docs/mini-display.md): JD9853 SPI panel -> /dev/fb0' \
+      '# (fbtft loads as a dependency), plus the knob button + rotary encoder.' \
+      'fb_jd9853' \
+      'gpio_keys' \
+      'rotary_encoder' \
       > "$PWD/nanokvm-modules-load.conf"
     emit_file "$PWD/nanokvm-modules-load.conf" "/etc/modules-load.d/nanokvm.conf" 0100644
+
+    # 5b4. mini-display status daemon (pkgs/nanokvm-display.nix): pure-Python
+    # renderer + build-time-generated fonts under /opt/nanokvm-display, plus a
+    # systemd unit, enabled via wants-symlink (same pattern as nanokvm.service).
+    echo "mkdir /opt" >> "$script"                    # existing dir: harmless
+    echo "mkdir /opt/nanokvm-display" >> "$script"
+    emit_file "${nanokvm-display}/opt/nanokvm-display/nanokvm_display.py" \
+              "/opt/nanokvm-display/nanokvm_display.py" 0100755
+    emit_file "${nanokvm-display}/opt/nanokvm-display/font_data.py" \
+              "/opt/nanokvm-display/font_data.py" 0100644
+    emit_file "${nanokvm-display}/etc/systemd/system/nanokvm-display.service" \
+              "/etc/systemd/system/nanokvm-display.service" 0100644
 
     # 5b3. Disable the Ubuntu motd-news beacon. The vendor Ubuntu base ships
     # /etc/update-motd.d/50-motd-news, which phones home to motd.ubuntu.com on
@@ -218,6 +245,11 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "symlink $wants/nanokvm.service /etc/systemd/system/nanokvm.service"
       echo "sif $wants/nanokvm.service uid 0"
       echo "sif $wants/nanokvm.service gid 0"
+      # enable the mini-display status daemon (unit written in step 5b4)
+      echo "rm $wants/nanokvm-display.service"
+      echo "symlink $wants/nanokvm-display.service /etc/systemd/system/nanokvm-display.service"
+      echo "sif $wants/nanokvm-display.service uid 0"
+      echo "sif $wants/nanokvm-display.service gid 0"
     } >> "$script"
 
     # 5d. remove inert closed kvmcomm binaries + vendor swupdate -- see
@@ -295,6 +327,25 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: /etc/modules-load.d/nanokvm.conf missing/differs in image" >&2; exit 1; }
     echo "  modules-load: /etc/modules-load.d/nanokvm.conf -- verified in image."
 
+    # Sanity: the display modules the loader config names actually exist in the
+    # staged modules tree (all built from OUR kernel source, no /kvmcomm blobs).
+    for m in fb_jd9853 fbtft gpio_keys rotary_encoder; do
+      find "$stage" -name "$m.ko" | grep -q . \
+        || { echo "ERROR: $m.ko missing from from-source modules tree" >&2; exit 1; }
+    done
+    echo "  display modules: fb_jd9853/fbtft/gpio_keys/rotary_encoder -- present, from source."
+
+    # Sanity: the mini-display daemon + unit landed and the unit is enabled.
+    debugfs -R "dump /opt/nanokvm-display/nanokvm_display.py /tmp/chk.disp" rootfs.ext4 2>/dev/null
+    cmp -s /tmp/chk.disp "${nanokvm-display}/opt/nanokvm-display/nanokvm_display.py" \
+      || { echo "ERROR: nanokvm_display.py missing/differs in image" >&2; exit 1; }
+    debugfs -R "dump /opt/nanokvm-display/font_data.py /tmp/chk.font" rootfs.ext4 2>/dev/null
+    cmp -s /tmp/chk.font "${nanokvm-display}/opt/nanokvm-display/font_data.py" \
+      || { echo "ERROR: font_data.py missing/differs in image" >&2; exit 1; }
+    debugfs -R "stat $wants/nanokvm-display.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
+      || { echo "ERROR: nanokvm-display.service not enabled (symlink missing) in image" >&2; exit 1; }
+    echo "  mini-display: daemon + fonts + enabled unit -- verified in image."
+
     # Sanity: the inert closed kvmcomm/swupdate binaries are GONE (5d). debugfs
     # `stat` exits 0 even for a missing path, so test the OUTPUT -- an "Inode:"
     # line only appears when the entry still exists (same idiom as the
@@ -334,7 +385,13 @@ pkgs.stdenvNoCC.mkDerivation {
                                                 (incl. lt6911_manage.ko), depmod'd
                                                 (vendor ax_*.ko NOT merged; they
                                                 load from /soc/ko -- see step [4])
-      /etc/modules-load.d/nanokvm.conf       <- autoloads lt6911_manage at boot
+      /etc/modules-load.d/nanokvm.conf       <- autoloads lt6911_manage + the
+                                                mini-display stack (fb_jd9853/
+                                                fbtft/gpio_keys/rotary_encoder,
+                                                all from-source) at boot
+      /opt/nanokvm-display/                  <- mini-display status daemon
+                                                (pure Python + generated fonts)
+      /etc/systemd/system/nanokvm-display.service (enabled)
       /etc/default/motd-news (ENABLED=0)     <- disables the Ubuntu motd-news
                                                 beacon (no motd.ubuntu.com phone-home)
     removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack

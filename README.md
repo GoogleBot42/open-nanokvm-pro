@@ -39,7 +39,7 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
 | [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL USB flashing, the `User`-button recovery path, full backup/restore, non-destructive SD-card boot |
 | [docs/updates.md](docs/updates.md) | **Our own OTA/update system**: CI builds images + web-update packages; the web-UI "update" button pulls from **our** GitHub Releases, not Sipeed |
-| [docs/mini-display.md](docs/mini-display.md) | The built-in screen: why it's excluded (closed `kvm_ui`) and a verified recipe to reclaim it openly if the display `.ko` blobs are later accepted |
+| [docs/mini-display.md](docs/mini-display.md) | The built-in screen: driven **fully from source** (kernel drivers built from our tree + our open Python status daemon; no `kvm_ui`, no `.ko` blobs), incl. sleep/wake on the knob button |
 
 > The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
 > findings, the resolved MIPI/VIN/VENC capture config, per-test results) lives in
@@ -54,6 +54,7 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | FSBL/SPL + DDR init, TF-A 2.7, OP-TEE 3.21, U-Boot 2020.04 | **from source** (`maix_ax620e_sdk`) | GPL/BSD |
 | Linux 4.19.125 kernel + NanoKVM-Pro DTS | **from source** (`maix_ax620e_sdk_kernel`) | GPL-2.0 |
 | `lt6911_manage.ko` (HDMI-in bridge driver) | **from source** | GPL-2.0 |
+| Mini-display stack: `fbtft`/`fb_jd9853`/`gpio_keys`/`rotary_encoder` drivers + `nanokvm-display` status daemon | **from source** (drivers from the SDK kernel tree; daemon is ours, fonts generated from source-built `terminus_font`) | GPL-2.0 / GPL-3.0 |
 | `libkvm.so` (our capture + H.264/MJPEG + Opus backend) | **from source** — our open reimplementation over the Axera MPI | ours (GPL-3 app) |
 | NanoKVM-Server (Go) + web UI (React) | **from source** (`NanoKVM-Pro`) | GPL-3.0 |
 | `ax_*.ko` media modules (venc/mipi/proton/ivps/…) | **pinned blob** (in the kernel repo) | GPL-tagged, source not published |
@@ -65,11 +66,11 @@ Axera blobs** — not a blob-free build. See
 [docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs) for the
 rationale and the full blob audit.
 
-> **Deliberately excluded:** the vendor's on-device **mini-display app `kvm_ui`**
-> is a closed-source binary (no source published), so we don't ship or run it —
-> the built-in screen is dark on our firmware. The panel is a standard `/dev/fb0`
-> framebuffer, so open code could reclaim it later
-> ([details](docs/architecture.md#the-built-in-mini-display)).
+> **Deliberately excluded:** the vendor's closed **mini-display app `kvm_ui`**
+> (no source published). The built-in screen is instead driven by our own open
+> stack — from-source kernel drivers + a small Python status daemon with
+> sleep/wake on the knob button
+> ([details](docs/mini-display.md)).
 
 ---
 

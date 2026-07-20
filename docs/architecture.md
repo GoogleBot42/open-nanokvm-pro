@@ -100,6 +100,11 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    `depmod`'d on a host staging tree so autoloading works with no on-device depmod.
 3. **Service selection** (see below): disable `kvmcomm.service`, enable
    `nanokvm.service` in `multi-user.target.wants`.
+4. **Mini-display**: `/opt/nanokvm-display/` (status daemon + generated fonts)
+   plus the enabled `nanokvm-display.service`; `/etc/modules-load.d/nanokvm.conf`
+   also loads the from-source display/input modules
+   (`fb_jd9853`→`fbtft`, `gpio_keys`, `rotary_encoder`). See
+   [mini-display.md](mini-display.md).
 
 `debugfs`'s `sif … uid/gid 0` restores root ownership after each write. The build
 asserts our `libkvm.so` matches byte-for-byte and that the service symlinks are
@@ -152,7 +157,7 @@ most surprising thing about the platform, so it's worth stating plainly:
 | systemd unit | `nanokvm.service` | `kvmcomm.service` |
 | web server | `NanoKVM-Server` (Go) on :80/:443 | hands web to PiKVM's `kvmd` |
 | capture/encode | **our open `libkvm.so`** | `kvm_vin` + `kvm_ui`, straight to the Axera libs (no libkvm) |
-| built-in mini-display | — | `kvm_ui` drives it |
+| built-in mini-display | **our open `nanokvm-display` daemon** (from-source drivers) | closed `kvm_ui` drives it |
 | web UI on this base | **works** | **`kvmd` ships disabled + inactive → no web UI at all** |
 
 Both stacks are full capture pipelines and **contend for the single MIPI_RX/VENC
@@ -167,20 +172,23 @@ KVM, `nanokvm` is the correct stack.
 
 ### The built-in mini-display
 
-Running `kvmcomm` also means running `kvm_ui`, which drives the small on-device
-screen. **`kvm_ui` (and its `frameforge` helper) are closed-source vendor
-binaries** — no source is published in Sipeed's repo — so we deliberately do
-**not** ship or run them. Consequently the mini-display is dark on our firmware.
+On the vendor stack the small on-device screen is driven by `kvm_ui` (+
+`frameforge`), **closed-source vendor binaries** we neither ship nor run. On our
+firmware the display is instead driven **entirely from source**:
 
-This is a decision about the closed *app*, not a hardware limitation. The panel
-itself is open and standard: a **JD9853 SPI TFT** driven by mainline Linux
-**`fbtft`** (+ a small `fb_jd9853` panel module, in `/kvmcomm/ko/`), exposed as an
-ordinary **`/dev/fb0`** framebuffer — Sipeed even ships an open Python framebuffer
-API + demo apps for it. So the screen can be reclaimed by *our own* open code
-(load the `fb` modules, draw to `/dev/fb0`; feed it `libkvm` frames for a live
-preview) without the closed `kvm_ui`. This was verified on hardware — the panel
-lit and drew while the web KVM kept running. It's future work, not something the
-current image does; the full findings and a step-by-step reclaim recipe are in
+- **Drivers:** `fbtft` + `fb_jd9853` (panel → `/dev/fb0`), `gpio_keys` (knob
+  button) and `rotary_encoder` (knob rotation) — all built by our own kernel
+  build (their sources ship in the SDK kernel tree and the vendor defconfig
+  already sets them `=m`), loaded at boot via `/etc/modules-load.d/nanokvm.conf`.
+  No `/kvmcomm/ko` blob copies are used (they are deleted from the image).
+- **UI:** `nanokvm-display.service` runs `/opt/nanokvm-display/nanokvm_display.py`
+  (`pkgs/nanokvm-display.nix`) — a small pure-stdlib-Python status screen
+  (hostname, IP, live-stream state, HDMI input, firmware version, uptime) with
+  inactivity sleep (backlight off after 3 min) and wake on the knob button.
+  Fonts are generated at build time from source-built `terminus_font` — no new
+  binary assets.
+
+Full panel details, the blob-free story, and the sleep/wake behavior are in
 [mini-display.md](mini-display.md).
 
 ---
@@ -200,6 +208,10 @@ current image does; the full findings and a step-by-step reclaim recipe are in
 - The server serves the React web UI + a JSON/WebRTC API on :80/:443, reads frames
   from `libkvm`, and exposes keyboard/mouse HID, storage/image mount, and the
   update flow.
+- **`nanokvm-display.service`** (ours, independent of the two stacks above) runs
+  the mini-display status daemon from `/opt/nanokvm-display`; it only reads
+  `/dev/fb0`, the backlight sysfs, the knob evdev devices, and the server's
+  loopback `/api/streamer/local` endpoint — see [mini-display.md](mini-display.md).
 
 ---
 

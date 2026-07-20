@@ -1,4 +1,4 @@
-{ pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel
+{ pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel, nanokvm-display
 , boot, dtb-slot-image, kernel-slot-image
 , version ? "0.0.0-dev", ... }:
 
@@ -35,6 +35,12 @@
 #     etc/modules-load.d/nanokvm.conf            autoloads lt6911_manage at boot
 #                                                (systemd-modules-load) -- libkvm
 #                                                needs it; nothing else loads it.
+#                                                Also loads the mini-display stack
+#                                                (fb_jd9853 -> fbtft, gpio_keys,
+#                                                rotary_encoder), all from source.
+#     opt/nanokvm-display/ + systemd unit        mini-display status daemon,
+#                                                enabled via wants-symlink
+#                                                (takes effect on next boot).
 #
 #   partitions/      vendor-format SIGNED partition images (magic 0x55543322 @ off 4),
 #                    fixed naming contract consumed by install()'s image->partition map:
@@ -141,13 +147,38 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q 'lt6911_manage' "$modroot/modules.dep" \
       || { echo "ERROR: lt6911_manage missing from modules.dep" >&2; exit 1; }
 
-    # --- autoload lt6911_manage at boot (mirrors pkgs/rootfs.nix step [5b2]).
-    # Nothing on the vendor rootfs loads it for the kvmapp/nanokvm stack, yet
-    # libkvm polls /proc/lt6911_info/*. systemd-modules-load.service modprobes
-    # entries here at boot; modprobe resolves it via the modules.dep above.
+    # --- autoload lt6911_manage + the mini-display stack at boot (mirrors
+    # pkgs/rootfs.nix step [5b2]). All four display/input modules are built
+    # from OUR kernel source and are parameter-less-safe (they bind DT nodes),
+    # so this cannot re-create the ax_cmm autoload brick. f_udisp_drv is a USB
+    # gadget function (USB-display), unneeded for the panel -- not loaded.
     mkdir -p "$rfs/etc/modules-load.d"
-    printf '# NanoKVM-Pro: load HDMI-capture bridge driver at boot (libkvm needs it).\nlt6911_manage\n' \
+    printf '%s\n' \
+      '# NanoKVM-Pro: load HDMI-capture bridge driver at boot (libkvm needs it).' \
+      'lt6911_manage' \
+      '# Mini-display stack (docs/mini-display.md): JD9853 SPI panel -> /dev/fb0' \
+      '# (fbtft loads as a dependency), plus the knob button + rotary encoder.' \
+      'fb_jd9853' \
+      'gpio_keys' \
+      'rotary_encoder' \
       > "$rfs/etc/modules-load.d/nanokvm.conf"
+    # the modules the conf names must exist in the shipped tree
+    for m in lt6911_manage fb_jd9853 fbtft gpio_keys rotary_encoder; do
+      find "$modroot" -name "$m.ko" | grep -q . \
+        || { echo "ERROR: $m.ko missing from modules tree (named in modules-load.d)" >&2; exit 1; }
+    done
+
+    # --- mini-display status daemon (pkgs/nanokvm-display.nix): daemon + fonts
+    # under /opt/nanokvm-display, systemd unit, enabled via wants-symlink (the
+    # OTA overlay is `cp -a rootfs/. /`, which preserves the symlink). It
+    # starts on the next boot; an app-only OTA doesn't launch it immediately.
+    mkdir -p "$rfs/opt"
+    cp -r ${nanokvm-display}/opt/nanokvm-display "$rfs/opt/"
+    mkdir -p "$rfs/etc/systemd/system/multi-user.target.wants"
+    cp ${nanokvm-display}/etc/systemd/system/nanokvm-display.service \
+       "$rfs/etc/systemd/system/nanokvm-display.service"
+    ln -sf /etc/systemd/system/nanokvm-display.service \
+       "$rfs/etc/systemd/system/multi-user.target.wants/nanokvm-display.service"
 
     # ===================================================================
     # 3. partitions/ -- vendor-format signed images, fixed naming contract

@@ -85,7 +85,7 @@ survive):
 | `/kvmcomm/ui/kvm_ui` | 8.5M | closed OSD app, only launched by disabled `kvmcomm.service` |
 | `/kvmcomm/vin/kvm_vin` | 792K | closed capture daemon |
 | `/kvmcomm/ui/frameforge` | 988K | closed compositor |
-| `/kvmcomm/ko/{fbtft,fb_jd9853,f_udisp_drv,gpio_keys,rotary_encoder,wireguard}.ko` | ~2.7M | mini-display / knob / wireguard modules, none loaded |
+| `/kvmcomm/ko/{fbtft,fb_jd9853,f_udisp_drv,gpio_keys,rotary_encoder,wireguard}.ko` | ~2.7M | mini-display / knob / wireguard module *copies*. All five display/input modules turned out to exist **as source** in the SDK kernel tree and are built by our own kernel (`CONFIG_FB_TFT_JD9853` etc. are `=m` in the defconfig we already use) — the mini-display now runs on those from-source builds ([mini-display.md](mini-display.md)); these prebuilt copies stay deleted. |
 | `/opt/swupdate/bin/swupdate` | ~500K | vendor OTA binary; its `S99checkota` call is commented out (we replaced OTA) |
 
 **Kept** (live dependencies, not blobs to chase): `/kvmcomm/scripts/*` (wifi,
