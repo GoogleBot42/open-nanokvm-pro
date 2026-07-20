@@ -1,25 +1,32 @@
 name: release
 
-# Two ways to cut a release:
+# Cut a release two ways:
 #
 #  1. Actions -> "release" -> Run workflow, enter the version (e.g. 0.0.3).
-#     This commits the VERSION bump to `main`, tags `vX.Y.Z` on that commit,
-#     builds the firmware .axp + OTA package, and publishes the release --
-#     all in one run. The commit keeps `main`'s VERSION in lockstep with the
-#     newest release, so local `nix build` matches too.
+#     Commits the VERSION bump to `main`, builds the firmware .axp + OTA
+#     package, tags `vX.Y.Z`, and publishes -- one run. The commit keeps main's
+#     VERSION in lockstep with the newest release, so local `nix build` matches.
 #
-#  2. Push a tag `vX.Y.Z` yourself -> builds + publishes from that tagged
-#     commit (VERSION is stamped from the tag for the build; `main` is not
-#     touched). Handy for one-off / hand-cut tags.
+#  2. Push a tag `vX.Y.Z` yourself -> builds + publishes from that tagged commit
+#     (main is not touched).
 #
-# Publishing a release IS the OTA push: NanoKVM-Server is patched to poll
+# Publishing a release IS the OTA push: NanoKVM-Server polls
 # `releases/latest/download/...` (flake.nix `updateBaseUrl`, docs/updates.md),
-# so devices offer the update whenever the manifest version is semver-greater
-# than the installed /kvmapp/version.
+# so devices offer the update when the manifest version is semver-greater than
+# the installed /kvmapp/version.
 #
-# No PAT required: the dispatch path does the commit + tag + build + publish in
-# a single run, so it never relies on a tag push triggering a second workflow
-# (which the built-in GITHUB_TOKEN cannot do).
+# The whole job is idempotent: re-running the same version adopts the existing
+# main commit + tag, upserts the release, and re-uploads any missing asset -- so
+# a transient failure is recovered by simply re-running.
+#
+# Why the .axp upload is split out: GitHub's large release-asset path
+# intermittently 500s with "Error creating policy". action-gh-release surfaces
+# that as a fatal error that aborts the whole release (it took down the first
+# real run *after* the OTA assets had uploaded). So the small OTA assets -- the
+# only thing an update needs -- publish first via action-gh-release, and the
+# 1.4 GB .axp uploads afterward with the `gh` CLI (proper chunked upload +
+# backoff) and retries. If it still fails, the job fails loudly; the OTA is
+# already live and a re-run finishes the .axp.
 
 on:
   push:
@@ -41,8 +48,7 @@ jobs:
     steps:
       - name: Free up runner disk space
         # The rootfs de-sparses to several GB and the base .axp is ~1.4 GB; the
-        # stock runner image leaves too little headroom. Reclaim the big preinstalled
-        # toolchains we don't use.
+        # stock runner image leaves too little headroom.
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
@@ -51,10 +57,9 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          # On dispatch we commit the VERSION bump onto main, so check main out
-          # (with full history for release notes); on a tag push, use the tag.
+          # Dispatch commits the bump onto main; a tag push builds the tag.
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
-          fetch-depth: 0
+          fetch-depth: 0   # full history for release notes
 
       - uses: cachix/install-nix-action@v27
         with:
@@ -71,37 +76,32 @@ jobs:
             V="${GITHUB_REF_NAME}"
           fi
           V="${V#v}"
-          # Guard against a bad tag/input producing a garbage release.
           echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
             || { echo "::error::invalid version '$V' (expected X.Y.Z)"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "tag=v$V"    >> "$GITHUB_OUTPUT"
           echo "Release v$V (version $V)"
 
-      - name: Prepare VERSION + tag
-        # Dispatch: commit the bump on main and create the tag LOCALLY (pushed
-        # only after a successful build, below, so a build failure leaves no
-        # orphan tag). Tag push: stamp VERSION from the tag for the build.
+      - name: Prepare VERSION
+        # Dispatch: commit the bump on main (no-op if already at this version, so
+        # re-runs are clean). Tag push: stamp VERSION from the tag for the build.
+        # Emit the resulting HEAD sha so the release tags exactly the built commit
+        # (github.sha is frozen at checkout, before the bump commit).
+        id: prep
         env:
-          TAG: ${{ steps.ver.outputs.tag }}
           V: ${{ steps.ver.outputs.version }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-              echo "::error::tag $TAG already exists -- pick a new version"; exit 1
-            fi
             printf '%s\n' "$V" > VERSION
             git add VERSION
             git diff --cached --quiet || git commit -m "release: set VERSION to $V"
-            git tag -a "$TAG" -m "Release $TAG"
           else
-            # Manually pushed tag: make the flake see the tag's version even if
-            # the tagged commit's VERSION file lagged. Not committed to main.
             printf '%s\n' "$V" > VERSION
             git add VERSION
           fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build web-update package
         run: nix build .#update-package --print-build-logs --out-link result-update
@@ -109,36 +109,57 @@ jobs:
       - name: Build firmware image (.axp)
         run: nix build .#firmware-image --print-build-logs --out-link result-image
 
-      - name: Push VERSION bump + tag
-        # Only after both builds succeed, and only on the dispatch path.
+      - name: Push VERSION bump to main (dispatch only)
+        # Runs only after both builds succeed. Fatal on failure (no swallow): the
+        # bump commit is what the tag/release will point at.
         if: github.event_name == 'workflow_dispatch'
-        env:
-          TAG: ${{ steps.ver.outputs.tag }}
-        run: |
-          git push origin HEAD:main
-          git push origin "$TAG"
+        run: git push origin HEAD:main
 
       - name: Stage release assets
-        id: stage
         run: |
           mkdir -p dist
-          # Web-update: manifest name MUST stay `nanokvm_pro_latest.json` and the
-          # tarball `nanokvm_pro_<version>.tar.gz` so releases/latest/download/<name>
-          # resolves (the server builds those exact URLs).
           cp result-update/nanokvm_pro_latest.json dist/
           cp result-update/nanokvm_pro_*.tar.gz     dist/
-          # Device image.
           cp result-image/*.axp                     dist/
           echo "--- release assets ---"; ls -l dist
-          # Sanity: manifest version must equal the tag version.
           grep -q '"version": "${{ steps.ver.outputs.version }}"' dist/nanokvm_pro_latest.json \
-            || { echo "manifest version != ${{ steps.ver.outputs.version }}"; exit 1; }
+            || { echo "::error::manifest version != ${{ steps.ver.outputs.version }}"; exit 1; }
 
-      - name: Publish GitHub Release
+      - name: Publish release + OTA assets
+        # Small, reliable, and all the OTA needs. Creates (or updates, on re-run)
+        # the release and the tag at the built commit.
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
-          files: dist/*
+          target_commitish: ${{ steps.prep.outputs.sha }}
+          files: |
+            dist/nanokvm_pro_latest.json
+            dist/nanokvm_pro_${{ steps.ver.outputs.version }}.tar.gz
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+      - name: Upload firmware .axp
+        # Separate from the OTA assets because GitHub's large-asset upload
+        # intermittently 500s ("Error creating policy"). The `gh` CLI does the
+        # correct chunked upload; we retry genuine transients and fail loudly if
+        # the upload truly cannot complete (the OTA is already live -- re-run to
+        # finish the .axp).
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          axp=$(ls dist/*.axp)
+          n=5
+          for attempt in $(seq 1 "$n"); do
+            if gh release upload "$TAG" "$axp" --clobber; then
+              echo "uploaded $(basename "$axp") on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt "$n" ]; then
+              echo "::warning::.axp upload attempt $attempt/$n failed; retrying in $((attempt*20))s..."
+              sleep $((attempt*20))
+            fi
+          done
+          echo "::error::.axp upload failed after $n attempts. The OTA (manifest + tarball) is published and live; re-run this workflow for the same version to finish uploading the .axp."
+          exit 1
