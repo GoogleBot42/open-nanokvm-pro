@@ -111,8 +111,8 @@ connections; all of the below fire on boot, a timer, or an explicit user action.
 
 | Endpoint | Trigger | Status |
 |---|---|---|
-| `github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download/nanokvm_pro_latest.json` | web UI version check | **APPROVE** — our release host; `cdn.sipeed.com` patched out at build (`nanokvm-server.nix`), verified by `--replace-fail`. |
-| `…/nanokvm_pro_<ver>.tar.gz` → 302 → `objects.githubusercontent.com` | user clicks update | **APPROVE** — our OTA asset; SHA-512 verified against the manifest. |
+| `git.neet.dev/zuckerberg/open-nanokvm-pro/releases/download/latest/nanokvm_pro_latest.json` | web UI version check | **APPROVE** — our release host (rolling `latest` release, see `docs/updates.md`); `cdn.sipeed.com` patched out at build (`nanokvm-server.nix`), verified by `--replace-fail`. |
+| `…/download/latest/nanokvm_pro_<ver>.tar.gz` | user clicks update | **APPROVE** — our OTA asset, served directly by Gitea; SHA-512 verified against the manifest. |
 | preview channel (`…/download/preview/…`) | only if `/etc/kvm/preview_updates` exists (absent) | **APPROVE (dormant)** — leave the flag file absent. |
 
 ### Auto-egress inherited from the retained vendor Ubuntu rootfs

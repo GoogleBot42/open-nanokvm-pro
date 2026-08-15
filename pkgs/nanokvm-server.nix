@@ -1,8 +1,9 @@
 { pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder, axera-libs
-, # Base URL the on-device updater fetches from. Point at the GitHub repo that
-  # hosts the Releases; `releases/latest/download` always resolves to the newest
-  # release's assets. See flake.nix (updateBaseUrl) and docs/updates.md.
-  updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
+, # Base URL the on-device updater fetches from: the Gitea repo's rolling
+  # `latest` release (its assets are refreshed by tools/release on every cut,
+  # since Gitea has no GitHub-style releases/latest/download route). See
+  # flake.nix (updateBaseUrl) and docs/updates.md.
+  updateBaseUrl ? "https://git.neet.dev/zuckerberg/open-nanokvm-pro/releases/download/latest"
 , ...
 }:
 
@@ -49,8 +50,8 @@ buildGoModule {
     substituteInPlace service/application/service.go \
       --replace-fail 'https://cdn.sipeed.com/nanokvm' '${updateBaseUrl}'
 
-    # 2. Drop the ?now= cache-buster. GitHub release-asset URLs 302-redirect and
-    #    a trailing query can interfere; a static manifest needs no cache-bust.
+    # 2. Drop the ?now= cache-buster. Release-asset URLs may redirect and a
+    #    trailing query can interfere; a static manifest needs no cache-bust.
     substituteInPlace service/application/version.go \
       --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/nanokvm_pro_latest.json", baseURL'
     sed -i '/^[[:space:]]*"time"$/d' service/application/version.go

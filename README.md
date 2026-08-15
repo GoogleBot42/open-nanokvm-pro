@@ -38,7 +38,7 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | [docs/architecture.md](docs/architecture.md) | Boot chain, partition layout, the video pipeline, our `libkvm`, and the **two vendor app stacks** (why we run `nanokvm`, not `kvmcomm`) |
 | [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
 | [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL USB flashing, the `User`-button recovery path, full backup/restore, non-destructive SD-card boot |
-| [docs/updates.md](docs/updates.md) | **Our own OTA/update system**: CI builds images + web-update packages; the web-UI "update" button pulls from **our** GitHub Releases, not Sipeed |
+| [docs/updates.md](docs/updates.md) | **Our own OTA/update system**: `tools/release` builds images + web-update packages; the web-UI "update" button pulls from **our** Gitea releases, not Sipeed |
 | [docs/mini-display.md](docs/mini-display.md) | The built-in screen: driven **fully from source** (kernel drivers built from our tree + our open Python status daemon; no `kvm_ui`, no `.ko` blobs), incl. sleep/wake on the knob button |
 
 > The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
@@ -118,11 +118,12 @@ strap/boot-source caveats are in
 ## Updates come from us, not Sipeed
 
 We build `NanoKVM-Server` from source, so it's patched to fetch updates from
-**our** GitHub Releases instead of `cdn.sipeed.com`. Tag a release (`git tag
-v2.0.0 && git push --tags`) and `.github/workflows/release.yml` builds the `.axp`
-image **and** a web-update package, publishing both as Release assets. Every
-device then sees the new version in the web UI's **update** button and pulls it
-from us. Full design + setup (including the one-time `updateBaseUrl` step) is in
+**our** [Gitea releases](https://git.neet.dev/zuckerberg/open-nanokvm-pro/releases)
+instead of `cdn.sipeed.com`. Bump `VERSION`, push, and run `tools/release`: it
+builds the `.axp` image **and** a web-update package, publishes them as release
+assets, and refreshes the rolling `latest` release the devices poll. Every
+device that can reach the forge then sees the new version in the web UI's
+**update** button and pulls it from us. Full design + setup is in
 [docs/updates.md](docs/updates.md).
 
 ---

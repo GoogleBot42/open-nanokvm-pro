@@ -22,11 +22,9 @@ authenticated as bot user `agent` — confirmed working.
 tea issues list --repo zuckerberg/open-nanokvm-pro
 ```
 
-As of this writing there are **30 open issues, 0 closed** (indices 7–36;
-1–6 don't exist — nothing to worry about, just historical numbering). All
-were filed by either `agent` (26 of them) or the user `zuckerberg` directly
-(the newest four: #33–#36, feature requests not covered by any doc or
-script).
+Issue indices run from #1 (early seed issues #1–#8 included; #1 and #6 look
+like duplicate "auto update" asks). Filed by the bot `agent` or by
+`zuckerberg` directly. Don't trust any cached count — pull the live list.
 
 Label taxonomy already in place — filter on these:
 
@@ -122,28 +120,12 @@ propose SG2002 work without flagging this gap up front.
 
 ## 5. Known inconsistencies awaiting work
 
-- **GitHub-vs-Gitea split in the release/OTA pipeline.** The forge is
-  Gitea-only (`zuckerberg/open-nanokvm-pro`, confirmed via `tea repos
-  list`; `tea releases list --repo zuckerberg/open-nanokvm-pro` returns
-  zero releases), but:
-  - `flake.nix` line 60 hardcodes
-    `updateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"`.
-  - `docs/updates.md` lines 51–56 instruct the reader to
-    create a **GitHub** repo at `GoogleBot42/open-nanokvm-pro` and bake that
-    URL in.
-  - `.github/workflows/release.yml` is a GitHub Actions
-    workflow start to finish (`gh` CLI, `github.token`,
-    `softprops/action-gh-release`) — it does not run on Gitea, and there is
-    no Gitea Actions workflow anywhere in the tree. So right now there is
-    **no working CI/release path at all** on the actual forge.
-  - Migration to Gitea releases (new workflow or manual `tea` release
-    flow, plus repointing `updateBaseUrl`) is pending and not tracked by
-    any single filed issue as of this scan — worth filing one before
-    picking up related work.
-- **Version scheme mismatch.** `VERSION` currently reads
-  `0.0.5` (a local/dev value), while `docs/updates.md` lines 213–214
-  documents a scheme where the *release* line should start at `2.0.0` (so
-  it's unambiguously newer than the vendor's `1.2.x`). Since no release has
-  ever been cut (`tea releases list` is empty), this hasn't caused a
-  problem yet, but it needs reconciling before the first tag — don't file
-  or ship a release without checking this first.
+- **Release pipeline migrated to Gitea (2026-08-15), but no release cut
+  yet.** `updateBaseUrl` points at the rolling `latest` Gitea release,
+  `tools/release` is the canonical cut path, `VERSION` is `2.0.0`, and the
+  GitHub workflow is deleted — see `docs/updates.md`. What still gates a
+  usable OTA (tracked in issue #37): the device cannot reach git.neet.dev
+  (Tailscale-only, device not on the tailnet — needs-human), and the
+  1.4 GB `.axp` exceeds the Gitea attachment limit of 1024 MB
+  (needs-human app.ini bump). Gitea Actions has a runner but release
+  builds on it need a binary cache first (issue #5).

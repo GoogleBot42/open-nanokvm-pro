@@ -13,8 +13,8 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
 ## Git
 
 - The only forge is Gitea: `gitea@git.neet.dev:zuckerberg/open-nanokvm-pro.git`.
-  GitHub references in `flake.nix`, `docs/updates.md`, and `.github/workflows/release.yml`
-  are stale — OTA/release migration to Gitea is tracked in issue #37.
+  Releases are cut with `tools/release` (rolling `latest` release feeds OTA);
+  remaining OTA gaps (device reachability, `.axp` size limit) are in issue #37.
 - **Commit as you work; push after committing.** Never let finished work sit
   uncommitted or unpushed. (Standing instruction from Jeremy; a Stop hook also checks.)
 - This repo pushes directly to `main` (Jeremy's explicit instruction, 2026-08-15) —
