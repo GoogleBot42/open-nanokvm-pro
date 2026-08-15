@@ -95,9 +95,15 @@ from the base `.axp`) and overlays our bits **without root/mount privileges**,
 editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
 
 1. **`libkvm.so`** → `/kvmapp/server/dl_lib/` (our capture/encode backend).
-2. **Kernel modules** → `/lib/modules/4.19.125/`: our from-source modules
-   (incl. `lt6911_manage.ko`) **merged** with the prebuilt `ax_*.ko`, then
-   `depmod`'d on a host staging tree so autoloading works with no on-device depmod.
+2. **Kernel modules** → `/lib/modules/4.19.125/`: our from-source modules only
+   (incl. `lt6911_manage.ko`), `depmod`'d on a host staging tree so autoloading
+   works with no on-device depmod. The prebuilt `ax_*.ko` are **deliberately
+   excluded** — the build fails if any appear. Merging them in makes `depmod`
+   emit `of:` aliases that udev coldplug autoloads parameter-less at boot;
+   `ax_cmm` without its `cmm=` parameter panics and the device boot-loops
+   (this bricked a unit on the first OTA). They stay in the vendor rootfs at
+   `/soc/ko`, where `auto_load_all_drv.sh` insmods them by path with the
+   required parameters.
 3. **Service selection** (see below): disable `kvmcomm.service`, enable
    `nanokvm.service` in `multi-user.target.wants`.
 4. **Mini-display**: `/opt/nanokvm-display/` (status daemon + generated fonts)

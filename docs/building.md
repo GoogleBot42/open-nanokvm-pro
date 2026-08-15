@@ -129,10 +129,13 @@ The prebuilt Axera media modules must `insmod` into our **from-source** kernel, 
 the kernel's `vermagic` (kernel version + key `CONFIG_*` + compiler) has to line up
 with what the blobs were built against. `kernel.nix` builds against the vendor
 `axera_AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig` for this reason;
-`rootfs.nix` merges the blobs into `/lib/modules/4.19.125/` and re-runs `depmod`
-on a host staging tree so the dependency graph
-(`ax_venc → ax_base/ax_pool/ax_cmm/ax_sys`, plus `lt6911_manage`) resolves on the
-target with no on-device `depmod`. The build asserts those edges exist.
+The blobs are **not** installed under `/lib/modules/4.19.125/` — `rootfs.nix`
+stages only the from-source modules there and hard-fails if any `ax_*.ko`
+sneak in (a merged tree gives them `of:` modaliases, udev autoloads `ax_cmm`
+parameter-less, and the device panic-loops; this bricked a unit once). They
+load instead from the vendor rootfs at `/soc/ko` via `auto_load_all_drv.sh`,
+which passes the required parameters. The vermagic match still matters because
+that insmod targets our kernel.
 
 ---
 
