@@ -28,6 +28,14 @@
         }                                                                    \
     } while (0)
 
+/* The capture half (SYS/pool + MIPI/VIN/ISP-bypass + frame dequeue) has two
+ * back ends selected at build time:
+ *   - default: the vendor-MPI implementation below (links libax_sys/mipi/proton);
+ *   - KVM_OPEN_CAPTURE: the blob-free direct-ioctl backend in kvm_capture_open.c
+ *     (Stage-6 sequence; keeps only libax_venc for encode).
+ * The VENC half and kvm_read_source (further down) are shared by both. */
+#ifndef KVM_OPEN_CAPTURE
+
 /* ---------------- SYS + VB pool ----------------
  *
  * RIGHT-SIZED POOL (Phase 1 fix). The old config allocated TWO common pools of
@@ -237,6 +245,8 @@ void kvm_cap_release(AX_IMG_INFO_T *img)
     AX_VIN_ReleaseYuvFrame(KVM_VIN_PIPE, AX_VIN_CHN_ID_MAIN, img);
 }
 
+#endif /* !KVM_OPEN_CAPTURE (vendor capture backend) */
+
 /* ---------------- VENC ---------------- */
 static AX_BOOL g_vencInit = AX_FALSE;
 
@@ -253,8 +263,14 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
         g_vencInit = AX_TRUE;
     }
 
+#ifdef KVM_OPEN_CAPTURE
+    /* Open capture links no libax_proton, so size the encoder in/out buffers
+     * locally. YUYV (2 B/px) is the actual VIN-bypass output and is >= NV12. */
+    AX_U32 bufSz = (AX_U32)w * (AX_U32)h * 2u;
+#else
     AX_FRAME_COMPRESS_INFO_T noComp = { AX_COMPRESS_MODE_NONE, 0 };
     AX_U32 bufSz = AX_VIN_GetImgBufferSize(h, w, AX_FORMAT_YUV420_SEMIPLANAR, &noComp, 0);
+#endif
 
     AX_VENC_CHN_ATTR_T va;
     memset(&va, 0, sizeof(va));

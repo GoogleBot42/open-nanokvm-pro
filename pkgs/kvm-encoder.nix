@@ -1,4 +1,14 @@
-{ pkgs, crossPkgs, axera-libs, ... }:
+{ pkgs, crossPkgs, axera-libs, openCapture ? false, ... }:
+
+# openCapture (default false): select the capture backend.
+#   false -> vendor-MPI capture (kvm_pipeline.c; links libax_sys/mipi/proton).
+#   true  -> BLOB-FREE capture (kvm_capture_open.c; the folded Stage-6 direct-
+#            ioctl sequence, docs/blob-replacement.md). Our capture code calls no
+#            AX libs (raw ioctls); the link line keeps libax_venc/sys/ivps/proton
+#            only because the closed ENCODER pins them, and drops libax_mipi.
+#            Device-verified end-to-end (real H.264 from blob-free capture);
+#            teardown is the least-exercised path. Default stays off so the
+#            shipped image is unchanged.
 
 # ---------------------------------------------------------------------------
 # libkvm.so -- our REAL open capture + hardware-encode backend for the AX630C.
@@ -40,6 +50,18 @@
 
 let
   cc = "${crossPkgs.stdenv.cc.targetPrefix}gcc";
+  # Capture backend selection (see openCapture above).
+  captureSrc  = if openCapture then "kvm_capture_open.c" else "";
+  captureDef  = pkgs.lib.optionalString openCapture "-DKVM_OPEN_CAPTURE";
+  # Direct link deps. The blob-free capture code CALLS none of the AX libs (raw
+  # ioctls), but the closed encoder (libax_venc) hard-pins libax_sys
+  # (AX_SYS_Init; else AX_VENC_Init => AX_ERR_NOT_INIT), libax_proton
+  # (AX_VIN_PRIV_FindMeStat) and libax_ivps (AX_IVPS_*). So the open build drops
+  # only -lax_mipi; the rest stay for the encoder until it too is replaced.
+  # Device-verified: this set produces real H.264 from blob-free capture.
+  captureLibs = if openCapture
+                then "-lax_venc -lax_sys -lax_ivps -lax_proton"
+                else "-lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps";
 in
 crossPkgs.stdenv.mkDerivation {
   pname = "libkvm";
@@ -73,12 +95,13 @@ crossPkgs.stdenv.mkDerivation {
     # GLIBC_2.38 and does NOT exist on the target Ubuntu 22.04 rootfs (glibc 2.35),
     # so the Go server fails to load libkvm.so ("GLIBC_2.38 not found"). gnu17
     # drops the only >2.35 symbol; the rest are <= 2.34 and load fine on 2.35.
-    ${cc} -shared -fPIC -O2 -Wall -std=gnu17 \
+    echo "capture backend: ${if openCapture then "BLOB-FREE (kvm_capture_open.c)" else "vendor MPI (kvm_pipeline.c)"}"
+    ${cc} -shared -fPIC -O2 -Wall -std=gnu17 ${captureDef} \
       -I. -I${axera-libs}/include \
       -Wl,-soname,libkvm.so.0 \
-      libkvm.c kvm_pipeline.c \
+      libkvm.c kvm_pipeline.c ${captureSrc} \
       -L${axera-libs}/lib \
-      -lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps \
+      ${captureLibs} \
       -lopus -lasound \
       -ldl -lpthread \
       -Wl,-rpath,${axera-libs}/lib \
