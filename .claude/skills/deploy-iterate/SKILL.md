@@ -3,9 +3,10 @@ name: deploy-iterate
 description: Build a component with Nix and hot-deploy it to the running NanoKVM-Pro device for fast iteration, then verify the service came back up.
 ---
 
-UNVALIDATED — verify on first use. (Connectivity to the device was confirmed
-read-only for this bootstrap; the build/deploy/restart loop itself was not
-exercised, per instructions to avoid mutating the device during setup.)
+Validated 2026-08-15 for the **web-bundle** variant (build → tar → both
+trees → restart → HTTP 200 with the new bundle hash). The libkvm variant
+below follows the same shape but has not itself been exercised via this
+skill yet.
 
 # The loop
 
@@ -46,6 +47,30 @@ Package names below are confirmed against `flake.nix`
    - `tools/kvmssh 'curl -sk -o /dev/null -w "%{http_code}" https://127.0.0.1/'`
      — expect `200`.
    Do not skip this step (see Failure modes).
+
+# Variant: web bundle (`nanokvm-web`)
+
+Proven flow (2026-08-15, deploying the dead-extensions patch):
+
+1. `nix build .#nanokvm-web --out-link <scratch>/result-web` — output is the
+   static `dist/` (index.html + assets/). The bundle filename hash
+   (`assets/index-<hash>.js`) changes with content — note it; it's the
+   deploy-verification token.
+2. `tar czf web-dist.tar.gz -C result-web .` and `tools/kvmscp` it to `/tmp/`
+   (~700 KB, quick).
+3. Install into BOTH trees with an atomic-ish swap; the web root is
+   `<root>/server/web`:
+   ```
+   for root in /kvmapp /dev/shm/kvmapp; do
+     mkdir -p $root/server/web.new && tar xzf /tmp/web-dist.tar.gz -C $root/server/web.new
+     mv $root/server/web $root/server/web.old && mv $root/server/web.new $root/server/web
+     rm -rf $root/server/web.old
+   done
+   ```
+4. `systemctl restart nanokvm`, then verify as in step 4 above **plus** check
+   the served bundle is the new one:
+   `curl -sk https://127.0.0.1/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'`
+   must print the hash from step 1.
 
 # Failure modes
 
