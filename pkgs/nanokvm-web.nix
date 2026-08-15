@@ -26,6 +26,13 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   src = nanokvm-pro-src;
   sourceRoot = "source/web";
 
+  # Remove the KVM Admin and AI Assistant panels: their /api/extensions/*
+  # backend routes are deliberately dropped in nanokvm-server.nix (they fetch
+  # closed third-party code; see docs/provenance.md), so the vendor UI surfaces
+  # would 404. Applied against the pinned source; a pin bump that drifts these
+  # files fails the patch loudly rather than silently resurfacing dead panels.
+  patches = [ ./patches/web-remove-dead-extensions.patch ];
+
   nativeBuildInputs = [
     nodejs
     pnpm.configHook

@@ -1,0 +1,65 @@
+diff -urN a/src/pages/desktop/menu/index.tsx b/src/pages/desktop/menu/index.tsx
+--- a/src/pages/desktop/menu/index.tsx	2026-08-15 17:27:48.239678685 -0600
++++ b/src/pages/desktop/menu/index.tsx	2026-08-15 17:27:48.245678712 -0600
+@@ -11,7 +11,6 @@
+ import { useMenuBounds } from '@/hooks/useMenuBounds.ts';
+ import { useMenuVisibility } from '@/hooks/useMenuVisibility.ts';
+ 
+-import { AIAssistant } from './assistant';
+ import { Fullscreen } from './fullscreen';
+ import { Image } from './image';
+ import { Keyboard } from './keyboard';
+@@ -115,11 +114,10 @@
+ 
+             {isEnabled('image') && <Image />}
+             {isEnabled('script') && <Script />}
+-            {isEnabled('assistant') && <AIAssistant />}
+             {isEnabled('terminal') && <Terminal />}
+             {isEnabled('wol') && <Wol />}
+ 
+-            {['image', 'script', 'assistant', 'terminal', 'wol'].some(isEnabled) && (
++            {['image', 'script', 'terminal', 'wol'].some(isEnabled) && (
+               <Divider type="vertical" />
+             )}
+ 
+diff -urN a/src/pages/desktop/menu/settings/account/index.tsx b/src/pages/desktop/menu/settings/account/index.tsx
+--- a/src/pages/desktop/menu/settings/account/index.tsx	2026-08-15 17:27:48.229678641 -0600
++++ b/src/pages/desktop/menu/settings/account/index.tsx	2026-08-15 17:29:06.303933162 -0600
+@@ -5,7 +5,6 @@
+ 
+ import * as api from '@/api/auth.ts';
+ 
+-import { Kvmadmin } from './kvmadmin.tsx';
+ import { Logout } from './logout.tsx';
+ 
+ export const Account = () => {
+@@ -47,10 +46,6 @@
+ 
+       <Divider className="opacity-50" style={{ margin: '40px 0' }} />
+ 
+-      <Kvmadmin />
+-
+-      <Divider className="opacity-50" style={{ margin: '40px 0' }} />
+-
+       <Logout />
+     </>
+   );
+diff -urN a/src/pages/desktop/menu/settings/appearance/menu-icons.tsx b/src/pages/desktop/menu/settings/appearance/menu-icons.tsx
+--- a/src/pages/desktop/menu/settings/appearance/menu-icons.tsx	2026-08-15 17:27:48.234678663 -0600
++++ b/src/pages/desktop/menu/settings/appearance/menu-icons.tsx	2026-08-15 17:28:54.038530617 -0600
+@@ -2,7 +2,6 @@
+ import { Switch } from 'antd';
+ import { useAtom } from 'jotai';
+ import {
+-  BotMessageSquare,
+   DiscIcon,
+   FileJsonIcon,
+   MaximizeIcon,
+@@ -30,7 +29,6 @@
+     { key: 'microphone', icon: <MicIcon size={16} /> },
+     { key: 'image', icon: <DiscIcon size={16} /> },
+     { key: 'script', icon: <FileJsonIcon size={16} /> },
+-    { key: 'assistant', icon: <BotMessageSquare size={16} /> },
+     { key: 'terminal', icon: <TerminalSquareIcon size={16} /> },
+     { key: 'wol', icon: <NetworkIcon size={16} /> },
+     { key: 'power', icon: <PowerIcon size={16} /> },
