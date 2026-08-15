@@ -44,6 +44,9 @@ Everything you need beyond this lives in [`docs/`](docs/):
 > The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
 > findings, the resolved MIPI/VIN/VENC capture config, per-test results) lives in
 > `../PLAN.md`. This repo's `docs/` is the distilled, buildable reference.
+> **`PLAN.md` is frozen** — its last substantive entry is 2026-07-18, predating
+> blob-free capture, idle power-down, the mini-display, and the SD-image
+> rework; current status lives in this repo's `docs/` and git history.
 
 ---
 

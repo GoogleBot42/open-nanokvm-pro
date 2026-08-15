@@ -16,6 +16,20 @@ and [building.md](building.md) for the build.
 
 ---
 
+> **Status: pipeline targets GitHub, forge is now Gitea — not live as documented.**
+> Everything below (`updateBaseUrl` in `flake.nix`, this doc, and
+> `.github/workflows/release.yml`) targets GitHub
+> (`github.com/GoogleBot42/open-nanokvm-pro`), but the project's only forge is
+> now [Gitea](https://git.neet.dev/zuckerberg/open-nanokvm-pro). The
+> GitHub-based OTA/release flow described here is **pending migration to
+> Gitea releases** and should not be assumed live until that migration lands.
+>
+> There's also a versioning discrepancy: [Versioning](#versioning) below
+> describes starting the release line at `2.0.0`, but the tracked `VERSION`
+> is currently `0.0.5`, with real CI-cut releases running `0.0.2`–`0.0.5` —
+> the documented scheme was never followed. Reconcile the version line when
+> migrating releases to Gitea.
+
 ## The idea
 
 Stock NanoKVM-Server checks `https://cdn.sipeed.com/nanokvm/...` for updates. We

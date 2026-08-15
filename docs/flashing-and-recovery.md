@@ -8,6 +8,7 @@ eMMC, and how to get back to a known-good state. Read
 - [AXDL USB flashing (eMMC)](#axdl-usb-flashing-emmc)
 - [Backup and restore](#backup-and-restore)
 - [SD-card boot (non-destructive)](#sd-card-boot)
+  - [Flashing the SD card remotely](#flashing-the-sd-card-remotely-no-card-reader)
 - [First boot & the web UI](#first-boot--the-web-ui)
 - [Serial console](#serial-console)
 
@@ -29,6 +30,15 @@ Because a normal power-on always boots eMMC, the SD path and download mode are
 way to accidentally boot the wrong source. eMMC is never written unless you flash
 it. This also makes recovery reliable: download mode lives in **mask ROM**, so it
 **cannot be bricked** by a bad eMMC image.
+
+> **No U-Boot autoboot interrupt window.** The shipped U-Boot environment has
+> `bootdelay=0` — there is no autoboot countdown to break into, even with a
+> working serial console, until you deliberately set one
+> (`fw_setenv bootdelay 3` from a running system). Consequence: a bad
+> kernel/boot-chain flash **cannot be caught at the U-Boot prompt** — you can't
+> interrupt boot and load a known-good kernel manually. Recovery after a bad
+> flash is the physical path above: hold `User` ~10 s for AXDL download mode,
+> not a serial break-in.
 
 ---
 
@@ -65,12 +75,32 @@ return to factory. Keep a stock `.axp` on hand as your ultimate fallback.
 **Do this before flashing eMMC the first time.** With SSH access to a
 stock/working device, dump every partition so you can byte-restore later.
 
+### The eMMC partition map
+
+`/proc/partitions` and `ls /dev/disk/by-partlabel/` don't surface names on
+this device (no partlabels are written) — the map below is the vendor layout,
+recovered from the `blkdevparts=` string this project's DTB embeds
+(`pkgs/dtb.nix`) and matching the signed-partition slot numbers used
+throughout `pkgs/*.nix`:
+
+| # | Name | # | Name | # | Name |
+|---|---|---|---|---|---|
+| 1 | `spl` | 7 | `env` | 13 | `dtb_b` |
+| 2 | `ddrinit` | 8 | `logo` | 14 | `kernel` |
+| 3 | `atf` | 9 | `logo_b` | 15 | `kernel_b` |
+| 4 | `atf_b` | 10 | `optee` | 16 | `boot` |
+| 5 | `uboot` | 11 | `optee_b` | 17 | `rootfs` |
+| 6 | `uboot_b` | 12 | `dtb` | | |
+
+Plus the two eMMC boot hardware areas, `mmcblk0boot0`/`mmcblk0boot1`, which
+aren't GPT partitions at all — dump them separately, as below.
+
 ```bash
 # On the device: list the eMMC partitions and their names.
 cat /proc/partitions
 ls -l /dev/disk/by-partlabel/ 2>/dev/null   # or parse the GPT
 
-# Pull each partition + the boot areas. Example (adjust to the real table):
+# Pull each partition + the boot areas (see the partition map above for names).
 for p in /dev/mmcblk0p*; do
   n=$(basename "$p")
   ssh root@<device> "cat $p" | gzip > "backup/${n}.img.gz"
@@ -81,9 +111,26 @@ ssh root@<device> "cat /proc/cmdline"     > backup/cmdline.txt
 ```
 
 Verify sizes look sane and the rootfs image gunzips + `debugfs`-stats cleanly.
-The rootfs is the large one (`…p17`, gzipped ~1.8 GB). To restore a single
-partition later, `dd` the raw image back onto the same `/dev/mmcblk0pN`; to fully
-recover, re-flash a stock `.axp` over AXDL (above).
+`p17` (`rootfs`) is the large one — ~30 GB, gzipped ~1.8 GB — back it up
+separately with streaming gzip as the loop above already does; budget the
+time/disk for it. To restore a single partition later, `dd` the raw image back
+onto the same `/dev/mmcblk0pN`; to fully recover, re-flash a stock `.axp` over
+AXDL (above).
+
+### Quick integrity check for signed-partition backups
+
+The signed boot-chain images (`spl`, `atf`/`atf_b`, `uboot`/`uboot_b`,
+`optee`/`optee_b`, `dtb`/`dtb_b`, `kernel`/`kernel_b`) all carry a 1 KB header
+with magic bytes `0x55543322` at offset 4 (little-endian). A well-formed
+backup of, say, the `kernel` partition (`p14`) should show:
+
+```bash
+zcat backup/mmcblk0p14.img.gz | xxd -s 4 -l 4 -
+# 00000004: 2233 5455                                ".3TU"
+```
+
+If that doesn't match, the dump is truncated/corrupt, or it's the wrong
+partition — re-pull it before trusting the backup as a restore point.
 
 ---
 
@@ -101,6 +148,35 @@ sudo dd if=result/AX630C_emmc_arm64_k419_sipeed_nanokvm-sdcard.img \
 sync
 # Insert the card, then HOLD `User` while applying power, release right away.
 # Revert: power on WITHOUT holding `User` (and/or remove the card) -> stock eMMC.
+```
+
+### Flashing the SD card remotely (no card reader)
+
+In this dev setup the SD card lives in the device's **own TF slot**, not a
+reader on the workstation — the image is streamed **over SSH** into
+`/dev/mmcblk1` on the running device instead of `dd`'d locally.
+
+```bash
+# 1. Safety guard FIRST, by exact sector count -- eMMC is mmcblk0, NEVER write
+#    it during SD testing.
+ssh root@<device> 'cat /sys/block/mmcblk1/size'
+# Compare that number against the known card's sector count before doing
+# anything else. If it doesn't match what you expect, stop.
+
+# 2. Unmount any mounted mmcblk1 partitions on the device.
+ssh root@<device> 'umount /dev/mmcblk1p* 2>/dev/null; true'
+
+# 3. Stream the image over SSH straight onto the card.
+dd if=result/AX630C_..._sdcard.img bs=4M | \
+  ssh root@<device> 'dd of=/dev/mmcblk1 bs=4M conv=fsync && sync'
+
+# 4. Verify. Drop the device's page cache first, or you hash cached pages
+#    instead of what actually landed on the card.
+ssh root@<device> 'echo 3 > /proc/sys/vm/drop_caches'
+size=$(stat -c%s result/AX630C_..._sdcard.img)
+ssh root@<device> "head -c $size /dev/mmcblk1 | sha256sum"
+sha256sum result/AX630C_..._sdcard.img
+# The two digests must match.
 ```
 
 **How SD boot works (from the SDK source, confirmed against the official image):**
