@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# kvmscp -- copy files to the NanoKVM-Pro test device over SCP, trying both
+# known IPs (Tailscale first, then LAN) and both known passwords (the
+# configured password, then the factory-default password used right after a
+# reflash) until one combination works. Same fallback logic as tools/kvmssh.
+#
+# Usage: tools/kvmscp <local-file> [more-local-files...] <remote-path>
+#   The remote path is a path ON THE DEVICE (e.g. /tmp/). This script adds
+#   the root@<ip>: prefix itself -- do not include it yourself.
+#   Example: tools/kvmscp lib/libkvm.so lib/libkvm.so.0 /tmp/
+#
+# Credentials and IPs live in ~/.config/nanokvm/device.env (chmod 600, never
+# committed). See .claude/skills/kvm-device/SKILL.md for the full picture.
+#
+# Exit codes:
+#   0   scp succeeded
+#   1   env file missing/misconfigured, bad usage, or no IP/password
+#       combination could even establish a connection
+#   N   scp itself exited N once a connection was successfully authenticated
+set -u
+
+ENV_FILE="${NANOKVM_DEVICE_ENV:-$HOME/.config/nanokvm/device.env}"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "kvmscp: env file not found: $ENV_FILE" >&2
+    echo "kvmscp: expected KVM_IP_TAILSCALE, KVM_IP_LAN, KVM_PASSWORD, KVM_PASSWORD_FACTORY" >&2
+    exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+if [ "$#" -lt 2 ]; then
+    echo "kvmscp: usage: kvmscp <local-files...> <remote-path>" >&2
+    exit 1
+fi
+
+# Last argument is the remote path; everything before it is a local file.
+args=("$@")
+remote_path="${args[-1]}"
+local_files=("${args[@]:0:${#args[@]}-1}")
+
+ips=()
+[ -n "${KVM_IP_TAILSCALE:-}" ] && ips+=("$KVM_IP_TAILSCALE")
+[ -n "${KVM_IP_LAN:-}" ] && ips+=("$KVM_IP_LAN")
+
+passwords=()
+[ -n "${KVM_PASSWORD:-}" ] && passwords+=("$KVM_PASSWORD")
+[ -n "${KVM_PASSWORD_FACTORY:-}" ] && passwords+=("$KVM_PASSWORD_FACTORY")
+
+if [ "${#ips[@]}" -eq 0 ]; then
+    echo "kvmscp: no IPs configured in $ENV_FILE" >&2
+    exit 1
+fi
+if [ "${#passwords[@]}" -eq 0 ]; then
+    echo "kvmscp: no passwords configured in $ENV_FILE" >&2
+    exit 1
+fi
+
+last_stderr=""
+last_ip=""
+
+for ip in "${ips[@]}"; do
+    # Fast pre-probe: skip an IP outright if port 22 isn't even reachable.
+    if ! timeout 4 bash -c "echo > /dev/tcp/$ip/22" 2>/dev/null; then
+        last_stderr="pre-probe: tcp/22 unreachable on $ip"
+        last_ip="$ip"
+        continue
+    fi
+
+    for pw in "${passwords[@]}"; do
+        stderr_file="$(mktemp)"
+        nix shell nixpkgs#sshpass --command sshpass -p "$pw" \
+            scp -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o LogLevel=ERROR \
+                -o ConnectTimeout=12 \
+                "${local_files[@]}" "root@$ip:$remote_path" \
+            2>"$stderr_file"
+        rc=$?
+
+        if [ "$rc" -eq 0 ]; then
+            rm -f "$stderr_file"
+            exit 0
+        fi
+
+        last_stderr="$(cat "$stderr_file")"
+        last_ip="$ip"
+        rm -f "$stderr_file"
+
+        if [ "$rc" -eq 5 ]; then
+            # sshpass: invalid/incorrect password -- try the next password on
+            # this same IP.
+            continue
+        fi
+
+        if [ "$rc" -eq 255 ]; then
+            # ssh/scp's own generic failure code: connection refused, timed
+            # out, or dropped during handshake. Not a password problem --
+            # move on to the next IP.
+            break
+        fi
+
+        # Any other nonzero exit means the connection was established but
+        # scp itself failed (e.g. no such remote directory, disk full).
+        # Propagate that exit code as-is.
+        exit "$rc"
+    done
+done
+
+echo "kvmscp: all IP/password combinations failed. Last attempt was $last_ip:" >&2
+echo "$last_stderr" >&2
+exit 1

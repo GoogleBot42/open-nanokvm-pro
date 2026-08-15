@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# kvmssh -- run a command on the NanoKVM-Pro test device over SSH, trying both
+# known IPs (Tailscale first, then LAN) and both known passwords (the
+# configured password, then the factory-default password used right after a
+# reflash) until one combination works.
+#
+# Usage: tools/kvmssh '<remote command>'
+#   Everything after the script name is passed through as the remote command,
+#   e.g.: tools/kvmssh 'uname -r && echo OK'
+#
+# Credentials and IPs live in ~/.config/nanokvm/device.env (chmod 600, never
+# committed). See .claude/skills/kvm-device/SKILL.md for the full picture.
+#
+# Exit codes:
+#   0       remote command succeeded
+#   1       env file missing/misconfigured, or no IP/password combination
+#           could even establish a connection
+#   N       the remote command itself exited N (propagated as-is), once a
+#           connection was successfully established and authenticated
+#   Note: sshpass cannot distinguish "wrong password" from "remote command
+#   legitimately exited 5" -- see the comment above the rc==5 check below.
+set -u
+
+ENV_FILE="${NANOKVM_DEVICE_ENV:-$HOME/.config/nanokvm/device.env}"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "kvmssh: env file not found: $ENV_FILE" >&2
+    echo "kvmssh: expected KVM_IP_TAILSCALE, KVM_IP_LAN, KVM_PASSWORD, KVM_PASSWORD_FACTORY" >&2
+    exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+if [ "$#" -eq 0 ]; then
+    echo "kvmssh: usage: kvmssh '<remote command>'" >&2
+    exit 1
+fi
+
+ips=()
+[ -n "${KVM_IP_TAILSCALE:-}" ] && ips+=("$KVM_IP_TAILSCALE")
+[ -n "${KVM_IP_LAN:-}" ] && ips+=("$KVM_IP_LAN")
+
+passwords=()
+[ -n "${KVM_PASSWORD:-}" ] && passwords+=("$KVM_PASSWORD")
+[ -n "${KVM_PASSWORD_FACTORY:-}" ] && passwords+=("$KVM_PASSWORD_FACTORY")
+
+if [ "${#ips[@]}" -eq 0 ]; then
+    echo "kvmssh: no IPs configured in $ENV_FILE" >&2
+    exit 1
+fi
+if [ "${#passwords[@]}" -eq 0 ]; then
+    echo "kvmssh: no passwords configured in $ENV_FILE" >&2
+    exit 1
+fi
+
+last_stderr=""
+last_ip=""
+
+for ip in "${ips[@]}"; do
+    # Fast pre-probe: skip an IP outright if port 22 isn't even reachable.
+    # This avoids waiting out a full ssh ConnectTimeout on a dead IP (e.g.
+    # the Tailscale address when the tailnet link is down).
+    if ! timeout 4 bash -c "echo > /dev/tcp/$ip/22" 2>/dev/null; then
+        last_stderr="pre-probe: tcp/22 unreachable on $ip"
+        last_ip="$ip"
+        continue
+    fi
+
+    for pw in "${passwords[@]}"; do
+        stderr_file="$(mktemp)"
+        nix shell nixpkgs#sshpass --command sshpass -p "$pw" \
+            ssh -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o LogLevel=ERROR \
+                -o ConnectTimeout=12 \
+                "root@$ip" "$@" \
+            2>"$stderr_file"
+        rc=$?
+
+        if [ "$rc" -eq 0 ]; then
+            rm -f "$stderr_file"
+            exit 0
+        fi
+
+        last_stderr="$(cat "$stderr_file")"
+        last_ip="$ip"
+        rm -f "$stderr_file"
+
+        if [ "$rc" -eq 5 ]; then
+            # sshpass: invalid/incorrect password -- try the next password on
+            # this same IP. Caveat: if the remote command itself legitimately
+            # exits with status 5 after a successful login, sshpass cannot
+            # tell the difference and this will misfire as an auth retry.
+            continue
+        fi
+
+        if [ "$rc" -eq 255 ]; then
+            # ssh's own generic failure code: connection refused, timed out,
+            # or dropped during handshake. Not a password problem -- move on
+            # to the next IP rather than retrying passwords against a
+            # connection that isn't accepting them.
+            break
+        fi
+
+        # Any other nonzero exit means ssh connected, authenticated, and ran
+        # the remote command, which itself exited nonzero. Propagate that
+        # exit code as-is rather than masking it as a connectivity failure.
+        exit "$rc"
+    done
+done
+
+echo "kvmssh: all IP/password combinations failed. Last attempt was $last_ip:" >&2
+echo "$last_stderr" >&2
+exit 1

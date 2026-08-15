@@ -6,3 +6,6 @@ result-*
 
 # local .axp copies (1.4 GB firmware bundles)
 *.axp
+
+# per-machine Claude Code overrides
+.claude/settings.local.json
