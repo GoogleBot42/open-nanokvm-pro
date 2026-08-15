@@ -1,0 +1,128 @@
+name: release
+
+# Publishes a release when a `vX.Y.Z` tag arrives.
+#
+# This GitHub repo is a READ-ONLY DOWNSTREAM MIRROR of the Gitea source of
+# truth (git.neet.dev/zuckerberg/open-nanokvm-pro). Tags are cut on Gitea
+# (`tools/release`) and reach here via the push mirror; this workflow's only
+# job is to build and attach release assets to the mirrored tag. It must
+# NEVER create commits or tags — that would diverge from the mirror. Hence:
+# no workflow_dispatch, no VERSION writing; the committed VERSION file is the
+# source of truth and must already equal the tag (tools/release guarantees
+# this before the tag ever leaves Gitea).
+#
+# Publishing a release IS the OTA push: NanoKVM-Server polls
+# `releases/latest/download/...` (flake.nix `updateBaseUrl`, docs/updates.md),
+# so devices offer the update when the manifest version is semver-greater than
+# the installed /kvmapp/version.
+#
+# The job is idempotent: re-running upserts the release and re-uploads any
+# missing asset, so a transient failure is recovered by re-running the run.
+#
+# Why the .axp upload is split out: GitHub's large release-asset path
+# intermittently 500s with "Error creating policy". action-gh-release surfaces
+# that as a fatal error that aborts the whole release (it took down the first
+# real run *after* the OTA assets had uploaded). So the small OTA assets — the
+# only thing an update needs — publish first via action-gh-release, and the
+# 1.4 GB .axp uploads afterward with the `gh` CLI (proper chunked upload +
+# backoff) and retries. If it still fails, the job fails loudly; the OTA is
+# already live and a re-run finishes the .axp.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write        # create releases + upload assets (never commits)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150   # the cross kernel + boot chain + multi-GB rootfs are slow
+    steps:
+      - name: Free up runner disk space
+        # The rootfs de-sparses to several GB and the base .axp is ~1.4 GB; the
+        # stock runner image leaves too little headroom.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -a -f || true
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0   # full history for release notes
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            system-features = big-parallel kvm
+
+      - name: Resolve and verify version
+        id: ver
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
+            || { echo "::error::invalid tag '$GITHUB_REF_NAME' (expected vX.Y.Z)"; exit 1; }
+          FILE="$(tr -d '[:space:]' < VERSION)"
+          [ "$FILE" = "$V" ] || { echo "::error::VERSION file ('$FILE') != tag version ('$V'). Tags are cut from Gitea with tools/release, which keeps them in lockstep — do not hand-create tags."; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V"    >> "$GITHUB_OUTPUT"
+          echo "Release v$V"
+
+      - name: Build web-update package
+        run: nix build .#update-package --print-build-logs --out-link result-update
+
+      - name: Build firmware image (.axp)
+        run: nix build .#firmware-image --print-build-logs --out-link result-image
+
+      - name: Stage release assets
+        run: |
+          mkdir -p dist
+          cp result-update/nanokvm_pro_latest.json dist/
+          cp result-update/nanokvm_pro_*.tar.gz     dist/
+          cp result-image/*.axp                     dist/
+          echo "--- release assets ---"; ls -l dist
+          grep -q '"version": "${{ steps.ver.outputs.version }}"' dist/nanokvm_pro_latest.json \
+            || { echo "::error::manifest version != ${{ steps.ver.outputs.version }}"; exit 1; }
+
+      - name: Publish release + OTA assets
+        # Small, reliable, and all the OTA needs. Creates (or updates, on
+        # re-run) the release on the already-mirrored tag.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: |
+            dist/nanokvm_pro_latest.json
+            dist/nanokvm_pro_${{ steps.ver.outputs.version }}.tar.gz
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+      - name: Upload firmware .axp
+        # Separate from the OTA assets because GitHub's large-asset upload
+        # intermittently 500s ("Error creating policy"). The `gh` CLI does the
+        # correct chunked upload; we retry genuine transients and fail loudly if
+        # the upload truly cannot complete (the OTA is already live — re-run to
+        # finish the .axp).
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          axp=$(ls dist/*.axp)
+          n=5
+          for attempt in $(seq 1 "$n"); do
+            if gh release upload "$TAG" "$axp" --clobber; then
+              echo "uploaded $(basename "$axp") on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -lt "$n" ]; then
+              echo "::warning::.axp upload attempt $attempt/$n failed; retrying in $((attempt*20))s..."
+              sleep $((attempt*20))
+            fi
+          done
+          echo "::error::.axp upload failed after $n attempts. The OTA (manifest + tarball) is published and live; re-run this workflow to finish uploading the .axp."
+          exit 1

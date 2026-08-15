@@ -51,16 +51,17 @@
 
       # Release identity for the OTA / web-update system (docs/updates.md).
       # `version` comes from ./VERSION (first token) — the single source of
-      # truth that `tools/release` tags and publishes from — and is stamped
-      # into /kvmapp/version and the update manifest. `updateBaseUrl` is baked
-      # into NanoKVM-Server so its update check pulls from our Gitea releases
-      # instead of Sipeed's CDN. Gitea has no GitHub-style
-      # `releases/latest/download` route, so the URL targets a rolling release
-      # tagged `latest` whose assets `tools/release` refreshes on every cut.
+      # truth that `tools/release` tags from — and is stamped into
+      # /kvmapp/version and the update manifest. `updateBaseUrl` is baked into
+      # NanoKVM-Server so its update check pulls from our releases instead of
+      # Sipeed's CDN. Releases are hosted on the public GitHub downstream
+      # mirror (the Gitea source of truth is Tailscale-only, unreachable from
+      # devices); `releases/latest/download/<asset>` always resolves to the
+      # newest release's assets.
       version =
         let m = builtins.match "[[:space:]]*([^[:space:]]+).*" (builtins.readFile ./VERSION);
         in if m == null then "0.0.0-dev" else builtins.head m;
-      updateBaseUrl = "https://git.neet.dev/zuckerberg/open-nanokvm-pro/releases/download/latest";
+      updateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
     in
     flake-utils.lib.eachSystem supportedSystems (
       localSystem:

@@ -1,9 +1,10 @@
 { pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder, axera-libs
-, # Base URL the on-device updater fetches from: the Gitea repo's rolling
-  # `latest` release (its assets are refreshed by tools/release on every cut,
-  # since Gitea has no GitHub-style releases/latest/download route). See
-  # flake.nix (updateBaseUrl) and docs/updates.md.
-  updateBaseUrl ? "https://git.neet.dev/zuckerberg/open-nanokvm-pro/releases/download/latest"
+, # Base URL the on-device updater fetches from: the public GitHub downstream
+  # mirror's releases (`releases/latest/download` always resolves to the
+  # newest release's assets; the Gitea source of truth is Tailscale-only and
+  # unreachable from devices). See flake.nix (updateBaseUrl) and
+  # docs/updates.md.
+  updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
 , ...
 }:
 

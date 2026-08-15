@@ -120,12 +120,13 @@ propose SG2002 work without flagging this gap up front.
 
 ## 5. Known inconsistencies awaiting work
 
-- **Release pipeline migrated to Gitea (2026-08-15), but no release cut
-  yet.** `updateBaseUrl` points at the rolling `latest` Gitea release,
-  `tools/release` is the canonical cut path, `VERSION` is `2.0.0`, and the
-  GitHub workflow is deleted — see `docs/updates.md`. What still gates a
-  usable OTA (tracked in issue #37): the device cannot reach git.neet.dev
-  (Tailscale-only, device not on the tailnet — needs-human), and the
-  1.4 GB `.axp` exceeds the Gitea attachment limit of 1024 MB
-  (needs-human app.ini bump). Gitea Actions has a runner but release
-  builds on it need a binary cache first (issue #5).
+- **Release pipeline: Gitea source of truth → public GitHub downstream
+  mirror (architecture set 2026-08-15, Jeremy's decision), no release cut
+  yet.** `updateBaseUrl` points at GitHub `releases/latest/download`
+  (public — the earlier device-reachability and `.axp`-size blockers are
+  moot); `tools/release` tags on Gitea; the mirrored tag triggers the
+  GitHub Actions release build (`.github/workflows/release.yml`,
+  tag-trigger-only, never commits). See `docs/updates.md`. Gates before
+  the first release (issue #37): Jeremy configures the Gitea push mirror
+  (with tag sync + PAT identity), then `tools/release` cuts `v2.0.0`.
+  Never propose pushing/tagging on GitHub directly.

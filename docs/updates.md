@@ -1,10 +1,19 @@
 # Updates & releases
 
 How this firmware builds device images and serves its **own** over-the-air
-updates — so the web UI's "update" button pulls from **our** Gitea releases
-([git.neet.dev/zuckerberg/open-nanokvm-pro](https://git.neet.dev/zuckerberg/open-nanokvm-pro))
-instead of Sipeed's CDN. See [architecture.md](architecture.md) for the runtime
-and [building.md](building.md) for the build.
+updates — so the web UI's "update" button pulls from **our** releases instead
+of Sipeed's CDN. See [architecture.md](architecture.md) for the runtime and
+[building.md](building.md) for the build.
+
+**Forge topology:** the source of truth is Gitea
+([git.neet.dev/zuckerberg/open-nanokvm-pro](https://git.neet.dev/zuckerberg/open-nanokvm-pro),
+Tailscale-only, locked down). A **public downstream mirror** at
+[github.com/GoogleBot42/open-nanokvm-pro](https://github.com/GoogleBot42/open-nanokvm-pro)
+exists solely for public distribution: it receives every branch and tag via
+Gitea's push mirror, its Actions build the release assets, and its Releases
+are what devices poll (public, no tailnet needed, 2 GB asset limit fits the
+`.axp`). **Never create commits, tags, or edits on GitHub directly** — all
+git data flows one way, Gitea → GitHub.
 
 - [The idea](#the-idea)
 - [One-time setup](#one-time-setup)
@@ -17,23 +26,12 @@ and [building.md](building.md) for the build.
 
 ---
 
-> **Status: no Gitea release has been cut yet**, so the update button has
-> nothing to find until the first `tools/release` run. Two constraints gate a
-> *usable* OTA (both tracked in issue #37):
->
-> - **Reachability.** git.neet.dev is Tailscale-only and the device is not on
->   the tailnet (verified 2026-08-15: DNS resolves to the tailnet address,
->   connection times out). Until the device can reach the forge — tailnet
->   enrollment or a public release path — OTA checks fail silently (the UI
->   just reports "up to date").
-> - **`.axp` size.** The flashable image (~1.4 GB) exceeds the server's
->   attachment limit (`[attachment] MAX_SIZE`, currently 1024 MB), so
->   releases carry it only once that limit is raised. OTA itself is
->   unaffected — the payload tarball is ~30 MB.
->
-> The old GitHub pipeline (releases `v0.0.2`–`v0.0.5` at
-> `github.com/GoogleBot42/open-nanokvm-pro`) is retired; the version line
-> restarts at `2.0.0` per [Versioning](#versioning).
+> **Status: waiting on the mirror + first release.** The pipeline goes live
+> once the Gitea push mirror to GitHub is configured (tag sync included —
+> owner action, tracked in issue #37) and the first `tools/release` run cuts
+> `v2.0.0`. Until then the update button finds nothing newer and the UI
+> reports "up to date". Old releases `v0.0.2`–`v0.0.5` on GitHub predate the
+> version-line restart at `2.0.0` (see [Versioning](#versioning)).
 
 ## The idea
 
@@ -41,11 +39,9 @@ Stock NanoKVM-Server checks `https://cdn.sipeed.com/nanokvm/...` for updates. We
 build the server **from source**, so we patch two things (in
 `pkgs/nanokvm-server.nix`, applied to the pinned upstream source):
 
-1. **The update base URL** → our Gitea releases (`flake.nix` `updateBaseUrl`).
-   Gitea has no GitHub-style `releases/latest/download` route, so the URL
-   targets `releases/download/latest` — a **rolling release tagged `latest`**
-   whose assets `tools/release` replaces on every cut. The manifest URL stays
-   stable; the tag moves.
+1. **The update base URL** → the public GitHub mirror's releases
+   (`flake.nix` `updateBaseUrl`). `releases/latest/download/<name>` always
+   resolves to the newest release's assets, so the manifest URL is stable.
 2. **The apply step** → instead of the vendor's three-`.deb` + `dpkg -i` flow, our
    `install()` (see `pkgs/nanokvm-server/install-override.go.in`) applies a
    **full-firmware** payload: a `rootfs/` overlay copied over `/` (app + web +
@@ -69,54 +65,54 @@ Publishing a release **is** the OTA push.
 
 ## One-time setup
 
-1. **The repo and update URL are already set.** The forge is
-   [`zuckerberg/open-nanokvm-pro` on git.neet.dev](https://git.neet.dev/zuckerberg/open-nanokvm-pro);
-   `flake.nix` `updateBaseUrl` points at
-   `https://git.neet.dev/zuckerberg/open-nanokvm-pro/releases/download/latest`,
-   baked into `NanoKVM-Server` at build time. If you fork/move the repo, change
-   it there and rebuild (images built against the old URL keep pointing at it).
-2. **A Gitea token** with release (repo) scope, either as `GITEA_TOKEN` or via a
-   logged-in `tea` CLI (`tools/release` reads either).
-3. **Flash a build that has your URL** (see
+1. **The update URL is already set.** `flake.nix` `updateBaseUrl` points at
+   `https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download`
+   (the public mirror), baked into `NanoKVM-Server` at build time. If you
+   fork/move the mirror, change it there and rebuild (images built against
+   the old URL keep pointing at it).
+2. **Configure the Gitea push mirror** (repo Settings → Mirror on Gitea):
+   target `github.com/GoogleBot42/open-nanokvm-pro`, with **tag sync** and
+   ideally sync-on-commit (otherwise a cut release waits for the mirror
+   interval or a manual "Synchronize now"). The mirror must push with a
+   PAT/deploy-key identity — pushes from such identities trigger the GitHub
+   release workflow; pushes authored by `github-actions` would not.
+3. **GitHub Actions on the mirror**: enabled, with workflow permissions
+   allowing `contents: write` (the default `GITHUB_TOKEN` is sufficient) so
+   `release.yml` can create releases and upload assets.
+4. **Flash a build that has your URL** (see
    [flashing-and-recovery.md](flashing-and-recovery.md)) so the device's update
-   button targets your releases — and make sure the device can actually reach
-   the forge host (see the status note above).
+   button targets your releases.
 
 ---
 
 ## Cutting a release
 
-Bump the version, push, and run the release script from the repo root:
+Everything starts on Gitea; GitHub only builds and hosts the assets.
 
 ```bash
 echo 2.0.0 > VERSION
 git commit -am "release: 2.0.0" && git push
-tools/release          # add --no-axp to skip the 1.4 GB flashable image
+tools/release
 ```
 
-`tools/release`:
+`tools/release` verifies (semver `VERSION`, clean tree, HEAD pushed, tag
+free), then tags `v2.0.0` **on Gitea** and pushes the tag. From there:
 
-1. sanity-checks (semver `VERSION`, clean tree, HEAD pushed, tag free),
-2. `nix build .#update-package` (and `.#firmware-image` unless `--no-axp`),
-3. cross-checks the built manifest against `VERSION`,
-4. publishes the archival release `v2.0.0` with all assets:
+1. the Gitea push mirror replicates the commit + tag to GitHub
+   (`tools/release` polls the public API until the tag appears);
+2. `.github/workflows/release.yml` fires on the mirrored tag, checks
+   `VERSION` == tag (it never writes or commits anything — the mirror must
+   stay one-way), builds `.#update-package` and `.#firmware-image`, and
+   publishes the GitHub Release with:
    - `nanokvm_pro_latest.json` (manifest),
    - `nanokvm_pro_2.0.0.tar.gz` (OTA payload),
-   - `AX630C_..._sipeed_nanokvm-selfbuilt.axp` (device image, when it fits —
-     see the status note),
-5. refreshes the rolling **`latest`** release (deletes and re-creates the
-   `latest` tag+release with the new manifest + payload), and
-6. fetches the device-facing manifest URL back and verifies it byte-for-byte.
+   - `AX630C_..._sipeed_nanokvm-selfbuilt.axp` (device image, uploaded
+     separately with retries — GitHub's large-asset path is flaky).
 
-Once `latest` is refreshed, every device on an older version that can reach the
-forge sees the update in the web UI.
-
-**Why not CI?** Gitea Actions is enabled and a runner exists, but a release
-build on it currently rebuilds the whole aarch64 cross-toolchain from scratch
-(no binary cache) and nix runs unsandboxed in the runner container (the
-run dies on the `/homeless-shelter` purity check — see actions run #6).
-A release from a warm local nix store takes minutes instead of hours;
-CI releases can return with the binary-cache work tracked in issue #5.
+Once the release is published, every device on an older version sees the
+update in the web UI. A failed run is recovered by re-running it from the
+Actions tab (the job is idempotent); never fix a release by pushing to
+GitHub.
 
 ---
 
@@ -124,11 +120,11 @@ CI releases can return with the binary-cache work tracked in issue #5.
 
 ```
 web UI "check"  ─► GET /api/application/version (server)
-                     └─► GET releases/download/latest/nanokvm_pro_latest.json
+                     └─► GET releases/latest/download/nanokvm_pro_latest.json
                           └─► {version, name, sha512, size}
 web UI compares  ─► semver.gt(latest, /kvmapp/version)?  → offer "update"
 user clicks      ─► POST /api/application/update (server)
-   server        ─► download releases/download/latest/<name>   (WS progress)
+   server        ─► download releases/latest/download/<name>   (WS progress)
                  ─► verify base64 SHA-512 == manifest.sha512
                  ─► untar → install(dir):
                        1. cp -a <dir>/rootfs/. /            (app+web+libkvm+modules)
@@ -239,8 +235,9 @@ shipped modules' `vermagic` matches the `4.19.125` modules directory, and
   update only when its `version` is **semver-greater** (`semver.gt`).
 - The version comes from the tracked `./VERSION` file — the single source of
   truth. `tools/release` refuses to run unless it is semver and untagged, and
-  tags the release `v<VERSION>`. (A malformed `VERSION` makes the flake fall
-  back to `0.0.0-dev`.)
+  tags `v<VERSION>` on Gitea; the GitHub workflow independently re-checks
+  `VERSION` == tag and fails the build on drift. (A malformed `VERSION` makes
+  the flake fall back to `0.0.0-dev`.)
 - Vendor stock devices report `1.2.x`, and the old GitHub pipeline cut
   `0.0.2`–`0.0.5` — versions a `1.2.x` device would never accept
   (`semver.gt` fails). The line therefore restarts at **`2.0.0`** (the
@@ -273,12 +270,18 @@ TLS won't work — the server uses `https://` and verifies the certificate.)
 
 - **No signature, only a hash.** The tarball is gated by a SHA-512 that comes from
   your own manifest — integrity, not authenticity. Whoever serves the manifest
-  controls what the device installs (it runs as root). Gitea releases over TLS
-  are the trust boundary; keep the repo's write access tight. (Signed OTA is
-  issue #31.)
-- **Build cost.** The `.axp` build cross-compiles the kernel + boot chain and
-  de-sparses a multi-GB rootfs — run `tools/release` from a machine with a warm
-  nix store. The `update-package` alone is small and fast.
+  controls what the device installs (it runs as root). **GitHub Releases over
+  TLS is the trust boundary** — note that's the *mirror*, not the Gitea source
+  of truth, so both the GitHub repo's write access and the mirror credential
+  matter. (Signed OTA — which would collapse that boundary back to the signing
+  key — is issue #31.)
+- **CI cost/disk.** The `.axp` build cross-compiles the kernel + boot chain and
+  de-sparses a multi-GB rootfs; on a stock GitHub runner it is slow (~2 h,
+  uncached) and disk-tight (the workflow frees space first). Consider a binary
+  cache if it gets painful. The `update-package` alone is small and fast.
+- **Mirrored-tag trigger.** The release workflow fires only if the mirror's
+  pushes come from a PAT/deploy-key identity. If a tag lands on GitHub and no
+  run starts, check the mirror's auth identity before anything else.
 - **kvmadmin / AI-assistant extensions.** Our build **removes** their backend
   routes (`pkgs/nanokvm-server.nix` rewrites `router/extensions.go` to register
   only the Tailscale routes — they fetched closed third-party code from

@@ -1,45 +1,28 @@
 #!/usr/bin/env bash
-# Cut a release on Gitea (git.neet.dev/zuckerberg/open-nanokvm-pro).
+# Cut a release. Runs entirely against the Gitea source of truth
+# (git.neet.dev/zuckerberg/open-nanokvm-pro); the GitHub mirror
+# (github.com/GoogleBot42/open-nanokvm-pro) and its Actions do the rest.
 #
-# Reads ./VERSION (the single source of truth), builds the OTA package (and,
-# unless --no-axp, the flashable .axp), then publishes:
+# Flow (docs/updates.md, "Cutting a release"):
+#   1. bump VERSION, commit, push (by hand, before running this);
+#   2. tools/release — verifies VERSION/tree/tag state, then tags v<VERSION>
+#      on Gitea and pushes the tag;
+#   3. the Gitea push mirror replicates the tag to GitHub;
+#   4. GitHub Actions (release.yml) fires on the mirrored tag, builds, and
+#      publishes the release assets the devices poll.
 #
-#   1. an archival release tagged v<VERSION> with all assets, and
-#   2. the rolling release tagged `latest`, whose assets the device-side
-#      updater fetches (updateBaseUrl = .../releases/download/latest). Gitea
-#      has no GitHub-style releases/latest/download route, so `latest` is a
-#      real tag+release whose assets are replaced on every cut.
-#
-# Flow: bump VERSION, commit, push, then run tools/release from the repo root.
-#
-# Auth: GITEA_TOKEN env var, or the tea CLI token in ~/.config/tea/config.yml.
-#
-# The .axp is ~1.4 GB; if it exceeds the server's attachment limit
-# ([attachment] MAX_SIZE, currently 1024 MB) the upload fails and the script
-# says so — the release stays valid without it (the .axp is only needed for
-# AXDL recovery, not OTA). Raise MAX_SIZE in the Gitea app.ini to include it.
+# This script never talks to GitHub with credentials — it only polls the
+# public API to confirm the mirrored tag arrived. Never create tags or
+# commits on GitHub directly; Gitea is the single source of truth.
 
 set -euo pipefail
 
-REPO="zuckerberg/open-nanokvm-pro"
-API="https://git.neet.dev/api/v1/repos/${REPO}"
-NO_AXP=0
-[ "${1:-}" = "--no-axp" ] && NO_AXP=1
+GH_REPO="GoogleBot42/open-nanokvm-pro"
 
 die() { echo "error: $*" >&2; exit 1; }
 
 [ -f VERSION ] && [ -f flake.nix ] || die "run from the repo root"
 
-TOKEN="${GITEA_TOKEN:-$(grep -oP 'token:\s*\K\S+' ~/.config/tea/config.yml 2>/dev/null | head -1 || true)}"
-[ -n "$TOKEN" ] || die "no Gitea token (set GITEA_TOKEN or configure tea)"
-auth=(-H "Authorization: token ${TOKEN}")
-
-api() { # <method> <path> [curl args...]
-  local method="$1" path="$2"; shift 2
-  curl -sSf -X "$method" "${auth[@]}" "${API}${path}" "$@"
-}
-
-# --- sanity ---------------------------------------------------------------
 V="$(tr -d '[:space:]' < VERSION)"
 echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
   || die "VERSION '$V' is not semver"
@@ -49,63 +32,22 @@ git diff --quiet && git diff --cached --quiet || die "working tree not clean"
 git fetch -q origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
   || die "HEAD is not pushed origin/main — commit and push first"
-SHA="$(git rev-parse HEAD)"
+git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null \
+  && die "tag ${TAG} already exists on Gitea — bump VERSION first"
 
-curl -sf "${auth[@]}" "${API}/tags/${TAG}" >/dev/null \
-  && die "tag ${TAG} already exists — bump VERSION first"
+echo "==> tagging ${TAG} on Gitea"
+git tag "$TAG"
+git push origin "$TAG"
 
-# --- build ----------------------------------------------------------------
-echo "==> nix build .#update-package (version $V)"
-nix build .#update-package --out-link result-update
-MANIFEST=result-update/nanokvm_pro_latest.json
-TARBALL="result-update/nanokvm_pro_${V}.tar.gz"
-[ -f "$MANIFEST" ] || die "manifest missing from update-package output"
-[ -f "$TARBALL" ] || die "expected $TARBALL in update-package output (VERSION/manifest mismatch?)"
-grep -q "\"version\": *\"$V\"" "$MANIFEST" || die "manifest version != $V"
-
-AXP=""
-if [ "$NO_AXP" = 0 ]; then
-  echo "==> nix build .#firmware-image (.axp)"
-  nix build .#firmware-image --out-link result-image
-  AXP="$(echo result-image/*.axp)"
-  [ -f "$AXP" ] || die "no .axp in firmware-image output"
-fi
-
-# --- publish --------------------------------------------------------------
-release_id() { # <tag> -> id or empty
-  curl -sf "${auth[@]}" "${API}/releases/tags/$1" | grep -oE '"id":[0-9]+' | head -1 | cut -d: -f2
-}
-
-upload() { # <release-id> <file>
-  local id="$1" f="$2" name; name="$(basename "$f")"
-  echo "    upload $name ($(du -h "$f" | cut -f1))"
-  api POST "/releases/${id}/assets?name=${name}" -F "attachment=@${f}" -o /dev/null
-}
-
-echo "==> publish ${TAG}"
-ID="$(api POST /releases -H 'Content-Type: application/json' \
-  -d "{\"tag_name\":\"${TAG}\",\"target_commitish\":\"${SHA}\",\"name\":\"${TAG}\",\"body\":\"open-nanokvm-pro ${V}\"}" \
-  | grep -oE '"id":[0-9]+' | head -1 | cut -d: -f2)"
-[ -n "$ID" ] || die "release creation returned no id"
-upload "$ID" "$MANIFEST"
-upload "$ID" "$TARBALL"
-if [ -n "$AXP" ]; then
-  upload "$ID" "$AXP" || echo "WARNING: .axp upload failed (likely over the server attachment limit); release is still valid — see script header." >&2
-fi
-
-echo "==> refresh rolling 'latest' release"
-OLD="$(release_id latest || true)"
-[ -n "$OLD" ] && api DELETE "/releases/${OLD}" -o /dev/null
-curl -sf -X DELETE "${auth[@]}" "${API}/tags/latest" -o /dev/null || true
-LID="$(api POST /releases -H 'Content-Type: application/json' \
-  -d "{\"tag_name\":\"latest\",\"target_commitish\":\"${SHA}\",\"name\":\"latest (${V})\",\"body\":\"Rolling release consumed by the on-device updater. Real release: ${TAG}.\"}" \
-  | grep -oE '"id":[0-9]+' | head -1 | cut -d: -f2)"
-[ -n "$LID" ] || die "rolling-release creation returned no id"
-upload "$LID" "$MANIFEST"
-upload "$LID" "$TARBALL"
-
-# --- verify the URL the device will hit -----------------------------------
-echo "==> verify device-facing manifest URL"
-GOT="$(curl -sfL "https://git.neet.dev/${REPO}/releases/download/latest/nanokvm_pro_latest.json")"
-[ "$GOT" = "$(cat "$MANIFEST")" ] || die "served manifest differs from built manifest"
-echo "OK: ${TAG} published; devices will see $V via releases/download/latest"
+echo "==> waiting for the mirror to carry ${TAG} to github.com/${GH_REPO}"
+for i in $(seq 1 30); do
+  if curl -sf "https://api.github.com/repos/${GH_REPO}/git/ref/tags/${TAG}" >/dev/null; then
+    echo "OK: tag mirrored. Watch the release build at:"
+    echo "    https://github.com/${GH_REPO}/actions"
+    exit 0
+  fi
+  sleep 10
+done
+echo "Tag not visible on GitHub after 5 min. If the mirror syncs on an" >&2
+echo "interval (not on push), wait for it or hit 'Synchronize now' on the" >&2
+echo "Gitea mirror settings — the release workflow fires when the tag lands." >&2
