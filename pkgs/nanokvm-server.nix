@@ -98,6 +98,64 @@ func extensionsRouter(r *gin.Engine) {
 	api.POST("/tailscale/restart", ts.Restart)     // tailscale restart
 }
 EOF
+
+    # 5. Idle power management for the capture pipeline. Adds
+    #    common/video_power.go (idle watcher + cgo bindings for our libkvm
+    #    extension kvmv_video_suspend/resume -- see pkgs/kvm-encoder/src) and
+    #    hooks every frame/audio read with markVideoActive(): reads only happen
+    #    while a client is attached (all streamer loops exit at zero clients),
+    #    so read-recency == viewer-recency, and the /api/streamer/local poller
+    #    (mini-display) can never keep capture awake. Config knob:
+    #    videoIdleTimeout (seconds) in /etc/kvm/server.yaml; 0/unset = 300,
+    #    negative = disabled. State surfaces as "video_state" ("active" |
+    #    "suspended") in /api/streamer/local.
+    cp ${./nanokvm-server/video-power.go.in} common/video_power.go
+
+    substituteInPlace common/kvm_vision.go \
+      --replace-fail 'func (k *KvmVision) ReadMjpeg(width uint16, height uint16, quality uint16) (data []byte, result int) {' \
+'func (k *KvmVision) ReadMjpeg(width uint16, height uint16, quality uint16) (data []byte, result int) {
+	k.markVideoActive()' \
+      --replace-fail 'func (k *KvmVision) ReadH264(width uint16, height uint16, bitRate uint16) (data []byte, result int) {' \
+'func (k *KvmVision) ReadH264(width uint16, height uint16, bitRate uint16) (data []byte, result int) {
+	k.markVideoActive()' \
+      --replace-fail 'func (k *KvmVision) ReadH265(width uint16, height uint16, bitRate uint16) (data []byte, result int) {' \
+'func (k *KvmVision) ReadH265(width uint16, height uint16, bitRate uint16) (data []byte, result int) {
+	k.markVideoActive()' \
+      --replace-fail 'func (k *KvmVision) ReadAudio() (data []byte, result int) {' \
+'func (k *KvmVision) ReadAudio() (data []byte, result int) {
+	k.markVideoActive()'
+
+    # Start the idle watcher at boot (after screen/config init).
+    substituteInPlace main.go \
+      --replace-fail '_ = common.GetScreen()' \
+'_ = common.GetScreen()
+
+	// suspend the capture pipeline when idle (our common/video_power.go)
+	common.StartVideoIdleWatcher()'
+
+    # Config knob (viper matches the yaml key case-insensitively by field name).
+    substituteInPlace config/types.go \
+      --replace-fail 'Stun           string   `yaml:"stun"`' \
+'Stun           string   `yaml:"stun"`
+	VideoIdleTimeout int    `yaml:"videoIdleTimeout"`'
+
+    # Surface the suspend state on /api/streamer/local so pollers (mini-display)
+    # can tell "suspended" from plain "no viewer" -- endpoint keeps working
+    # while suspended (it only reads /proc + in-memory state).
+    substituteInPlace service/ui/response.go \
+      --replace-fail 'InstanceID string  `json:"instance_id"`' \
+'InstanceID string  `json:"instance_id"`
+	VideoState string  `json:"video_state"`'
+    substituteInPlace service/ui/streamer.go \
+      --replace-fail 'clients := 0' \
+'videoState := "active"
+	if common.VideoIsSuspended() {
+		videoState = "suspended"
+	}
+	clients := 0' \
+      --replace-fail 'Streamer: Streamer{' \
+'Streamer: Streamer{
+				VideoState: videoState,'
   '';
 
   # cgo on for the kvm_vision + opus bindings.

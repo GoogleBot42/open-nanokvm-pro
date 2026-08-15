@@ -173,7 +173,12 @@ def get_stream_status():
         with urllib.request.urlopen(STREAMER_URL, timeout=3,
                                     context=_SSL_CTX) as r:
             data = json.load(r)
-        fps = data["result"]["streamer"]["source"]["captured_fps"]
+        streamer = data["result"]["streamer"]
+        # video_state == "suspended": capture pipeline powered down after the
+        # server's idle timeout (videoIdleTimeout). Expected while unwatched.
+        if streamer.get("video_state") == "suspended":
+            return "sleep", "power save"
+        fps = streamer["source"]["captured_fps"]
         if fps and fps > 0:
             return "streaming", f"{fps} fps"
         return "idle", "no viewer"
@@ -206,9 +211,11 @@ def build_lines():
     (font_name, color565, text) -- or a ("gap", pixels, None) spacer."""
     ips = get_ips()
     state, detail = get_stream_status()
-    stream_color = {"streaming": GREEN, "idle": GREY, "down": AMBER}[state]
+    stream_color = {"streaming": GREEN, "idle": GREY, "sleep": GREY,
+                    "down": AMBER}[state]
     stream_text = {"streaming": f"LIVE  {detail}",
                    "idle": "idle  (no viewer)",
+                   "sleep": "asleep  (power save)",
                    "down": "server not running"}[state]
 
     lines = [

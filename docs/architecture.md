@@ -134,6 +134,53 @@ conversion), so the ISP is **bypassed** — no ISP/3A algorithm blobs are needed
 the KVM path. `libkvm` links the Axera libs directly (`-lax_venc -lax_sys
 -lax_proton -lax_mipi -lax_ivps`) plus `libopus`/`libasound` for audio.
 
+### Capture lifecycle & idle power-down
+
+The pipeline is **lazy**: nothing is initialized until the first
+`kvmv_read_img` call, which brings up SYS/pool → MIPI_RX → VIN → VENC at the
+*live* source geometry read from `/proc/lt6911_info` (`init_pipeline_locked`
+in `libkvm.c`). Every streamer loop in the Go server (WebRTC, MJPEG, direct
+H.264) exits as soon as its client count reaches zero, so frames are only ever
+read while somebody is watching.
+
+**Idle suspend (our addition):** the Go server hooks every frame/audio read
+(`markVideoActive()` in the patched-in `common/video_power.go`; see
+`pkgs/nanokvm-server.nix` + `pkgs/nanokvm-server/video-power.go.in`) and runs
+a watcher that, after **`videoIdleTimeout` seconds without any read** (config
+key in `/etc/kvm/server.yaml`; `0`/unset = **300 s**, negative = disabled),
+calls our libkvm extension `kvmv_video_suspend()`:
+
+- **Torn down:** VENC channel + `AX_VENC_Deinit`, `AX_ISP`/`AX_VIN` stop &
+  destroy, `AX_MIPI_RX_Stop`/`DeInit`, `AX_POOL_Exit` (releases the ~16 MB CMM
+  video pool), `AX_SYS_Deinit`, plus the ALSA/Opus HDMI-audio capture. This is
+  the exact `kvmv_deinit` teardown sequence, re-used.
+- **Deliberately kept powered:** the **LT6911UXC HDMI receiver**. Its only
+  power control (`/proc/lt6911_info/power` → `lt6911_pwr_ctrl()` → the chip's
+  PWR GPIO in `drivers/misc/lt6911_manage.c` — this is also what the legacy
+  `kvmv_hdmi_control()` toggles) cuts the whole chip, including the EDID/HPD
+  it presents to the attached host: the host would see its monitor unplug and
+  rearrange the desktop. Partial savings with zero host-visible side effects
+  wins.
+
+**Resume** is synchronous and transparent: the first read after a suspend
+(first viewer connecting, WebRTC or MJPEG alike) calls `kvmv_video_resume()`,
+which re-runs the normal lazy-init path — including re-reading the live
+`/proc/lt6911_info` geometry, so an **HDMI mode change while suspended** is
+absorbed exactly like a fresh server start. Expected resume latency is the
+normal first-frame bring-up (~1–2 s). Even if the explicit resume fails
+(e.g. no HDMI signal at that instant), `kvmv_read_img` keeps retrying init on
+every read, same as at process start. Suspend state is visible as
+`"video_state": "active" | "suspended"` in `GET /api/streamer/local` (the
+endpoint keeps working while suspended — it reads only `/proc` and in-memory
+state), and in the logs (`video capture suspended after …` /
+`OPEN-KVM: video pipeline suspended/resumed`). The mini-display's status poll
+uses only that endpoint, never the read path, so it cannot keep capture awake;
+it shows `asleep (power save)` while suspended.
+
+No-signal behavior is unchanged: HDMI-unplugged with a viewer attached keeps
+the pipeline up (reads continue, frames time out), and with no viewer the
+ordinary idle timer suspends anyway.
+
 **Load-bearing linker detail:** `libkvm` needs `DT_RPATH` (transitive), **not**
 `DT_RUNPATH`. It `DT_NEEDED`s `libax_proton`, which in turn needs `libax_engine`.
 `DT_RUNPATH` is searched only for a library's *own* direct deps, so the transitive

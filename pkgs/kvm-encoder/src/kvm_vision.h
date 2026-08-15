@@ -68,6 +68,20 @@ int kvmv_set_gop(uint8_t _gop);
 int kvmv_hdmi_control(uint8_t _en);
 int kvmv_read_audio(uint8_t** _pp_kvm_data, uint32_t* _p_kvmv_data_size);
 int kvmv_set_rate_control(uint8_t mode);
+
+/* ---- OUR ABI EXTENSION (not in Sipeed's libkvm) ---------------------------
+ * Idle power management. kvmv_video_suspend tears down the SoC-side capture
+ * pipeline (VENC channel + module, VIN/ISP/MIPI_RX, VB pool, ALSA audio
+ * capture) via the exact teardown path kvmv_deinit uses. It deliberately does
+ * NOT touch LT6911 power: that chip supplies EDID/HPD to the attached host,
+ * and cutting it looks like a monitor unplug. kvmv_video_resume re-runs the
+ * normal auto-init path at the live /proc/lt6911_info source geometry (the
+ * same re-slice that runs on the first kvmv_read_img), so a resolution change
+ * while suspended is handled exactly like a fresh process start. Both return
+ * 0 on success. Resume is also implicit: the first kvmv_read_img after a
+ * suspend re-inits on its own; the explicit call just fronts the latency. */
+int kvmv_video_suspend(void);
+int kvmv_video_resume(void);
 #ifdef __cplusplus
 }
 #endif

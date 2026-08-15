@@ -1,0 +1,127 @@
+package common
+
+// Idle power management for the HDMI capture pipeline (OUR addition; copied
+// into the vendored server source as common/video_power.go by
+// pkgs/nanokvm-server.nix postPatch).
+//
+// Design: every video/audio read (ReadMjpeg/ReadH264/ReadH265/ReadAudio) is
+// hooked with k.markVideoActive(). Those reads only ever happen while at
+// least one client is attached -- every streamer loop (webrtc, mjpeg, direct)
+// exits when its client count hits zero -- so "time since the last read" IS
+// "time since anyone was viewing". No per-transport client bookkeeping is
+// needed, and pollers of /api/streamer/local (e.g. the mini-display daemon)
+// never touch the read path, so they cannot keep the capture awake.
+//
+// After videoIdleTimeout seconds (server.yaml; 0/unset = 300, negative =
+// disabled) without a read, the watcher calls kvmv_video_suspend(): the
+// SoC-side pipeline (MIPI_RX/VIN/ISP, VENC, VB pool, ALSA audio capture) is
+// torn down via the same code path as kvmv_deinit. The LT6911 HDMI receiver
+// is NEVER powered down -- it supplies EDID/HPD to the attached host, and
+// cutting it would look like a monitor unplug (see libkvm.c).
+//
+// Resume is synchronous and transparent: the first read after a suspend calls
+// kvmv_video_resume() before touching the encoder, which re-inits at the LIVE
+// source geometry -- so a resolution change while suspended is picked up
+// exactly like at process start.
+
+/*
+#cgo CFLAGS: -I../include
+#cgo LDFLAGS: -L../dl_lib -lkvm
+// Our libkvm extension; not in the vendored include/kvm_vision.h, so declare
+// the two entry points here.
+extern int kvmv_video_suspend(void);
+extern int kvmv_video_resume(void);
+*/
+import "C"
+
+import (
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"NanoKVM-Server/config"
+
+	log "github.com/sirupsen/logrus"
+)
+
+const defaultVideoIdleTimeout = 300 // seconds without a viewer before suspend
+
+var (
+	videoPowerMu   sync.Mutex   // serializes suspend/resume transitions
+	videoSuspended atomic.Bool  // true while the capture pipeline is torn down
+	lastVideoRead  atomic.Int64 // unix-nano of the most recent frame/audio read
+)
+
+func init() {
+	lastVideoRead.Store(time.Now().UnixNano())
+}
+
+// markVideoActive records viewer-driven activity and, if the capture pipeline
+// is suspended, resumes it synchronously BEFORE the caller reads a frame.
+func (k *KvmVision) markVideoActive() {
+	lastVideoRead.Store(time.Now().UnixNano())
+	if !videoSuspended.Load() {
+		return
+	}
+
+	videoPowerMu.Lock()
+	defer videoPowerMu.Unlock()
+	if !videoSuspended.Load() { // someone else resumed while we waited
+		return
+	}
+
+	ret := int(C.kvmv_video_resume())
+	// Clear the flag even on failure: libkvm retries init on every read, and
+	// leaving the flag set would just re-run resume on each frame anyway.
+	videoSuspended.Store(false)
+	if ret == 0 {
+		log.Info("video capture resumed (viewer active)")
+	} else {
+		log.Errorf("video capture resume returned %d (will retry on reads)", ret)
+	}
+}
+
+// VideoIsSuspended reports whether the capture pipeline is currently
+// suspended (surfaced as "video_state" in /api/streamer/local).
+func VideoIsSuspended() bool {
+	return videoSuspended.Load()
+}
+
+// StartVideoIdleWatcher launches the goroutine that suspends the capture
+// pipeline once no client has read a frame for videoIdleTimeout seconds.
+func StartVideoIdleWatcher() {
+	timeout := config.GetInstance().VideoIdleTimeout
+	if timeout == 0 {
+		timeout = defaultVideoIdleTimeout
+	}
+	if timeout < 0 {
+		log.Info("video idle suspend disabled (videoIdleTimeout < 0)")
+		return
+	}
+	idle := time.Duration(timeout) * time.Second
+	log.Infof("video idle suspend enabled: capture powers down after %s without viewers", idle)
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if videoSuspended.Load() {
+				continue
+			}
+			if time.Since(time.Unix(0, lastVideoRead.Load())) < idle {
+				continue
+			}
+
+			videoPowerMu.Lock()
+			// Re-check under the lock: a viewer may have arrived meanwhile.
+			if !videoSuspended.Load() &&
+				time.Since(time.Unix(0, lastVideoRead.Load())) >= idle {
+				C.kvmv_video_suspend()
+				videoSuspended.Store(true)
+				log.Infof("video capture suspended after %s without viewers", idle)
+			}
+			videoPowerMu.Unlock()
+		}
+	}()
+}

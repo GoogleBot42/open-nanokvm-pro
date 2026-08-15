@@ -426,6 +426,62 @@ int kvmv_read_audio(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
     return 0;
 }
 
+/* ---- idle power management (our ABI extension; see kvm_vision.h) ----------
+ *
+ * Suspend depth: FULL SoC-side teardown -- the same proven sequence as
+ * kvmv_deinit (VENC chn destroy + AX_VENC_Deinit, ISP/VIN/MIPI_RX stop and
+ * destroy, AX_POOL_Exit releasing the ~16 MB CMM pool, AX_SYS_Deinit) plus the
+ * ALSA/Opus audio capture. Resume is the unmodified lazy auto-init path
+ * (init_pipeline_locked + ensure_chn_locked), which re-reads the LIVE source
+ * geometry from /proc/lt6911_info -- so an HDMI mode change during the nap is
+ * absorbed exactly like a fresh server start.
+ *
+ * What is deliberately NOT suspended: the LT6911UXC HDMI receiver. Its only
+ * power control (/proc/lt6911_info/power -> lt6911_pwr_ctrl -> PWR_PIN GPIO,
+ * see drivers/misc/lt6911_manage.c; this is what kvmv_hdmi_control toggles)
+ * cuts the whole chip -- including the EDID/HPD it presents to the attached
+ * host, which would make the host's desktop see a monitor unplug. Zero
+ * host-visible side effects beats the extra few hundred mW. */
+int kvmv_video_suspend(void)
+{
+    pthread_mutex_lock(&s_lock);
+    int was_up = s_inited;
+    teardown_locked();
+    /* Drop cached SPS/PPS and any half-served pack: they describe the
+     * pre-suspend geometry; the fresh VENC channel re-emits SPS/PPS + IDR. */
+    free(s_sps); s_sps = NULL; s_sps_len = 0;
+    free(s_pps); s_pps = NULL; s_pps_len = 0;
+    s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0;
+    pthread_mutex_unlock(&s_lock);
+
+    pthread_mutex_lock(&s_alock);
+    audio_teardown_locked();   /* reopens lazily on the next kvmv_read_audio */
+    pthread_mutex_unlock(&s_alock);
+
+    fprintf(stderr, "OPEN-KVM: video pipeline suspended (%s; LT6911/HPD untouched)\n",
+            was_up ? "was active" : "was already down");
+    fflush(stderr);
+    return 0;
+}
+
+int kvmv_video_resume(void)
+{
+    int rc = 0;
+    pthread_mutex_lock(&s_lock);
+    if (!s_inited) {
+        /* init_pipeline_locked prefers the live /proc/lt6911_info geometry;
+         * the last-known (or default) size is only the no-signal fallback. */
+        int w = (s_w > 0) ? s_w : 1920;
+        int h = (s_h > 0) ? s_h : 1080;
+        rc = init_pipeline_locked(w, h);
+    }
+    fprintf(stderr, "OPEN-KVM: video pipeline resume%s (%dx%d)\n",
+            (rc == 0) ? "d" : " FAILED (will retry on next read)", s_w, s_h);
+    fflush(stderr);
+    pthread_mutex_unlock(&s_lock);
+    return rc;
+}
+
 void kvmv_deinit(void)
 {
     pthread_mutex_lock(&s_lock);

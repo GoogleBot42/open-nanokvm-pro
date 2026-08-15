@@ -108,10 +108,15 @@ Shown (refreshed every 2 s while awake):
 - hostname
 - **IP address(es)** (large font; `ip -j -4 addr`, skipping `lo`)
 - **video state** — `LIVE <n> fps` (green) while a client is actively
-  streaming, `idle (no viewer)` otherwise, `server not running` if the KVM
-  server is down. Source: `GET /api/streamer/local` on loopback (no auth from
-  127.0.0.1); its `captured_fps` mirrors the server's `RealFPS` counter, which
-  is only non-zero while a client is pulling frames.
+  streaming, `idle (no viewer)` otherwise, `asleep (power save)` once the
+  server has suspended the capture pipeline after its idle timeout (see
+  [architecture.md](architecture.md), *capture lifecycle*), `server not
+  running` if the KVM server is down. Source: `GET /api/streamer/local` on
+  loopback (no auth from 127.0.0.1); its `captured_fps` mirrors the server's
+  `RealFPS` counter, which is only non-zero while a client is pulling frames,
+  and its `video_state` field reports `active`/`suspended`. This poll never
+  touches the frame-read path, so the display can never keep capture awake,
+  and the endpoint keeps answering while the pipeline is suspended.
 - HDMI input resolution (`/proc/lt6911_info/{width,height}`)
 - firmware version (`/kvmapp/version`) + uptime
 
@@ -178,11 +183,12 @@ pipeline our `libkvm` owns. So a future **live preview** on the mini-display
 must be fed from `libkvm`'s frames, not by running `kvm_vin`. The status screen
 needs no capture at all.
 
-Related finding (capture-idle behavior): when the last web viewer disconnects,
-the server's streaming goroutines exit and stop pulling frames — encoding
-stops — but nothing tears the pipeline down (`kvmv_deinit` has no idle-path
-caller), so VIN/VENC stay initialized and the LT6911 HDMI-RX stays powered.
-There is no automatic capture power-down on idle.
+Related (capture-idle behavior): when the last web viewer disconnects, the
+server's streaming goroutines exit and stop pulling frames — and after
+`videoIdleTimeout` (default 5 min) the server now also suspends the SoC-side
+capture pipeline (VIN/VENC/MIPI_RX + audio capture; the LT6911 HDMI-RX stays
+powered so the host keeps seeing its monitor). See
+[architecture.md](architecture.md), *capture lifecycle & idle power-down*.
 
 ---
 
