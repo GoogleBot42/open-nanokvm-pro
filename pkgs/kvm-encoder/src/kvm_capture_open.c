@@ -39,8 +39,12 @@
  * -lax_mipi. Our CAPTURE code calls none of these (raw ioctls); they are loaded
  * solely for the encoder. Fully shedding them is the separate encode gate.
  *
- * Least-exercised part: teardown (kvm_cap_stop) -- selector numbers/order from
- * mv5.log, pointer-free id-scalar args, issued best-effort. See NOTE there.
+ * Teardown (kvm_cap_stop): selector numbers/order from mv5.log, pointer-free
+ * id-scalar args. DEVICE-VALIDATED 2026-08-16 (#16): three warm
+ * suspend/resume cycles in one process -- every teardown selector returned 0,
+ * the VB pool freed and re-created at the same base each cycle, the persistent
+ * isp_model CMM block stayed at exactly one instance (reuse-before-allocate),
+ * and capture came back with live frames every time.
  */
 #ifdef KVM_OPEN_CAPTURE
 
@@ -79,11 +83,17 @@
 #define MIPI_NR7  0xc0086d07u   /* Stop */
 #define MIPI_NR8  0xc0086d08u   /* SetLaneCombo */
 
-/* isp_model_manger_list CMM block phys. Deterministic for our fixed 200 MB
- * carveout (partition base 0x73800000) + fixed allocation order; embedded by
- * the vendor lib and reproduced here. If the carveout layout ever changes this
- * constant (and PL_nr12[0..7]) must track it. */
+/* isp_model_manger_list CMM block phys -- FALLBACK ONLY (#16). The real
+ * address is derived at bring-up: cmm nr0 allocates (or finds) the named
+ * block, then /proc/ax_proc/mem_cmm_info reports its actual phys, which is
+ * what nr6/nr138/nr12 get fed. This captured constant (carveout base
+ * 0x73800000 + the fixed vendor allocation order: comm_pool_0 first, this
+ * block right after) is used only if the /proc parse fails, with a loud
+ * warning -- device-verified to match the derived value on the current
+ * layout. */
 #define ISP_MODEL_PHYS 0x74846000ULL
+#define CMM_CARVEOUT_BASE 0x73800000ULL
+#define CMM_CARVEOUT_END  0x80000000ULL
 
 /* ================= captured selector payloads (within-cfu prefixes) ======== */
 /* Dev-layer attr struct, 376 B: used for BOTH proton nr17 CreateDev and nr21
@@ -122,6 +132,7 @@ static struct {
     void    *osmem_map;            /* mapping of the allocator shared page */
     uint64_t osmem_phys;
     uint64_t pool_base;            /* comm_pool_0 CMM phys base */
+    uint64_t isp_model_phys;       /* isp_model_manger_list block, derived */
     uint32_t blk_size;             /* per-block bytes == w*h*2 (YUYV) */
     int      w, h;
     unsigned char last_desc[256];  /* last nr101 descriptor, for ReleaseYuvFrame */
@@ -168,18 +179,18 @@ static int cmm_call(unsigned long cmd, void (*fill)(unsigned char *), const char
 static void f_n10a(unsigned char *s){ *(uint32_t *)s = 4; *(uint64_t *)(s + 8) = 0x02400000ULL; *(uint32_t *)(s + 0x2c) = 0x000d4008U; }
 static void f_n10b(unsigned char *s){ *(uint32_t *)s = 4; *(uint64_t *)(s + 8) = 0x02500000ULL; *(uint32_t *)(s + 0x2c) = 0x00002000U; }
 static void f_n0 (unsigned char *s){ *(uint32_t *)s = 4; *(uint32_t *)(s + 0x28) = 1; *(uint32_t *)(s + 0x2c) = 0x188; strcpy((char *)(s + 0x3c), "anonymous:isp_model_manger_list"); }
-static void f_n6 (unsigned char *s){ *(uint32_t *)s = 4; *(uint64_t *)(s + 8) = ISP_MODEL_PHYS; *(uint32_t *)(s + 0x28) = 1; *(uint32_t *)(s + 0x2c) = 0x188; strcpy((char *)(s + 0x3c), "anonymous:isp_model_manger_list"); }
+static void f_n6 (unsigned char *s){ *(uint32_t *)s = 4; *(uint64_t *)(s + 8) = S.isp_model_phys; *(uint32_t *)(s + 0x28) = 1; *(uint32_t *)(s + 0x2c) = 0x188; strcpy((char *)(s + 0x3c), "anonymous:isp_model_manger_list"); }
 static void f_n17(unsigned char *s){ *(uint32_t *)(s + 0x368) = 17; }
 
-/* Parse /proc/ax_proc/mem_cmm_info for the comm_pool_0 CMM phys base. */
-static int find_pool_base(uint64_t *base)
+/* Parse /proc/ax_proc/mem_cmm_info for a named CMM block's phys base. */
+static int find_cmm_block(const char *name, uint64_t *base)
 {
     FILE *f = fopen("/proc/ax_proc/mem_cmm_info", "r");
     if (!f) return -1;
     char line[512];
     int found = 0;
     while (fgets(line, sizeof line, f)) {
-        if (strstr(line, "comm_pool")) {
+        if (strstr(line, name)) {
             char *pp = strstr(line, "phys(");
             /* Parse the base hex by hand. The scanf/strtol families redirect to
              * __isoc23_* (GLIBC_2.38) under the build glibc; the target is glibc
@@ -278,7 +289,7 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
     if (ioctl(S.fp, POOL_NR20, NULL) != 0) { fprintf(stderr, "[openkvm][FAIL] pool nr20 (Init)\n"); return -1; }
     c->poolInit = AX_TRUE;
 
-    if (find_pool_base(&S.pool_base) != 0)
+    if (find_cmm_block("comm_pool", &S.pool_base) != 0)
         fprintf(stderr, "[openkvm][WARN] comm_pool_0 not in /proc yet; will retry at first frame\n");
     fprintf(stderr, "[openkvm] SYS+pool up: blk=%u B x %d, pool_base=0x%llx (blob-free)\n",
             S.blk_size, KVM_POOL_BLKCNT_OPEN, (unsigned long long)S.pool_base);
@@ -317,10 +328,45 @@ int kvm_cap_start(kvm_cap_ctx *c, int w, int h, int fps)
      * block our teardown does not free (no CMM-free selector is mapped yet), so
      * on in-process re-init it returns EPERM "already allocated". The existing
      * block stays valid for reuse, so tolerate EPERM here. */
-    { int e = cmm_call(CMM_NR0, f_n0, "cmm nr0"); if (e && e != EPERM) return -1; }
-    { int e = cmm_call(CMM_NR6, f_n6, "cmm nr6"); if (e && e != EPERM) return -1; }
-    { uint64_t p = ISP_MODEL_PHYS; if (io_pl(S.fpr, PR(138), &p, sizeof p, "proton nr138")) return -1; }
-    if (IO_PL(S.fpr, PR(12), PL_nr12, "proton nr12 VIN_Init")) return -1;
+    /* isp_model_manger_list block: REUSE-before-allocate (#16). Our teardown
+     * cannot free it (no CMM-free selector is mapped), and cross-session the
+     * kernel does NOT EPERM a duplicate cmm nr0 -- it allocates ANOTHER 4 KB
+     * block (observed on device: a stale block from a dead process plus a
+     * fresh one). So: if a block already exists, adopt its phys and skip the
+     * alloc -- this is the same reuse the original EPERM tolerance relied on,
+     * and it caps the leak at one persistent block per boot. Only when none
+     * exists do we allocate, then re-derive the real phys from /proc instead
+     * of trusting the captured carveout-layout constant. */
+    S.isp_model_phys = 0;
+    if (find_cmm_block("isp_model_manger_list", &S.isp_model_phys) == 0
+        && S.isp_model_phys >= CMM_CARVEOUT_BASE && S.isp_model_phys < CMM_CARVEOUT_END) {
+        fprintf(stderr, "[openkvm] isp_model block reused @0x%llx\n",
+                (unsigned long long)S.isp_model_phys);
+    } else {
+        int e = cmm_call(CMM_NR0, f_n0, "cmm nr0");
+        if (e && e != EPERM) return -1;
+        S.isp_model_phys = 0;
+        if (find_cmm_block("isp_model_manger_list", &S.isp_model_phys) != 0
+            || S.isp_model_phys < CMM_CARVEOUT_BASE || S.isp_model_phys >= CMM_CARVEOUT_END) {
+            fprintf(stderr, "[openkvm][WARN] isp_model_manger_list not found/sane "
+                            "in mem_cmm_info (got 0x%llx); falling back to captured 0x%llx\n",
+                    (unsigned long long)S.isp_model_phys, (unsigned long long)ISP_MODEL_PHYS);
+            S.isp_model_phys = ISP_MODEL_PHYS;
+        } else {
+            fprintf(stderr, "[openkvm] isp_model block allocated @0x%llx%s\n",
+                    (unsigned long long)S.isp_model_phys,
+                    S.isp_model_phys == ISP_MODEL_PHYS ? " (matches captured constant)" : "");
+        }
+    }
+    { int e = cmm_call(CMM_NR6, f_n6, "cmm nr6");
+      if (e == EPERM)
+          fprintf(stderr, "[openkvm] (cmm nr6 EPERM tolerated: block already attached)\n");
+      else if (e) return -1; }
+    { uint64_t p = S.isp_model_phys; if (io_pl(S.fpr, PR(138), &p, sizeof p, "proton nr138")) return -1; }
+    { unsigned char nr12[sizeof PL_nr12];
+      memcpy(nr12, PL_nr12, sizeof nr12);
+      memcpy(nr12, &S.isp_model_phys, 8);   /* [0..7] = block phys, LE */
+      if (io_pl(S.fpr, PR(12), nr12, sizeof nr12, "proton nr12 VIN_Init")) return -1; }
     if (IO_PL(S.fpr, PR(2),  PL_nr2p, "proton nr2 global"))    return -1;
 
     /* --- MIPI-RX PHY bring-up (real 4-lane attr; Stage-5 proven, no hang) --- */
@@ -358,33 +404,36 @@ int kvm_cap_start(kvm_cap_ctx *c, int w, int h, int fps)
     c->devEnabled = AX_TRUE;
     c->streamOn = AX_TRUE;
 
-    if (!S.pool_base) find_pool_base(&S.pool_base);   /* pool now populated */
+    if (!S.pool_base) find_cmm_block("comm_pool", &S.pool_base);   /* pool now populated */
     S.started = 1;
     fprintf(stderr, "[openkvm] capture up %dx%d (blob-free, pool_base=0x%llx)\n",
             w, h, (unsigned long long)S.pool_base);
     return 0;
 }
 
-/* NOTE (teardown validation). The bring-up above is byte-for-byte the Stage-6
- * proven sequence. Teardown is reconstructed from the vendor selector order in
- * mv5.log with pointer-free id-scalar args; it is issued best-effort (rc
- * ignored) and is the least-exercised path here. A wrong teardown cannot poison
- * a fresh process (fds are closed in kvm_sys_deinit), but suspend/resume and
- * in-process restart rely on it -- validate on-device before trusting warm
- * re-init. */
+/* Teardown, reconstructed from the vendor selector order in mv5.log with
+ * pointer-free id-scalar args. Each selector's rc is tallied and summarized
+ * (io_pl still logs individual failures). DEVICE-VALIDATED 2026-08-16: three
+ * warm suspend/resume cycles ran this back-to-back with zero selector
+ * failures and clean re-init each time (see the file header). A wrong
+ * teardown still cannot poison a fresh process (fds close in
+ * kvm_sys_deinit). */
 void kvm_cap_stop(kvm_cap_ctx *c)
 {
     uint8_t id = 0; uint32_t z = 0;
-    if (c->devEnabled)  { io_pl(S.fpr, PR(20), &id, 1, "nr20 DisableDev"); c->devEnabled = AX_FALSE; }
-    if (c->pipeStarted) { io_pl(S.fpr, PR(41), &id, 1, "nr41 StopPipe");
-                          io_pl(S.fpr, PR(39), &id, 1, "nr39 StopPipe"); c->pipeStarted = AX_FALSE; }
-    if (c->chnEnabled)  { io_pl(S.fpr, PR(55), &id, 1, "nr55 DisableChn"); c->chnEnabled = AX_FALSE; }
-    if (c->pipeCreated) { io_pl(S.fpr, PR(36), &id, 1, "nr36 DestroyPipe"); c->pipeCreated = AX_FALSE; }
-    if (c->devCreated)  { io_pl(S.fpr, PR(18), &id, 1, "nr18 DestroyDev"); c->devCreated = AX_FALSE; }
-    if (c->mipiStarted) { io_pl(S.fm, MIPI_NR7, &z, 4, "mipi nr7 Stop"); c->mipiStarted = AX_FALSE; }
-    if (c->mipiInit)    { ioctl(S.fm, MIPI_NR1, NULL); c->mipiInit = AX_FALSE; }
+    int fails = 0;
+    if (c->devEnabled)  { fails += !!io_pl(S.fpr, PR(20), &id, 1, "nr20 DisableDev"); c->devEnabled = AX_FALSE; }
+    if (c->pipeStarted) { fails += !!io_pl(S.fpr, PR(41), &id, 1, "nr41 StopPipe");
+                          fails += !!io_pl(S.fpr, PR(39), &id, 1, "nr39 StopPipe"); c->pipeStarted = AX_FALSE; }
+    if (c->chnEnabled)  { fails += !!io_pl(S.fpr, PR(55), &id, 1, "nr55 DisableChn"); c->chnEnabled = AX_FALSE; }
+    if (c->pipeCreated) { fails += !!io_pl(S.fpr, PR(36), &id, 1, "nr36 DestroyPipe"); c->pipeCreated = AX_FALSE; }
+    if (c->devCreated)  { fails += !!io_pl(S.fpr, PR(18), &id, 1, "nr18 DestroyDev"); c->devCreated = AX_FALSE; }
+    if (c->mipiStarted) { fails += !!io_pl(S.fm, MIPI_NR7, &z, 4, "mipi nr7 Stop"); c->mipiStarted = AX_FALSE; }
+    if (c->mipiInit)    { fails += !!ioctl(S.fm, MIPI_NR1, NULL); c->mipiInit = AX_FALSE; }
     c->streamOn = AX_FALSE; c->vinInit = AX_FALSE;
     S.started = 0; S.have_frame = 0;
+    fprintf(stderr, "[openkvm] capture teardown: %d selector failure%s\n",
+            fails, fails == 1 ? "" : "s");
 }
 
 /* ============================ frame dequeue ============================ */
@@ -392,7 +441,7 @@ int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
 {
     memset(img, 0, sizeof(*img));
     if (!S.started) return -1;
-    if (!S.pool_base && find_pool_base(&S.pool_base) != 0) {
+    if (!S.pool_base && find_cmm_block("comm_pool", &S.pool_base) != 0) {
         fprintf(stderr, "[openkvm][FAIL] no comm_pool_0 base\n");
         return -1;
     }
@@ -421,6 +470,10 @@ int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
     if (blkidx >= KVM_POOL_BLKCNT_OPEN) {   /* stray handle -> would point outside the pool */
         fprintf(stderr, "[openkvm][FAIL] frame block idx %d >= pool blks %d (handle 0x%x)\n",
                 blkidx, KVM_POOL_BLKCNT_OPEN, handle);
+        /* nr101 DID dequeue this frame -- return the block or repeated stray
+         * handles starve the 4-block pool (#16). last_desc/have_frame were
+         * just set, so the normal release path applies. */
+        kvm_cap_release(img);
         return -1;
     }
     uint64_t phys = S.pool_base + (uint64_t)blkidx * S.blk_size;

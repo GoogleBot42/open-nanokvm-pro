@@ -1704,11 +1704,23 @@ libax_venc/sys/ivps/proton (+opus/asound/libc); libax_mipi dropped.
   backend clamps any other requested resolution to 1080p (with a warning) rather
   than silently mis-sizing the pool/descriptor. Parametric payloads for other
   modes are future work.
-- **`ISP_MODEL_PHYS` (0x74846000)** is the deterministic offset for the
-  `isp_model_manger_list` block (fixed 200 MB carveout + fixed alloc order);
-  re-confirm if the pool layout moves.
-- **Teardown does not free the isp_model CMM carveout**, so warm re-init
-  tolerates the resulting `cmm nr6` EPERM (the block stays valid).
+- **The `isp_model_manger_list` phys is now derived at bring-up (#16,
+  2026-08-16):** reuse-before-allocate — an existing named block is adopted
+  from `/proc/ax_proc/mem_cmm_info`; only when none exists does `cmm nr0`
+  allocate, and the real phys is then read back from `/proc`. The captured
+  constant `ISP_MODEL_PHYS` (0x74846000) survives only as a loudly-warned
+  fallback. (Device finding: cross-session the kernel does *not* EPERM a
+  duplicate nr0 — it allocates another 4 KB block, so alloc-then-tolerate
+  would leak one block per warm cycle; reuse caps it at one per boot.)
+- **Teardown is device-validated (#16, 2026-08-16):** three warm
+  suspend/resume cycles — every teardown selector returned 0, the VB pool
+  freed and re-created at the same base each cycle, the isp_model block held
+  at exactly one instance, capture returned live frames every time. The
+  isp_model block itself is intentionally persistent (no CMM-free selector is
+  mapped); the reuse path re-adopts it and tolerates the `cmm nr6` EPERM.
+- **The stray-handle path in `kvm_cap_get` now releases the dequeued frame**
+  before erroring, so repeated stray handles can no longer starve the 4-block
+  pool.
 
 (Post-review fix: SetDevAttr#2 now sends the vendor's distinct `nr21b` bytes, so
 the whole bring-up is byte-faithful to the captured vendor path.)
