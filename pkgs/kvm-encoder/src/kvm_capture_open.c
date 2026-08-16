@@ -232,6 +232,8 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
      * coexists with the raw allocator below (device-verified: real H.264 out). */
     if (AX_SYS_Init() != 0)
         fprintf(stderr, "[openkvm][WARN] AX_SYS_Init failed (encoder may not init)\n");
+    else
+        c->sysInit = AX_TRUE;   /* set now so a failed init still deinits it */
 
     S.fo  = open("/dev/ax_os_mem",  O_RDWR);
     S.fs  = open("/dev/ax_sys",     O_RDWR);
@@ -275,7 +277,6 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
     if (rc22 != 0) { fprintf(stderr, "[openkvm][FAIL] pool nr22 (SetConfig) rc=%d\n", rc22); return -1; }
     if (ioctl(S.fp, POOL_NR20, NULL) != 0) { fprintf(stderr, "[openkvm][FAIL] pool nr20 (Init)\n"); return -1; }
     c->poolInit = AX_TRUE;
-    c->sysInit  = AX_TRUE;
 
     if (find_pool_base(&S.pool_base) != 0)
         fprintf(stderr, "[openkvm][WARN] comm_pool_0 not in /proc yet; will retry at first frame\n");

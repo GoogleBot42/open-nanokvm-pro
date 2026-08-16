@@ -88,6 +88,9 @@ static int ensure_chn_locked(int want_type, int w, int h, int qlty)
     int chn = (want_type == 0) ? KVM_VENC_MJPEG_CHN : KVM_VENC_H264_CHN;
     if (s_cur_type == want_type && s_cur_chn == chn && s_qlty == qlty) return 0;
     if (s_cur_chn >= 0) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
+    /* Any buffered pack belongs to the channel just destroyed: serving it
+     * after the switch would hand e.g. an H.264 SPS+IDR back as a "JPEG". */
+    s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0;
     s_qlty = qlty;
     AX_PAYLOAD_TYPE_E pt = (want_type == 0) ? PT_MJPEG : PT_H264;
     if (kvm_venc_create(chn, pt, w, h, s_fps, s_gop, qlty, s_rc) != 0) return -1;
@@ -101,17 +104,24 @@ static int init_pipeline_locked(int w, int h)
     if (kvm_read_source(&sw, &sh, &sf, &locked) == 0 && locked && sw > 0 && sh > 0) {
         w = sw; h = sh; s_fps = sf ? sf : s_fps;   /* trust the live source geometry */
     }
-    if (kvm_sys_init(&s_cap, w, h) != 0) return -1;
-    if (kvm_cap_start(&s_cap, w, h, s_fps) != 0) { kvm_sys_deinit(&s_cap); return -1; }
+    if (kvm_sys_init(&s_cap, w, h) != 0) { kvm_sys_deinit(&s_cap); return -1; }
+    if (kvm_cap_start(&s_cap, w, h, s_fps) != 0) { kvm_cap_stop(&s_cap); kvm_sys_deinit(&s_cap); return -1; }
     s_w = w; s_h = h; s_inited = 1;
     return 0;
 }
 
-/* Copy a fresh VENC pack into the pending buffer; reset the NAL cursor. */
+/* Copy a fresh VENC pack into the pending buffer; reset the NAL cursor.
+ * On allocation failure the pack is dropped (pending state cleared) and the
+ * caller's next_from_pending returns IMG_NOT_EXIST -- a skipped frame, not a
+ * crash. */
 static void stash_pack(AX_VENC_STREAM_T *st)
 {
     uint32_t len = st->stPack.u32Len;
-    if (len > s_pend_cap) { s_pend = realloc(s_pend, len); s_pend_cap = len; }
+    if (len > s_pend_cap) {
+        uint8_t *n = realloc(s_pend, len);
+        if (!n) { s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0; return; }
+        s_pend = n; s_pend_cap = len;
+    }
     memcpy(s_pend, st->stPack.pu8Addr, len);
     s_pend_len = len;
     s_pend_coding = st->stPack.enCodingType;
@@ -128,6 +138,7 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
 
     if (type == 0) {  /* MJPEG: whole pack is one image */
         uint8_t *b = malloc(s_pend_len);
+        if (!b) return IMG_NOT_EXIST;   /* pack kept; retried on the next call */
         memcpy(b, s_pend, s_pend_len);
         *out = b; *olen = s_pend_len; s_pend_len = 0;
         return IMG_MJPEG_TYPE;
@@ -136,16 +147,19 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
     /* H264: iterate NALs. Fall back to whole-pack if encoder didn't split. */
     if (s_pend_num == 0) {
         uint8_t *b = malloc(s_pend_len);
+        if (!b) return IMG_NOT_EXIST;   /* pack kept; retried on the next call */
         memcpy(b, s_pend, s_pend_len);
         *out = b; *olen = s_pend_len; s_pend_len = 0;
         return (s_pend_coding == AX_VENC_INTRA_FRAME) ? IMG_H264_TYPE_IF : IMG_H264_TYPE_PF;
     }
     if (s_pend_idx >= s_pend_num) { s_pend_len = 0; return IMG_NOT_EXIST; }
 
-    AX_VENC_NALU_INFO_T *ni = &s_nalu[s_pend_idx++];
+    AX_VENC_NALU_INFO_T *ni = &s_nalu[s_pend_idx];
     uint32_t off = ni->u32NaluOffset, len = ni->u32NaluLength;
     if (off + len > s_pend_len) { len = (off < s_pend_len) ? s_pend_len - off : 0; }
     uint8_t *b = malloc(len ? len : 1);
+    if (!b) return IMG_NOT_EXIST;       /* cursor not advanced; NAL retried */
+    s_pend_idx++;
     memcpy(b, s_pend + off, len);
     *out = b; *olen = len;
     if (s_pend_idx >= s_pend_num) s_pend_len = 0;   /* consumed */
@@ -207,7 +221,9 @@ int kvmv_get_sps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 {
     pthread_mutex_lock(&s_lock);
     if (!s_sps) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
-    uint8_t *b = malloc(s_sps_len); memcpy(b, s_sps, s_sps_len);
+    uint8_t *b = malloc(s_sps_len);
+    if (!b) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
+    memcpy(b, s_sps, s_sps_len);
     *_pp_kvm_data = b; *_p_kvmv_data_size = s_sps_len;
     pthread_mutex_unlock(&s_lock);
     return IMG_H264_TYPE_SPS;
@@ -217,7 +233,9 @@ int kvmv_get_pps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 {
     pthread_mutex_lock(&s_lock);
     if (!s_pps) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
-    uint8_t *b = malloc(s_pps_len); memcpy(b, s_pps, s_pps_len);
+    uint8_t *b = malloc(s_pps_len);
+    if (!b) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
+    memcpy(b, s_pps, s_pps_len);
     *_pp_kvm_data = b; *_p_kvmv_data_size = s_pps_len;
     pthread_mutex_unlock(&s_lock);
     return IMG_H264_TYPE_PPS;
@@ -263,12 +281,19 @@ int kvmv_set_rate_control(uint8_t mode)
 
 int kvmv_hdmi_control(uint8_t _en)
 {
-    /* Sipeed toggles the LT6911 HDMI-RX power via /proc. We expose the same
-     * control; guarded so it is a no-op unless explicitly turning ON, to avoid
-     * accidentally blanking the source during unit tests. */
+    /* Sipeed toggles the LT6911 HDMI-RX power via /proc. Cutting it kills the
+     * whole chip INCLUDING the EDID/HPD it presents to the attached host (the
+     * host sees its monitor unplug), so "off" is refused -- same policy as the
+     * idle suspend above, which deliberately leaves the LT6911 powered. The
+     * server has no caller for this ABI entry point anyway. */
+    if (!_en) {
+        fprintf(stderr, "OPEN-KVM: kvmv_hdmi_control(0) refused "
+                        "(would cut LT6911 power and drop host EDID/HPD)\n");
+        return 0;
+    }
     FILE *f = fopen("/proc/lt6911_info/power", "w");
     if (!f) return -1;
-    fputs(_en ? "on" : "off", f);
+    fputs("on", f);
     fclose(f);
     return 0;
 }
