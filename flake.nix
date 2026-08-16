@@ -148,7 +148,11 @@
               dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync'';
         };
 
-        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; };
+        # openCapture = true: ALPHA ONLY (2.1.0-alpha.x) — the blob-free raw-ioctl
+        # capture backend (docs/blob-replacement.md, issue #16 hardening) goes out
+        # on the preview channel for real-world soak. Flip back to the vendor-MPI
+        # default (omit the flag) before the next stable cut.
+        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; openCapture = true; };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
 
