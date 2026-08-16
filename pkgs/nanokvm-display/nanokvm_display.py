@@ -64,10 +64,12 @@ FB_DEV = "/dev/fb0"
 FB_W, FB_H = 172, 320          # native framebuffer geometry (portrait)
 W, H = FB_H, FB_W              # logical landscape canvas: 320 x 172
 BACKLIGHT = "/sys/class/backlight/backlight"
-REFRESH_S = 2.0                # content poll interval while awake
+REFRESH_S = 2.0                # fast poll: streamer state + redraw cadence
+SLOW_POLL_S = 30.0             # slow poll: `ip` subprocess (IPs change rarely)
 SLEEP_TIMEOUT_S = int(os.environ.get("NANOKVM_DISPLAY_SLEEP_S", "180"))
 #   ^ seconds of no knob/button input before the panel sleeps; 0 = never.
-BRIGHTNESS = "80"              # 0..100 (panel max_brightness = 100)
+BRIGHTNESS = os.environ.get("NANOKVM_DISPLAY_BRIGHTNESS", "80")
+#   ^ 0..100 (panel max_brightness = 100)
 STREAMER_URL = "http://127.0.0.1/api/streamer/local"  # loopback-only endpoint
 GPIO_URL = "https://127.0.0.1/api/vm/gpio"  # loopback bypasses auth; must be
 #   https directly: port 80 answers 307 and urllib drops a POST body on redirect
@@ -109,7 +111,10 @@ VERSION_FILE = "/kvmapp/version"
 FBIOGET_VSCREENINFO = 0x4600
 EVIOCGNAME_256 = 0x81004506    # EVIOCGNAME(256): _IOC(READ, 'E', 0x06, 256)
 
-# input_event on 64-bit: timeval(16) + u16 type + u16 code + s32 value
+# input_event on 64-bit: timeval(16) + u16 type + u16 code + s32 value.
+# The "qq" and the ioctl numbers below assume LP64 (correct on AX630C's
+# aarch64); refuse to run on anything else rather than misparse events.
+assert struct.calcsize("P") == 8, "this daemon assumes an LP64 (64-bit) ABI"
 EV_FMT = "qqHHi"
 EV_SIZE = struct.calcsize(EV_FMT)  # 24
 EV_KEY, EV_REL = 0x01, 0x02
@@ -308,9 +313,15 @@ class StatusPoller(threading.Thread):
         self._active.set()
 
     def run(self):
+        ips, ips_at = [], -SLOW_POLL_S  # force an `ip` run on the first poll
         while True:
             self._active.wait()
-            self.snapshot = (get_ips(), get_stream_status())
+            # IPs change rarely; don't fork `ip` every 2 s forever. A resume()
+            # (wake redraw) skips the cache so a changed network shows fresh.
+            now = time.monotonic()
+            if now - ips_at >= SLOW_POLL_S or self._tick.is_set():
+                ips, ips_at = get_ips(), now
+            self.snapshot = (ips, get_stream_status())
             self.first.set()
             self._tick.wait(REFRESH_S)
             self._tick.clear()
@@ -516,24 +527,31 @@ def write_fb(frame):
 
 def wait_for_fb(timeout=60):
     """Wait for /dev/fb0 (fb_jd9853 loads via systemd-modules-load; SPI panel
-    init takes a moment). Verify geometry via FBIOGET_VSCREENINFO."""
+    init takes a moment). Verify geometry via FBIOGET_VSCREENINFO.
+
+    A wrong geometry keeps being re-probed until the deadline (the driver may
+    not have settled at first sight); if it is still wrong at the end this is
+    genuinely not our panel and main() exits 0 -- a clean determination, not a
+    failure, so the unit's Restart=on-failure does not loop forever."""
     deadline = time.monotonic() + timeout
+    geom = None
     while time.monotonic() < deadline:
         if os.path.exists(FB_DEV):
             try:
                 with open(FB_DEV, "rb") as f:
                     vinfo = fcntl.ioctl(f, FBIOGET_VSCREENINFO, b"\0" * 160)
-                xres, yres = struct.unpack_from("<2I", vinfo, 0)
-                if (xres, yres) == (FB_W, FB_H):
+                geom = struct.unpack_from("<2I", vinfo, 0)
+                if geom == (FB_W, FB_H):
                     return True
-                print(f"fb0 is {xres}x{yres}, expected {FB_W}x{FB_H}; "
-                      "not the mini-display -- exiting", file=sys.stderr)
-                return False
             except OSError:
                 pass
         time.sleep(1)
+    if geom is not None:
+        print(f"fb0 is {geom[0]}x{geom[1]}, expected {FB_W}x{FB_H}; "
+              "not the mini-display -- exiting cleanly", file=sys.stderr)
+        return "mismatch"
     print(f"timed out waiting for {FB_DEV}", file=sys.stderr)
-    return False
+    return "timeout"
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +578,10 @@ def open_input_devices():
             name = raw.split(b"\0", 1)[0].decode(errors="replace").lower()
         except OSError:
             name = ""
-        if any(k in name for k in ("key", "rotary")):
+        # Exactly the two pinned knob devices (docs/mini-display.md): the
+        # gpio_keys button and the rotary encoder. A loose "key" substring
+        # would also grab e.g. a "keyboard" HID gadget as a wake source.
+        if name == "gpio_keys" or name.startswith("rotary"):
             fds[fd] = name
         else:
             os.close(fd)
@@ -595,8 +616,11 @@ def drain_events(fd):
 def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-    if not wait_for_fb():
-        return 1
+    fb_ok = wait_for_fb()
+    if fb_ok is not True:
+        # "mismatch" = clean not-our-panel determination: exit 0 so the unit's
+        # Restart=on-failure doesn't loop forever. "timeout" = worth a retry.
+        return 0 if fb_ok == "mismatch" else 1
     set_backlight(True)
 
     canvas = Canvas()
