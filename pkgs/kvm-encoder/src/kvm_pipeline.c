@@ -253,6 +253,10 @@ static AX_BOOL g_vencInit = AX_FALSE;
 int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
                     int fps, int gop, int qlty, int rc_mode)
 {
+    /* The VC8000E rejects a zero frame rate/gop with ILLEGAL_PARAM; callers
+     * should have resolved "auto" already, this is the last line of defence. */
+    if (fps <= 0 || fps > 240) fps = 60;
+    if (gop <= 0 || gop > 240) gop = 30;
     if (!g_vencInit) {
         AX_VENC_MOD_ATTR_T modAttr;
         memset(&modAttr, 0, sizeof(modAttr));

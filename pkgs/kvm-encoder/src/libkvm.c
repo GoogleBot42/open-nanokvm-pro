@@ -48,6 +48,7 @@ static int  s_cur_type = -1;       /* 0=MJPEG chn, 1=H264 chn currently created 
 static int  s_cur_chn = -1;
 static int  s_w = 0, s_h = 0;
 static int  s_fps = 60, s_gop = 30, s_rc = 0 /*CBR*/, s_qlty = 8000;
+static int64_t s_chn_fail_until = 0;  /* VENC-create cooldown: no 120 Hz retry storms */
 
 /* mini-display preview lease (kvmv_preview_tick): while fresh, the encoder
  * read path also feeds kvm_preview_publish; when the encoder path is quiet,
@@ -99,18 +100,43 @@ static void teardown_locked(void)
     kvm_preview_reset();   /* pool phys addrs change across teardown/re-init */
 }
 
+/* Resolve the frame rate a VENC channel is actually built with. The web UI
+ * legitimately sends fps=0 ("auto") on every page load; the VC8000E rejects a
+ * zero frame rate (AX_VENC_CreateChn -> AX_ERR_VENC_ILLEGAL_PARAM), so 0 is a
+ * SENTINEL here, never a value: resolve it from the live LT6911 source at each
+ * channel (re)build, falling back to 60. */
+static int effective_fps_locked(void)
+{
+    int f = s_fps;
+    if (f <= 0) {
+        int sw, sh, sf, locked;
+        if (kvm_read_source(&sw, &sh, &sf, &locked) == 0 && sf > 0) f = sf;
+        else f = 60;
+    }
+    if (f > 120) f = 120;
+    return f;
+}
+
 /* (re)create the VENC channel for the requested encode type/params */
 static int ensure_chn_locked(int want_type, int w, int h, int qlty)
 {
     int chn = (want_type == 0) ? KVM_VENC_MJPEG_CHN : KVM_VENC_H264_CHN;
     if (s_cur_type == want_type && s_cur_chn == chn && s_qlty == qlty) return 0;
+    /* A failing create must not be retried at the caller's 120 Hz read rate. */
+    if (kvm_mono_us() < s_chn_fail_until) return -1;
     if (s_cur_chn >= 0) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
     /* Any buffered pack belongs to the channel just destroyed: serving it
      * after the switch would hand e.g. an H.264 SPS+IDR back as a "JPEG". */
     s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0;
     s_qlty = qlty;
     AX_PAYLOAD_TYPE_E pt = (want_type == 0) ? PT_MJPEG : PT_H264;
-    if (kvm_venc_create(chn, pt, w, h, s_fps, s_gop, qlty, s_rc) != 0) return -1;
+    if (kvm_venc_create(chn, pt, w, h, effective_fps_locked(), s_gop, qlty, s_rc) != 0) {
+        /* CreateChn can succeed and a later step fail: destroy the half-created
+         * channel or every future create gets AX_ERR_VENC_EXIST forever. */
+        kvm_venc_destroy(chn);
+        s_chn_fail_until = kvm_mono_us() + 500000;
+        return -1;
+    }
     s_cur_type = want_type; s_cur_chn = chn;
     return 0;
 }
@@ -120,6 +146,13 @@ static int init_pipeline_locked(int w, int h)
     int sw, sh, sf, locked;
     if (kvm_read_source(&sw, &sh, &sf, &locked) == 0 && locked && sw > 0 && sh > 0) {
         w = sw; h = sh; s_fps = sf ? sf : s_fps;   /* trust the live source geometry */
+    }
+    if (w <= 0 || h <= 0) {
+        /* HDMI unlocked and the caller passed 0x0 (screen.go forwards the raw
+         * /proc values): a 0-byte VB pool and a 0x0 VIN dev "succeed" partway
+         * and then loop on AX_ERR_VIN_ILLEGAL_PARAM. Refuse bring-up instead. */
+        fprintf(stderr, "OPEN-KVM: no source geometry (%dx%d, HDMI unlocked?); refusing bring-up\n", w, h);
+        return -1;
     }
     if (kvm_sys_init(&s_cap, w, h) != 0) { kvm_sys_deinit(&s_cap); return -1; }
     if (kvm_cap_start(&s_cap, w, h, s_fps) != 0) { kvm_cap_stop(&s_cap); kvm_sys_deinit(&s_cap); return -1; }
@@ -272,8 +305,10 @@ void kvmv_free_all_data(void) { /* per-frame buffers are freed by caller via kvm
 int kvmv_set_fps(uint8_t _fps)
 {
     pthread_mutex_lock(&s_lock);
-    s_fps = _fps;
-    if (s_cur_chn >= 0) kvm_venc_set_fps(s_cur_chn, (s_cur_type == 0) ? PT_MJPEG : PT_H264, _fps);
+    s_fps = _fps;   /* 0 = "auto": resolved per rebuild by effective_fps_locked */
+    if (s_cur_chn >= 0)
+        kvm_venc_set_fps(s_cur_chn, (s_cur_type == 0) ? PT_MJPEG : PT_H264,
+                         effective_fps_locked());
     pthread_mutex_unlock(&s_lock);
     return 0;
 }

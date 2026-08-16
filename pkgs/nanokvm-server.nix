@@ -193,6 +193,69 @@ EOF
       service/vm/gpio.go
     grep -q 'muxPowerPin()' service/vm/gpio.go \
       || { echo "ERROR: muxPowerPin hook failed to apply to service/vm/gpio.go" >&2; exit 1; }
+
+    # 7. Backoff in the stream read loops. Upstream retries a failing
+    #    ReadH264/ReadMjpeg with a bare `continue` on a 120 Hz ticker -- a wedged
+    #    encoder means an infinite retry storm that once grew the server log to
+    #    470 MB (two log lines per attempt, no rotation anywhere). After 30
+    #    consecutive failures (~250 ms), drop to one attempt per second until a
+    #    read succeeds. libkvm has its own 500 ms create-cooldown; this catches
+    #    every other failure mode too.
+    substituteInPlace service/stream/direct/streamer.go \
+      --replace-fail 'startTime := time.Now()' \
+'startTime := time.Now()
+	failStreak := 0' \
+      --replace-fail 'data, result := vision.ReadH264(screen.Width, screen.Height, screen.BitRate)
+		if result < 0 || len(data) == 0 {
+			continue
+		}' \
+'data, result := vision.ReadH264(screen.Width, screen.Height, screen.BitRate)
+		if result < 0 || len(data) == 0 {
+			failStreak++
+			if failStreak > 30 {
+				time.Sleep(time.Second)
+			}
+			continue
+		}
+		failStreak = 0'
+    substituteInPlace service/stream/mjpeg/streamer.go \
+      --replace-fail 'duration := time.Second / time.Duration(120)' \
+'failStreak := 0
+	duration := time.Second / time.Duration(120)' \
+      --replace-fail 'data, result := vision.ReadMjpeg(screen.Width, screen.Height, screen.Quality)
+		if result < 0 || len(data) == 0 {
+			continue
+		}' \
+'data, result := vision.ReadMjpeg(screen.Width, screen.Height, screen.Quality)
+		if result < 0 || len(data) == 0 {
+			failStreak++
+			if failStreak > 30 {
+				time.Sleep(time.Second)
+			}
+			continue
+		}
+		failStreak = 0'
+    substituteInPlace service/stream/webrtc/manager.go \
+      --replace-fail 'startTime := time.Now()' \
+'startTime := time.Now()
+	failStreak := 0' \
+      --replace-fail 'data, result := vision.ReadH264(screen.Width, screen.Height, screen.BitRate)
+		m.updateStatus(result)
+
+		if result < 0 || len(data) == 0 {
+			continue
+		}' \
+'data, result := vision.ReadH264(screen.Width, screen.Height, screen.BitRate)
+		m.updateStatus(result)
+
+		if result < 0 || len(data) == 0 {
+			failStreak++
+			if failStreak > 30 {
+				time.Sleep(time.Second)
+			}
+			continue
+		}
+		failStreak = 0'
   '';
 
   # cgo on for the kvm_vision + opus bindings.

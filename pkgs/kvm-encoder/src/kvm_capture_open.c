@@ -124,6 +124,7 @@ static const unsigned char PL_nr101[248]={0x00,0x00,0x00,0x00,0x18,0x00,0x00,0x0
 
 #define FRAME_HANDLE_OFF 0x28   /* nr101 output: block handle location */
 #define KVM_POOL_BLKCNT_OPEN 4  /* common VB pool blocks (== Stage-6 floorplan) */
+#define KVM_POOL_METASIZE 4096  /* per-block metadata page (pool nr22 @0x28) */
 
 /* ---------------- device state (single capture instance) ---------------- */
 static struct {
@@ -131,9 +132,11 @@ static struct {
     int fmem;                      /* /dev/mem */
     void    *osmem_map;            /* mapping of the allocator shared page */
     uint64_t osmem_phys;
-    uint64_t pool_base;            /* comm_pool_0 CMM phys base */
+    uint64_t pool_base;            /* comm_pool_0 CMM phys base (region start) */
     uint64_t isp_model_phys;       /* isp_model_manger_list block, derived */
     uint32_t blk_size;             /* per-block bytes == w*h*2 (YUYV) */
+    uint32_t blk_pitch;            /* page-aligned per-block pitch in the pool */
+    int      phys_logged;          /* one-shot frame-phys provenance log */
     int      w, h;
     unsigned char last_desc[256];  /* last nr101 descriptor, for ReleaseYuvFrame */
     int      have_frame;
@@ -233,6 +236,7 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
     c->w = w; c->h = h;
     S.w = w; S.h = h;
     S.blk_size = (uint32_t)w * (uint32_t)h * 2u;   /* YUYV 2 bytes/pixel */
+    S.blk_pitch = (S.blk_size + 4095u) & ~4095u;   /* pool packs blocks page-aligned */
 
     /* AX_SYS_Init is the ONE vendor-lib call the capture path makes, and it is
      * here only because the closed encoder (AX_VENC) hard-requires an
@@ -279,7 +283,7 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
     unsigned char *fp = aligned_alloc(4096, 4096);
     if (!fp) return -1;
     memset(fp, 0, 4096);
-    *(uint64_t *)(fp + 0x28) = 4096;                 /* MetaSize */
+    *(uint64_t *)(fp + 0x28) = KVM_POOL_METASIZE;    /* MetaSize */
     *(uint64_t *)(fp + 0x30) = S.blk_size;           /* BlkSize  */
     *(uint32_t *)(fp + 0x38) = KVM_POOL_BLKCNT_OPEN; /* BlkCnt   */
     strcpy((char *)(fp + 0x44), "anonymous");
@@ -289,7 +293,7 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
     if (ioctl(S.fp, POOL_NR20, NULL) != 0) { fprintf(stderr, "[openkvm][FAIL] pool nr20 (Init)\n"); return -1; }
     c->poolInit = AX_TRUE;
 
-    if (find_cmm_block("comm_pool", &S.pool_base) != 0)
+    if (find_cmm_block("comm_pool_0", &S.pool_base) != 0)
         fprintf(stderr, "[openkvm][WARN] comm_pool_0 not in /proc yet; will retry at first frame\n");
     fprintf(stderr, "[openkvm] SYS+pool up: blk=%u B x %d, pool_base=0x%llx (blob-free)\n",
             S.blk_size, KVM_POOL_BLKCNT_OPEN, (unsigned long long)S.pool_base);
@@ -404,7 +408,17 @@ int kvm_cap_start(kvm_cap_ctx *c, int w, int h, int fps)
     c->devEnabled = AX_TRUE;
     c->streamOn = AX_TRUE;
 
-    if (!S.pool_base) find_cmm_block("comm_pool", &S.pool_base);   /* pool now populated */
+    /* Re-derive the pool base on EVERY start: a suspend/resume cycle can
+     * re-create the pool at a different phys, and a stale base silently
+     * shifts every frame we hand the encoder. */
+    { uint64_t nb = 0;
+      if (find_cmm_block("comm_pool_0", &nb) == 0 && nb) {
+          if (S.pool_base && nb != S.pool_base)
+              fprintf(stderr, "[openkvm] comm_pool_0 moved 0x%llx -> 0x%llx\n",
+                      (unsigned long long)S.pool_base, (unsigned long long)nb);
+          S.pool_base = nb;
+      } }
+    S.phys_logged = 0;
     S.started = 1;
     fprintf(stderr, "[openkvm] capture up %dx%d (blob-free, pool_base=0x%llx)\n",
             w, h, (unsigned long long)S.pool_base);
@@ -441,7 +455,7 @@ int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
 {
     memset(img, 0, sizeof(*img));
     if (!S.started) return -1;
-    if (!S.pool_base && find_cmm_block("comm_pool", &S.pool_base) != 0) {
+    if (!S.pool_base && find_cmm_block("comm_pool_0", &S.pool_base) != 0) {
         fprintf(stderr, "[openkvm][FAIL] no comm_pool_0 base\n");
         return -1;
     }
@@ -476,7 +490,30 @@ int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
         kvm_cap_release(img);
         return -1;
     }
-    uint64_t phys = S.pool_base + (uint64_t)blkidx * S.blk_size;
+    /* Block phys. LAYOUT (device-verified 2026-08-17 by dumping the live pool
+     * region over /dev/mem): comm_pool_0 = [BlkCnt x MetaSize meta pages]
+     * [blk0][blk1]... with each data block at a PAGE-ALIGNED pitch. The old
+     * base + idx*BlkSize formula pointed 16384+2048*idx bytes BEFORE the real
+     * frame, so the encoder swallowed the zeroed meta pages as the first ~4
+     * lines (the green top bar) and each block index landed at a different
+     * horizontal phase (the fast apparent scrolling). Prefer the documented
+     * AX_POOL_Handle2PhysAddr (libax_sys is linked for the encoder anyway);
+     * fall back to the measured layout if the API doesn't know a pool that
+     * was configured via raw ioctl. */
+    uint64_t derived = S.pool_base
+                     + (uint64_t)KVM_POOL_METASIZE * KVM_POOL_BLKCNT_OPEN
+                     + (uint64_t)blkidx * S.blk_pitch;
+    uint64_t span = (uint64_t)KVM_POOL_METASIZE * KVM_POOL_BLKCNT_OPEN
+                  + (uint64_t)KVM_POOL_BLKCNT_OPEN * S.blk_pitch;
+    uint64_t api = AX_POOL_Handle2PhysAddr((AX_BLK)handle);
+    uint64_t phys = (api >= S.pool_base && api + S.blk_size <= S.pool_base + span)
+                  ? api : derived;
+    if (!S.phys_logged) {
+        S.phys_logged = 1;
+        fprintf(stderr, "[openkvm] frame phys: api=0x%llx derived=0x%llx -> using %s (blk %d)\n",
+                (unsigned long long)api, (unsigned long long)derived,
+                phys == api ? "api" : "derived", blkidx);
+    }
 
     AX_VIDEO_FRAME_T *f = &img->tFrameInfo.stVFrame;
     f->u32Width      = (AX_U32)S.w;

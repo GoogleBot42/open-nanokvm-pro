@@ -1732,3 +1732,45 @@ libax_venc/sys/ivps/proton (+opus/asound/libc); libax_mipi dropped.
 
 (Post-review fix: SetDevAttr#2 now sends the vendor's distinct `nr21b` bytes, so
 the whole bring-up is byte-faithful to the captured vendor path.)
+
+### 2026-08-17 — first live-use bugs of the open backend (green bar + scrolling; VENC fps=0)
+
+First real-world session on the open backend (v2.1.0-alpha.1) surfaced three
+symptoms: a green bar at the top of the image, a fast apparent horizontal
+scroll, and a permanent black screen after a browser refresh. All three are
+fixed and device-verified; the diagnoses matter for the record:
+
+- **Green bar + scrolling = one bug: the hand-derived frame phys was wrong.**
+  `kvm_cap_get` computed `pool_base + blkidx * BlkSize`. Dumping the live
+  `comm_pool_0` region over `/dev/mem` showed the real CMM layout is
+  `[BlkCnt × MetaSize meta pages][blk0][blk1]…` with data blocks at a
+  **page-aligned pitch** (`ALIGN_UP(BlkSize, 4096)`), so the old formula
+  pointed `16384 + 2048·idx` bytes *before* each real frame: the encoder ate
+  the zeroed meta pages as the first ~4 lines (green bar — YUV zeros decode
+  green) and each of the 4 cycling block indexes landed at a different
+  horizontal phase (the "scroll"). Why Stage 6 missed it: the single-frame A/B
+  compared two grabs computed with the *same wrong formula* — a common-mode
+  offset cancels. The fix asks the documented API instead:
+  `AX_POOL_Handle2PhysAddr(handle)` — device-verified to work fine for a pool
+  created via raw ioctl (the handle is kernel-global state) and to agree
+  exactly with the measured layout, which is kept as a bounds-checked fallback.
+  `find_cmm_block` now matches `comm_pool_0` (not any `comm_pool*` substring)
+  and the base is re-derived on every `kvm_cap_start`.
+- **Black screen after refresh = VENC rebuilt with fps=0.** The web UI's
+  default video setting is `fps: 0` ("auto") and it POSTs the full settings
+  sequence on every page load; `kvmv_set_rate_control` intentionally destroys
+  the live channel to apply the new mode, and the rebuild then used the raw
+  stored 0 → `AX_VENC_CreateChn` = `0x8007020A` (`AX_ERR_VENC_ILLEGAL_PARAM` —
+  the VC8000E rejects a zero frame rate), retried by the Go streamers at
+  120 Hz forever (once: a 470 MB log). Only a *fresh* pipeline init healed
+  `s_fps` from `/proc/lt6911_info`, which is why the first refresh after a
+  suspend worked and the second wedged. Now fps 0 is a sentinel resolved from
+  the live source at every channel (re)build (`effective_fps_locked`), a
+  failed create destroys the half-created channel (else `AX_ERR_VENC_EXIST`
+  forever) and arms a 500 ms cooldown, `kvm_venc_create` clamps fps/gop as a
+  last line of defence, and the Go stream loops back off to 1 Hz after 30
+  consecutive failed reads (`pkgs/nanokvm-server.nix`).
+- `init_pipeline_locked` now refuses 0×0 geometry (HDMI unlocked) instead of
+  building a 0-byte pool and looping on `AX_ERR_VIN_ILLEGAL_PARAM`
+  (`0x8011010A`) — that sibling loop is in the vendor-backend logs of
+  2026-07-20.
