@@ -15,8 +15,9 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
 - The source of truth is Gitea: `gitea@git.neet.dev:zuckerberg/open-nanokvm-pro.git`.
   `github.com/GoogleBot42/open-nanokvm-pro` is a **read-only public downstream
   mirror** (release hosting + Actions release builds only) — never push,
-  commit, or tag on GitHub. Releases: bump `VERSION`, push, `tools/release`
-  (tags on Gitea; the mirror + GitHub Actions do the rest — docs/updates.md).
+  commit, or tag on GitHub. Releases: Gitea web UI → Actions → `cut-release`
+  with a version input (`tools/release` is the local fallback); the mirror +
+  GitHub Actions do the rest — docs/updates.md.
 - **Commit as you work; push after committing.** Never let finished work sit
   uncommitted or unpushed. (Standing instruction from Jeremy; a Stop hook also checks.)
 - This repo pushes directly to `main` (Jeremy's explicit instruction, 2026-08-15) —

@@ -123,7 +123,9 @@ propose SG2002 work without flagging this gap up front.
 - **Release pipeline: LIVE (issue #37 closed 2026-08-15).** Gitea source
   of truth → push mirror → public GitHub downstream mirror
   (GoogleBot42/open-nanokvm-pro) hosts releases and runs the tag-triggered
-  release workflow. v2.0.0 published and verified end-to-end; the test
-  device sees it ({current: 0.0.5, latest: 2.0.0}) — applying the OTA on
-  the device is a Jeremy decision (writes boot partitions + reboots).
-  Never propose pushing/tagging on GitHub directly; see `docs/updates.md`.
+  release workflow. v2.0.0 published, verified, and APPLIED on the device
+  (2026-08-16) — the full-firmware OTA path incl. partition writes +
+  reboot is hardware-proven. A/B *failover* is still unexercised (#10).
+  Releases are cut via the `cut-release` workflow in the Gitea web UI
+  (dry-run-tested; `tools/release` = fallback). Never propose
+  pushing/tagging on GitHub directly; see `docs/updates.md`.
