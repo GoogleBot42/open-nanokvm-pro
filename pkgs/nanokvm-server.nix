@@ -158,6 +158,19 @@ EOF
       --replace-fail 'Streamer: Streamer{' \
 'Streamer: Streamer{
 				VideoState: videoState,'
+
+    # 6. Re-assert the SW_PWR pinmux before every power press. The closed
+    #    capture stack re-muxes the VI_D7 pad (= gpio7, the ATX power line)
+    #    back to camera-data function on every pipeline init (boot, restart,
+    #    idle resume), leaving the power button dead while reset works; the
+    #    vendor never muxed it correctly anywhere (their gpio.sh pokes the
+    #    wrong register). See pkgs/nanokvm-server/pinmux-power.go.in and
+    #    docs/mini-display.md ("ATX GPIO setup").
+    cp ${./nanokvm-server/pinmux-power.go.in} service/vm/pinmux_power.go
+    sed -i 's|device = conf.GPIOPower$|device = conf.GPIOPower\n\t\tmuxPowerPin()|' \
+      service/vm/gpio.go
+    grep -q 'muxPowerPin()' service/vm/gpio.go \
+      || { echo "ERROR: muxPowerPin hook failed to apply to service/vm/gpio.go" >&2; exit 1; }
   '';
 
   # cgo on for the kvm_vision + opus bindings.

@@ -49,9 +49,14 @@ pkgs.stdenvNoCC.mkDerivation {
     #   gpio35 = SW_RST  (out, idle low)
     #   gpio75 = power LED sense (in; host on = reads 0)
     #   gpio74 = HDD LED sense   (in; declared but unused by the server)
-    # The pinmux register (0x02302024) already holds the required value at
-    # boot, so export + direction is all that's needed. "low" = output
-    # driving 0 in one write (no high glitch on the power line).
+    # "low" = output driving 0 in one write (no high glitch on the power
+    # line). The devmem muxes the VI_D7 pad to GPIO0_A7 (SW_PWR): sysfs
+    # export never programs the mux on this SoC, and the vendor's own
+    # gpio.sh pokes the wrong register (0x02302024 = GPIO3_A2). NOTE this
+    # boot-time write alone is NOT sufficient -- the closed capture stack
+    # re-muxes VI_D7 to camera-data on every pipeline init, so the server
+    # also re-asserts it before each power press (pkgs/nanokvm-server/
+    # pinmux-power.go.in). The other three pads' muxes survive boot fine.
     cat > nanokvm-gpio.service <<'EOF'
 [Unit]
 Description=NanoKVM-Pro ATX GPIO setup (target power/reset pins)
@@ -60,6 +65,7 @@ Before=nanokvm.service nanokvm-display.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+ExecStart=/usr/sbin/devmem 0x02300060 32 0x00060003
 ExecStart=/bin/sh -c 'cd /sys/class/gpio && for p in 7:low 35:low 74:in 75:in; do n=''${p%%:*} d=''${p##*:}; [ -d gpio$n ] || echo $n > export; echo $d > gpio$n/direction; done'
 
 [Install]

@@ -99,7 +99,28 @@ literal module (`pkgs/nanokvm-display/gen_font.py`).
    line never glitches), `gpio75`/`gpio74` LED-sense inputs. The vendor's
    disabled kvmcomm stack used to do this; without it the server's
    `POST /api/vm/gpio` (web UI power menu) and the knob control page have
-   nothing to actuate. Pinmux is already correct at boot.
+   nothing to actuate.
+
+   **The SW_PWR pinmux trap** (cost a real debugging session — device-proven
+   2026-08-16): sysfs GPIO export **never programs the pinmux** on this SoC
+   (`axera-pinctrl` doesn't wire `gpio_request_enable` to the mux), and
+   `gpio7` sits on the **`VI_D7` camera-data pad**, whose mux register is
+   `0x02300060` (function 6 = `GPIO0_A7`, correct word `0x00060003`). Two
+   consequences: (a) the vendor's own `gpio.sh` pokes `0x02302024` — that is
+   **GPIO3_A2's register, not VI_D7's** — so the power button is likely
+   broken on stock firmware too; (b) the closed capture stack re-muxes the
+   VI pad group back to camera-data function on pipeline init (observed
+   across a `nanokvm` restart), so no boot-time write can stick. Reset
+   (`gpio35` = `UART3_RXD` pad, mux `0x02304090`) and the LED senses
+   (`CDTX_L0N/P`, `0x0230A00C`/`0x0230A018`) are not touched by capture,
+   which is why "reset works but power doesn't" is the symptom signature.
+   The durable fix is in the server: `muxPowerPin()`
+   (`pkgs/nanokvm-server/pinmux-power.go.in`) re-asserts `VI_D7 → GPIO0_A7`
+   via `/dev/mem` immediately before **every** power press;
+   `nanokvm-gpio.service` also writes it once at boot as belt-and-braces.
+   Kernel-side reading: a GPIO's `value` file just echoes the output
+   latch — it proves nothing about the ball; check the pad word with
+   `devmem 0x02300060` instead.
 4. The OTA update package carries the same payload (`pkgs/update-package.nix`).
 
 ---
@@ -231,10 +252,15 @@ powered so the host keeps seeing its monitor). See
   confirm screen arms, twist cancels, `back` returns to the status page —
   each step verified via framebuffer dumps rendered off-device. The host
   power state read (`GET /api/vm/gpio` → gpio75) reported the live host
-  correctly after `nanokvm-gpio.service` exported the pins. **Not yet
-  exercised: an actual power/reset pulse** — the sysfs write path is
-  vendor server code and the wiring is per the vendor pin table, but no
-  physical press has been fired at a target yet.
+  correctly after `nanokvm-gpio.service` exported the pins.
+- **Physical power and reset pulses (2026-08-16).** Reset was pressed by
+  Jeremy (target rebooted); power was initially dead — root-caused to the
+  `VI_D7` pinmux trap above. With the mux fixed, an 800 ms press through
+  `POST /api/vm/gpio` powered the live target **off** (gpio75 LED 0→1) and
+  a second press powered it back **on** — both observed via the LED sense.
+  The per-press re-assert was verified by deliberately breaking the mux,
+  firing a 1 ms press (below ATX debounce), and reading the pad word back
+  repaired.
 - All panel-side findings (top table, DT node, backlight, `/dev/fb0`
   behavior) — on a NanoKVM-Pro Desk running this firmware.
 - The **orientation mapping** — by dumping the live framebuffer of a
@@ -288,6 +314,10 @@ Daemon:     /opt/nanokvm-display/nanokvm_display.py  (nanokvm-display.service)
 ATX pins:   nanokvm-gpio.service (oneshot, boot) exports gpio7=SW_PWR out,
             gpio35=SW_RST out (idle low), gpio75/74 LED sense in; host on
             when gpio75 reads 0 (server inverts: GET /api/vm/gpio .pwr)
+            SW_PWR pad = VI_D7, mux reg 0x02300060 must hold 0x00060003
+            (GPIO0_A7); capture init re-muxes it, server re-asserts before
+            every power press (pinmux-power.go.in). Reset pad = UART3_RXD
+            (0x02304090), LED pads = CDTX_L0N/P -- capture leaves those alone.
 Closed junk:kvm_ui / frameforge / kvm_vin and /kvmcomm/ko blob copies -- still
             REMOVED from the image (pkgs/rootfs.nix 5d)
 ```

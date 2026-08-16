@@ -34,6 +34,11 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   UI is down — `docs/architecture.md` ("The two app stacks").
 - The app tree is copied to tmpfs at boot: hot patches must land in BOTH `/kvmapp`
   and `/dev/shm/kvmapp` — see the deploy-iterate skill.
+- "ATX reset works but power doesn't" = the SW_PWR pinmux trap: sysfs GPIO export
+  never programs the mux, gpio7 lives on the VI_D7 pad (mux reg `0x02300060`), and
+  capture init re-muxes it — the server re-asserts it per press. A GPIO `value`
+  read only echoes the output latch, it proves nothing about the ball. Details:
+  `docs/mini-display.md` ("The SW_PWR pinmux trap").
 
 ## Hardware tripwires
 

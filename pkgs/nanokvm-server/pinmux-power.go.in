@@ -1,0 +1,50 @@
+package vm
+
+// SW_PWR (gpio7) sits on the VI_D7 pad, and the closed capture stack
+// re-muxes the VI pad group back to camera-data function (0x00000003)
+// every time the video pipeline initializes -- boot, service restart, and
+// every idle-suspend resume. A boot-time pinmux therefore cannot stick:
+// the power button goes dead again on the next capture init, while reset
+// (UART3_RXD pad, untouched by capture) keeps working. Nothing in the
+// vendor stack ever muxed this pad either: their kvmcomm gpio.sh pokes
+// 0x02302024, which is GPIO3_A2's register, not VI_D7's.
+//
+// Fix: re-assert VI_D7 -> GPIO0_A7 immediately before every power press.
+// Register map: AX620E pinmux group G1 at 0x02300000, one 12-byte slot
+// per pad from +0x0C; pad word bits [18:16] = function select, [3:0] =
+// drive strength. VI_D7 = +0x60, function 6 = GPIO0_A7 (SDK
+// drivers/pinctrl/axera/pinctrl-ax620e.{c,h}; value matches the vendor
+// board table build/projects/.../pinmux/AX630C_DEMO_pinmux.h).
+
+import (
+	"encoding/binary"
+	"os"
+	"syscall"
+
+	log "github.com/sirupsen/logrus"
+)
+
+const (
+	pinmuxG1Base   = 0x02300000 // VI pad group (page-aligned)
+	viD7Offset     = 0x60       // VI_D7 pad word
+	viD7GpioConfig = 0x00060003 // function 6 = GPIO0_A7, drive strength 3
+)
+
+func muxPowerPin() {
+	f, err := os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, 0)
+	if err != nil {
+		log.Errorf("pinmux: open /dev/mem: %s", err)
+		return
+	}
+	defer f.Close()
+
+	mem, err := syscall.Mmap(int(f.Fd()), pinmuxG1Base, syscall.Getpagesize(),
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		log.Errorf("pinmux: mmap pinmux block: %s", err)
+		return
+	}
+	defer func() { _ = syscall.Munmap(mem) }()
+
+	binary.LittleEndian.PutUint32(mem[viD7Offset:], viD7GpioConfig)
+}
