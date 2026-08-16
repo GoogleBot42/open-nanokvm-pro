@@ -99,7 +99,7 @@ crossPkgs.stdenv.mkDerivation {
     ${cc} -shared -fPIC -O2 -Wall -std=gnu17 ${captureDef} \
       -I. -I${axera-libs}/include \
       -Wl,-soname,libkvm.so.0 \
-      libkvm.c kvm_pipeline.c ${captureSrc} \
+      libkvm.c kvm_pipeline.c kvm_preview.c ${captureSrc} \
       -L${axera-libs}/lib \
       ${captureLibs} \
       -lopus -lasound \

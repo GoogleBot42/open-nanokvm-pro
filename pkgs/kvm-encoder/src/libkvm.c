@@ -28,6 +28,8 @@
 #include <math.h>
 #endif
 
+#include <time.h>
+
 #include <opus/opus.h>
 #include <alsa/asoundlib.h>
 
@@ -35,6 +37,7 @@
 #include "ax_global_type.h"
 #include "ax_venc_comm.h"
 #include "kvm_pipeline.h"
+#include "kvm_preview.h"
 #include "kvm_vision.h"
 
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -45,6 +48,19 @@ static int  s_cur_type = -1;       /* 0=MJPEG chn, 1=H264 chn currently created 
 static int  s_cur_chn = -1;
 static int  s_w = 0, s_h = 0;
 static int  s_fps = 60, s_gop = 30, s_rc = 0 /*CBR*/, s_qlty = 8000;
+
+/* mini-display preview lease (kvmv_preview_tick): while fresh, the encoder
+ * read path also feeds kvm_preview_publish; when the encoder path is quiet,
+ * the tick captures for itself. Both under s_lock. */
+static int64_t s_prev_lease_us = 0;    /* read-path tap active until then */
+static int64_t s_last_enc_cap_us = 0;  /* last kvm_cap_get by the read path */
+
+static int64_t kvm_mono_us(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
 
 /* cached SPS/PPS copies for get_sps/get_pps */
 static uint8_t *s_sps = NULL; static uint32_t s_sps_len = 0;
@@ -80,6 +96,7 @@ static void teardown_locked(void)
 {
     if (s_cur_chn >= 0) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
     if (s_inited) { kvm_cap_stop(&s_cap); kvm_venc_module_deinit(); kvm_sys_deinit(&s_cap); s_inited = 0; }
+    kvm_preview_reset();   /* pool phys addrs change across teardown/re-init */
 }
 
 /* (re)create the VENC channel for the requested encode type/params */
@@ -206,6 +223,9 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
     /* 2) otherwise capture+encode a fresh frame */
     AX_IMG_INFO_T img;
     if (kvm_cap_get(&img, 1000) != 0) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
+    s_last_enc_cap_us = kvm_mono_us();
+    if (s_last_enc_cap_us < s_prev_lease_us)          /* preview page open: tap */
+        kvm_preview_publish(&img.tFrameInfo.stVFrame);
     kvm_venc_send(s_cur_chn, &img.tFrameInfo);
     kvm_cap_release(&img);
     if (kvm_venc_get(s_cur_chn, &st, 2000) == 0) {
@@ -487,6 +507,39 @@ int kvmv_video_suspend(void)
             was_up ? "was active" : "was already down");
     fflush(stderr);
     return 0;
+}
+
+/* One preview beat for the mini-display (our ABI extension; the Go server
+ * calls this ~10x/s while the display daemon holds a preview lease). Extends
+ * the read-path tap window; when the encoder path has captured recently a
+ * web viewer's own reads feed the preview and this is a no-op. Otherwise it
+ * captures one frame itself and publishes it -- WITHOUT touching VENC, so it
+ * never steals an encoded pack from (or switches codecs under) a web viewer,
+ * and it works with zero viewers connected. */
+int kvmv_preview_tick(void)
+{
+    int rc = 0;
+    pthread_mutex_lock(&s_lock);
+    int64_t now = kvm_mono_us();
+    s_prev_lease_us = now + 1000000;
+    if (now - s_last_enc_cap_us < 300000) {   /* read path is feeding the tap */
+        pthread_mutex_unlock(&s_lock);
+        return 0;
+    }
+    if (!s_inited && init_pipeline_locked(s_w > 0 ? s_w : 1920,
+                                          s_h > 0 ? s_h : 1080) != 0) {
+        pthread_mutex_unlock(&s_lock);
+        return -1;
+    }
+    AX_IMG_INFO_T img;
+    if (kvm_cap_get(&img, 200) != 0) {
+        rc = -1;
+    } else {
+        kvm_preview_publish(&img.tFrameInfo.stVFrame);
+        kvm_cap_release(&img);
+    }
+    pthread_mutex_unlock(&s_lock);
+    return rc;
 }
 
 int kvmv_video_resume(void)

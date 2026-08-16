@@ -27,10 +27,11 @@ package common
 /*
 #cgo CFLAGS: -I../include
 #cgo LDFLAGS: -L../dl_lib -lkvm
-// Our libkvm extension; not in the vendored include/kvm_vision.h, so declare
-// the two entry points here.
+// Our libkvm extensions; not in the vendored include/kvm_vision.h, so declare
+// the entry points here.
 extern int kvmv_video_suspend(void);
 extern int kvmv_video_resume(void);
+extern int kvmv_preview_tick(void);
 */
 import "C"
 
@@ -85,6 +86,48 @@ func (k *KvmVision) markVideoActive() {
 // suspended (surfaced as "video_state" in /api/streamer/local).
 func VideoIsSuspended() bool {
 	return videoSuspended.Load()
+}
+
+// ---- mini-display live preview keep-alive ---------------------------------
+//
+// The display daemon POSTs /api/streamer/preview (loopback-only) about once a
+// second while its preview page is open. Each POST extends a short lease; a
+// single goroutine ticks kvmv_preview_tick() ~10x/s while the lease is fresh,
+// which (a) marks video activity so the idle watcher never suspends mid-
+// preview and resume happens if it was suspended, and (b) has libkvm publish
+// panel-ready RGB565 frames to /dev/shm/nanokvm-preview -- from the web
+// viewers' own frames when someone is streaming, or from its own VENC-free
+// captures when nobody is. Daemon gone (crash, page closed, panel asleep) =>
+// lease expires => ticking stops => the normal idle timeout suspends capture.
+
+const (
+	previewLease      = 3 * time.Second
+	previewTickPeriod = 100 * time.Millisecond
+)
+
+var (
+	previewUntil   atomic.Int64 // unix-nano lease deadline
+	previewRunning atomic.Bool
+)
+
+// PanelPreviewKeepAlive extends the preview lease and ensures the tick
+// goroutine is running. Loopback handler; see service/ui/panel_preview.go.
+func PanelPreviewKeepAlive() {
+	previewUntil.Store(time.Now().Add(previewLease).UnixNano())
+	if !previewRunning.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer previewRunning.Store(false)
+		k := GetKvmVision()
+		log.Info("panel preview: keep-alive lease opened, ticking")
+		for time.Now().UnixNano() < previewUntil.Load() {
+			k.markVideoActive()
+			C.kvmv_preview_tick()
+			time.Sleep(previewTickPeriod)
+		}
+		log.Info("panel preview: lease expired, ticking stopped")
+	}()
 }
 
 // StartVideoIdleWatcher launches the goroutine that suspends the capture

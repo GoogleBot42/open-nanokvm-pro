@@ -26,6 +26,14 @@ moves the selection, press activates; every action needs a second confirming
 press, and any twist cancels. Selection starts on "back" so stray input does
 nothing. Falling asleep returns to the status page.
 
+The "hdmi preview" menu entry opens a live view of the captured HDMI input:
+libkvm publishes panel-ready frames (172x320 RGB565, pre-rotated) to
+/dev/shm/nanokvm-preview while this daemon POSTs the server's loopback
+/api/streamer/preview keep-alive (~1x/s); the page just blits the freshest
+frame straight to the framebuffer -- zero per-pixel Python work. Press = back;
+falling asleep exits the page (and the lease dies with it, so capture can
+power down again). See docs/mini-display.md ("Live HDMI preview").
+
 Extending the screen: add an entry to build_lines() below. Each line is
 (font, fg565, text) -- fg may also be a (fg, bg) tuple for inverse video;
 the renderer stacks them top-down with per-font spacing.
@@ -70,15 +78,29 @@ KNOB_DETENT = int(os.environ.get("NANOKVM_KNOB_DETENT", "2"))
 #   physical detent, so 1 would move the selection on half-clicks (it lands
 #   between detents). Twist-to-cancel on the confirm screen stays raw.
 
-# Target-control menu: (label, gpio type for /api/vm/gpio, press ms).
-# "back" first so entering the page with a stray twist + press exits cleanly.
-# Durations mirror the web UI (800 ms click, 8 s force-off hold).
+# Target-control menu: (label, action, press ms). action None = back,
+# "preview" = open the live-preview page (no confirm), else the gpio type for
+# /api/vm/gpio (confirm required). "back" first so entering the page with a
+# stray twist + press exits cleanly. Durations mirror the web UI (800 ms
+# click, 8 s force-off hold).
 MENU = [
     ("back", None, 0),
+    ("hdmi preview", "preview", 0),
     ("power press", "power", 800),
     ("reset", "reset", 800),
     ("force off (8s)", "power", 8000),
 ]
+
+# Live-preview frame feed (written by libkvm's kvm_preview.c; see the header
+# struct there): 32-byte header + 172*320 RGB565-LE payload in native fb
+# layout, atomically renamed into place, mono_us stamping freshness.
+PREVIEW_FILE = "/dev/shm/nanokvm-preview"
+PREVIEW_URL = "https://127.0.0.1/api/streamer/preview"  # loopback, no auth;
+#   https directly for the same 307-redirect reason as GPIO_URL above
+PV_FMT = "<IIIHHHHQI"
+PV_HDR_SIZE = struct.calcsize(PV_FMT)  # 32
+PV_MAGIC = 0x56504B4E                  # "NKPV"
+PREVIEW_STALE_S = 2.0   # older than this = show the waiting screen instead
 LT6911_W = "/proc/lt6911_info/width"
 LT6911_H = "/proc/lt6911_info/height"
 VERSION_FILE = "/kvmapp/version"
@@ -302,6 +324,81 @@ class StatusPoller(threading.Thread):
         self._tick.set()
 
 
+class PreviewKeepAlive(threading.Thread):
+    """POSTs the server's loopback preview keep-alive ~1x/s while active.
+
+    Each POST extends a ~3 s lease server-side; while it is fresh the server
+    ticks libkvm's preview publisher (resuming the capture pipeline if it was
+    idle-suspended). Runs off the main loop so a hung server can never block
+    knob input; page transitions just flip the event."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self._active = threading.Event()
+
+    def run(self):
+        while True:
+            self._active.wait()
+            try:
+                req = urllib.request.Request(PREVIEW_URL, data=b"",
+                                             method="POST")
+                with urllib.request.urlopen(req, timeout=3, context=_SSL_CTX):
+                    pass
+            except Exception:
+                pass  # server down; the page shows its waiting screen
+            time.sleep(1.0)
+
+    def set_active(self, on):
+        if on:
+            self._active.set()
+        else:
+            self._active.clear()
+
+
+def read_preview_frame():
+    """Freshest published preview frame, or None.
+
+    Returns (payload, seq) where payload is the full 110080-byte native-fb
+    RGB565 frame ready for write_fb(). The writer replaces the file by
+    rename(), so a single read() always sees one consistent frame."""
+    try:
+        with open(PREVIEW_FILE, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    if len(data) < PV_HDR_SIZE:
+        return None
+    magic, ver, seq, fb_w, fb_h, _sw, _sh, mono_us, plen = \
+        struct.unpack_from(PV_FMT, data, 0)
+    if (magic != PV_MAGIC or ver != 1 or fb_w != FB_W or fb_h != FB_H
+            or plen != FB_W * FB_H * 2 or len(data) < PV_HDR_SIZE + plen):
+        return None
+    # mono_us is CLOCK_MONOTONIC on this same host, directly comparable.
+    if time.monotonic() - mono_us / 1e6 > PREVIEW_STALE_S:
+        return None
+    return data[PV_HDR_SIZE:PV_HDR_SIZE + plen], seq
+
+
+def build_preview_wait_lines(stream):
+    """Shown on the preview page until fresh frames arrive (pipeline resume
+    takes ~1-2 s) or when they stop (no signal, server down)."""
+    state, _ = stream
+    if state == "down":
+        msg, color = "server off", AMBER
+    elif get_hdmi_input() == "no signal":
+        msg, color = "no hdmi signal", AMBER
+    else:
+        msg, color = "starting video", CYAN
+    return [
+        ("small", WHITE, " hdmi preview"),
+        ("hr", GREY, None),
+        ("gap", 40, None),
+        ("big", color, msg.center(22)),
+        ("gap", 24, None),
+        ("small", GREY, "  press = back"),
+    ]
+
+
 def build_lines(ips, stream):
     """The screen content. To add a status item, append a line tuple here:
     (font_name, color565, text) -- or a ("gap", pixels, None) spacer.
@@ -512,6 +609,10 @@ def main():
     poller.start()
     poller.first.wait(8)  # brief grace so the first paint has real data
 
+    preview_ka = PreviewKeepAlive()
+    preview_ka.start()
+    last_preview_seq = None
+
     awake = True
     last_frame = None
     last_activity = time.monotonic()
@@ -527,26 +628,44 @@ def main():
     twist_acc = 0            # rotary events accumulated toward a full detent
 
     while True:
+        # -- keep the server's preview lease exactly while the page is open --
+        preview_ka.set_active(awake and page == "preview")
+
         # -- draw (only while awake) ---------------------------------------
         if awake:
             try:
-                if page == "control":
+                if page == "preview":
+                    got = read_preview_frame()
+                    if got:
+                        payload, seq = got
+                        if seq != last_preview_seq:
+                            write_fb(payload)
+                            last_preview_seq = seq
+                            last_frame = None  # canvas pages redraw after this
+                        lines = None
+                    else:
+                        _, stream = poller.snapshot
+                        lines = build_preview_wait_lines(stream)
+                elif page == "control":
                     lines = build_control_lines(
                         get_host_power(), sel, mode, flash and flash[0])
                 else:
                     ips, stream = poller.snapshot
                     lines = build_lines(ips, stream)
-                render(canvas, lines)
-                frame = canvas.to_fb_bytes()
-                if frame != last_frame:
-                    write_fb(frame)
-                    last_frame = frame
+                if lines is not None:
+                    render(canvas, lines)
+                    frame = canvas.to_fb_bytes()
+                    if frame != last_frame:
+                        write_fb(frame)
+                        last_frame = frame
             except Exception as e:  # never die on a transient source error
                 print(f"refresh failed: {e}", file=sys.stderr)
 
         # -- wait for input or next refresh tick ---------------------------
         if not awake:
             timeout = 60.0        # just wait for the waking input
+        elif page == "preview":
+            timeout = 0.1         # poll the frame feed at ~10 Hz
         elif mode == "busy":
             timeout = 0.25        # notice the press thread finishing quickly
         else:
@@ -581,6 +700,13 @@ def main():
                 if abs(twist_acc) >= KNOB_DETENT:  # full detent opens control
                     page, sel, mode, flash = "control", 0, "menu", None
                     twist_acc = 0
+                    last_frame = None
+            elif page == "preview":
+                if presses:  # press = back; twists only reset the sleep timer
+                    page, mode, flash = "status", "menu", None
+                    twist_acc = 0
+                    last_frame = None
+                    last_preview_seq = None
             elif mode == "menu":
                 twist_acc += delta
                 steps = int(twist_acc / KNOB_DETENT)  # trunc toward zero
@@ -591,6 +717,11 @@ def main():
                     twist_acc = 0
                     if MENU[sel][1] is None:  # back
                         page = "status"
+                        last_frame = None
+                    elif MENU[sel][1] == "preview":  # live view; no confirm
+                        page = "preview"
+                        last_frame = None
+                        last_preview_seq = None
                     else:
                         mode = "confirm"
                         confirm_deadline = now + CONFIRM_TIMEOUT_S

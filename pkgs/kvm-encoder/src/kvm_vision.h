@@ -82,6 +82,17 @@ int kvmv_set_rate_control(uint8_t mode);
  * suspend re-inits on its own; the explicit call just fronts the latency. */
 int kvmv_video_suspend(void);
 int kvmv_video_resume(void);
+
+/* Mini-display live preview (also ours). One call = one preview beat: keeps
+ * the read-path preview tap leased for 1 s and, when no web viewer is pulling
+ * frames, captures a frame itself (VENC untouched -- no pack stealing, no
+ * codec interaction) and publishes it as RGB565 in the panel's native fb
+ * layout to /dev/shm/nanokvm-preview (see kvm_preview.c for the format). The
+ * Go server ticks this ~10x/s while the display daemon's loopback keep-alive
+ * lease is fresh. Returns 0 if a frame was published or the web read path is
+ * covering it, negative if capture is not possible right now (e.g. no HDMI
+ * signal). */
+int kvmv_preview_tick(void);
 #ifdef __cplusplus
 }
 #endif

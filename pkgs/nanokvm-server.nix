@@ -159,6 +159,16 @@ EOF
 'Streamer: Streamer{
 				VideoState: videoState,'
 
+    # Mini-display live preview: loopback keep-alive endpoint the display
+    # daemon POSTs while its preview page is open; the lease drives
+    # common.PanelPreviewKeepAlive (video-power.go.in) -> kvmv_preview_tick,
+    # which publishes panel-ready frames to /dev/shm/nanokvm-preview.
+    cp ${./nanokvm-server/panel-preview.go.in} service/ui/panel_preview.go
+    substituteInPlace router/local.go \
+      --replace-fail 'api.GET("/streamer/local", ui.GetStreamer)' \
+'api.GET("/streamer/local", ui.GetStreamer)
+	api.POST("/streamer/preview", ui.PanelPreview)'
+
     # 6. Re-assert the SW_PWR pinmux before every power press. The closed
     #    capture stack re-muxes the VI_D7 pad (= gpio7, the ATX power line)
     #    back to camera-data function on every pipeline init (boot, restart,

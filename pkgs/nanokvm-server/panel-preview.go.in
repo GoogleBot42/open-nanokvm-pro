@@ -1,0 +1,23 @@
+package ui
+
+// Mini-display preview keep-alive (OUR addition; copied into the vendored
+// server source as service/ui/panel_preview.go by pkgs/nanokvm-server.nix
+// postPatch, routed loopback-only next to /api/streamer/local).
+//
+// The display daemon POSTs this ~1x/s while its preview page is open; each
+// call extends the lease that keeps common.PanelPreviewKeepAlive's tick
+// goroutine publishing panel-ready frames. See pkgs/nanokvm-server/
+// video-power.go.in and pkgs/kvm-encoder/src/kvm_preview.c.
+
+import (
+	"net/http"
+
+	"NanoKVM-Server/common"
+
+	"github.com/gin-gonic/gin"
+)
+
+func PanelPreview(c *gin.Context) {
+	common.PanelPreviewKeepAlive()
+	c.JSON(http.StatusOK, gin.H{"code": 0})
+}

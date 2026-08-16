@@ -16,6 +16,7 @@ from-source module + daemon stack was proven end-to-end on the device
 - [How it is blob-free](#how-it-is-blob-free)
 - [What ships in the image](#what-ships-in-the-image)
 - [The status daemon](#the-status-daemon)
+- [Live HDMI preview](#live-hdmi-preview)
 - [Orientation](#orientation)
 - [Drawing to it](#drawing-to-it)
 - [Coexistence with the web KVM](#coexistence-with-the-web-kvm)
@@ -162,6 +163,7 @@ the `gpio_keys` / `rotary_encoder` evdev devices (discovered by name via
 
 **Target-control page (knob-driven power/reset):** twisting the knob on the
 status page opens a control page; twisting moves the selection (`back`,
+`hdmi preview` — see [Live HDMI preview](#live-hdmi-preview) —
 `power press`, `reset`, `force off (8s)` — selection starts on `back` so
 stray input is harmless), pressing the knob arms an amber confirm screen
 (`press = confirm, twist = cancel`, auto-cancels after 8 s), and a second
@@ -179,6 +181,54 @@ latency is never bounded by server health.
 top-down. Fonts available: `small` (Terminus 8×16 → 40 cols) and `big`
 (Terminus Bold 14×28 → 22 cols); add more PSF sizes in `pkgs/nanokvm-display.nix`
 if needed.
+
+---
+
+## Live HDMI preview
+
+**Included, device-verified 2026-08-16** (issues #36/#33). The `hdmi preview`
+entry on the control page shows the captured HDMI input live on the panel.
+Press = back; falling asleep exits too. It honors the coexistence constraint
+below by design: the preview is **fed from libkvm's own frames** — no second
+capture pipeline, no `kvm_vin`.
+
+How the pieces fit (each layer does the only thing it can do cheaply):
+
+1. **libkvm** (`pkgs/kvm-encoder/src/kvm_preview.c`) converts a held capture
+   frame (YUYV 4:2:2, the live source geometry) straight into the panel's
+   native fb layout — 172×320 portrait RGB565-LE, pre-rotated with the
+   verified orientation mapping, letterboxed to preserve aspect — and
+   publishes it atomically (write + `rename(2)`) to `/dev/shm/nanokvm-preview`
+   (32-byte header: magic/seq/geometry/`CLOCK_MONOTONIC` stamp + 110 080-byte
+   payload). Rate-limited to ~12 fps; nearest-neighbour + integer BT.601,
+   a few ms per frame on the A53.
+2. **The Go server** exposes loopback-only `POST /api/streamer/preview`
+   (`pkgs/nanokvm-server/panel-preview.go.in` + the lease logic in
+   `video-power.go.in`). Each POST extends a 3 s lease; while it is fresh, a
+   single goroutine ticks our libkvm extension `kvmv_preview_tick()` at 10 Hz
+   and marks video activity (so idle suspend stays away and a suspended
+   pipeline resumes on entry).
+3. **`kvmv_preview_tick`** (in `libkvm.c`) is what makes coexistence free:
+   if the encoder read path has captured a frame in the last 300 ms (a web
+   viewer is streaming), the tick is a no-op — the viewer's own frames feed
+   the publisher via a tap in `kvmv_read_img`. Otherwise the tick captures a
+   frame itself and releases it **without touching VENC**: no encoded pack is
+   stolen from a web stream, no codec switch happens, and the preview works
+   with zero viewers connected (including from a cold idle-suspended state).
+4. **The daemon** POSTs the keep-alive ~1×/s from a background thread while
+   the page is open and just blits the freshest payload to `/dev/fb0` when
+   the header seq changes — zero per-pixel Python. A stale feed (>2 s: no
+   signal, server down, pipeline warming) falls back to a rendered status
+   screen (`starting video` / `no hdmi signal` / `server off`).
+
+Lifecycle: page closed (or panel asleep) → keep-alives stop → lease expires
+in ≤3 s → ticking stops → the normal `videoIdleTimeout` suspends capture.
+The lease means a crashed daemon can never pin the pipeline awake.
+
+Verified on device with a live 1080p source: correct orientation/colors on
+the panel (fb dump == published payload, byte-exact), lease open/expiry in
+the server log, and a simultaneous loopback MJPEG viewer pulling 28 fps while
+the panel preview stayed live.
 
 ---
 
@@ -223,9 +273,9 @@ The display path (SPI panel → `/dev/fb0`) is **independent of the capture path
 
 The thing that *does* conflict is `kvm_vin`, the vendor **capture** feeder that
 supplies a live HDMI preview to the screen — it wants the same MIPI/VENC
-pipeline our `libkvm` owns. So a future **live preview** on the mini-display
-must be fed from `libkvm`'s frames, not by running `kvm_vin`. The status screen
-needs no capture at all.
+pipeline our `libkvm` owns. This is why the shipped
+[live preview](#live-hdmi-preview) is fed from `libkvm`'s frames, never by
+running `kvm_vin`. The status screen needs no capture at all.
 
 Related (capture-idle behavior): when the last web viewer disconnects, the
 server's streaming goroutines exit and stop pulling frames — and after

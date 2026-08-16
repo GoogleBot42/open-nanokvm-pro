@@ -237,9 +237,10 @@ firmware the display is instead driven **entirely from source**:
 - **UI:** `nanokvm-display.service` runs `/opt/nanokvm-display/nanokvm_display.py`
   (`pkgs/nanokvm-display.nix`) — a small pure-stdlib-Python status screen
   (hostname, IP, live-stream state, HDMI input, firmware version, uptime) with
-  inactivity sleep (backlight off after 3 min) and wake on the knob button.
-  Fonts are generated at build time from source-built `terminus_font` — no new
-  binary assets.
+  inactivity sleep (backlight off after 3 min), wake on the knob button, a
+  knob-driven target power/reset page, and a **live HDMI preview** page fed
+  from libkvm's frames (never a second capture pipeline). Fonts are generated
+  at build time from source-built `terminus_font` — no new binary assets.
 
 Full panel details, the blob-free story, and the sleep/wake behavior are in
 [mini-display.md](mini-display.md).
