@@ -75,7 +75,13 @@ jobs:
           [ "$FILE" = "$V" ] || { echo "::error::VERSION file ('$FILE') != tag version ('$V'). Tags are cut from Gitea with tools/release, which keeps them in lockstep — do not hand-create tags."; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "tag=v$V"    >> "$GITHUB_OUTPUT"
-          echo "Release v$V"
+          # Any semver prerelease suffix (e.g. 2.1.0-alpha.1) = alpha cut:
+          # published as a GitHub prerelease, which the stable channel's
+          # `releases/latest/download` alias never serves.
+          case "$V" in
+            *-*) echo "prerelease=true"  >> "$GITHUB_OUTPUT"; echo "Release v$V (ALPHA/prerelease)";;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT"; echo "Release v$V";;
+          esac
 
       - name: Build web-update package
         run: nix build .#update-package --print-build-logs --out-link result-update
@@ -100,11 +106,45 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
+          prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
           files: |
             dist/nanokvm_pro_latest.json
             dist/nanokvm_pro_${{ steps.ver.outputs.version }}.tar.gz
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+      - name: Refresh the rolling preview-channel release
+        # The preview/alpha channel polls the fixed URL
+        # releases/download/preview/nanokvm_pro_latest.json (flake.nix
+        # `previewUpdateBaseUrl`): a rolling release on the mirrored `preview`
+        # tag, refreshed on EVERY cut (stable or alpha) so preview devices
+        # always see the newest version of either kind. Stale tarballs are
+        # pruned so only the manifest + the current payload remain.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if ! git ls-remote --exit-code origin refs/tags/preview >/dev/null; then
+            echo "::warning::no 'preview' tag on this repo yet (older cut-release); skipping preview-channel refresh"
+            exit 0
+          fi
+          if ! gh release view preview >/dev/null 2>&1; then
+            gh release create preview --prerelease \
+              --title "preview channel (rolling)" \
+              --notes "Rolling release backing the web UI's *preview updates* channel. Assets always track the most recently cut release (stable or alpha) — see docs/updates.md."
+          fi
+          gh release upload preview \
+            "dist/nanokvm_pro_latest.json" \
+            "dist/nanokvm_pro_${VERSION}.tar.gz" \
+            --clobber
+          # prune payloads from previous cuts
+          gh release view preview --json assets -q '.assets[].name' \
+            | grep -vx "nanokvm_pro_latest.json" \
+            | grep -vx "nanokvm_pro_${VERSION}.tar.gz" \
+            | while read -r stale; do
+                echo "pruning stale preview asset: $stale"
+                gh release delete-asset preview "$stale" -y
+              done
 
       - name: Upload firmware .axp
         # Separate from the OTA assets because GitHub's large-asset upload

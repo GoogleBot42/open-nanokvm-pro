@@ -40,6 +40,10 @@ git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null \
 echo "==> tagging ${TAG} on Gitea"
 git tag "$TAG"
 git push origin "$TAG"
+# Rolling preview-channel tag: always points at the newest cut (stable or
+# alpha); the GitHub release workflow re-targets the preview release at it.
+git tag -f preview "$TAG"
+git push -f origin refs/tags/preview
 
 echo "==> waiting for the mirror to carry ${TAG} to github.com/${GH_REPO}"
 for i in $(seq 1 30); do

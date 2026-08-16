@@ -63,6 +63,12 @@
         let m = builtins.match "[[:space:]]*([^[:space:]]+).*" (builtins.readFile ./VERSION);
         in if m == null then "0.0.0-dev" else builtins.head m;
       updateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
+      # The preview/alpha channel (web-UI "preview updates" toggle). GitHub's
+      # `latest` alias excludes prereleases, so alphas ride a ROLLING release
+      # on the fixed `preview` tag instead (assets clobbered on every cut) --
+      # a release-asset namespace is flat, so the vendor's derived
+      # `<stable>/preview` sub-path can never work on GitHub. docs/updates.md.
+      previewUpdateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview";
     in
     flake-utils.lib.eachSystem supportedSystems (
       localSystem:
@@ -143,7 +149,7 @@
         };
 
         kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; };
-        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl; };
+        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
 
         # Mini-display status daemon (pure Python + build-time-generated fonts;

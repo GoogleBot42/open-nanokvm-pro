@@ -95,8 +95,18 @@ Everything starts on Gitea; GitHub only builds and hosts the assets.
 **Primary path — from the Gitea web UI:** Actions → **cut-release** → Run
 workflow → enter the version (e.g. `2.0.1`). The job
 (`.gitea/workflows/cut-release.yml`) validates, writes `VERSION`, commits
-`release: 2.0.1`, tags `v2.0.1`, and pushes — git work only, no nix, safe on
-the Gitea runner. (A `dry_run` input validates without pushing.)
+`release: 2.0.1`, tags `v2.0.1`, pushes, and force-moves the rolling
+`preview` tag to the same commit — git work only, no nix, safe on the Gitea
+runner. (A `dry_run` input validates without pushing.)
+
+**Alpha releases:** give the version any semver prerelease suffix —
+`2.1.0-alpha.1`. That single fact drives the whole split: GitHub publishes it
+as a *prerelease*, which the stable channel's `releases/latest/download`
+alias never serves, while the preview channel (below) picks it up
+immediately. Devices with the web-UI **preview updates** toggle on get the
+alpha; everyone else waits for the next stable. When `2.1.0` finally ships,
+preview devices see it too (`semver.gt(2.1.0, 2.1.0-alpha.1)`) and converge
+back onto stable.
 
 **Fallback — locally:**
 
@@ -116,11 +126,15 @@ Either way, from there:
 2. `.github/workflows/release.yml` fires on the mirrored tag, checks
    `VERSION` == tag (it never writes or commits anything — the mirror must
    stay one-way), builds `.#update-package` and `.#firmware-image`, and
-   publishes the GitHub Release with:
+   publishes the GitHub Release (marked *prerelease* for alpha versions)
+   with:
    - `nanokvm_pro_latest.json` (manifest),
    - `nanokvm_pro_2.0.0.tar.gz` (OTA payload),
    - `AX630C_..._sipeed_nanokvm-selfbuilt.axp` (device image, uploaded
-     separately with retries — GitHub's large-asset path is flaky).
+     separately with retries — GitHub's large-asset path is flaky);
+3. the same run refreshes the **rolling `preview` release** (fixed tag
+   `preview`, moved by cut-release; assets clobbered, stale payloads
+   pruned) — the fixed URL the preview channel polls.
 
 Once the release is published, every device on an older version sees the
 update in the web UI. A failed run is recovered by re-running it from the
@@ -236,9 +250,15 @@ asserts at build time: every `partitions/` image has the boot-header magic, the
 shipped modules' `vermagic` matches the `4.19.125` modules directory, and
 `modules.dep` resolves `ax_venc`/`lt6911_manage`.
 
-> **Preview channel:** the vendor supports a `preview` channel gated by the file
-> `/etc/kvm/preview_updates`; our base URL keeps a `/preview` sub-path but it is
-> not wired for the Releases-only layout. Leave the flag file absent (default).
+> **Preview channel — wired (issues #19/#4).** The web UI's *preview updates*
+> toggle (flag file `/etc/kvm/preview_updates`) switches the update check to
+> `PreviewURL`, which our build points at the **rolling `preview` release**
+> (`flake.nix` `previewUpdateBaseUrl` →
+> `releases/download/preview/nanokvm_pro_latest.json`) instead of the
+> vendor-derived `<stable>/preview` sub-path — impossible on GitHub's flat
+> release-asset namespace, which used to make the toggle silently break
+> update checks. The rolling release tracks the most recently cut release of
+> either kind, so the toggle means: get alphas as soon as they're cut.
 
 ---
 

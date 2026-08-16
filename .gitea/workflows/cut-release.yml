@@ -1,15 +1,20 @@
 name: cut-release
 
 # Cut a release from the Gitea web UI: Actions → cut-release → Run workflow,
-# enter the version (e.g. 2.0.1). This job runs ON GITEA (the source of
+# enter the version (e.g. 2.0.1, or 2.1.0-alpha.1 for an ALPHA — any semver
+# prerelease suffix makes it one). This job runs ON GITEA (the source of
 # truth, where commits are legitimate) and only does git work — no nix:
 #
 #   write VERSION → commit "release: X.Y.Z" → tag vX.Y.Z → push main + tag
+#   → force-move the rolling `preview` tag to the same commit
 #
 # From there the existing machinery takes over: the push mirror replicates
-# the commit + tag to GitHub, and .github/workflows/release.yml (which runs
+# the commits + tags to GitHub, and .github/workflows/release.yml (which runs
 # only on GitHub — see its server_url guard) builds and publishes the
-# release assets that devices poll. docs/updates.md, "Cutting a release".
+# release assets that devices poll. An alpha version publishes as a GitHub
+# *prerelease*, which `releases/latest/download` (the stable channel) never
+# serves; every cut also refreshes the rolling `preview` release the
+# preview/alpha channel polls. docs/updates.md, "Cutting a release".
 #
 # tools/release remains the local fallback for the same tag-cutting step.
 
@@ -59,8 +64,15 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           git push origin main "refs/tags/v$V"
-          echo "Pushed release commit + tag v$V. The mirror will carry them to"
-          echo "GitHub, whose release workflow builds and publishes the assets:"
+          # The rolling `preview` tag marks the newest cut of ANY kind; the
+          # GitHub release workflow re-points the preview-channel release at
+          # it. Created here (the source of truth) so the mirror owns it —
+          # GitHub-side ref creation would diverge from the mirror.
+          git tag -f preview "v$V"
+          git push -f origin refs/tags/preview
+          echo "Pushed release commit + tag v$V (+ rolling preview tag). The"
+          echo "mirror will carry them to GitHub, whose release workflow"
+          echo "builds and publishes the assets:"
           echo "  https://github.com/GoogleBot42/open-nanokvm-pro/actions"
 
       - name: Dry run summary

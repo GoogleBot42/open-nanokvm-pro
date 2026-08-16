@@ -5,6 +5,7 @@
   # unreachable from devices). See flake.nix (updateBaseUrl) and
   # docs/updates.md.
   updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
+, previewUpdateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview"
 , ...
 }:
 
@@ -45,10 +46,13 @@ buildGoModule {
   # So the web UI "update" button pulls firmware/app updates we publish, not
   # Sipeed's. Runs in sourceRoot (server/). See docs/updates.md for the protocol.
   postPatch = ''
-    # 1. Base URL. One fixed-string replace rewrites BOTH consts, because
-    #    PreviewURL == StableURL + "/preview": replacing the StableURL substring
-    #    also fixes the PreviewURL prefix.
+    # 1. Base URLs. The vendor derives PreviewURL = StableURL + "/preview",
+    #    which can never resolve on GitHub's flat release-asset namespace --
+    #    so the preview channel gets its own base (the rolling `preview`
+    #    release, see flake.nix + docs/updates.md). Replace the full preview
+    #    string FIRST, then the stable prefix catches what remains.
     substituteInPlace service/application/service.go \
+      --replace-fail 'https://cdn.sipeed.com/nanokvm/preview' '${previewUpdateBaseUrl}' \
       --replace-fail 'https://cdn.sipeed.com/nanokvm' '${updateBaseUrl}'
 
     # 2. Drop the ?now= cache-buster. Release-asset URLs may redirect and a
