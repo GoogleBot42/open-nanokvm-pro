@@ -38,6 +38,10 @@ permissions:
 
 jobs:
   release:
+    # Gitea Actions also picks up .github/workflows/ — this guard makes sure
+    # the heavy build only ever runs on GitHub's runners, never on the Gitea
+    # runner (which has no binary cache and no nix sandbox).
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 150   # the cross kernel + boot chain + multi-GB rootfs are slow
     steps:

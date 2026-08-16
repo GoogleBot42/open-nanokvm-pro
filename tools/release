@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Cut a release. Runs entirely against the Gitea source of truth
-# (git.neet.dev/zuckerberg/open-nanokvm-pro); the GitHub mirror
+# Cut a release (LOCAL FALLBACK — the primary path is the `cut-release`
+# workflow in the Gitea web UI, .gitea/workflows/cut-release.yml, which also
+# does the VERSION bump for you). Runs entirely against the Gitea source of
+# truth (git.neet.dev/zuckerberg/open-nanokvm-pro); the GitHub mirror
 # (github.com/GoogleBot42/open-nanokvm-pro) and its Actions do the rest.
 #
 # Flow (docs/updates.md, "Cutting a release"):

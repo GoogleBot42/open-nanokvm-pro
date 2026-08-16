@@ -92,14 +92,24 @@ Publishing a release **is** the OTA push.
 
 Everything starts on Gitea; GitHub only builds and hosts the assets.
 
+**Primary path — from the Gitea web UI:** Actions → **cut-release** → Run
+workflow → enter the version (e.g. `2.0.1`). The job
+(`.gitea/workflows/cut-release.yml`) validates, writes `VERSION`, commits
+`release: 2.0.1`, tags `v2.0.1`, and pushes — git work only, no nix, safe on
+the Gitea runner. (A `dry_run` input validates without pushing.)
+
+**Fallback — locally:**
+
 ```bash
-echo 2.0.0 > VERSION
-git commit -am "release: 2.0.0" && git push
+echo 2.0.1 > VERSION
+git commit -am "release: 2.0.1" && git push
 tools/release
 ```
 
 `tools/release` verifies (semver `VERSION`, clean tree, HEAD pushed, tag
-free), then tags `v2.0.0` **on Gitea** and pushes the tag. From there:
+free), then tags `v2.0.1` **on Gitea** and pushes the tag.
+
+Either way, from there:
 
 1. the Gitea push mirror replicates the commit + tag to GitHub
    (`tools/release` polls the public API until the tag appears);

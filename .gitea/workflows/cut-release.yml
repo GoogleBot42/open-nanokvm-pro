@@ -1,0 +1,68 @@
+name: cut-release
+
+# Cut a release from the Gitea web UI: Actions → cut-release → Run workflow,
+# enter the version (e.g. 2.0.1). This job runs ON GITEA (the source of
+# truth, where commits are legitimate) and only does git work — no nix:
+#
+#   write VERSION → commit "release: X.Y.Z" → tag vX.Y.Z → push main + tag
+#
+# From there the existing machinery takes over: the push mirror replicates
+# the commit + tag to GitHub, and .github/workflows/release.yml (which runs
+# only on GitHub — see its server_url guard) builds and publishes the
+# release assets that devices poll. docs/updates.md, "Cutting a release".
+#
+# tools/release remains the local fallback for the same tag-cutting step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without leading v (e.g. 2.0.1)'
+        required: true
+      dry_run:
+        description: 'Validate and show what would happen, but push nothing'
+        type: boolean
+        default: false
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0   # need existing tags for the duplicate check
+
+      - name: Validate
+        run: |
+          V="${{ inputs.version }}"
+          V="${V#v}"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
+            || { echo "invalid version '$V' (expected X.Y.Z)"; exit 1; }
+          git rev-parse -q --verify "refs/tags/v$V" >/dev/null \
+            && { echo "tag v$V already exists"; exit 1; }
+          [ "$(tr -d '[:space:]' < VERSION)" = "$V" ] \
+            && { echo "VERSION is already $V but no tag exists — finish by pushing the tag manually (tools/release)"; exit 1; }
+          echo "V=$V" >> "$GITHUB_ENV"
+
+      - name: Bump VERSION, commit, tag
+        run: |
+          git config user.name  "gitea-actions"
+          git config user.email "actions@git.neet.dev"
+          printf '%s\n' "$V" > VERSION
+          git add VERSION
+          git commit -m "release: $V"
+          git tag "v$V"
+          git show --stat --oneline HEAD
+
+      - name: Push (skipped on dry run)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git push origin main "refs/tags/v$V"
+          echo "Pushed release commit + tag v$V. The mirror will carry them to"
+          echo "GitHub, whose release workflow builds and publishes the assets:"
+          echo "  https://github.com/GoogleBot42/open-nanokvm-pro/actions"
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        run: echo "DRY RUN — nothing pushed. Would have pushed the commit above and tag v$V."
