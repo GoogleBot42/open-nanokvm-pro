@@ -47,7 +47,8 @@ pkgs.stdenvNoCC.mkDerivation {
     cp -a "$subdir/include/." "$out/include/"
 
     # Convenience: also expose the dummy-sensor lib explicitly if present
-    # (libsns_dummy.so is dlopen'd by the capture path -- see PLAN.md).
+    # (libsns_dummy.so is dlopen'd by the capture path -- see
+    # docs/blob-replacement.md).
     if [ -f "$out/lib/libsns_dummy.so" ]; then
       echo "libsns_dummy.so present (dummy-sensor inject path OK)"
     else

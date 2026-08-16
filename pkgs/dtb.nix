@@ -57,7 +57,7 @@
 # needs `make dtbs` (dtc + cpp), not Image/modules -- a light build that keeps
 # the kernel derivation's hash stable. kernel.nix's own $out/dtb/*.dtb remains
 # the unpatched raw artifact; THIS is the one packaged + flashed (see
-# dtb-fip.nix for the signed partition). The SDK-tree setup (writable kernel
+# slot-image.nix for the signed partition). The SDK-tree setup (writable kernel
 # copy, msp/build siblings, HOME_PATH/PROJECT/LIBC, gcc13) mirrors kernel.nix.
 # ===========================================================================
 

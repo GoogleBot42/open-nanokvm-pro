@@ -62,10 +62,10 @@ BootROM (mask ROM, unbrickable)
   (off)**, so self-signed/unsigned firmware boots. Boot derivations default to the
   unsigned path.
 
-The console UART is a build parameter. The eMMC image uses `ttyS0` (`0x4880000`);
-the `sd-image` uses a `boot-sd` variant that redirects **every** stage
-(SPL/ATF/OP-TEE/U-Boot + kernel) to `ttyS1` (`0x4881000`, the accessible header
-pin) so an SD boot is watchable end-to-end.
+Every stage — SPL/ATF/OP-TEE/U-Boot and the kernel — runs its console on
+`ttyS0` (`0x4880000`), for the SD image as well as eMMC, matching the official
+firmware. (An experimental UART1-redirect boot chain for SD was removed in
+`86b8c58`: touching the still-clock-gated UART1 hung the SPL before any output.)
 
 ---
 
@@ -78,8 +78,8 @@ of the pinned vendor base `.axp`, swapping in our from-source members by basenam
 | `.axp` member(s) | Source | Notes |
 |---|---|---|
 | SPL / DDR-init / ATF / OP-TEE / U-Boot | `pkgs/boot.nix` | signed basenames match `make_axp_v2.py` |
-| `boot_signed.bin` (+ A/B `.1`) | `pkgs/kernel-fip.nix` | `Image` → `ax_gzip -9` + 1 KB signed header |
-| `dtb.img` (+ A/B) | `pkgs/dtb-fip.nix` | patched DTB → `ax_gzip -9` + signed header |
+| `boot_signed.bin` (+ A/B `.1`) | `pkgs/kernel.nix` → `pkgs/slot-image.nix` | `Image` → `ax_gzip -9` + 1 KB signed header |
+| `dtb.img` (+ A/B) | `pkgs/dtb.nix` → `pkgs/slot-image.nix` | patched DTB → `ax_gzip -9` + signed header |
 | `ubuntu_rootfs_sparse.ext4` | `pkgs/rootfs.nix` | overlaid rootfs (below) |
 | everything else | vendor base `.axp` | kept as-is |
 

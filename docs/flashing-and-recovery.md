@@ -248,10 +248,10 @@ On a clean boot our image auto-starts `nanokvm.service` (see
 - Open **`https://<device-ip>/`** and complete account setup / set a password.
 - SSH is available as `root` (default password `sipeed` on the from-source image
   until you change it).
-- The on-device **mini-display is intentionally off**: it was driven by the
-  vendor's closed-source `kvm_ui` binary, which we don't ship. The panel itself is
-  a standard `/dev/fb0` framebuffer and could be reclaimed by open code later —
-  see [architecture.md](architecture.md#the-built-in-mini-display).
+- The on-device **mini-display comes up from source** (`nanokvm-display.service`
+  drawing the status screen: hostname, IPs, video state, fw version). If it stays
+  dark past boot, run the post-flash checklist in
+  [mini-display.md](mini-display.md#hardware-verification).
 
 If the web UI is unreachable but the device pings, check the service:
 

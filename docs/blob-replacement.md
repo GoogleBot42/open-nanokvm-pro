@@ -1649,8 +1649,9 @@ changes by default; this adds the blob-free path one flag away.
   both backends. The one `AX_VIN_GetImgBufferSize` call in `kvm_venc_create` is
   guarded (open build sizes the encoder buffers locally, needing no libax_proton).
 - `pkgs/kvm-encoder.nix` — `openCapture` arg (default `false`). When `true`:
-  compiles `kvm_capture_open.c`, defines `-DKVM_OPEN_CAPTURE`, and trims the
-  direct link line to `-lax_venc` only.
+  compiles `kvm_capture_open.c`, defines `-DKVM_OPEN_CAPTURE`, and drops
+  `-lax_mipi` from the link line (`-lax_venc -lax_sys -lax_ivps -lax_proton`
+  stay — the closed encoder pins them; see the integration finding below).
 
 **Productionization deltas vs `stage6.c`**
 - Owns the pool-block↔phys math: parses `/proc/ax_proc/mem_cmm_info` **once** at
