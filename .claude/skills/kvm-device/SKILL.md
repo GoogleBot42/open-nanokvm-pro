@@ -40,6 +40,44 @@ What each part tells you:
 - `[ -b /dev/mmcblk1 ]` — whether an SD card is currently inserted. Absent is
   normal when the device is running from eMMC with no card in the slot.
 
+# Targeted diagnostics (all validated on device 2026-08-15)
+
+**USB HID / gadget path** ("keyboard/mouse not reaching the host"):
+
+```
+cat /sys/class/udc/8000000.dwc3/state; cat /sys/class/usb_role/8000000.dwc3-role-switch/role
+```
+
+`configured` + `device` = host enumerated us, gadget healthy — the problem is
+elsewhere. `not attached` (with role `device`) = the host never enumerated:
+almost always cable/port/host-side (reseat, suspect charge-only cables), not
+firmware — gadget config under `/sys/kernel/config/usb_gadget/g0` being bound
+to the UDC is normal even in this state. Writes to `/dev/hidg*` block forever
+while unattached; guard test writes with `timeout`.
+
+**Mini-display** (status screen, `nanokvm-display.service`):
+
+- Panel asleep is the norm (3-min idle blank): `bl_power=1` in
+  `/sys/class/backlight/backlight/` and `/dev/fb0` reads all-zero.
+- Wake it with a synthetic knob press (gpio_keys = `/dev/input/event0`,
+  KEY_ENTER=28; struct is `qqHHi` on aarch64):
+
+  ```
+  python3 -c "
+  import struct
+  ev=lambda t,c,v: struct.pack('qqHHi',0,0,t,c,v)
+  with open('/dev/input/event0','wb') as f:
+      f.write(ev(1,28,1)+ev(0,0,0)+ev(1,28,0)+ev(0,0,0))"
+  ```
+
+- See what the panel shows without eyes on it: dump `/dev/fb0` (RGB565,
+  172x320, 110080 bytes) via `dd | base64` over kvmssh, decode locally, then
+  `nix shell nixpkgs#ffmpeg-headless -c ffmpeg -f rawvideo -pix_fmt rgb565le
+  -s 172x320 -i fb.raw -frames:v 1 -vf transpose=2 out.png`. The dump
+  contains device IPs — never commit the image.
+- Never `rmmod`/live-swap `fb_jd9853`: teardown deadlock hard-hangs the
+  device (docs/mini-display.md).
+
 # Gotchas
 
 - **Two IPs.** The device is reachable over Tailscale or plain LAN; which one

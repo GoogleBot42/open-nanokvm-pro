@@ -94,11 +94,8 @@ Contains `MEMORY.md` (the index) plus four project memory files:
 `nanokvm-nix-rebuild-project.md` (SG2002), `nanokvm-pro-blob-audit.md`,
 `nanokvm-pro-runtime-stack.md`, `nanokvm-pro-ota-updates.md`. These carry
 day-to-day findings that haven't necessarily been codified into docs yet —
-check them for recent context, but see the inconsistency below:
-`nanokvm-pro-ota-updates.md` is itself stale (still describes a "push to
-GitHub, no `gh` CLI in this env, repo not yet pushed" state) even though the
-project has since fully moved to Gitea with 30 issues already filed
-there. A `reflect` pass should reconcile or prune this file.
+check them for recent context. (All four were reconciled against the tree
+as of 2026-08-15; no known staleness.)
 
 ## 4. Dormant SG2002 project
 
