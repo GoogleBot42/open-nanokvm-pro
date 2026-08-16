@@ -34,6 +34,7 @@ import ssl
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -206,11 +207,46 @@ def get_uptime():
     return f"{d}d {h:02}:{m:02}" if d else f"{h:02}:{m:02}"
 
 
-def build_lines():
+class StatusPoller(threading.Thread):
+    """Polls the two slow status sources (the `ip` subprocess and the HTTPS
+    streamer endpoint) off the main loop, publishing an atomic snapshot.
+
+    The main loop renders from the latest snapshot and never blocks on the
+    network, so knob/button response is bounded by the select() timeout even
+    when the KVM server hangs (issue #20). While the panel sleeps the poller
+    is paused -- nothing polls a screen nobody is looking at."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.snapshot = ([], ("down", "server off"))  # (ips, stream_status)
+        self.first = threading.Event()   # set once the first poll completed
+        self._tick = threading.Event()   # set -> skip the inter-poll wait
+        self._active = threading.Event()  # cleared -> paused (panel asleep)
+        self._active.set()
+
+    def run(self):
+        while True:
+            self._active.wait()
+            self.snapshot = (get_ips(), get_stream_status())
+            self.first.set()
+            self._tick.wait(REFRESH_S)
+            self._tick.clear()
+
+    def pause(self):
+        self._active.clear()
+
+    def resume(self):
+        """Un-pause and poll immediately (fresh data for the wake redraw)."""
+        self._active.set()
+        self._tick.set()
+
+
+def build_lines(ips, stream):
     """The screen content. To add a status item, append a line tuple here:
-    (font_name, color565, text) -- or a ("gap", pixels, None) spacer."""
-    ips = get_ips()
-    state, detail = get_stream_status()
+    (font_name, color565, text) -- or a ("gap", pixels, None) spacer.
+    ips/stream come from the StatusPoller snapshot; anything gathered inline
+    here must be cheap (local file reads), never network or subprocess."""
+    state, detail = stream
     stream_color = {"streaming": GREEN, "idle": GREY, "sleep": GREY,
                     "down": AMBER}[state]
     stream_text = {"streaming": f"LIVE  {detail}",
@@ -367,6 +403,10 @@ def main():
     print(f"input devices: {list(inputs.values()) or 'none found'}",
           file=sys.stderr)
 
+    poller = StatusPoller()
+    poller.start()
+    poller.first.wait(8)  # brief grace so the first paint has real data
+
     awake = True
     last_frame = None
     last_activity = time.monotonic()
@@ -376,7 +416,8 @@ def main():
         # -- draw (only while awake) ---------------------------------------
         if awake:
             try:
-                render(canvas, build_lines())
+                ips, stream = poller.snapshot
+                render(canvas, build_lines(ips, stream))
                 frame = canvas.to_fb_bytes()
                 if frame != last_frame:
                     write_fb(frame)
@@ -408,12 +449,14 @@ def main():
                 awake = True
                 last_frame = None  # force redraw
                 set_backlight(True)
+                poller.resume()
 
         # -- inactivity -> sleep (backlight off + blank panel) -------------
         if (awake and SLEEP_TIMEOUT_S > 0
                 and now - last_activity >= SLEEP_TIMEOUT_S):
             awake = False
             set_backlight(False)
+            poller.pause()
             try:
                 write_fb(blank)  # nothing lingers on the panel while dark
             except OSError:
