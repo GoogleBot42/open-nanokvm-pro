@@ -7,5 +7,8 @@ result-*
 # local .axp copies (1.4 GB firmware bundles)
 *.axp
 
+# python bytecode (py_compile checks on the display daemon)
+__pycache__/
+
 # per-machine Claude Code overrides
 .claude/settings.local.json
