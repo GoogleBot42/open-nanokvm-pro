@@ -179,6 +179,12 @@ pkgs.stdenvNoCC.mkDerivation {
        "$rfs/etc/systemd/system/nanokvm-display.service"
     ln -sf /etc/systemd/system/nanokvm-display.service \
        "$rfs/etc/systemd/system/multi-user.target.wants/nanokvm-display.service"
+    # ATX GPIO setup oneshot (same package): exports the target power/reset
+    # pins so the web UI power menu and the knob control page can actuate.
+    cp ${nanokvm-display}/etc/systemd/system/nanokvm-gpio.service \
+       "$rfs/etc/systemd/system/nanokvm-gpio.service"
+    ln -sf /etc/systemd/system/nanokvm-gpio.service \
+       "$rfs/etc/systemd/system/multi-user.target.wants/nanokvm-gpio.service"
 
     # ===================================================================
     # 3. partitions/ -- vendor-format signed images, fixed naming contract

@@ -214,6 +214,11 @@ pkgs.stdenvNoCC.mkDerivation {
               "/opt/nanokvm-display/font_data.py" 0100644
     emit_file "${nanokvm-display}/etc/systemd/system/nanokvm-display.service" \
               "/etc/systemd/system/nanokvm-display.service" 0100644
+    # ATX GPIO setup unit (same package): exports the target power/reset pins
+    # the vendor kvmcomm stack used to export -- without it the web UI power
+    # menu and the knob control page cannot actuate anything.
+    emit_file "${nanokvm-display}/etc/systemd/system/nanokvm-gpio.service" \
+              "/etc/systemd/system/nanokvm-gpio.service" 0100644
 
     # 5b3. Disable the Ubuntu motd-news beacon. The vendor Ubuntu base ships
     # /etc/update-motd.d/50-motd-news, which phones home to motd.ubuntu.com on
@@ -250,6 +255,11 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "symlink $wants/nanokvm-display.service /etc/systemd/system/nanokvm-display.service"
       echo "sif $wants/nanokvm-display.service uid 0"
       echo "sif $wants/nanokvm-display.service gid 0"
+      # enable the ATX GPIO setup oneshot (unit written in step 5b4)
+      echo "rm $wants/nanokvm-gpio.service"
+      echo "symlink $wants/nanokvm-gpio.service /etc/systemd/system/nanokvm-gpio.service"
+      echo "sif $wants/nanokvm-gpio.service uid 0"
+      echo "sif $wants/nanokvm-gpio.service gid 0"
     } >> "$script"
 
     # 5d. remove inert closed kvmcomm binaries + vendor swupdate -- see

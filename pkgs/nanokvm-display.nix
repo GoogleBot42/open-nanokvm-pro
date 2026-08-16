@@ -41,6 +41,31 @@ pkgs.stdenvNoCC.mkDerivation {
     # Both files must at least be valid python3 (the device runs them as-is).
     python3 -m py_compile nanokvm_display.py font_data.py
 
+    # ATX GPIO setup: the vendor's kvmcomm stack (disabled in our image) was
+    # what exported the power/reset pins; without this unit neither the web
+    # UI's power menu (POST /api/vm/gpio -> sysfs writes) nor the knob control
+    # page can actuate anything. Pins (config/hardware.go, kvmcomm gpio.sh):
+    #   gpio7  = SW_PWR  (out, idle low -- pulse high to press)
+    #   gpio35 = SW_RST  (out, idle low)
+    #   gpio75 = power LED sense (in; host on = reads 0)
+    #   gpio74 = HDD LED sense   (in; declared but unused by the server)
+    # The pinmux register (0x02302024) already holds the required value at
+    # boot, so export + direction is all that's needed. "low" = output
+    # driving 0 in one write (no high glitch on the power line).
+    cat > nanokvm-gpio.service <<'EOF'
+[Unit]
+Description=NanoKVM-Pro ATX GPIO setup (target power/reset pins)
+Before=nanokvm.service nanokvm-display.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'cd /sys/class/gpio && for p in 7:low 35:low 74:in 75:in; do n=''${p%%:*} d=''${p##*:}; [ -d gpio$n ] || echo $n > export; echo $d > gpio$n/direction; done'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
     cat > nanokvm-display.service <<'EOF'
 [Unit]
 Description=NanoKVM-Pro mini-display status screen
@@ -69,6 +94,7 @@ EOF
     install -Dm0755 nanokvm_display.py "$out/opt/nanokvm-display/nanokvm_display.py"
     install -Dm0644 font_data.py       "$out/opt/nanokvm-display/font_data.py"
     install -Dm0644 nanokvm-display.service "$out/etc/systemd/system/nanokvm-display.service"
+    install -Dm0644 nanokvm-gpio.service    "$out/etc/systemd/system/nanokvm-gpio.service"
     runHook postInstall
   '';
 
