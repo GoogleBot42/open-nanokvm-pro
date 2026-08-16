@@ -80,9 +80,10 @@ rationale and the full blob audit.
 
 ## How it's put together
 
-Cross-compiled from `x86_64-linux` via nixpkgs `pkgsCross.aarch64-multiplatform`
-(stock aarch64 glibc GCC — **no exotic toolchain**). Outputs are keyed off the
-dev/build system; the firmware target is always aarch64.
+Cross-compiled from `x86_64-linux` (the only supported build system — the
+vendor `ax_gzip` packer is an x86-64-only static ELF) via nixpkgs
+`pkgsCross.aarch64-multiplatform` (stock aarch64 glibc GCC — **no exotic
+toolchain**); the firmware target is always aarch64.
 
 ```
 firmware-image (.axp)  ◄── image.nix: streaming zip-rewrite of the vendor base .axp,

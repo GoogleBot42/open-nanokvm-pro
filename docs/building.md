@@ -18,9 +18,10 @@ How to build the firmware and its components with the flake. For what the pieces
 ## Prerequisites
 
 - Nix with flakes enabled (`experimental-features = nix-command flakes`).
-- A dev box that is `x86_64-linux` (the default, cross-compiles to aarch64) or
-  `aarch64-linux` (native). No exotic toolchain is required — stock nixpkgs
-  aarch64 glibc GCC is sufficient.
+- An `x86_64-linux` dev box (cross-compiles to aarch64; the vendor `ax_gzip`
+  partition packer is an x86-64-only static ELF, so the flashable outputs
+  cannot build on an aarch64 host). No exotic toolchain is required — stock
+  nixpkgs aarch64 glibc GCC is sufficient.
 - Disk + patience for the heavy derivations (see [below](#heavy-builds--caching)):
   the base `.axp` is a 1.4 GB fixed-output fetch and the rootfs de-sparses to a
   multi-GB ext4.
@@ -105,8 +106,8 @@ The `base-axp` FOD hash changes only if you re-pin a different vendor release
 
 ## Cross-compile notes
 
-- Outputs are keyed off the **build/dev** system; `crossPkgs` is
-  `pkgsCross.aarch64-multiplatform` on x86_64, or a native no-op on aarch64.
+- `crossPkgs` is `pkgsCross.aarch64-multiplatform`; the flake's only supported
+  build system is `x86_64-linux` (`ax_gzip` is an x86-64-only static ELF).
 - **Go/cgo:** use `crossPkgs.buildGoModule` (the cross-capable `go`). Overriding
   it with a native `pkgs.go_*` breaks cgo (native go passes `-m64` to the aarch64
   gcc). `GOEXPERIMENT=boringcrypto` is kept for parity with upstream `build.sh`.

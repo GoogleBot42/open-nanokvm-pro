@@ -44,10 +44,11 @@
     , ...
     }@inputs:
     let
-      # The firmware targets aarch64-linux but is normally cross-built from an
-      # x86_64-linux dev box; outputs are keyed off the build system and use an
-      # aarch64 cross set internally.
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+      # The firmware targets aarch64-linux but must be built from an
+      # x86_64-linux dev box: the vendor's ax_gzip partition packer is an
+      # x86-64-only static ELF (pkgs/boot.nix), so every flashable output is
+      # x86_64-only. The cross set below handles the aarch64 target.
+      supportedSystems = [ "x86_64-linux" ];
 
       # Release identity for the OTA / web-update system (docs/updates.md).
       # `version` comes from ./VERSION (first token) — the single source of
@@ -68,12 +69,8 @@
       let
         pkgs = import nixpkgs { system = localSystem; };
 
-        # aarch64/glibc cross set (the rootfs is Ubuntu 22.04 arm64); a no-op
-        # native set when the dev box is already aarch64-linux.
-        crossPkgs =
-          if localSystem == "aarch64-linux"
-          then pkgs
-          else pkgs.pkgsCross.aarch64-multiplatform;
+        # aarch64/glibc cross set (the rootfs is Ubuntu 22.04 arm64).
+        crossPkgs = pkgs.pkgsCross.aarch64-multiplatform;
 
         project = "AX630C_emmc_arm64_k419_sipeed_nanokvm";
 
