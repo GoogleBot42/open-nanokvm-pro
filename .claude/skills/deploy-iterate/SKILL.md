@@ -41,6 +41,14 @@ Package names below are confirmed against `flake.nix`
    reboot. Background: `docs/architecture.md`, section
    "Runtime service model".
 
+   **Trap (cost a deploy cycle 2026-08-17): `cp` onto the RUNNING
+   `NanoKVM-Server` binary in `/dev/shm/kvmapp` fails with ETXTBSY and the
+   old file silently stays.** Copy to a temp name and `mv` over it (atomic,
+   works while running), and **always md5sum-verify all deployed copies
+   against the staged file** — that's what caught it:
+   `cp /tmp/NanoKVM-Server $root/server/NanoKVM-Server.new && mv $root/server/NanoKVM-Server.new $root/server/NanoKVM-Server`.
+   Shared libs (`libkvm.so`) don't hit this — only the exec'd binary.
+
 4. **Restart and verify.** `tools/kvmssh 'systemctl restart nanokvm'`, then
    poll for up to ~30 seconds:
    - `tools/kvmssh 'pgrep -a NanoKVM-Server'` — process is up.

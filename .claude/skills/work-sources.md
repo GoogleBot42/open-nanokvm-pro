@@ -76,7 +76,14 @@ for pending/TODO/unverified markers still present in the tree:
   open VC8000E VCMD driver"). Remaining residual: 1080p-only payloads
   (issue #17; needs a non-1080p source to test). Issue #16 (isp_model phys
   derivation, teardown validation, pool-block leak) was closed 2026-08-16
-  with on-device warm suspend/resume validation.
+  with on-device warm suspend/resume validation. 2026-08-17: the first
+  real-use bugs of the open backend (frame-phys off by the pool's meta
+  pages → green bar + horizontal scroll; web-UI fps=0 wedging VENC
+  rebuilds → black screen on refresh; 120 Hz retry storms) were fixed,
+  device-verified, and released as v2.1.0-alpha.2 (commit 26ce865; doc
+  section "2026-08-17" in blob-replacement.md). New follow-ups: #40
+  (kvmv_deinit SIGSEGV at shutdown after idle-suspend), #41 (log
+  rotation).
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.

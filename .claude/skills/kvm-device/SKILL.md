@@ -82,6 +82,30 @@ while unattached; guard test writes with `timeout`.
 - Never `rmmod`/live-swap `fb_jd9853`: teardown deadlock hard-hangs the
   device (docs/mini-display.md).
 
+**Capture pipeline / video quality** (all validated 2026-08-17):
+
+- Quickest "is video sane" probe, no auth needed on localhost:
+  `curl -sk --max-time 6 "https://127.0.0.1/api/stream/mjpeg" | head -c 3000000 > /tmp/mj.bin`
+  — also wakes/starts capture as a side effect. Split frames on the
+  `\xff\xd8\xff` JPEG SOI marker, base64 one over kvmssh, and view it
+  locally. Two consecutive frames of a static screen should be
+  byte-identical — a per-frame differing offset means a capture-address
+  bug, not encoder noise.
+- Physical-memory inspection: `read()` on `/dev/mem` fails (EFAULT) but
+  **mmap works** — use python3 `mmap.mmap(fd, LEN, offset=BASE)` to dump
+  CMM regions (pool bases from `/proc/ax_proc/mem_cmm_info`). This is how
+  the comm_pool block layout was proven (docs/blob-replacement.md,
+  2026-08-17 section). Zero-run analysis of a dump discriminates
+  meta/unwritten pages from live YUYV (real video is never long zero runs;
+  YUV zeros decode green).
+- libkvm can be exercised WITHOUT the Go server via python3 ctypes
+  (service stopped first): dlopen `/dev/shm/kvmapp/server/dl_lib/libkvm.so`,
+  `kvmv_init(0)`, then `kvmv_read_img(w, h, type, qlty, byref(u8ptr),
+  byref(u32))` (type 0=MJPEG, 3=H264; see kvm_vision.h). Used to prove the
+  fps=0 rebuild fix by replaying the exact web-UI call sequence. Restart
+  nanokvm afterwards.
+- LT6911 live source truth: `/proc/lt6911_info/{width,height,fps}`.
+
 # Gotchas
 
 - **Two IPs.** The device is reachable over Tailscale or plain LAN; which one
