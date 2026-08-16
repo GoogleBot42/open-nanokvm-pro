@@ -1,5 +1,5 @@
 { pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel, nanokvm-display
-, boot, dtb-slot-image, kernel-slot-image
+, libsns-dummy, boot, dtb-slot-image, kernel-slot-image
 , version ? "0.0.0-dev", ... }:
 
 # ---------------------------------------------------------------------------
@@ -174,6 +174,13 @@ pkgs.stdenvNoCC.mkDerivation {
     # starts on the next boot; an app-only OTA doesn't launch it immediately.
     mkdir -p "$rfs/opt"
     cp -r ${nanokvm-display}/opt/nanokvm-display "$rfs/opt/"
+
+    # --- from-source ISP dummy-sensor lib over the vendor prebuilt (#30);
+    # dlopen'd from /opt/lib by the closed-capture backend (mirrors
+    # pkgs/rootfs.nix step [5a1]).
+    mkdir -p "$rfs/opt/lib"
+    cp ${libsns-dummy}/lib/libsns_dummy.so "$rfs/opt/lib/libsns_dummy.so"
+    chmod 755 "$rfs/opt/lib/libsns_dummy.so"
     mkdir -p "$rfs/etc/systemd/system/multi-user.target.wants"
     cp ${nanokvm-display}/etc/systemd/system/nanokvm-display.service \
        "$rfs/etc/systemd/system/nanokvm-display.service"

@@ -178,15 +178,23 @@ dependency mapping):
    pipeline *if the SoC's CSI-RX had an open driver* — the bridge is not the
    obstacle, the SoC side is.
 
-### Cheap hygiene wins found along the way
+### Cheap hygiene wins found along the way (issue #30 — resolved 2026-08-16)
 
-- `libax_ivps` is on the link line in `kvm-encoder.nix` but **zero `AX_IVPS_*`
-  calls exist** — droppable from `DT_NEEDED`.
-- The aarch64 `libsns_dummy.so` we `dlopen` is **not in `axera-libs`** (device
-  uses the vendor-rootfs `/opt/lib` copy); buildable from source at
-  `component/isp_proton/sensor/dummysensor/`.
-- Only **12 of 22** vendor-loaded modules are needed for video — relevant if we
-  ever curate the module load set.
+- `libax_ivps` **must stay on the link line** despite zero `AX_IVPS_*` calls
+  in our code: `libax_venc.so` references `AX_IVPS_AlphaBlendingTdp` /
+  `AX_IVPS_CropResizeTdp` (and `AX_VIN_PRIV_FindMeStat` from `libax_proton`)
+  as undefined symbols **without declaring the `DT_NEEDED`** — our link is the
+  only thing keeping them resolvable in the process. Verified by symbol
+  inspection of the shipped `libax_venc.so`.
+- `libsns_dummy.so` is now **built from SDK source** (`pkgs/libsns-dummy.nix`
+  from `component/isp_proton/sensor/dummysensor/` + shared i2c/common
+  sources): 73 KB vs the vendor's 1.3 MB (the difference is AI-ISP glue and
+  debug baggage irrelevant to bypass mode). Shipped in the rootfs and the OTA
+  payload over the vendor `/opt/lib` copy; device-tested on the closed
+  (vendor-MPI) backend — clean dlopen of `gSnsdummyObj`, live MJPEG.
+- Only **12 of 22** vendor-loaded modules are needed for video — module-set
+  curation remains future work (needs reboot-cycle testing; see #30's closing
+  notes).
 
 ---
 

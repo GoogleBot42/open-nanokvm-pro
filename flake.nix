@@ -159,12 +159,17 @@
         # the display kernel modules are part of `kernel` -- all from source).
         nanokvm-display = callPkg ./pkgs/nanokvm-display.nix { };
 
+        # ISP dummy-sensor library, built from SDK source (#30). The
+        # closed-capture backend dlopens it; replaces the vendor's prebuilt
+        # /opt/lib copy in the shipped rootfs and the OTA payload.
+        libsns-dummy = callPkg ./pkgs/libsns-dummy.nix { inherit axera-libs; };
+
         # Full-firmware OTA package (tarball + manifest) served from our
         # Releases: rootfs overlay (app/web/libkvm/modules) + A/B partition
         # images (kernel/dtb/boot chain). See docs/updates.md.
         update-package = callPkg ./pkgs/update-package.nix {
-          inherit nanokvm-server nanokvm-web kvm-encoder nanokvm-display version
-            kernel boot dtb-slot-image kernel-slot-image;
+          inherit nanokvm-server nanokvm-web kvm-encoder nanokvm-display
+            libsns-dummy version kernel boot dtb-slot-image kernel-slot-image;
         };
 
         # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
@@ -178,7 +183,7 @@
         # web UI, libkvm.so, and merged/depmod'd kernel modules.
         rootfs = callPkg ./pkgs/rootfs.nix {
           inherit base-axp kvm-encoder kernel
-            nanokvm-server nanokvm-web nanokvm-display version;
+            nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
         };
 
         # Final flashable .axp: our dtb/kernel/boot-chain/rootfs member-swapped
@@ -202,7 +207,8 @@
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
             kernel dtb dtb-slot-image kernel-slot-image
-            kvm-encoder nanokvm-server nanokvm-web nanokvm-display update-package
+            kvm-encoder nanokvm-server nanokvm-web nanokvm-display libsns-dummy
+            update-package
             base-axp rootfs firmware-image sd-image
             axdl;
 

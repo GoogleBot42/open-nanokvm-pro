@@ -1,5 +1,5 @@
 { pkgs, base-axp, kvm-encoder, kernel
-, nanokvm-server, nanokvm-web, nanokvm-display
+, nanokvm-server, nanokvm-web, nanokvm-display, libsns-dummy
 , version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
 , ...
 }:
@@ -136,6 +136,15 @@ pkgs.stdenvNoCC.mkDerivation {
     fi
     emit_file "${kvm-encoder}/lib/libkvm.so"   "/kvmapp/server/dl_lib/libkvm.so"   0100755
     emit_file "${kvm-encoder}/lib/libkvm.so.0" "/kvmapp/server/dl_lib/libkvm.so.0" 0100755
+
+    # 5a1. from-source ISP dummy-sensor lib over the vendor prebuilt (#30).
+    # The closed-capture backend dlopens it from /opt/lib; device-tested
+    # 2026-08-16 (clean dlopen, live MJPEG on the vendor-MPI path).
+    if ! debugfs -R "stat /opt/lib/libsns_dummy.so" rootfs.ext4 >/dev/null 2>&1; then
+      echo "ERROR: /opt/lib/libsns_dummy.so missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    emit_file "${libsns-dummy}/lib/libsns_dummy.so" "/opt/lib/libsns_dummy.so" 0100755
 
     # 5a2. OUR from-source app: patched NanoKVM-Server + web UI + version stamp.
     # This makes the flashed image RUN our server (whose update check targets our
