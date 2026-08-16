@@ -213,19 +213,6 @@ def get_stream_status():
         return "down", "server off"
 
 
-def get_power_state():
-    """True/False = target host power LED on/off (server reads the gpio75
-    sense pin, polarity already handled server-side); None = unknown."""
-    try:
-        with urllib.request.urlopen(GPIO_URL, timeout=3, context=_SSL_CTX) as r:
-            data = json.load(r)
-        if data.get("code") == 0:
-            return bool(data["data"]["pwr"])
-    except Exception:
-        pass
-    return None
-
-
 def start_press(gtype, duration_ms):
     """Pulse the target's power/reset line via POST /api/vm/gpio (loopback,
     no auth). The server holds the pin high for duration_ms, so the HTTP call
@@ -262,6 +249,14 @@ def get_hdmi_input():
     return f"{wi}x{hi}" if wi and hi else "no signal"
 
 
+def get_host_power():
+    """Target power LED straight from sysfs (gpio75, exported at boot by
+    nanokvm-gpio.service): cheap local read, safe for the render path.
+    Inverted sense: host ON = reads 0. Returns True/False/None."""
+    v = read_file("/sys/class/gpio/gpio75/value")
+    return {"0": True, "1": False}.get(v)
+
+
 def get_uptime():
     try:
         secs = int(float(read_file("/proc/uptime", "0").split()[0]))
@@ -285,8 +280,6 @@ class StatusPoller(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.snapshot = ([], ("down", "server off"))  # (ips, stream_status)
-        self.power = None                # target power state; None = unknown
-        self.want_power = False          # only poll it on the control page
         self.first = threading.Event()   # set once the first poll completed
         self._tick = threading.Event()   # set -> skip the inter-poll wait
         self._active = threading.Event()  # cleared -> paused (panel asleep)
@@ -296,7 +289,6 @@ class StatusPoller(threading.Thread):
         while True:
             self._active.wait()
             self.snapshot = (get_ips(), get_stream_status())
-            self.power = get_power_state() if self.want_power else None
             self.first.set()
             self._tick.wait(REFRESH_S)
             self._tick.clear()
@@ -334,8 +326,12 @@ def build_lines(ips, stream):
             lines.append(("small", CYAN, ip.center(40)))
     else:
         lines.append(("big", AMBER, "no network".center(22)))
+    host = get_host_power()
+    host_color = {True: GREEN, False: AMBER, None: GREY}[host]
+    host_text = {True: "on", False: "off", None: "?"}[host]
     lines += [
         ("gap", 8, None),
+        ("small", host_color, f" host    {host_text}"),
         ("small", stream_color, f" video   {stream_text}"),
         ("small", WHITE, f" hdmi in {get_hdmi_input()}"),
         ("small", GREY, f" fw {read_file(VERSION_FILE, '?')}   up {get_uptime()}"),
@@ -536,7 +532,7 @@ def main():
             try:
                 if page == "control":
                     lines = build_control_lines(
-                        poller.power, sel, mode, flash and flash[0])
+                        get_host_power(), sel, mode, flash and flash[0])
                 else:
                     ips, stream = poller.snapshot
                     lines = build_lines(ips, stream)
@@ -585,8 +581,6 @@ def main():
                 if abs(twist_acc) >= KNOB_DETENT:  # full detent opens control
                     page, sel, mode, flash = "control", 0, "menu", None
                     twist_acc = 0
-                    poller.want_power = True
-                    poller.resume()  # poke: fresh power state for the page
             elif mode == "menu":
                 twist_acc += delta
                 steps = int(twist_acc / KNOB_DETENT)  # trunc toward zero
@@ -597,7 +591,6 @@ def main():
                     twist_acc = 0
                     if MENU[sel][1] is None:  # back
                         page = "status"
-                        poller.want_power = False
                     else:
                         mode = "confirm"
                         confirm_deadline = now + CONFIRM_TIMEOUT_S
@@ -619,7 +612,6 @@ def main():
                       else ("FAILED (see log)", AMBER)), now + FLASH_S)
             mode, press_res = "menu", None
             last_activity = now     # keep the result visible before sleep
-            poller.resume()         # poke: re-read power state after the press
         if flash and now >= flash[1]:
             flash = None
 
@@ -631,7 +623,6 @@ def main():
             poller.pause()
             page, mode, flash = "status", "menu", None  # sleep resets the UI
             twist_acc = 0
-            poller.want_power = False
             try:
                 write_fb(blank)  # nothing lingers on the panel while dark
             except OSError:

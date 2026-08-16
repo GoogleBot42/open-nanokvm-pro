@@ -134,6 +134,9 @@ Shown (refreshed every 2 s while awake):
 
 - hostname
 - **IP address(es)** (large font; `ip -j -4 addr`, skipping `lo`)
+- **target host power** — `host on`/`off`, read directly from the gpio75
+  power-LED sense in sysfs (exported at boot by `nanokvm-gpio.service`;
+  inverted: host on = reads 0); `?` if the pin isn't exported
 - **video state** — `LIVE <n> fps` (green) while a client is actively
   streaming, `idle (no viewer)` otherwise, `asleep (power save)` once the
   server has suspended the capture pipeline after its idle timeout (see
@@ -166,9 +169,8 @@ press fires the action. Actions go through the KVM server's loopback
 `POST /api/vm/gpio` (no auth from 127.0.0.1; press durations mirror the web
 UI: 800 ms click, 8 s force-off) in a worker thread, so even an 8-second
 hold never blocks knob input; a `done`/`FAILED` result flashes afterwards.
-The page shows the target's power state from `GET /api/vm/gpio` (the gpio75
-LED sense), polled only while the page is open. Falling asleep resets to the
-status page. Slow status sources (the `ip` subprocess and the streamer poll)
+Both pages show the target's power state via the direct gpio75 sysfs read
+above. Falling asleep resets to the status page. Slow status sources (the `ip` subprocess and the streamer poll)
 run in a `StatusPoller` thread that pauses during panel sleep, so knob
 latency is never bounded by server health.
 
