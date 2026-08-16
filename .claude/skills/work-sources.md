@@ -113,12 +113,13 @@ propose SG2002 work without flagging this gap up front.
 
 ## 5. Known inconsistencies awaiting work
 
-- **Preview/alpha update channel: WIRED (issues #19 + #4 closed
-  2026-08-16).** Alpha = any `-suffix` semver version via cut-release;
-  publishes as a GitHub prerelease + refreshes the rolling `preview`
-  release the web-UI toggle polls. Full pipeline proof rides the next real
-  cut — if that cut misbehaves, start at the rolling-`preview`-release
-  step in `.github/workflows/release.yml`.
+- **Preview/alpha update channel: LIVE + pipeline-proven (issues #19 + #4
+  closed 2026-08-16).** Alpha = any `-suffix` semver version via
+  cut-release; publishes as a GitHub prerelease + refreshes the rolling
+  `preview` release the web-UI toggle polls. Proven by the real
+  v2.1.0-alpha.1 cut (openCapture build): prerelease flag set, rolling
+  `preview` release refreshed (manifest 2.1.0-alpha.1 + payload,
+  hash-verified bit-exact), stable channel untouched (still 2.0.0).
 - **Release pipeline: LIVE (issue #37 closed 2026-08-15).** Gitea source
   of truth → push mirror → public GitHub downstream mirror
   (GoogleBot42/open-nanokvm-pro) hosts releases and runs the tag-triggered
