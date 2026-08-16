@@ -34,7 +34,8 @@ let
 in
 buildGoModule {
   pname = "nanokvm-server";
-  version = "unstable-2026-06-12";
+  # Track the actual upstream pin, so the store path says what was built (#34).
+  version = "unstable-${nanokvm-pro-src.shortRev or "unpinned"}";
 
   src = nanokvm-pro-src;
   sourceRoot = "source/server";
@@ -66,6 +67,13 @@ buildGoModule {
     #    install() is the LAST function in update.go: truncate at its signature
     #    and append ours. appNames/getFileInfo become unused package-level decls,
     #    which Go permits (only unused imports / locals are errors).
+    #    Guarded for pin bumps (#34): fail loudly if the anchor is missing or
+    #    upstream added declarations after install() that the truncation would
+    #    silently delete.
+    grep -q '^func install(dir string, version string) error {' service/application/update.go \
+      || { echo "ERROR: install() anchor not found in update.go — upstream changed its signature" >&2; exit 1; }
+    [ "$(sed -n '/^func install(dir string, version string) error {/,$p' service/application/update.go | grep -c '^func ')" = 1 ] \
+      || { echo "ERROR: update.go has declarations after install() — the truncation would silently drop them" >&2; exit 1; }
     sed -i '/^func install(dir string, version string) error {/,$d' service/application/update.go
     cat ${./nanokvm-server/install-override.go.in} >> service/application/update.go
 

@@ -21,7 +21,8 @@ let
 in
 pkgs.stdenv.mkDerivation (finalAttrs: {
   pname = "nanokvm-web";
-  version = "0.0.0";
+  # Track the actual upstream pin, so the store path says what was built (#34).
+  version = "unstable-${nanokvm-pro-src.shortRev or "unpinned"}";
 
   src = nanokvm-pro-src;
   sourceRoot = "source/web";

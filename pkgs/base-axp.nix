@@ -30,6 +30,16 @@ let
   version = "1.0.15";
   asset = "20260529_NanoKVMPro_1_0_15.axp";
 in
+# RE-PIN BLAST RADIUS (#34): this 1.4 GB base comes from a MUTABLE Sipeed
+# release-asset URL with no fallback mirror — if Sipeed deletes or reshuffles
+# the v1.0.15 release, every non-cached build breaks (the FOD hash at least
+# makes tampering loud). Bumping to a newer base is NOT just a hash change:
+#   - image.nix's member map swaps our partitions into THIS zip's member set;
+#   - sd-image.nix's FAT BPB byte-assertions were diffed against THIS
+#     release's SD layout;
+#   - docs/provenance.md's blob inventory audits THIS rootfs.
+# Re-verify all three against the new asset before re-pinning. Mirroring the
+# asset (release hosting decision) would remove the single point of rot.
 pkgs.fetchurl {
   name = "nanokvm-pro-base-${version}.axp";
   url = "https://github.com/sipeed/NanoKVM-Pro/releases/download/v${version}/${asset}";
