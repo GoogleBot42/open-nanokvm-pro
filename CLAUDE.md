@@ -78,7 +78,9 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
   vendor-internal seam.
 - Record findings and rationale even for rejected paths, so decisions can be revisited.
 - Questions get direct answers before (or instead of) action.
-- Delegate to subagents with an explicit `model: opus` or `model: sonnet` override
-  wherever the task allows it (searching, mining, bulk writing, verification); don't
-  let subagents inherit a Fable/Mythos-tier session model.
+- Delegate aggressively to `model: opus` subagents to save usage — searching, mining,
+  bulk writing, analysis, verification, anything that doesn't truly need the session
+  model. Reserve Fable/Mythos-tier work for what genuinely requires it; never let
+  subagents inherit the session model. Always check the agent's work yourself
+  (spot-read the code paths it cites, verify its claims) before acting on it.
 - After substantial work, run the reflect skill.
