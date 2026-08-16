@@ -26,12 +26,12 @@ git data flows one way, Gitea → GitHub.
 
 ---
 
-> **Status: waiting on the mirror + first release.** The pipeline goes live
-> once the Gitea push mirror to GitHub is configured (tag sync included —
-> owner action, tracked in issue #37) and the first `tools/release` run cuts
-> `v2.0.0`. Until then the update button finds nothing newer and the UI
-> reports "up to date". Old releases `v0.0.2`–`v0.0.5` on GitHub predate the
-> version-line restart at `2.0.0` (see [Versioning](#versioning)).
+> **Status: LIVE.** Verified end-to-end 2026-08-15 with `v2.0.0` (issue #37):
+> Gitea tag → mirror (seconds) → tag-triggered workflow → all three assets
+> published (incl. the 1.44 GB `.axp`), manifest served from
+> `releases/latest/download` with a matching SHA-512, and the test device
+> reports `{current: 0.0.5, latest: 2.0.0}`. Old releases `v0.0.2`–`v0.0.5`
+> predate the version-line restart at `2.0.0` (see [Versioning](#versioning)).
 
 ## The idea
 

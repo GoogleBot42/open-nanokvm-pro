@@ -120,13 +120,10 @@ propose SG2002 work without flagging this gap up front.
 
 ## 5. Known inconsistencies awaiting work
 
-- **Release pipeline: Gitea source of truth → public GitHub downstream
-  mirror (architecture set 2026-08-15, Jeremy's decision), no release cut
-  yet.** `updateBaseUrl` points at GitHub `releases/latest/download`
-  (public — the earlier device-reachability and `.axp`-size blockers are
-  moot); `tools/release` tags on Gitea; the mirrored tag triggers the
-  GitHub Actions release build (`.github/workflows/release.yml`,
-  tag-trigger-only, never commits). See `docs/updates.md`. Gates before
-  the first release (issue #37): Jeremy configures the Gitea push mirror
-  (with tag sync + PAT identity), then `tools/release` cuts `v2.0.0`.
-  Never propose pushing/tagging on GitHub directly.
+- **Release pipeline: LIVE (issue #37 closed 2026-08-15).** Gitea source
+  of truth → push mirror → public GitHub downstream mirror
+  (GoogleBot42/open-nanokvm-pro) hosts releases and runs the tag-triggered
+  release workflow. v2.0.0 published and verified end-to-end; the test
+  device sees it ({current: 0.0.5, latest: 2.0.0}) — applying the OTA on
+  the device is a Jeremy decision (writes boot partitions + reboots).
+  Never propose pushing/tagging on GitHub directly; see `docs/updates.md`.
