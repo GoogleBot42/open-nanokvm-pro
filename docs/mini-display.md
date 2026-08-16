@@ -196,6 +196,15 @@ powered so the host keeps seeing its monitor). See
 
 **Verified on hardware:**
 
+- **The full from-source stack, end-to-end (2026-08-15),** on the device
+  running the v2.0.0 from-source firmware (applied via OTA): all modules
+  loaded at boot (`fbtft`, `fb_jd9853`, `gpio_keys`, `rotary_encoder`),
+  `graphics fb0: fb_jd9853 frame buffer, 172x320 ... spi2.1 at 80 MHz` in
+  dmesg, `nanokvm-display` active. After the 3-min idle blank (backlight
+  `bl_power=1`, fb zeroed), a knob-button press injected through
+  `/dev/input/event0` woke the panel (backlight on, fb redrawn); the fb dump
+  read back over SSH renders as the legible status screen (hostname, IPs,
+  video power-save state, HDMI input mode, fw version, uptime).
 - All panel-side findings (top table, DT node, backlight, `/dev/fb0`
   behavior) — on a NanoKVM-Pro Desk running this firmware.
 - The **orientation mapping** — by dumping the live framebuffer of a
@@ -203,7 +212,7 @@ powered so the host keeps seeing its monitor). See
   it (the "Welcome / visit IP" screen reads upright exactly under
   `phys(x,y) = fb[319-x][y]`); the daemon uses that same mapping.
 
-**Verified off-device (strong evidence, final boot test pending):**
+**Verified off-device (pre-flash evidence):**
 
 - Our five modules build from the SDK kernel source with vermagic
   `4.19.125 SMP preempt mod_unload aarch64` — identical to the vendor blobs.
@@ -215,15 +224,11 @@ powered so the host keeps seeing its monitor). See
   the full **sleep → blank/backlight-off → wake-on-button-press** cycle
   against a synthetic evdev stream.
 
-**Pending on real hardware:** one boot of the built image (or an insmod of our
-`fbtft.ko`+`fb_jd9853.ko` on a live device) to watch
-`graphics fb0: fb_jd9853 frame buffer, 172x320` appear and the daemon light the
-panel. The attempt during development was cut short: **unloading the vendor's
-loaded `fb_jd9853` hard-hung the stock test device** (its TE-timer/workqueue
-teardown deadlocks; the module's *load* path is what we exercise at boot and is
-unaffected) — the device needed a power cycle before the swap could complete.
+Durable trap from development: **unloading a loaded `fb_jd9853` hard-hangs the
+device** (its TE-timer/workqueue teardown deadlocks; the *load* path exercised
+at boot is unaffected) — never live-swap the panel modules; test at boot.
 
-Quick post-flash checklist:
+Quick post-flash checklist (run in full 2026-08-15, all green):
 
 ```bash
 lsmod | grep -E 'fbtft|jd9853|gpio_keys|rotary'   # loaded at boot

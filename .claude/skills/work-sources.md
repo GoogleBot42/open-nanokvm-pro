@@ -59,14 +59,12 @@ for pending/TODO/unverified markers still present in the tree:
   from source but **not yet exercised on hardware** — "treat dual-slot
   writes as belt-and-suspenders, not a proven rollback guarantee." Mirrors
   Gitea issue #10 (`hardware-validation`, `needs-human`, `priority/high`).
-- **`docs/mini-display.md`, "Hardware verification" section (lines
-  195–230):** verified off-device (vermagic + symbol-table match against
-  the vendor `.ko`, plus a synthetic-evdev daemon harness including the
-  sleep/wake cycle) but the **final on-device boot test is pending** —
-  watching `fb_jd9853 frame buffer, 172x320` actually appear and the panel
-  light up. Notes a prior swap-in-place attempt hard-hung the dev unit on
-  vendor module *unload* (not load), so the safe path is testing at boot,
-  not live-swapping on stock firmware. Mirrors issue #11.
+- **`docs/mini-display.md`, "Hardware verification" section:** RESOLVED
+  2026-08-15 — the from-source stack was proven end-to-end on the device
+  running v2.0.0 (modules at boot, fb registration, daemon drawing, idle
+  blank + knob-press wake; fb dump rendered legibly off-device). Issue #11
+  closed. Durable trap retained in the doc: never unload/live-swap
+  `fb_jd9853` — teardown deadlock hard-hangs the device; test at boot.
 - **`docs/blob-replacement.md`:** the RE narrative log for de-blobbing
   capture/encode. The `openCapture` flag (`pkgs/kvm-encoder.nix`, default
   **off**) landed and was **device-validated 2026-07-21** for the capture
@@ -82,14 +80,11 @@ for pending/TODO/unverified markers still present in the tree:
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
 
-A claim that is **not** in the docs but recorded in memory (see below) and
-worth surfacing when relevant: idle video power-down
-(`kvmv_video_suspend`/`resume`, commit `bfa823e`) is code-complete but has
-**never been run on device** — the underlying teardown/re-init mechanism is
-device-proven (via the Stage-6 capture validation), but the Go-server idle
-watcher and display integration around it are not. Verify this is still
-true against the current tree before relying on it; it's a memory claim,
-not a doc claim.
+Idle video power-down (`kvmv_video_suspend`/`resume`, commit `bfa823e`):
+the suspend half + display integration were **observed live on device
+2026-08-15** (mini-display status screen reads "video asleep (power save)"
+with no viewers connected). The **resume-on-viewer path is still
+device-unobserved** — worth a quick check next time a stream is opened.
 
 ## 3. Memory dir (transient session state)
 
