@@ -73,9 +73,10 @@ for pending/TODO/unverified markers still present in the tree:
   end of the file): the open build still links `libax_venc`/`sys`/`ivps`/
   `proton` because the closed encoder pins them; only `libax_mipi` was
   dropped. Matches the epic issue #25 ("blob-free video encoder — port the
-  open VC8000E VCMD driver"). Known residuals noted in the same doc:
-  1080p-only payloads (issue #17), hardcoded `ISP_MODEL_PHYS` and an
-  unfreed CMM carveout on teardown (issue #16).
+  open VC8000E VCMD driver"). Remaining residual: 1080p-only payloads
+  (issue #17; needs a non-1080p source to test). Issue #16 (isp_model phys
+  derivation, teardown validation, pool-block leak) was closed 2026-08-16
+  with on-device warm suspend/resume validation.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
@@ -112,6 +113,12 @@ propose SG2002 work without flagging this gap up front.
 
 ## 5. Known inconsistencies awaiting work
 
+- **Preview/alpha update channel: WIRED (issues #19 + #4 closed
+  2026-08-16).** Alpha = any `-suffix` semver version via cut-release;
+  publishes as a GitHub prerelease + refreshes the rolling `preview`
+  release the web-UI toggle polls. Full pipeline proof rides the next real
+  cut — if that cut misbehaves, start at the rolling-`preview`-release
+  step in `.github/workflows/release.yml`.
 - **Release pipeline: LIVE (issue #37 closed 2026-08-15).** Gitea source
   of truth → push mirror → public GitHub downstream mirror
   (GoogleBot42/open-nanokvm-pro) hosts releases and runs the tag-triggered

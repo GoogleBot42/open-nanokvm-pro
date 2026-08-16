@@ -4,9 +4,11 @@ description: Build a component with Nix and hot-deploy it to the running NanoKVM
 ---
 
 Validated 2026-08-15 for the **web-bundle** variant (build → tar → both
-trees → restart → HTTP 200 with the new bundle hash). The libkvm variant
-below follows the same shape but has not itself been exercised via this
-skill yet.
+trees → restart → HTTP 200 with the new bundle hash), and 2026-08-16 for
+the **libkvm** variant below plus the **server binary** (same dual-tree
+copy: `cp NanoKVM-Server` into `<root>/server/` for both roots, `chmod
+755`, restart, verify — used repeatedly for the mini-display preview and
+openCapture work).
 
 # The loop
 

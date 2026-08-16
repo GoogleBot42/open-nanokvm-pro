@@ -72,9 +72,13 @@ while unattached; guard test writes with `timeout`.
 
 - See what the panel shows without eyes on it: dump `/dev/fb0` (RGB565,
   172x320, 110080 bytes) via `dd | base64` over kvmssh, decode locally, then
-  `nix shell nixpkgs#ffmpeg-headless -c ffmpeg -f rawvideo -pix_fmt rgb565le
-  -s 172x320 -i fb.raw -frames:v 1 -vf transpose=2 out.png`. The dump
-  contains device IPs — never commit the image.
+  render with the **verified physical mapping `phys(x,y) = fb[319-x][y]`**
+  (320x172 output; PIL loop over `px[(319-x)*172 + y]`, e.g. via `nix shell
+  --impure --expr '(import <nixpkgs> {}).python3.withPackages (p:
+  [p.pillow])'`). Do NOT judge orientation from a plain
+  `ffmpeg -vf transpose=2` render — verified 2026-08-16 to come out 180°
+  rotated vs. the physical panel; only the explicit mapping is trustworthy.
+  The dump contains device IPs — never commit the image.
 - Never `rmmod`/live-swap `fb_jd9853`: teardown deadlock hard-hangs the
   device (docs/mini-display.md).
 
