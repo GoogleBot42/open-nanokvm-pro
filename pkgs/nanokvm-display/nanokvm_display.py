@@ -65,6 +65,10 @@ GPIO_URL = "https://127.0.0.1/api/vm/gpio"  # loopback bypasses auth; must be
 #   https directly: port 80 answers 307 and urllib drops a POST body on redirect
 CONFIRM_TIMEOUT_S = 8   # confirm prompt auto-cancels after this
 FLASH_S = 3             # how long the done/FAILED result stays on screen
+KNOB_DETENT = int(os.environ.get("NANOKVM_KNOB_DETENT", "2"))
+#   ^ rotary events per navigation step. The encoder emits 2 REL_X events per
+#   physical detent, so 1 would move the selection on half-clicks (it lands
+#   between detents). Twist-to-cancel on the confirm screen stays raw.
 
 # Target-control menu: (label, gpio type for /api/vm/gpio, press ms).
 # "back" first so entering the page with a stray twist + press exits cleanly.
@@ -524,6 +528,7 @@ def main():
     press_res = None         # dict from start_press() while busy
     confirm_deadline = 0.0   # auto-cancel the confirm prompt
     flash = None             # ((text, color), until) transient result line
+    twist_acc = 0            # rotary events accumulated toward a full detent
 
     while True:
         # -- draw (only while awake) ---------------------------------------
@@ -574,15 +579,22 @@ def main():
                 last_frame = None  # force redraw
                 set_backlight(True)
                 poller.resume()
+                twist_acc = 0  # the waking twist doesn't count toward a step
             elif page == "status":
-                if delta:  # twist opens the target-control page
+                twist_acc += delta
+                if abs(twist_acc) >= KNOB_DETENT:  # full detent opens control
                     page, sel, mode, flash = "control", 0, "menu", None
+                    twist_acc = 0
                     poller.want_power = True
                     poller.resume()  # poke: fresh power state for the page
             elif mode == "menu":
-                if delta:
-                    sel = max(0, min(len(MENU) - 1, sel + delta))
+                twist_acc += delta
+                steps = int(twist_acc / KNOB_DETENT)  # trunc toward zero
+                if steps:
+                    sel = max(0, min(len(MENU) - 1, sel + steps))
+                    twist_acc -= steps * KNOB_DETENT
                 if presses:
+                    twist_acc = 0
                     if MENU[sel][1] is None:  # back
                         page = "status"
                         poller.want_power = False
@@ -590,8 +602,9 @@ def main():
                         mode = "confirm"
                         confirm_deadline = now + CONFIRM_TIMEOUT_S
             elif mode == "confirm":
-                if delta:       # any twist cancels
+                if delta:       # any twist cancels (raw, no detent gate)
                     mode = "menu"
+                    twist_acc = 0
                 elif presses:   # second press fires the action
                     _, gtype, ms = MENU[sel]
                     press_res = start_press(gtype, ms)
@@ -617,6 +630,7 @@ def main():
             set_backlight(False)
             poller.pause()
             page, mode, flash = "status", "menu", None  # sleep resets the UI
+            twist_acc = 0
             poller.want_power = False
             try:
                 write_fb(blank)  # nothing lingers on the panel while dark
