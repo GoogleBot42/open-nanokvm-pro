@@ -151,7 +151,7 @@
         # Vendor-MPI capture default. The blob-free raw-ioctl backend ships
         # alpha-only for now: flip `openCapture = true` here for a preview-channel
         # cut (as v2.1.0-alpha.1 did), and flip back before the next stable.
-        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; };
+        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; openCapture = true; };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
 
