@@ -279,8 +279,12 @@ pkgs.stdenvNoCC.mkDerivation {
     # has no recursive remove, so these are EXACT file paths; `rm` silently
     # continues if a path is already absent.
     # KEEP (live deps -- do NOT add here): /kvmcomm/scripts/*, /kvmcomm/edid/*,
-    # /kvmcomm/ko/lt6911_manage.ko, and /opt/swupdate/bin/fw_printenv|fw_setenv
-    # (used by S99checkboot).
+    # and /opt/swupdate/bin/fw_printenv|fw_setenv (used by S99checkboot).
+    # lt6911_manage.ko left this list 2026-08-16 (issue #29): the loaded
+    # driver is OUR kernel build via /etc/modules-load.d -> /usr/lib/modules;
+    # nothing in the active stack references the /kvmcomm/ko copy (grep of
+    # kvmapp tree, server binary, systemd units, init scripts), and a reboot
+    # without it came up fully healthy (HDMI capture included).
     for dead in \
       /kvmcomm/ui/kvm_ui \
       /kvmcomm/ui/frameforge \
@@ -290,6 +294,7 @@ pkgs.stdenvNoCC.mkDerivation {
       /kvmcomm/ko/f_udisp_drv.ko \
       /kvmcomm/ko/gpio_keys.ko \
       /kvmcomm/ko/rotary_encoder.ko \
+      /kvmcomm/ko/lt6911_manage.ko \
       /kvmcomm/ko/wireguard.ko \
       /opt/swupdate/bin/swupdate ; do
       echo "rm $dead" >> "$script"
