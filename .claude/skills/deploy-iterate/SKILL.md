@@ -72,6 +72,39 @@ Proven flow (2026-08-15, deploying the dead-extensions patch):
    `curl -sk https://127.0.0.1/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\.js'`
    must print the hash from step 1.
 
+# Variant: mini-display daemon (`nanokvm-display`)
+
+Proven flow (2026-08-16, deploying the #20/#35 knob-latency + control-page
+work). This one does NOT live in the `/kvmapp` trees — no dual-tree dance:
+
+1. `nix build .#nanokvm-display` — output is
+   `result/opt/nanokvm-display/{nanokvm_display.py,font_data.py}` plus the
+   systemd units. `font_data.py` only changes if the font generation
+   changed; usually only the daemon file needs shipping.
+2. `tools/kvmscp result/opt/nanokvm-display/nanokvm_display.py /tmp/`, then
+   `tools/kvmssh 'cp /tmp/nanokvm_display.py /opt/nanokvm-display/ &&
+   systemctl restart nanokvm-display'`. `/opt` is the persistent rootfs —
+   the copy survives reboot; new/changed units go to
+   `/etc/systemd/system/` + `systemctl daemon-reload`.
+3. Verify: `systemctl is-active nanokvm-display` and
+   `journalctl -u nanokvm-display -n 5` — expect
+   `input devices: ['gpio_keys', 'rotary@0']` and no `refresh failed`.
+4. **Visual verification** (proves the daemon is actually drawing):
+   `dd if=/dev/fb0 bs=110080 count=1` on the device, pull the dump, convert
+   RGB565→PNG off-device with the orientation mapping
+   `phys(x,y) = fb[319-x][y]` (script pattern: scratchpad `fb2png_all.py`
+   from the 2026-08-16 session; PIL via
+   `nix shell --impure --expr '(import <nixpkgs> {}).python3.withPackages
+   (p: [p.pillow])'`) and view the image.
+5. **Exercising the knob UI without hands on the device**: root can inject
+   real input by writing `struct input_event` (`qqHHi`, zeroed timestamps)
+   to the evdev nodes — EV_REL/REL_X/±1 + SYN to the `rotary@0` node for a
+   twist, EV_KEY/28/1,0 + SYNs to the `gpio_keys` node for a press. Pair
+   each injection with an fb dump to walk and screenshot every UI state.
+   NEVER "test" the control page's final confirm press on the real device
+   — it pulses the attached host's ATX power/reset lines (via
+   `POST /api/vm/gpio`); firing real pulses is Jeremy's call.
+
 # Failure modes
 
 - **Silent crash-loop.** `nanokvm.service`'s `ExecStart` is a supervisor
