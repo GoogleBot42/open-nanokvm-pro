@@ -19,8 +19,16 @@ of the knob button (gpio-keys, KEY_ENTER) -- or turning the knob
 triggers nothing else. While awake, any knob/button activity resets the timer.
 Set SLEEP_TIMEOUT_S (or env NANOKVM_DISPLAY_SLEEP_S) to 0 to never sleep.
 
+Pages: twisting the knob on the status page opens the target-control page
+(power press / reset / force off, actuated through the KVM server's loopback
+/api/vm/gpio endpoint -- see nanokvm-gpio.service for the pin setup). Twist
+moves the selection, press activates; every action needs a second confirming
+press, and any twist cancels. Selection starts on "back" so stray input does
+nothing. Falling asleep returns to the status page.
+
 Extending the screen: add an entry to build_lines() below. Each line is
-(font, fg565, text); the renderer stacks them top-down with per-font spacing.
+(font, fg565, text) -- fg may also be a (fg, bg) tuple for inverse video;
+the renderer stacks them top-down with per-font spacing.
 """
 
 import array
@@ -53,6 +61,20 @@ SLEEP_TIMEOUT_S = int(os.environ.get("NANOKVM_DISPLAY_SLEEP_S", "180"))
 #   ^ seconds of no knob/button input before the panel sleeps; 0 = never.
 BRIGHTNESS = "80"              # 0..100 (panel max_brightness = 100)
 STREAMER_URL = "http://127.0.0.1/api/streamer/local"  # loopback-only endpoint
+GPIO_URL = "https://127.0.0.1/api/vm/gpio"  # loopback bypasses auth; must be
+#   https directly: port 80 answers 307 and urllib drops a POST body on redirect
+CONFIRM_TIMEOUT_S = 8   # confirm prompt auto-cancels after this
+FLASH_S = 3             # how long the done/FAILED result stays on screen
+
+# Target-control menu: (label, gpio type for /api/vm/gpio, press ms).
+# "back" first so entering the page with a stray twist + press exits cleanly.
+# Durations mirror the web UI (800 ms click, 8 s force-off hold).
+MENU = [
+    ("back", None, 0),
+    ("power press", "power", 800),
+    ("reset", "reset", 800),
+    ("force off (8s)", "power", 8000),
+]
 LT6911_W = "/proc/lt6911_info/width"
 LT6911_H = "/proc/lt6911_info/height"
 VERSION_FILE = "/kvmapp/version"
@@ -187,6 +209,46 @@ def get_stream_status():
         return "down", "server off"
 
 
+def get_power_state():
+    """True/False = target host power LED on/off (server reads the gpio75
+    sense pin, polarity already handled server-side); None = unknown."""
+    try:
+        with urllib.request.urlopen(GPIO_URL, timeout=3, context=_SSL_CTX) as r:
+            data = json.load(r)
+        if data.get("code") == 0:
+            return bool(data["data"]["pwr"])
+    except Exception:
+        pass
+    return None
+
+
+def start_press(gtype, duration_ms):
+    """Pulse the target's power/reset line via POST /api/vm/gpio (loopback,
+    no auth). The server holds the pin high for duration_ms, so the HTTP call
+    blocks for the whole press -- run it in a thread and let the main loop
+    watch the returned dict ({"done": bool, "ok": bool})."""
+    res = {"done": False, "ok": False}
+
+    def work():
+        try:
+            body = json.dumps({"type": gtype, "duration": duration_ms}).encode()
+            req = urllib.request.Request(
+                GPIO_URL, data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=duration_ms / 1000 + 10,
+                                        context=_SSL_CTX) as r:
+                rsp = json.load(r)
+            res["ok"] = rsp.get("code") == 0
+            if not res["ok"]:
+                print(f"gpio {gtype}: server said {rsp}", file=sys.stderr)
+        except Exception as e:
+            print(f"gpio {gtype} failed: {e}", file=sys.stderr)
+        res["done"] = True
+
+    threading.Thread(target=work, daemon=True).start()
+    return res
+
+
 def get_hdmi_input():
     w, h = read_file(LT6911_W, "0"), read_file(LT6911_H, "0")
     try:
@@ -219,6 +281,8 @@ class StatusPoller(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.snapshot = ([], ("down", "server off"))  # (ips, stream_status)
+        self.power = None                # target power state; None = unknown
+        self.want_power = False          # only poll it on the control page
         self.first = threading.Event()   # set once the first poll completed
         self._tick = threading.Event()   # set -> skip the inter-poll wait
         self._active = threading.Event()  # cleared -> paused (panel asleep)
@@ -228,6 +292,7 @@ class StatusPoller(threading.Thread):
         while True:
             self._active.wait()
             self.snapshot = (get_ips(), get_stream_status())
+            self.power = get_power_state() if self.want_power else None
             self.first.set()
             self._tick.wait(REFRESH_S)
             self._tick.clear()
@@ -274,6 +339,45 @@ def build_lines(ips, stream):
     return lines
 
 
+def build_control_lines(power, sel, mode, flash):
+    """The target-control page (issue #35). mode: "menu" | "confirm" | "busy";
+    flash: transient (text, color) result line or None."""
+    ptxt = {True: "on", False: "off", None: "?"}[power]
+    pcol = {True: GREEN, False: AMBER, None: GREY}[power]
+    lines = [
+        ("small", WHITE, " target control"),
+        ("hr", GREY, None),
+        ("gap", 4, None),
+        ("small", pcol, f" host power  {ptxt}"),
+    ]
+    label = MENU[sel][0]
+    if mode == "confirm":
+        lines += [
+            ("gap", 14, None),
+            ("big", AMBER, label.center(22)),
+            ("gap", 10, None),
+            ("small", WHITE, "  press = confirm"),
+            ("small", GREY, "  twist = cancel"),
+        ]
+    elif mode == "busy":
+        lines += [
+            ("gap", 14, None),
+            ("big", CYAN, label.center(22)),
+            ("gap", 10, None),
+            ("small", GREY, "  working ..."),
+        ]
+    else:
+        lines.append(("small", flash[1], f" {flash[0]}") if flash
+                     else ("gap", FONTS["small"]["h"] + 2, None))
+        lines.append(("gap", 4, None))
+        for i, (item, _, _) in enumerate(MENU):
+            if i == sel:
+                lines.append(("small", (BLACK, WHITE), f" {item} ".ljust(40)))
+            else:
+                lines.append(("small", GREY, f"  {item}"))
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Rendering / panel control
 # ---------------------------------------------------------------------------
@@ -288,7 +392,8 @@ def render(canvas, lines):
             canvas.hline(y + 1, color)
             y += 4
             continue
-        canvas.text(0, y, text, kind, color)
+        fg, bg = color if isinstance(color, tuple) else (color, None)
+        canvas.text(0, y, text, kind, fg, bg)
         y += FONTS[kind]["h"] + 2
         if y >= H:
             break
@@ -366,9 +471,9 @@ def open_input_devices():
 
 
 def drain_events(fd):
-    """Read all pending events; return True if any counts as user activity
-    (button press/release or knob rotation)."""
-    activity = False
+    """Read all pending events; return (presses, delta) -- button presses and
+    signed knob-rotation detents -- or None if the device went away."""
+    presses = delta = 0
     while True:
         try:
             buf = os.read(fd, EV_SIZE * 64)
@@ -380,11 +485,11 @@ def drain_events(fd):
             return None
         for off in range(0, len(buf) - EV_SIZE + 1, EV_SIZE):
             _, _, etype, _, value = struct.unpack_from(EV_FMT, buf, off)
-            if etype == EV_KEY and value == 1:  # button press
-                activity = True
-            elif etype == EV_REL:               # knob rotation
-                activity = True
-    return activity
+            if etype == EV_KEY and value == 1:  # button press (not release)
+                presses += 1
+            elif etype == EV_REL and value:     # knob rotation
+                delta += 1 if value > 0 else -1
+    return presses, delta
 
 
 # ---------------------------------------------------------------------------
@@ -412,12 +517,25 @@ def main():
     last_activity = time.monotonic()
     last_scan = time.monotonic()
 
+    # target-control page state (issue #35)
+    page = "status"          # "status" | "control"
+    sel = 0                  # MENU index
+    mode = "menu"            # "menu" | "confirm" | "busy"
+    press_res = None         # dict from start_press() while busy
+    confirm_deadline = 0.0   # auto-cancel the confirm prompt
+    flash = None             # ((text, color), until) transient result line
+
     while True:
         # -- draw (only while awake) ---------------------------------------
         if awake:
             try:
-                ips, stream = poller.snapshot
-                render(canvas, build_lines(ips, stream))
+                if page == "control":
+                    lines = build_control_lines(
+                        poller.power, sel, mode, flash and flash[0])
+                else:
+                    ips, stream = poller.snapshot
+                    lines = build_lines(ips, stream)
+                render(canvas, lines)
                 frame = canvas.to_fb_bytes()
                 if frame != last_frame:
                     write_fb(frame)
@@ -426,37 +544,80 @@ def main():
                 print(f"refresh failed: {e}", file=sys.stderr)
 
         # -- wait for input or next refresh tick ---------------------------
-        timeout = REFRESH_S if awake else 60.0  # asleep: just wait for input
+        if not awake:
+            timeout = 60.0        # just wait for the waking input
+        elif mode == "busy":
+            timeout = 0.25        # notice the press thread finishing quickly
+        else:
+            timeout = REFRESH_S
         try:
             readable, _, _ = select.select(list(inputs), [], [], timeout)
         except InterruptedError:
             readable = []
 
-        activity = False
+        presses = delta = 0
         for fd in readable:
             got = drain_events(fd)
             if got is None:  # device vanished; drop and rescan below
                 os.close(fd)
                 inputs.pop(fd, None)
                 last_scan = 0
-            elif got:
-                activity = True
+            else:
+                presses += got[0]
+                delta += got[1]
 
         now = time.monotonic()
-        if activity:
+        if presses or delta:
             last_activity = now
-            if not awake:  # waking press only wakes -- no other action
+            if not awake:  # waking input only wakes -- no other action
                 awake = True
                 last_frame = None  # force redraw
                 set_backlight(True)
                 poller.resume()
+            elif page == "status":
+                if delta:  # twist opens the target-control page
+                    page, sel, mode, flash = "control", 0, "menu", None
+                    poller.want_power = True
+                    poller.resume()  # poke: fresh power state for the page
+            elif mode == "menu":
+                if delta:
+                    sel = max(0, min(len(MENU) - 1, sel + delta))
+                if presses:
+                    if MENU[sel][1] is None:  # back
+                        page = "status"
+                        poller.want_power = False
+                    else:
+                        mode = "confirm"
+                        confirm_deadline = now + CONFIRM_TIMEOUT_S
+            elif mode == "confirm":
+                if delta:       # any twist cancels
+                    mode = "menu"
+                elif presses:   # second press fires the action
+                    _, gtype, ms = MENU[sel]
+                    press_res = start_press(gtype, ms)
+                    mode = "busy"
+            # mode == "busy": input ignored (only resets the sleep timer)
+
+        # -- control-page timers -------------------------------------------
+        if mode == "confirm" and now >= confirm_deadline:
+            mode = "menu"
+        if mode == "busy" and press_res and press_res["done"]:
+            flash = ((("done", GREEN) if press_res["ok"]
+                      else ("FAILED (see log)", AMBER)), now + FLASH_S)
+            mode, press_res = "menu", None
+            last_activity = now     # keep the result visible before sleep
+            poller.resume()         # poke: re-read power state after the press
+        if flash and now >= flash[1]:
+            flash = None
 
         # -- inactivity -> sleep (backlight off + blank panel) -------------
-        if (awake and SLEEP_TIMEOUT_S > 0
+        if (awake and SLEEP_TIMEOUT_S > 0 and mode != "busy"
                 and now - last_activity >= SLEEP_TIMEOUT_S):
             awake = False
             set_backlight(False)
             poller.pause()
+            page, mode, flash = "status", "menu", None  # sleep resets the UI
+            poller.want_power = False
             try:
                 write_fb(blank)  # nothing lingers on the panel while dark
             except OSError:

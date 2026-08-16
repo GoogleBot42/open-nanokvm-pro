@@ -9,9 +9,8 @@ overlay still deletes them — see `pkgs/rootfs.nix` step 5d).
 The panel findings below were verified on real hardware (a NanoKVM-Pro Desk
 running our from-source firmware); the orientation mapping was additionally
 confirmed against a live framebuffer dump from a stock-firmware device. The
-from-source module + daemon combination has been verified by build-time module
-equivalence and an off-device harness — the final on-device boot test is
-pending (see [Hardware verification](#hardware-verification)).
+from-source module + daemon stack was proven end-to-end on the device
+(2026-08-15, see [Hardware verification](#hardware-verification)).
 
 - [What the display is](#what-the-display-is)
 - [How it is blob-free](#how-it-is-blob-free)
@@ -94,7 +93,14 @@ literal module (`pkgs/nanokvm-display/gen_font.py`).
 2. **Status daemon**: `/opt/nanokvm-display/nanokvm_display.py` (+
    `font_data.py`), run by the enabled systemd unit
    `nanokvm-display.service`. Package: `pkgs/nanokvm-display.nix`.
-3. The OTA update package carries the same payload (`pkgs/update-package.nix`).
+3. **ATX GPIO setup**: the enabled oneshot `nanokvm-gpio.service` (same
+   package) exports the target power/reset pins at boot — `gpio7` SW_PWR and
+   `gpio35` SW_RST as outputs idling low (exported via `low` so the power
+   line never glitches), `gpio75`/`gpio74` LED-sense inputs. The vendor's
+   disabled kvmcomm stack used to do this; without it the server's
+   `POST /api/vm/gpio` (web UI power menu) and the knob control page have
+   nothing to actuate. Pinmux is already correct at boot.
+4. The OTA update package carries the same payload (`pkgs/update-package.nix`).
 
 ---
 
@@ -129,6 +135,21 @@ The waking press *only* wakes — it triggers nothing else. While awake, any
 knob/button activity resets the inactivity timer. Input is read straight from
 the `gpio_keys` / `rotary_encoder` evdev devices (discovered by name via
 `EVIOCGNAME`, re-scanned periodically).
+
+**Target-control page (knob-driven power/reset):** twisting the knob on the
+status page opens a control page; twisting moves the selection (`back`,
+`power press`, `reset`, `force off (8s)` — selection starts on `back` so
+stray input is harmless), pressing the knob arms an amber confirm screen
+(`press = confirm, twist = cancel`, auto-cancels after 8 s), and a second
+press fires the action. Actions go through the KVM server's loopback
+`POST /api/vm/gpio` (no auth from 127.0.0.1; press durations mirror the web
+UI: 800 ms click, 8 s force-off) in a worker thread, so even an 8-second
+hold never blocks knob input; a `done`/`FAILED` result flashes afterwards.
+The page shows the target's power state from `GET /api/vm/gpio` (the gpio75
+LED sense), polled only while the page is open. Falling asleep resets to the
+status page. Slow status sources (the `ip` subprocess and the streamer poll)
+run in a `StatusPoller` thread that pauses during panel sleep, so knob
+latency is never bounded by server health.
 
 **Extending the screen** is intentionally trivial: add a
 `(font, color, text)` tuple in `build_lines()` — the renderer stacks lines
@@ -205,6 +226,15 @@ powered so the host keeps seeing its monitor). See
   `/dev/input/event0` woke the panel (backlight on, fb redrawn); the fb dump
   read back over SSH renders as the legible status screen (hostname, IPs,
   video power-save state, HDMI input mode, fw version, uptime).
+- **The target-control page (2026-08-16),** by injecting real knob events
+  through the evdev nodes: twist opens the page, selection moves, the
+  confirm screen arms, twist cancels, `back` returns to the status page —
+  each step verified via framebuffer dumps rendered off-device. The host
+  power state read (`GET /api/vm/gpio` → gpio75) reported the live host
+  correctly after `nanokvm-gpio.service` exported the pins. **Not yet
+  exercised: an actual power/reset pulse** — the sysfs write path is
+  vendor server code and the wiring is per the vendor pin table, but no
+  physical press has been fired at a target yet.
 - All panel-side findings (top table, DT node, backlight, `/dev/fb0`
   behavior) — on a NanoKVM-Pro Desk running this firmware.
 - The **orientation mapping** — by dumping the live framebuffer of a
@@ -253,6 +283,11 @@ Modules:    OURS, from source, /usr/lib/modules/4.19.125/kernel/...
 Rotation:   physical (x,y) = fb[row 319-x, col y]  (vendor's R270)
 Daemon:     /opt/nanokvm-display/nanokvm_display.py  (nanokvm-display.service)
             sleep after 180 s idle (backlight off), wake on knob button/turn
+            twist on status page -> target-control page (power press / reset /
+            force off, confirm-then-fire via loopback POST /api/vm/gpio)
+ATX pins:   nanokvm-gpio.service (oneshot, boot) exports gpio7=SW_PWR out,
+            gpio35=SW_RST out (idle low), gpio75/74 LED sense in; host on
+            when gpio75 reads 0 (server inverts: GET /api/vm/gpio .pwr)
 Closed junk:kvm_ui / frameforge / kvm_vin and /kvmcomm/ko blob copies -- still
             REMOVED from the image (pkgs/rootfs.nix 5d)
 ```

@@ -354,7 +354,9 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: font_data.py missing/differs in image" >&2; exit 1; }
     debugfs -R "stat $wants/nanokvm-display.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
       || { echo "ERROR: nanokvm-display.service not enabled (symlink missing) in image" >&2; exit 1; }
-    echo "  mini-display: daemon + fonts + enabled unit -- verified in image."
+    debugfs -R "stat $wants/nanokvm-gpio.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
+      || { echo "ERROR: nanokvm-gpio.service not enabled (symlink missing) in image" >&2; exit 1; }
+    echo "  mini-display: daemon + fonts + enabled units (display, ATX gpio) -- verified in image."
 
     # Sanity: the inert closed kvmcomm/swupdate binaries are GONE (5d). debugfs
     # `stat` exits 0 even for a missing path, so test the OUTPUT -- an "Inode:"
@@ -402,6 +404,8 @@ pkgs.stdenvNoCC.mkDerivation {
       /opt/nanokvm-display/                  <- mini-display status daemon
                                                 (pure Python + generated fonts)
       /etc/systemd/system/nanokvm-display.service (enabled)
+      /etc/systemd/system/nanokvm-gpio.service (enabled) <- exports the ATX
+                                                target power/reset GPIOs at boot
       /etc/default/motd-news (ENABLED=0)     <- disables the Ubuntu motd-news
                                                 beacon (no motd.ubuntu.com phone-home)
     removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack
