@@ -81,10 +81,10 @@ for pending/TODO/unverified markers still present in the tree:
   re-grep before trusting it stale.
 
 Idle video power-down (`kvmv_video_suspend`/`resume`, commit `bfa823e`):
-the suspend half + display integration were **observed live on device
-2026-08-15** (mini-display status screen reads "video asleep (power save)"
-with no viewers connected). The **resume-on-viewer path is still
-device-unobserved** — worth a quick check next time a stream is opened.
+**fully observed live on device 2026-08-15** — suspend engages when idle
+(mini-display reads "video asleep (power save)") and resume-on-viewer
+worked in real use (Jeremy opened the web KVM from the suspended state;
+video and HID both functional). No longer a pending validation item.
 
 ## 3. Memory dir (transient session state)
 
