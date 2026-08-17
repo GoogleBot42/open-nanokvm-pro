@@ -44,6 +44,10 @@
 #     etc/logrotate.d/nanokvm                    rotates /var/log/nanokvm/*.log
 #                                                (10M, copytruncate; vendor
 #                                                logrotate.timer runs it daily).
+#     etc/systemd/system/wifi.service.d/         Restart=no drop-in that ends the
+#       override.conf                            vendor wifi.service crash-restart
+#                                                loop (#43); needs a daemon-reload
+#                                                or a reboot to take effect.
 #
 #   partitions/      vendor-format SIGNED partition images (magic 0x55543322 @ off 4),
 #                    fixed naming contract consumed by install()'s image->partition map:
@@ -181,6 +185,19 @@ pkgs.stdenvNoCC.mkDerivation {
     chmod 644 "$rfs/etc/logrotate.d/nanokvm"
     grep -q '^ *copytruncate' "$rfs/etc/logrotate.d/nanokvm" \
       || { echo "ERROR: logrotate drop-in lost copytruncate" >&2; exit 1; }
+
+    # --- end the vendor wifi.service crash-restart loop (#43, mirrors
+    # pkgs/rootfs.nix [5b6]). A drop-in over the vendor unit at
+    # /etc/systemd/system/wifi.service; Restart=no is the operative directive
+    # (the vendor already sets RemainAfterExit=yes). Unlike the logrotate
+    # drop-in this is NOT picked up automatically -- systemd needs a
+    # `systemctl daemon-reload` (or the next boot) to re-read the unit.
+    mkdir -p "$rfs/etc/systemd/system/wifi.service.d"
+    cp ${./rootfs/wifi-service-override.conf} \
+       "$rfs/etc/systemd/system/wifi.service.d/override.conf"
+    chmod 644 "$rfs/etc/systemd/system/wifi.service.d/override.conf"
+    grep -q '^Restart=no$' "$rfs/etc/systemd/system/wifi.service.d/override.conf" \
+      || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
 
     # --- mini-display status daemon (pkgs/nanokvm-display.nix): daemon + fonts
     # under /opt/nanokvm-display, systemd unit, enabled via wants-symlink (the

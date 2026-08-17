@@ -269,6 +269,16 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
   `/etc/logrotate.d/nanokvm` (size 10M, `copytruncate` — mandatory, the server
   holds the fd open for its lifetime) via the vendor base's daily
   `logrotate.timer`.
+- **Vendor `wifi.service`** (`/etc/systemd/system/wifi.service`, `Type=simple`,
+  `Restart=on-failure`, `RestartSec=3`) runs `/opt/scripts/wifi.sh start`, which
+  `exit 1`s whenever `aic8800_fdrv` is already loaded. That turns "nothing to do"
+  into a failure and the restart policy loops it forever — `RestartSec=3` puts 5
+  attempts (~12 s) outside systemd's default 10 s `StartLimitIntervalSec` window,
+  so the rate limiter never trips. On the device this ran up 2184 restarts and
+  ~100 MB/week of journal + syslog churn onto eMMC. We ship
+  `/etc/systemd/system/wifi.service.d/override.conf` with `Restart=no` (issue
+  #43); the vendor unit and its `multi-user.target.wants` symlink are untouched,
+  so the one-shot boot-time module load still happens.
 - **`nanokvm-display.service`** (ours, independent of the two stacks above) runs
   the mini-display status daemon from `/opt/nanokvm-display`; it only reads
   `/dev/fb0`, the backlight sysfs, the knob evdev devices, and the server's

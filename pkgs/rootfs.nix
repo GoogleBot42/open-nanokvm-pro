@@ -23,6 +23,8 @@
 #       motd.ubuntu.com news beacon (50-motd-news phones home on login/timer).
 #   - /etc/logrotate.d/nanokvm -> rotates /var/log/nanokvm/*.log at 10M
 #       (copytruncate; the server holds its stdout fd open -- see #41).
+#   - /etc/systemd/system/wifi.service.d/override.conf -> Restart=no, ends the
+#       vendor wifi.service crash-restart loop (see #43).
 #   - inert CLOSED vendor binaries REMOVED: the disabled kvmcomm stack's closed
 #       kvm_ui/kvm_vin/frameforge + its display .ko, and the vendor swupdate
 #       self-updater. Exact paths only (debugfs has no recursive rm); the live
@@ -253,6 +255,23 @@ pkgs.stdenvNoCC.mkDerivation {
     echo "mkdir /etc/logrotate.d" >> "$script"   # existing dir: harmless
     emit_file "${./rootfs/logrotate-nanokvm.conf}" "/etc/logrotate.d/nanokvm" 0100644
 
+    # 5b6. Kill the vendor wifi.service crash-restart loop (#43) with a systemd
+    # drop-in. The vendor unit is /etc/systemd/system/wifi.service (Type=simple,
+    # RemainAfterExit=yes, Restart=on-failure, RestartSec=3); its ExecStart
+    # (/opt/scripts/wifi.sh start) exits 1 whenever aic8800_fdrv is already
+    # loaded, so Restart=on-failure loops it forever -- RestartSec=3 keeps 5
+    # attempts just outside the default 10s StartLimit window, so the rate
+    # limiter never trips. Restart=no is the operative change; RemainAfterExit
+    # merely restates the vendor value. We do NOT mask the unit or patch
+    # wifi.sh -- see pkgs/rootfs/wifi-service-override.conf for the rationale.
+    if ! debugfs -R "stat /etc/systemd/system/wifi.service" rootfs.ext4 >/dev/null 2>&1; then
+      echo "ERROR: /etc/systemd/system/wifi.service missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    echo "mkdir /etc/systemd/system/wifi.service.d" >> "$script"
+    emit_file "${./rootfs/wifi-service-override.conf}" \
+              "/etc/systemd/system/wifi.service.d/override.conf" 0100644
+
     # 5c. systemd stack selection.
     # The pinned vendor base ships TWO independent KVM app stacks and enables the
     # WRONG one for our purposes:
@@ -411,6 +430,15 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: logrotate drop-in lost copytruncate" >&2; exit 1; }
     echo "  logrotate: /etc/logrotate.d/nanokvm -- verified in image."
 
+    # Sanity: the wifi.service drop-in landed and still carries Restart=no (the
+    # load-bearing directive -- see pkgs/rootfs/wifi-service-override.conf, #43).
+    debugfs -R "dump /etc/systemd/system/wifi.service.d/override.conf $PWD/chk.wifi" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.wifi "${./rootfs/wifi-service-override.conf}" \
+      || { echo "ERROR: wifi.service drop-in missing/differs in image" >&2; exit 1; }
+    grep -q '^Restart=no$' $PWD/chk.wifi \
+      || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
+    echo "  wifi loop: /etc/systemd/system/wifi.service.d/override.conf -- verified in image."
+
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="
     e2fsck -fy rootfs.ext4 || true
@@ -448,6 +476,9 @@ pkgs.stdenvNoCC.mkDerivation {
       /etc/logrotate.d/nanokvm               <- rotates /var/log/nanokvm/*.log
                                                 (size 10M, rotate 3, copytruncate;
                                                 the vendor logrotate.timer runs daily)
+      /etc/systemd/system/wifi.service.d/    <- Restart=no drop-in; ends the vendor
+        override.conf                           wifi.service 3s crash-restart loop
+                                                (~100 MB/week of syslog churn)
     removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack
                       (kvm_ui, frameforge, kvm_vin, and its display .ko:
                       fbtft/fb_jd9853/f_udisp_drv/gpio_keys/rotary_encoder/wireguard)
