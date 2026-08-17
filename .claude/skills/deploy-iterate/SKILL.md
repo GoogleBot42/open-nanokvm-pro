@@ -41,13 +41,28 @@ Package names below are confirmed against `flake.nix`
    reboot. Background: `docs/architecture.md`, section
    "Runtime service model".
 
-   **Trap (cost a deploy cycle 2026-08-17): `cp` onto the RUNNING
-   `NanoKVM-Server` binary in `/dev/shm/kvmapp` fails with ETXTBSY and the
-   old file silently stays.** Copy to a temp name and `mv` over it (atomic,
-   works while running), and **always md5sum-verify all deployed copies
-   against the staged file** — that's what caught it:
-   `cp /tmp/NanoKVM-Server $root/server/NanoKVM-Server.new && mv $root/server/NanoKVM-Server.new $root/server/NanoKVM-Server`.
-   Shared libs (`libkvm.so`) don't hit this — only the exec'd binary.
+   **NEVER `cp` onto a file the running server has open — stage + `mv`,
+   always, for EVERY file (binaries AND shared libraries).** `mv` is
+   `rename(2)`: it makes a NEW inode and leaves the old one (and every
+   mapping of it) intact, so the running process is untouched.
+   ```
+   cp /tmp/<f> $root/server/<f>.new && mv $root/server/<f>.new $root/server/<f>
+   ```
+   Always md5sum-verify all deployed copies against the staged file.
+
+   Two distinct traps, both real:
+   - `cp` onto the RUNNING `NanoKVM-Server` binary fails with **ETXTBSY**
+     and the old file silently stays (cost a deploy cycle 2026-08-17).
+   - `cp` onto a mapped **shared library** (`libkvm.so`, `libkvm.so.0`)
+     does NOT fail — and that is worse. `cp` opens `O_TRUNC`; truncation
+     zaps the running process's pages of that mapping **including its
+     private, relocated RELRO/GOT page**. The victim re-faults the NEW
+     file image, so its GOT reverts to the un-relocated on-disk values
+     (every PLT slot = the `.plt` base) and the next PLT call branches to
+     a tiny unmapped address. This was Gitea **#40**: `SIGSEGV ...
+     PC=0x24b0` in `kvmv_deinit`, where `0x24b0` is exactly libkvm.so's
+     `.plt` base. Idle-suspend only hid it: no libkvm call happened
+     between the `cp` and the shutdown, so `kvmv_deinit` faulted first.
 
 4. **Restart and verify.** `tools/kvmssh 'systemctl restart nanokvm'`, then
    poll for up to ~30 seconds:

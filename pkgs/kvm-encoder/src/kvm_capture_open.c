@@ -223,6 +223,9 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
 {
     memset(c, 0, sizeof(*c));
     memset(&S, 0, sizeof(S));
+    /* memset leaves every fd == 0; an early-failure teardown would then
+     * close(0)/ioctl(0,...) on stdin. -1 is the only safe "unset" fd. */
+    S.fo = S.fs = S.fc = S.fp = S.fm = S.fpr = S.fmem = -1;
     /* 1080p-ONLY: the captured selector payloads (PL_dev_attr geometry 0x780x438,
      * PL_nr35/42/48, PL_mipi_attr) bake in 1920x1080. We cannot honor another
      * resolution, so clamp -- otherwise the pipe would capture 1080p while the
@@ -304,7 +307,7 @@ void kvm_sys_deinit(kvm_cap_ctx *c)
 {
     /* Best-effort pool/SYS release. Closing the char-device fds drops the
      * kernel-side references our process holds. */
-    if (c->poolInit) { ioctl(S.fp, POOL_NR21, NULL); c->poolInit = AX_FALSE; }
+    if (c->poolInit) { if (S.fp >= 0) ioctl(S.fp, POOL_NR21, NULL); c->poolInit = AX_FALSE; }
     if (S.osmem_map) { munmap(S.osmem_map, 4096); S.osmem_map = NULL; }
     int *fds[] = { &S.fpr, &S.fm, &S.fp, &S.fc, &S.fs, &S.fo, &S.fmem };
     for (unsigned i = 0; i < sizeof(fds)/sizeof(fds[0]); i++)

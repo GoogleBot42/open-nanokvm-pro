@@ -96,8 +96,12 @@ void kvmv_init(uint8_t _debug_info_en)
 static void teardown_locked(void)
 {
     if (s_cur_chn >= 0) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
+    /* Release the preview's frame mappings BEFORE the SYS layer goes away:
+     * kvm_preview_reset() calls AX_SYS_Munmap(), which is only valid while
+     * libax_sys is initialized. Reset is idempotent, and pool phys addrs
+     * change across teardown/re-init anyway, so it must run every teardown. */
+    kvm_preview_reset();
     if (s_inited) { kvm_cap_stop(&s_cap); kvm_venc_module_deinit(); kvm_sys_deinit(&s_cap); s_inited = 0; }
-    kvm_preview_reset();   /* pool phys addrs change across teardown/re-init */
 }
 
 /* Resolve the frame rate a VENC channel is actually built with. The web UI
