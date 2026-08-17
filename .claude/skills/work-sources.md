@@ -93,10 +93,12 @@ for pending/TODO/unverified markers still present in the tree:
   section "2026-08-17" in blob-replacement.md). Follow-ups resolved
   2026-08-17: #41 (log rotation) fixed in e485d02 + hot on device; #40
   root-caused as a deploy-tooling artifact (cp onto the mapped .so zapped
-  the GOT — not a firmware bug; hardening + skill fix in b95c8ba). New:
-  #43 — vendor wifi.service crash-loops forever (wifi.sh exits 1 when
-  modules already loaded), ~100 MB/week syslog churn; interim `systemctl
-  stop` applied on device, overlay fix pending (options in the issue).
+  the GOT — not a firmware bug; hardening + skill fix in b95c8ba). #43
+  (wifi.service crash loop) FIXED + CLOSED 2026-08-17: Restart=no drop-in
+  via rootfs + OTA (97507e3), hot-applied and verified on device. #39
+  (module curation) DONE + CLOSED 2026-08-17: curated 12-of-22 loader
+  shipped (a553f55), device-proven over 3 warm reboots; keep/drop table in
+  blob-replacement.md ("Module curation"); cold-cycle datapoint rides #42.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.

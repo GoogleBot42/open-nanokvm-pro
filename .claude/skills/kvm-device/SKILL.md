@@ -12,6 +12,15 @@ typed into a tracked file or a shell history line that gets pasted somewhere
 public:
 
 - `tools/kvmssh '<remote command>'` — run a command on the device.
+  **Rebooting:** make `reboot` the LAST thing in the command string and
+  expect the call to error ("connection closed by remote host") or, if
+  output preceded it, to hang past the tool timeout — both are the reboot
+  working, not a failure. Then poll for return with a background
+  until-loop (`until tools/kvmssh 'echo up' | grep -q up; do sleep 5;
+  done`); SSH is typically back within ~60-90 s. Warm reboots are safe:
+  `/kvmapp` hot-patches persist (tmpfs tree is re-copied at boot) and a
+  warm reboot is a watchdog reset (does NOT reset the USB2 PHY — only a
+  cold power cycle does).
 - `tools/kvmscp <local-files...> <remote-path>` — copy files to the device
   (remote path is a path on the device, e.g. `/tmp/`; the script adds the
   `root@<ip>:` prefix itself).
