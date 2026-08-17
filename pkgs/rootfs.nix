@@ -21,6 +21,8 @@
 # Also hardened in the overlay:
 #   - motd-news DISABLED: /etc/default/motd-news ENABLED=0 kills the Ubuntu
 #       motd.ubuntu.com news beacon (50-motd-news phones home on login/timer).
+#   - /etc/logrotate.d/nanokvm -> rotates /var/log/nanokvm/*.log at 10M
+#       (copytruncate; the server holds its stdout fd open -- see #41).
 #   - inert CLOSED vendor binaries REMOVED: the disabled kvmcomm stack's closed
 #       kvm_ui/kvm_vin/frameforge + its display .ko, and the vendor swupdate
 #       self-updater. Exact paths only (debugfs has no recursive rm); the live
@@ -239,6 +241,18 @@ pkgs.stdenvNoCC.mkDerivation {
       > "$PWD/motd-news"
     emit_file "$PWD/motd-news" "/etc/default/motd-news" 0100644
 
+    # 5b5. Log rotation for /var/log/nanokvm (#41). The vendor Ubuntu base
+    # already ships logrotate + an enabled logrotate.timer (OnCalendar=daily,
+    # device-verified), so a drop-in is the whole fix -- no unit of ours.
+    # copytruncate is mandatory: NanoKVM-Server's stdout/stderr fd is held open
+    # for the process lifetime by nanokvm.sh's `>>` redirect.
+    if ! debugfs -R "stat /etc/logrotate.d" rootfs.ext4 >/dev/null 2>&1; then
+      echo "ERROR: /etc/logrotate.d missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    echo "mkdir /etc/logrotate.d" >> "$script"   # existing dir: harmless
+    emit_file "${./rootfs/logrotate-nanokvm.conf}" "/etc/logrotate.d/nanokvm" 0100644
+
     # 5c. systemd stack selection.
     # The pinned vendor base ships TWO independent KVM app stacks and enables the
     # WRONG one for our purposes:
@@ -306,8 +320,8 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "ERROR: debugfs overlay failed; tail of log:" >&2; tail -40 debugfs.log >&2; exit 1;
     }
     # Sanity: our libkvm must now be in the image and match ours byte-for-byte.
-    debugfs -R "dump /kvmapp/server/dl_lib/libkvm.so.0 /tmp/chk.so" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.so "${kvm-encoder}/lib/libkvm.so.0" \
+    debugfs -R "dump /kvmapp/server/dl_lib/libkvm.so.0 $PWD/chk.so" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.so "${kvm-encoder}/lib/libkvm.so.0" \
       || { echo "ERROR: libkvm.so.0 in image != our build" >&2; exit 1; }
     echo "  libkvm.so.0 verified in image."
 
@@ -322,8 +336,8 @@ pkgs.stdenvNoCC.mkDerivation {
     echo "  systemd stack: nanokvm enabled, kvmcomm disabled -- verified in image."
 
     # Sanity: our server binary + version stamp are in the image.
-    debugfs -R "dump /kvmapp/server/NanoKVM-Server /tmp/chk.srv" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.srv "${nanokvm-server}/bin/NanoKVM-Server" \
+    debugfs -R "dump /kvmapp/server/NanoKVM-Server $PWD/chk.srv" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.srv "${nanokvm-server}/bin/NanoKVM-Server" \
       || { echo "ERROR: NanoKVM-Server in image != our build" >&2; exit 1; }
     debugfs -R "cat /kvmapp/version" rootfs.ext4 2>/dev/null | grep -qx "${version}" \
       || { echo "ERROR: /kvmapp/version in image != ${version}" >&2; exit 1; }
@@ -334,20 +348,20 @@ pkgs.stdenvNoCC.mkDerivation {
     # cmp of modules.dep: the tree either lands (dump has real content) or the
     # /lib-symlink swallow leaves it absent (empty dump). A content check is robust
     # to debugfs/depmod byte-level quirks while still catching the silent failure.
-    debugfs -R "dump /usr/lib/modules/${release}/modules.dep /tmp/chk.dep" rootfs.ext4 2>/dev/null || true
-    grep -q 'lt6911_manage' /tmp/chk.dep \
+    debugfs -R "dump /usr/lib/modules/${release}/modules.dep $PWD/chk.dep" rootfs.ext4 2>/dev/null || true
+    grep -q 'lt6911_manage' $PWD/chk.dep \
       || { echo "ERROR: /usr/lib/modules/${release}/modules.dep absent or missing lt6911 in image" >&2; exit 1; }
     # And the actual .ko must be present + byte-identical (single-file dump).
     ltrel=$( cd "$stage" && find lib/modules/${release} -name lt6911_manage.ko | head -1 )
     test -n "$ltrel" || { echo "ERROR: lt6911_manage.ko not in staging tree" >&2; exit 1; }
-    debugfs -R "dump /usr/$ltrel /tmp/chk.ko" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.ko "$stage/$ltrel" \
+    debugfs -R "dump /usr/$ltrel $PWD/chk.ko" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.ko "$stage/$ltrel" \
       || { echo "ERROR: lt6911_manage.ko missing/differs in image (/usr/$ltrel)" >&2; exit 1; }
     echo "  modules: /usr/lib/modules/${release} modules.dep + lt6911_manage.ko -- verified in image."
 
     # Sanity: the boot-time module loader config landed.
-    debugfs -R "dump /etc/modules-load.d/nanokvm.conf /tmp/chk.conf" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.conf "$PWD/nanokvm-modules-load.conf" \
+    debugfs -R "dump /etc/modules-load.d/nanokvm.conf $PWD/chk.conf" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.conf "$PWD/nanokvm-modules-load.conf" \
       || { echo "ERROR: /etc/modules-load.d/nanokvm.conf missing/differs in image" >&2; exit 1; }
     echo "  modules-load: /etc/modules-load.d/nanokvm.conf -- verified in image."
 
@@ -360,11 +374,11 @@ pkgs.stdenvNoCC.mkDerivation {
     echo "  display modules: fb_jd9853/fbtft/gpio_keys/rotary_encoder -- present, from source."
 
     # Sanity: the mini-display daemon + unit landed and the unit is enabled.
-    debugfs -R "dump /opt/nanokvm-display/nanokvm_display.py /tmp/chk.disp" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.disp "${nanokvm-display}/opt/nanokvm-display/nanokvm_display.py" \
+    debugfs -R "dump /opt/nanokvm-display/nanokvm_display.py $PWD/chk.disp" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.disp "${nanokvm-display}/opt/nanokvm-display/nanokvm_display.py" \
       || { echo "ERROR: nanokvm_display.py missing/differs in image" >&2; exit 1; }
-    debugfs -R "dump /opt/nanokvm-display/font_data.py /tmp/chk.font" rootfs.ext4 2>/dev/null
-    cmp -s /tmp/chk.font "${nanokvm-display}/opt/nanokvm-display/font_data.py" \
+    debugfs -R "dump /opt/nanokvm-display/font_data.py $PWD/chk.font" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.font "${nanokvm-display}/opt/nanokvm-display/font_data.py" \
       || { echo "ERROR: font_data.py missing/differs in image" >&2; exit 1; }
     debugfs -R "stat $wants/nanokvm-display.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
       || { echo "ERROR: nanokvm-display.service not enabled (symlink missing) in image" >&2; exit 1; }
@@ -387,6 +401,15 @@ pkgs.stdenvNoCC.mkDerivation {
     debugfs -R "cat /etc/default/motd-news" rootfs.ext4 2>/dev/null | grep -qx "ENABLED=0" \
       || { echo "ERROR: /etc/default/motd-news missing or not ENABLED=0 in image" >&2; exit 1; }
     echo "  motd-news: /etc/default/motd-news ENABLED=0 -- verified in image."
+
+    # Sanity: the logrotate drop-in landed and still says copytruncate (the
+    # load-bearing directive -- see pkgs/rootfs/logrotate-nanokvm.conf).
+    debugfs -R "dump /etc/logrotate.d/nanokvm $PWD/chk.lr" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.lr "${./rootfs/logrotate-nanokvm.conf}" \
+      || { echo "ERROR: /etc/logrotate.d/nanokvm missing/differs in image" >&2; exit 1; }
+    grep -q '^ *copytruncate' $PWD/chk.lr \
+      || { echo "ERROR: logrotate drop-in lost copytruncate" >&2; exit 1; }
+    echo "  logrotate: /etc/logrotate.d/nanokvm -- verified in image."
 
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="
@@ -422,6 +445,9 @@ pkgs.stdenvNoCC.mkDerivation {
                                                 target power/reset GPIOs at boot
       /etc/default/motd-news (ENABLED=0)     <- disables the Ubuntu motd-news
                                                 beacon (no motd.ubuntu.com phone-home)
+      /etc/logrotate.d/nanokvm               <- rotates /var/log/nanokvm/*.log
+                                                (size 10M, rotate 3, copytruncate;
+                                                the vendor logrotate.timer runs daily)
     removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack
                       (kvm_ui, frameforge, kvm_vin, and its display .ko:
                       fbtft/fb_jd9853/f_udisp_drv/gpio_keys/rotary_encoder/wireguard)

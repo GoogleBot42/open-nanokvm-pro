@@ -262,6 +262,13 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
 - The server serves the React web UI + a JSON/WebRTC API on :80/:443, reads frames
   from `libkvm`, and exposes keyboard/mouse HID, storage/image mount, and the
   update flow.
+- **Logging:** `/var/log/nanokvm/NanoKVM-Server.log` is the server's redirected
+  stdout+stderr (`nanokvm.sh` appends `>> $LOG_DIR/$exe_name.log`; `server.yaml`
+  sets `logger.file: stdout`, so logrus never opens a file itself) — it carries
+  both Go log lines and `libkvm`'s C-side output. Rotated by our
+  `/etc/logrotate.d/nanokvm` (size 10M, `copytruncate` — mandatory, the server
+  holds the fd open for its lifetime) via the vendor base's daily
+  `logrotate.timer`.
 - **`nanokvm-display.service`** (ours, independent of the two stacks above) runs
   the mini-display status daemon from `/opt/nanokvm-display`; it only reads
   `/dev/fb0`, the backlight sysfs, the knob evdev devices, and the server's

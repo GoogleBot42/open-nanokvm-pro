@@ -41,6 +41,9 @@
 #     opt/nanokvm-display/ + systemd unit        mini-display status daemon,
 #                                                enabled via wants-symlink
 #                                                (takes effect on next boot).
+#     etc/logrotate.d/nanokvm                    rotates /var/log/nanokvm/*.log
+#                                                (10M, copytruncate; vendor
+#                                                logrotate.timer runs it daily).
 #
 #   partitions/      vendor-format SIGNED partition images (magic 0x55543322 @ off 4),
 #                    fixed naming contract consumed by install()'s image->partition map:
@@ -167,6 +170,17 @@ pkgs.stdenvNoCC.mkDerivation {
       find "$modroot" -name "$m.ko" | grep -q . \
         || { echo "ERROR: $m.ko missing from modules tree (named in modules-load.d)" >&2; exit 1; }
     done
+
+    # --- log rotation for /var/log/nanokvm (#41, mirrors pkgs/rootfs.nix [5b5]).
+    # logrotate + logrotate.timer already ship in the vendor Ubuntu base, so the
+    # drop-in alone is the fix; it takes effect on the next daily timer run with
+    # no restart or reboot. copytruncate is mandatory -- the server's stdout fd
+    # is held open by nanokvm.sh's `>>` redirect.
+    mkdir -p "$rfs/etc/logrotate.d"
+    cp ${./rootfs/logrotate-nanokvm.conf} "$rfs/etc/logrotate.d/nanokvm"
+    chmod 644 "$rfs/etc/logrotate.d/nanokvm"
+    grep -q '^ *copytruncate' "$rfs/etc/logrotate.d/nanokvm" \
+      || { echo "ERROR: logrotate drop-in lost copytruncate" >&2; exit 1; }
 
     # --- mini-display status daemon (pkgs/nanokvm-display.nix): daemon + fonts
     # under /opt/nanokvm-display, systemd unit, enabled via wants-symlink (the
