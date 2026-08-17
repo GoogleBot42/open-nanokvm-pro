@@ -87,9 +87,13 @@ for pending/TODO/unverified markers still present in the tree:
   pages → green bar + horizontal scroll; web-UI fps=0 wedging VENC
   rebuilds → black screen on refresh; 120 Hz retry storms) were fixed,
   device-verified, and released as v2.1.0-alpha.2 (commit 26ce865; doc
-  section "2026-08-17" in blob-replacement.md). New follow-ups: #40
-  (kvmv_deinit SIGSEGV at shutdown after idle-suspend), #41 (log
-  rotation).
+  section "2026-08-17" in blob-replacement.md). Follow-ups resolved
+  2026-08-17: #41 (log rotation) fixed in e485d02 + hot on device; #40
+  root-caused as a deploy-tooling artifact (cp onto the mapped .so zapped
+  the GOT — not a firmware bug; hardening + skill fix in b95c8ba). New:
+  #43 — vendor wifi.service crash-loops forever (wifi.sh exits 1 when
+  modules already loaded), ~100 MB/week syslog churn; interim `systemctl
+  stop` applied on device, overlay fix pending (options in the issue).
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
