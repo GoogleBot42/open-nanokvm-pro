@@ -60,11 +60,12 @@ for pending/TODO/unverified markers still present in the tree:
   writes as belt-and-suspenders, not a proven rollback guarantee." Mirrors
   Gitea issue #10 (`hardware-validation`, `needs-human`, `priority/high`).
 - **Issue #42 (2026-08-17, `needs-human`): USB HID to the host is dead** —
-  ep0 enumeration failure with hardware/host-port suspicion; every
-  software remedy exhausted (ladder now in the kvm-device skill). Blocked
-  on Jeremy: host dmesg, cable swap, different port, cold power cycle of
-  the KVM. Until resolved, keyboard/mouse via the web KVM does not work;
-  video is unaffected.
+  ep0 enumeration failure; every software remedy exhausted (ladder in the
+  kvm-device skill), and the 2026-08-17 cold power cycle changed nothing —
+  KVM-side PHY exonerated, fault is the physical link. Blocked on Jeremy:
+  cable SWAP (not replug), different host port, host dmesg. Until
+  resolved, keyboard/mouse via the web KVM does not work; video is
+  unaffected.
 - **`docs/mini-display.md`, "Hardware verification" section:** RESOLVED
   2026-08-15 — the from-source stack was proven end-to-end on the device
   running v2.0.0 (modules at boot, fb registration, daemon drawing, idle
