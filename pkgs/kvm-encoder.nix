@@ -51,7 +51,9 @@
 let
   cc = "${crossPkgs.stdenv.cc.targetPrefix}gcc";
   # Capture backend selection (see openCapture above).
-  captureSrc  = if openCapture then "kvm_capture_open.c" else "";
+  # kvm_capture_geom.c holds the parametric geometry payloads (#17). It is
+  # compiled ONLY on the open path -- the vendor-MPI build is untouched.
+  captureSrc  = if openCapture then "kvm_capture_open.c kvm_capture_geom.c" else "";
   captureDef  = pkgs.lib.optionalString openCapture "-DKVM_OPEN_CAPTURE";
   # Direct link deps. The blob-free capture code CALLS none of the AX libs (raw
   # ioctls), but the closed encoder (libax_venc) hard-pins libax_sys

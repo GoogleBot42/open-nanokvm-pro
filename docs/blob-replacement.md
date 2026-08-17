@@ -1708,10 +1708,10 @@ symbol 2.17 (loads on the target's 2.35). Open `libkvm.so` DT_NEEDED =
 libax_venc/sys/ivps/proton (+opus/asound/libc); libax_mipi dropped.
 
 **Known limitations / residuals**:
-- **1080p-only.** The captured selector payloads bake in 1920×1080, so the open
-  backend clamps any other requested resolution to 1080p (with a warning) rather
-  than silently mis-sizing the pool/descriptor. Parametric payloads for other
-  modes are future work.
+- ~~**1080p-only.**~~ **Superseded 2026-08-17 (#17)** — the geometry-bearing
+  payloads are now generated per-resolution by `kvm_capture_geom.c`; see
+  "Parametric geometry" at the end of this document. (Was: the captured
+  selector payloads baked in 1920×1080 and any other resolution was clamped.)
 - **The `isp_model_manger_list` phys is now derived at bring-up (#16,
   2026-08-16):** reuse-before-allocate — an existing named block is adopted
   from `/proc/ax_proc/mem_cmm_info`; only when none exists does `cmm nr0`
@@ -1774,3 +1774,100 @@ fixed and device-verified; the diagnoses matter for the record:
   building a 0-byte pool and looping on `AX_ERR_VIN_ILLEGAL_PARAM`
   (`0x8011010A`) — that sibling loop is in the vendor-backend logs of
   2026-07-20.
+
+### 2026-08-17 — Parametric geometry: the open backend is no longer 1080p-only (#17)
+
+The blob-free capture backend used to clamp every source to 1920×1080 because
+the captured selector payloads baked that geometry in. It now derives every
+geometry-dependent byte from the live `/proc/lt6911_info` source size.
+`pkgs/kvm-encoder/src/kvm_capture_geom.{c,h}` owns that math;
+`kvm_capture_open.c` just consumes it.
+
+**Where geometry actually lives on the wire.** Re-derived mechanically by
+scanning every captured payload for `u32` words equal to 1920/1080 (at *any*
+alignment) and cross-checking against the field the vendor-MPI backend fills
+for the same call in `kvm_pipeline.c`:
+
+| payload | width | height | stride |
+|---|---|---|---|
+| os_mem nr1 descriptor | word 0 | word 1 | — |
+| pool nr22 floorplan | — | — | `BlkSize@0x30 = stride·h·2` |
+| proton nr17/nr21 dev attr (376 B) | `@0x58` | `@0x5c` | `@0xdc` |
+| proton nr21 dev attr **#2** (376 B) | `@0x58` | `@0x5c` | — (stays 0, as captured) |
+| proton nr35 CreatePipe (76 B) | `@0x1c` | `@0x20` | — (0 in the capture) |
+| proton nr42 SetPipeAttr (76 B) | `@0x1c` | `@0x20` | `@0x24` |
+| proton nr48 SetChnAttr (48 B) | `@0x08` | `@0x0c` | `@0x10` |
+
+Everything else is resolution-invariant and stays byte-verbatim. Notably the
+**MIPI nr2 `SetAttr` payload carries no geometry at all** — it is
+`{idx, lanes=4, rate=0x258, lanemap}`; the DPHY link runs at a fixed
+600 Mbps/lane at every resolution (the vendor-MPI backend hardcodes the same
+`KVM_MIPI_RATE=600`). Issue #17 listed `PL_mipi_attr` as 1080p-baked; it is not.
+The ISP-bypass config payloads (nr56/74/54/89), the dev binds (nr30/nr22), nr55
+and the nr101 frame descriptor contain no geometry words either.
+
+**The regression constraint and how it is proven.** The device can only be
+tested against a 1080p source, so 1080p bit-identity with the device-proven
+constants is the only hardware-checkable property. It is proven mechanically,
+not by inspection: `pkgs/kvm-encoder/src/tests/geom_identity_test.c` holds the
+pre-change payload arrays (extracted programmatically from
+`97507e3:kvm_capture_open.c`) and byte-compares them against
+`kvm_geom_build(1920,1080)`, plus the descriptor words, `BlkSize`, block pitch,
+pool span, `MetaSize` and `BlkCnt`.
+
+```
+nix build .#checks.x86_64-linux.open-capture-geometry -L
+```
+
+The check phase fails the build on any difference (verified by mutation: moving
+one field offset makes it fail with the exact differing bytes). It also pins
+1280×720 and 1366×768 golden vectors and the accept/reject envelope so a later
+refactor cannot silently drop a field back to its 1080p constant.
+
+**Supported envelope.** Even width and height (a YUYV macropixel is 2 px),
+64×64 minimum, 1920×1200 maximum. The ceiling is the link budget, not the
+payloads: 4 lanes × 600 Mbps ≈ 2.4 Gbps and YUV422-8 is 16 bpp, so ~2.5 Mpx at
+60 Hz saturates the DPHY — 1920×1200 is the largest standard mode inside it,
+and we have no decoded way to program another rate. Out-of-envelope geometries
+are **refused** (bring-up returns an error and logs the reason) rather than
+clamped: clamping is what produced #17's garbage frames, because it drives the
+pipe at a resolution the source is not sending.
+
+**Assumptions made where the RE record is silent.** The only full-struct vendor
+capture that exists is 1080p, so no vendor bytes for another resolution have
+ever been observed. Each assumption is a no-op at 1920×1080:
+
+1. The three "second width" fields (dev attr `@0xdc`, nr42 `@0x24`, nr48
+   `@0x10`) are line strides **in pixels** — they equal the width in the
+   capture, sit immediately after a `{width,height}` pair, and correspond to
+   the single `nWidthStride` the vendor-MPI structs set for those same calls.
+2. Stride is padded up to 16 px (32 B) — `KVM_GEOM_STRIDE_ALIGN`. No measured
+   alignment rule exists; 16 px matches the AX DMA/VENC habit, is a no-op for
+   every standard HDMI width except 1366 (→1376), and can only over-size a
+   pool block, never under-size one. `BlkSize` follows the stride for the same
+   reason. If a non-1080p bring-up ever shears, set the knob to 2.
+3. CreatePipe (nr35) genuinely has no stride field — the captured bytes at
+   `@0x24` are zero for nr35 while nr42's are `0x780`.
+4. The vendor's second `SetDevAttr` keeps `@0xdc` and the `{01,02,03}` lane
+   bytes zeroed; only its width/height are parameterised.
+5. The os_mem nr1 **flag byte** stays `0xf0`. The Stage-3 differential table
+   shows it varying across configs (`0xf0` 1080p H.264 / `0x70` 720p H.264 /
+   `0x00` 1080p MJPEG) but it was never decoded and does not track resolution
+   alone. If a non-1080p bring-up fails at the allocator, this byte is
+   suspect #1.
+6. `nr54 partition_info` is replayed verbatim. Its first word is
+   `00 06 01 00` and the remaining 176 bytes are zero; whether any of it is an
+   ISP line-partition width tied to 1920 is undecoded. Second suspect if the
+   pipe hangs at a non-1080p geometry.
+
+**Build wiring.** `pkgs/kvm-encoder.nix` compiles `kvm_capture_geom.c` only on
+the `openCapture` path — the vendor-MPI build is untouched, and byte-identical:
+the vendor `libkvm.so` built before and after this change has the same SHA-256.
+New flake outputs: `kvm-encoder-open` (libkvm.so with `openCapture = true`, for
+building/type-checking the open path on demand) and `kvm-encoder-geom-test` /
+`checks.<system>.open-capture-geometry`.
+
+**Still untested on hardware:** everything except 1080p. The device has no
+non-1080p source available; the first 720p bring-up should be watched for the
+allocator flag byte (assumption 5), the nr54 partition struct (6) and shearing
+(2), in that order.

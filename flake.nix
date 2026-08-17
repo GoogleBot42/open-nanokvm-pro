@@ -152,6 +152,14 @@
         # alpha-only for now: flip `openCapture = true` here for a preview-channel
         # cut (as v2.1.0-alpha.1 did), and flip back before the next stable.
         kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; };
+        # Same libkvm.so with the blob-free capture backend selected. Not used
+        # by any image (flip the flag above for that) -- it exists so the open
+        # path is built and type-checked on demand:
+        #   nix build .#kvm-encoder-open -L
+        kvm-encoder-open = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; openCapture = true; };
+        # Host-side 1080p byte-identity proof for the open backend's parametric
+        # geometry (#17). See pkgs/kvm-encoder-geom-test.nix.
+        kvm-encoder-geom-test = callPkg ./pkgs/kvm-encoder-geom-test.nix { };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
 
@@ -207,12 +215,19 @@
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
             kernel dtb dtb-slot-image kernel-slot-image
-            kvm-encoder nanokvm-server nanokvm-web nanokvm-display libsns-dummy
+            kvm-encoder kvm-encoder-open kvm-encoder-geom-test
+            nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs firmware-image sd-image
             axdl;
 
           default = firmware-image;
+        };
+
+        # Cheap, hardware-free regression gates.
+        #   nix build .#checks.x86_64-linux.open-capture-geometry -L
+        checks = {
+          open-capture-geometry = kvm-encoder-geom-test;
         };
 
         # `nix run .#axdl -- --file result/*.axp --wait-for-device`

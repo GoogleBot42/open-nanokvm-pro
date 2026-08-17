@@ -79,8 +79,11 @@ for pending/TODO/unverified markers still present in the tree:
   end of the file): the open build still links `libax_venc`/`sys`/`ivps`/
   `proton` because the closed encoder pins them; only `libax_mipi` was
   dropped. Matches the epic issue #25 ("blob-free video encoder — port the
-  open VC8000E VCMD driver"). Remaining residual: 1080p-only payloads
-  (issue #17; needs a non-1080p source to test). Issue #16 (isp_model phys
+  open VC8000E VCMD driver"). Issue #17 (1080p-only payloads) implemented
+  2026-08-17: geometry is now parametric (`kvm_capture_geom.c`), guarded by
+  a mechanical 1080p byte-identity check (`nix build
+  .#checks.<system>.open-capture-geometry`); **non-1080p is still untested
+  on hardware — needs a non-1080p source**. Issue #16 (isp_model phys
   derivation, teardown validation, pool-block leak) was closed 2026-08-16
   with on-device warm suspend/resume validation. 2026-08-17: the first
   real-use bugs of the open backend (frame-phys off by the pool's meta
