@@ -55,6 +55,37 @@ firmware — gadget config under `/sys/kernel/config/usb_gadget/g0` being bound
 to the UDC is normal even in this state. Writes to `/dev/hidg*` block forever
 while unattached; guard test writes with `timeout`.
 
+Deeper decode (worked out 2026-08-17, issue #42) when state is neither of
+those:
+
+- `state=default` + `current_speed=high-speed` + debugfs
+  `/sys/kernel/debug/8000000.dwc3/link_state` = `Suspend` = the host's bus
+  reset and HS chirp COMPLETED but no ep0 transfer ever succeeded, then the
+  host gave up. Confirm with `grep dwc3 /proc/interrupts` sampled twice
+  (frozen counter = no traffic) and the `SOFFN` field in DSTS via debugfs
+  `regdump` (safe to read once `link_state` reads instantly). This pattern
+  is a physical-link / host-port problem, not gadget config — chirp is
+  robust low-speed signaling; HS data at 400 mV fails first on a marginal
+  cable.
+- Enumeration history: `journalctl -k -b <N> | grep 'config #1'` — each
+  line is one successful SET_CONFIGURATION. A cluster of them without
+  matching gadget rebuilds = the HOST was re-enumerating (link flapping or
+  host suspend/resume). They co-time with udhcpd re-ACKs on the NCM usb0
+  link in the nanokvm journal.
+- Escalation ladder, all tried-and-safe: UDC unbind/rebind
+  (`.../usb_gadget/g0/UDC`), `soft_connect` toggle, vendor full rebuild
+  `usbdev.sh restart` (NOTE: rebinds only the dwc3 CORE), then the one
+  usbdev.sh misses — rebind the Axera GLUE (re-runs USB clock init):
+  `echo "soc:axera_dwc3" > "/sys/bus/platform/drivers/axera dwc3/unbind"`
+  (space in dir name is real), then `bind`, then `usbdev.sh start`.
+  Descriptor A/B: `usbdev.sh hid-only` drops NCM + OS descriptors.
+  Stop nanokvm.service before glue rebind / hid-only; `usbdev.sh restart` +
+  `systemctl start nanokvm` restores the normal stack.
+- Board facts (from source, issue #42): no VBUS sense (VBUSVALID is
+  force-set in device mode), the USB ID pad is a never-muxed floating mic
+  pad, and NO software path pulses the USB2 PHY reset — only a cold power
+  cycle resets the PHY analog block. Warm `reboot` = watchdog reset.
+
 **Mini-display** (status screen, `nanokvm-display.service`):
 
 - Panel asleep is the norm (3-min idle blank): `bl_power=1` in
