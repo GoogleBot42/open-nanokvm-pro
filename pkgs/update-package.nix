@@ -48,6 +48,13 @@
 #       override.conf                            vendor wifi.service crash-restart
 #                                                loop (#43); needs a daemon-reload
 #                                                or a reboot to take effect.
+#     soc/scripts/auto_load_all_drv.sh           our CURATED /soc/ko module loader
+#                                                -- 12 of the vendor's 22 blobs
+#                                                (#39). Takes effect on the NEXT
+#                                                REBOOT: the modules the OTA lands
+#                                                on are already loaded.
+#     soc/scripts/auto_load_all_drv.sh.vendor    pristine vendor loader kept for
+#                                                on-device rollback (restore + reboot).
 #
 #   partitions/      vendor-format SIGNED partition images (magic 0x55543322 @ off 4),
 #                    fixed naming contract consumed by install()'s image->partition map:
@@ -198,6 +205,37 @@ pkgs.stdenvNoCC.mkDerivation {
     chmod 644 "$rfs/etc/systemd/system/wifi.service.d/override.conf"
     grep -q '^Restart=no$' "$rfs/etc/systemd/system/wifi.service.d/override.conf" \
       || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
+
+    # --- curated /soc/ko module loader (#39, mirrors pkgs/rootfs.nix [5b7]).
+    # Replaces the vendor auto_load_all_drv.sh (all 22 blobs) with the 12-module
+    # dependency closure of {ax_proton, ax_venc, ax_jenc}; the pristine vendor
+    # script ships beside it as .vendor for on-device rollback. This takes effect
+    # on the NEXT REBOOT -- when the OTA lands the vendor set is already loaded,
+    # so nothing is unloaded and the running pipeline is untouched.
+    # NOTE: unlike the rootfs build there is no vendor-loader byte-compare here
+    # (the OTA has no copy of the base rootfs to diff against); pkgs/rootfs.nix
+    # step [5b7] is the guard that catches a base .axp changing the loader.
+    mkdir -p "$rfs/soc/scripts"
+    cp ${./rootfs/ax-load-drv.sh}        "$rfs/soc/scripts/auto_load_all_drv.sh"
+    cp ${./rootfs/ax-load-drv.vendor.sh} "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
+    chmod 755 "$rfs/soc/scripts/auto_load_all_drv.sh" \
+              "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
+    # ax_cmm without its cmmpool= param is the strlen(NULL) boot-loop panic, and
+    # the module count is the whole point of the change -- assert both in-build.
+    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$rfs/soc/scripts/auto_load_all_drv.sh" \
+      || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$rfs/soc/scripts/auto_load_all_drv.sh" \
+      || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
+    nins=$(grep -c '^[[:space:]]*insmod ' "$rfs/soc/scripts/auto_load_all_drv.sh" || true)
+    if [ "$nins" -ne 12 ]; then
+      echo "ERROR: curated loader has $nins insmod lines, expected 12 (#39)" >&2; exit 1
+    fi
+    # No modprobe/depmod: the loader must insmod by PATH with explicit params, or
+    # modules.dep resolution could load ax_cmm parameter-less (the autoload brick).
+    if grep -Eq '(^|[^[:alnum:]_])(modprobe|depmod)([^[:alnum:]_]|$)' "$rfs/soc/scripts/auto_load_all_drv.sh"; then
+      echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
+    fi
+    echo "  module loader: curated set OK ($nins insmod lines) + .vendor rollback copy"
 
     # --- mini-display status daemon (pkgs/nanokvm-display.nix): daemon + fonts
     # under /opt/nanokvm-display, systemd unit, enabled via wants-symlink (the

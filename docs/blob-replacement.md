@@ -192,9 +192,76 @@ dependency mapping):
   debug baggage irrelevant to bypass mode). Shipped in the rootfs and the OTA
   payload over the vendor `/opt/lib` copy; device-tested on the closed
   (vendor-MPI) backend — clean dlopen of `gSnsdummyObj`, live MJPEG.
-- Only **12 of 22** vendor-loaded modules are needed for video — module-set
-  curation remains future work (needs reboot-cycle testing; see #30's closing
-  notes).
+- Only **12 of 22** vendor-loaded modules are needed for video. This is no
+  longer future work: since #39 the image ships a **curated loader** in place of
+  the vendor `auto_load_all_drv.sh` — see
+  [Module curation](#module-curation-12-of-22-issue-39) below.
+
+---
+
+## Module curation: 12 of 22 (issue #39)
+
+The vendor `/soc/scripts/auto_load_all_drv.sh` insmods all 22 `/soc/ko` blobs at
+boot. We replace it with a curated loader (`pkgs/rootfs/ax-load-drv.sh`, shipped
+by both `pkgs/rootfs.nix` step `[5b7]` and the OTA payload) that loads **12** —
+the symbol-dependency closure of `{ax_proton, ax_venc, ax_jenc}`, i.e. exactly
+what capture→encode needs. The pristine vendor script ships beside it as
+`auto_load_all_drv.sh.vendor`; rollback on the device is a `cp` and a reboot.
+
+Device-proven 2026-08-17: a 13-module boot came up green, `ax_tdp` sat at
+refcount 0 *while the encoder was actively streaming*, and the 12-module boot
+(no `ax_tdp`) is the shipped set.
+
+| Module | Verdict | Why |
+|---|---|---|
+| `ax_sys` | **KEEP** | root of the whole MPI stack; everything else links it |
+| `ax_cmm` | **KEEP** | contiguous-memory allocator — *must* get `cmmpool=` |
+| `ax_pool` | **KEEP** | frame-buffer pools |
+| `ax_base` | **KEEP** | shared MPI plumbing |
+| `ax_npu` | **KEEP** | `ax_proton` hard-depends on it (AI-ISP), even with no network loaded |
+| `ax_ivps` | **KEEP** | in the closure; also the module behind the `AX_IVPS_*` symbols `libax_venc.so` leaves undeclared (see the hygiene note above) |
+| `ax_vpp` | **KEEP** | in the closure (video-processing path under ivps/proton) |
+| `ax_gdc` | **KEEP** | in the closure (geometric-distortion block under the same chain) |
+| `ax_venc` | **KEEP** | H.264/H.265 encode |
+| `ax_jenc` | **KEEP** | MJPEG encode |
+| `ax_mipi_rx` | **KEEP** | CSI-2 receiver — the capture front end |
+| `ax_proton` | **KEEP** | the ISP/VIN driver (4.5 MB); needs `mem_iq_level=1` |
+| `hynitron_touch` | drop | touchscreen; see the udev note below |
+| `ax_tdp` | drop | 2D blit engine. Measured refcount 0 during active encode; its only in-tree user was `ax_avs`, also dropped |
+| `ax_vo` | drop | video *out* — the SoC display controller. We never output video |
+| `ax_fb` | drop | Axera vfb on top of `ax_vo`. The mini panel is `fb_jd9853` from our own kernel |
+| `ax_vdec` | drop | decoder; we only encode |
+| `ax_mipi_switch` | drop | multi-camera MIPI mux; one source here |
+| `ax_audio` | drop | see the ALSA note below |
+| `ax_ddr_dfs` | drop | DDR frequency scaling |
+| `ax_ive` | drop | classic-CV accelerator, unused |
+| `ax_avs` | drop | multi-sensor stitching, unused (and the only `ax_tdp` consumer) |
+
+Three facts that make the drops safe, and are easy to get wrong:
+
+- **`hynitron_touch` still loads anyway.** It is also built from source in our
+  kernel and lives in `/usr/lib/modules`, where udev autoloads it from the DT
+  match. Touch input therefore survives the curation untouched — what stops
+  loading is the 4.78 MB `/soc/ko` blob copy.
+- **Same for WiFi.** The `aic8800` drivers are in-tree from-source and
+  udev-autoload at ~5 s into boot, so the vendor `/soc/ko/aic8800_*.ko` blobs
+  never load on our image either — with or without this change. Only the
+  *runtime firmware* blob question remains open (#28).
+- **`ax_audio` is not the audio path.** The ALSA card is built into our kernel
+  (`simple-audio-card` + `dw-i2s` + a dummy codec) and `libkvm` opens ALSA
+  directly. `ax_audio` only provided the MPI audio layer, which nothing in our
+  stack calls.
+
+`pkgs/rootfs.nix` byte-compares the base `.axp`'s `auto_load_all_drv.sh` against
+`pkgs/rootfs/ax-load-drv.vendor.sh` and **fails the build** if a base bump ever
+ships a different loader, so the curated set can never silently drift from the
+vendor script it was derived from. Both builds also assert the `ax_cmm
+cmmpool=` parameter, `ax_proton mem_iq_level=1`, the insmod count, and the
+absence of any `modprobe`/`depmod` (which could resolve `ax_cmm` parameter-less
+— the OTA autoload-brick failure mode; see `pkgs/rootfs.nix` step `[4]`).
+
+The blobs themselves stay on disk in `/soc/ko`: this changes what *loads*, not
+what ships, and keeps rollback to a one-line `cp`.
 
 ---
 

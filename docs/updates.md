@@ -171,6 +171,7 @@ web UI           ─► reconnects after the restart / reboot
 |---|---|
 | app server, web UI, `libkvm.so{,.0}` | SPL (p1), ddrinit (p2) |
 | `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d; `ax_*.ko` stay in `/soc/ko`) | env (p7), logo (p10/11) |
+| `/soc/scripts/auto_load_all_drv.sh` — our curated 12-module `/soc/ko` loader (+ the `.vendor` rollback copy); takes effect on the **next reboot**, since the vendor set is already loaded when the OTA lands | the `/soc/ko` blobs themselves |
 | kernel (p14/p15), dtb (p12/p13) | base Ubuntu rootfs (p17) |
 | U-Boot (p5/p6), ATF (p3/p4), OP-TEE (p8/p9) | repartitioning / GPT layout |
 

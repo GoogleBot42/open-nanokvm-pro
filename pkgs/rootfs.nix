@@ -25,6 +25,12 @@
 #       (copytruncate; the server holds its stdout fd open -- see #41).
 #   - /etc/systemd/system/wifi.service.d/override.conf -> Restart=no, ends the
 #       vendor wifi.service crash-restart loop (see #43).
+#   - /soc/scripts/auto_load_all_drv.sh -> our CURATED module loader: 12 of the
+#       vendor's 22 /soc/ko blobs, the dependency closure of {ax_proton, ax_venc,
+#       ax_jenc} (see #39). The pristine vendor script is kept beside it as
+#       auto_load_all_drv.sh.vendor for on-device rollback, and step [5b7]
+#       byte-compares the base .axp's copy against our pin so a base bump that
+#       changes the loader fails the build.
 #   - inert CLOSED vendor binaries REMOVED: the disabled kvmcomm stack's closed
 #       kvm_ui/kvm_vin/frameforge + its display .ko, and the vendor swupdate
 #       self-updater. Exact paths only (debugfs has no recursive rm); the live
@@ -98,8 +104,9 @@ pkgs.stdenvNoCC.mkDerivation {
     #
     # The prebuilt vendor ax_*.ko (pkgs/ax-ko-blobs.nix) are DELIBERATELY NOT
     # merged in. They already ship on the device via the retained vendor rootfs at
-    # /soc/ko, where the vendor's auto_load_all_drv.sh insmods them by path WITH
-    # their required parameters (notably `ax_cmm cmm=<pool>`). Putting them in
+    # /soc/ko, where /soc/scripts/auto_load_all_drv.sh -- OUR curated 12-module
+    # loader since #39 (step [5b7]) -- insmods them by path WITH their required
+    # parameters (notably `ax_cmm cmmpool=...`). Putting them in
     # /usr/lib/modules makes depmod emit `of:` aliases; systemd-udevd coldplug then
     # autoloads the chain parameter-less at boot -> ax_cmm does strlen(NULL) ->
     # NULL-deref Oops -> panic-on-oops -> reboot loop. This bricked a device once
@@ -272,6 +279,54 @@ pkgs.stdenvNoCC.mkDerivation {
     emit_file "${./rootfs/wifi-service-override.conf}" \
               "/etc/systemd/system/wifi.service.d/override.conf" 0100644
 
+    # 5b7. CURATED /soc/ko module loader (#39). The vendor
+    # /soc/scripts/auto_load_all_drv.sh insmods all 22 blobs at boot; only 12 --
+    # the symbol-dependency closure of {ax_proton, ax_venc, ax_jenc} -- are
+    # needed for capture->encode. We ship a curated loader in its place and keep
+    # the pristine vendor script alongside as auto_load_all_drv.sh.vendor, so a
+    # rollback on the device is `cp <name>.vendor <name>` + reboot. Rationale and
+    # the full keep/drop table: docs/blob-replacement.md.
+    #
+    # The vendor loader is asserted BYTE-IDENTICAL to our pinned copy: if a base
+    # .axp bump ever ships a different auto_load_all_drv.sh, this build FAILS
+    # instead of silently overwriting it with a curated set derived from the old
+    # one. (debugfs `stat` exits 0 even for a missing path, so test the OUTPUT.)
+    vloader="/soc/scripts/auto_load_all_drv.sh"
+    if ! debugfs -R "stat $vloader" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+      echo "ERROR: $vloader missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    debugfs -R "dump $vloader $PWD/chk.vloader" rootfs.ext4 2>/dev/null
+    cmp -s "$PWD/chk.vloader" "${./rootfs/ax-load-drv.vendor.sh}" || {
+      echo "ERROR: the base .axp's $vloader differs from" >&2
+      echo "       pkgs/rootfs/ax-load-drv.vendor.sh. The vendor module loader" >&2
+      echo "       changed -- re-derive the curated 12-module set (#39," >&2
+      echo "       docs/blob-replacement.md) and re-pin both files." >&2
+      exit 1
+    }
+    # Content asserts on OUR loader (fail in-build, never on the device):
+    # the ax_cmm pool parameter and the proton IQ level are load-bearing --
+    # ax_cmm without cmmpool= is the strlen(NULL) panic from the OTA brick --
+    # and the whole point of the change is the module count.
+    curated="${./rootfs/ax-load-drv.sh}"
+    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$curated" \
+      || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$curated" \
+      || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
+    nins=$(grep -c '^[[:space:]]*insmod ' "$curated" || true)
+    if [ "$nins" -ne 12 ]; then
+      echo "ERROR: curated loader has $nins insmod lines, expected 12 (#39)" >&2; exit 1
+    fi
+    # No modprobe/depmod: the loader must insmod by PATH with explicit params.
+    # A modprobe here would resolve through modules.dep and could load ax_cmm
+    # parameter-less -- the exact autoload brick step [4] guards against.
+    if grep -Eq '(^|[^[:alnum:]_])(modprobe|depmod)([^[:alnum:]_]|$)' "$curated"; then
+      echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
+    fi
+    echo "  module loader: vendor script pinned + curated set asserted ($nins insmod lines)."
+    emit_file "${./rootfs/ax-load-drv.vendor.sh}" "$vloader.vendor" 0100755
+    emit_file "${./rootfs/ax-load-drv.sh}"        "$vloader"        0100755
+
     # 5c. systemd stack selection.
     # The pinned vendor base ships TWO independent KVM app stacks and enables the
     # WRONG one for our purposes:
@@ -439,6 +494,20 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
     echo "  wifi loop: /etc/systemd/system/wifi.service.d/override.conf -- verified in image."
 
+    # Sanity: the curated /soc/ko module loader replaced the vendor one, and the
+    # pristine vendor script is present alongside it for on-device rollback (#39).
+    debugfs -R "dump $vloader $PWD/chk.loader" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.loader "${./rootfs/ax-load-drv.sh}" \
+      || { echo "ERROR: $vloader in image != our curated loader" >&2; exit 1; }
+    debugfs -R "dump $vloader.vendor $PWD/chk.loader.vendor" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.loader.vendor "${./rootfs/ax-load-drv.vendor.sh}" \
+      || { echo "ERROR: $vloader.vendor rollback copy missing/differs in image" >&2; exit 1; }
+    debugfs -R "stat $vloader" rootfs.ext4 2>/dev/null | grep -qE "Mode: +0755" \
+      || { echo "ERROR: $vloader is not mode 0755 in image" >&2; exit 1; }
+    debugfs -R "stat $vloader.vendor" rootfs.ext4 2>/dev/null | grep -qE "Mode: +0755" \
+      || { echo "ERROR: $vloader.vendor is not mode 0755 in image" >&2; exit 1; }
+    echo "  module loader: curated $vloader + .vendor rollback copy -- verified in image."
+
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="
     e2fsck -fy rootfs.ext4 || true
@@ -479,6 +548,12 @@ pkgs.stdenvNoCC.mkDerivation {
       /etc/systemd/system/wifi.service.d/    <- Restart=no drop-in; ends the vendor
         override.conf                           wifi.service 3s crash-restart loop
                                                 (~100 MB/week of syslog churn)
+      /soc/scripts/auto_load_all_drv.sh      <- our CURATED /soc/ko module loader:
+                                                12 of 22 blobs (the dependency
+                                                closure of ax_proton/ax_venc/
+                                                ax_jenc), see issue #39
+      /soc/scripts/auto_load_all_drv.sh.vendor <- pristine vendor loader, kept for
+                                                on-device rollback (restore + reboot)
     removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack
                       (kvm_ui, frameforge, kvm_vin, and its display .ko:
                       fbtft/fb_jd9853/f_udisp_drv/gpio_keys/rotary_encoder/wireguard)

@@ -134,9 +134,11 @@ The blobs are **not** installed under `/lib/modules/4.19.125/` — `rootfs.nix`
 stages only the from-source modules there and hard-fails if any `ax_*.ko`
 sneak in (a merged tree gives them `of:` modaliases, udev autoloads `ax_cmm`
 parameter-less, and the device panic-loops; this bricked a unit once). They
-load instead from the vendor rootfs at `/soc/ko` via `auto_load_all_drv.sh`,
-which passes the required parameters. The vermagic match still matters because
-that insmod targets our kernel.
+load instead from the vendor rootfs at `/soc/ko` via
+`/soc/scripts/auto_load_all_drv.sh`, which passes the required parameters. Since
+issue #39 that loader is ours (`pkgs/rootfs/ax-load-drv.sh`, 12 of 22 modules) —
+the vermagic constraint is unchanged, it just applies to a shorter list. The
+vermagic match still matters because that insmod targets our kernel.
 
 ---
 

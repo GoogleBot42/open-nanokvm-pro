@@ -102,8 +102,13 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    emit `of:` aliases that udev coldplug autoloads parameter-less at boot;
    `ax_cmm` without its `cmm=` parameter panics and the device boot-loops
    (this bricked a unit on the first OTA). They stay in the vendor rootfs at
-   `/soc/ko`, where `auto_load_all_drv.sh` insmods them by path with the
-   required parameters.
+   `/soc/ko`, where `/soc/scripts/auto_load_all_drv.sh` insmods them by path
+   with the required parameters. That loader is **ours** since issue #39
+   (`pkgs/rootfs/ax-load-drv.sh`): it loads 12 of the vendor's 22 blobs — the
+   dependency closure of `{ax_proton, ax_venc, ax_jenc}` — and the pristine
+   vendor script ships alongside it as `auto_load_all_drv.sh.vendor`, so
+   rollback is a `cp` and a reboot. Keep/drop rationale:
+   [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39).
 3. **Service selection** (see below): disable `kvmcomm.service`, enable
    `nanokvm.service` in `multi-user.target.wants`.
 4. **Mini-display**: `/opt/nanokvm-display/` (status daemon + generated fonts)
