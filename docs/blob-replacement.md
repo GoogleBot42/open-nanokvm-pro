@@ -2043,3 +2043,61 @@ control** (§§5–7), plus the licence-encumbered VCEnc core. Remaining §8 ite
 (RC observability) and 5 (`/dev/mem` register-diff) are not yet run; item 5 is
 now known to be constrained by the idle clock-gating above (registers read
 `0xdeadbeef` unless sampled mid-frame).
+
+### 2026-08-22 — §8.4 RC observability: the CBR controller is stock VCEnc, characterized (ATX .221)
+
+Ran §8 item 4 (the high-value one — it tells us what a from-source rate controller
+must reproduce) on the live ATX unit, read-only, device healthy throughout. Drove
+the encoder headless via `libkvm` ctypes at three CBR targets (2000 / 8000 / 16000
+kbps, 90 frames each, GOP 30, 59 fps source, static 1080p desktop) and logged
+per-frame QP + size plus the vendor RC debug strings. (Item 5 — AsicConfig fuse
+readback — is NOT yet recorded: its capture run died on a transient SSH auth drop
+and produced no verifiable register words; pending a clean re-capture.)
+
+**The CBR path is stock VeriSilicon VCEnc rate control, not a heavy Axera layer.**
+The vendor `H26xSetRcParam` debug line is the standard `VCEncRateCtrl` field set:
+
+```
+setRcParam, vbr 0 qp 36 qpRange I[10,51] PB[10,51] 2000000 bps pic 1 skip 0
+  hrd 0 cpbSize 4000000 bitrateWindow 30 intraQpDelta 0 fixedIntraQp 0, idr length=30
+```
+
+- `vbr 0` = CBR; `bps` = target; `cpbSize = 2×bitrate` (a 2-second CPB/HRD buffer);
+  `bitrateWindow = 30` = the GOP-length averaging window; `qpRange [10,51]`.
+- **Initial QP is seeded from the target bitrate:** SPS `pic_init_qp` = **36 / 32 / 26**
+  for 2 / 8 / 16 Mbps. This is the only bitrate-dependent knob at start.
+- `AX_VENC_GetRcParam` returns the stock struct verbatim (byte-legible: target kbps
+  at one offset — `d0070000`=2000, `401f0000`=8000, `803e0000`=16000 — GOP `1e`=30,
+  QP range `0a`/`33` = 10/51), identical before/after — pure userspace RC state.
+
+**Per-frame behaviour (the reference trajectory a from-source controller must match):**
+- Right after each I-frame the P-QP starts high (35–40) and **ramps monotonically
+  down across the GOP** toward a floor, then flattens — classic one-pass CBR draining
+  then refilling the CPB buffer. Example @8 Mbps GOP1: F2 qp35 → F15 qp21, flat at
+  qp21 (~8.7 KB/frame) through F30.
+- The floor **descends across successive GOPs** as the controller converges
+  (@8 Mbps: 21 → 19 → 17 over the three GOPs); I-frame QP likewise drifts down
+  (32 → 30 → 28).
+- **Content saturation is the headline.** Effective delivered bitrate: **1.95 Mbps**
+  @2000 target (tracks), but only **5.9 Mbps** @8000 and **6.2 Mbps** @16000 — the
+  8 k and 16 k runs are nearly QP-identical because a near-static desktop cannot
+  fill the budget; the QP simply bottoms out at a content-determined floor. So the
+  RC genuinely targets bitrate when content allows and QP-floors when it can't.
+- The vendor lib also runs a `SceneChangeCheck` heuristic (logs "scene change ratio
+  95") — a thin scene-change→IDR/QP-bump detector in the `H26x` glue, benign for a
+  static screen.
+
+**Verdict — the rate-control wall is real but bounded for CBR-KVM.** The exercised
+path is stock VC8000E one-pass CBR (`VCEncSetRateCtrl` + the standard `VCEncRateCtrl`
+fields); Axera's `H26xSetRcParam`/`SceneChangeCheck`/`VencUpdateChnVariables` are
+thin marshaling + framerate bookkeeping + a scene-change heuristic, not a bespoke
+adaptive core. The proprietary `AXRc*` AVBR/CVBR/QVBR modes (§2) were **not** used by
+our CBR path — that is presumably where Axera's custom RC lives, but we don't need it.
+A from-source "good enough" KVM CBR controller therefore has to reproduce only: (1)
+bitrate→initial-QP seeding, (2) a per-frame QP feedback loop steering encoded size to
+the `bitrate/fps` budget within `[qpMin,qpMax]` under a 2 s CPB model, (3) an I-frame
+QP offset (`intraQpDelta`), and optionally (4) a scene-change→IDR trigger. We now have
+a measured reference trajectory to validate such a controller against. This
+meaningfully de-risks the §§5–7 "rate control is the historically hardest part"
+framing: for our use case it is a bounded, fully-observed feedback loop — with
+fixed-QP as the trivial fallback (acceptable for a mostly-static screen).
