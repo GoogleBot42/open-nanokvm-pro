@@ -39,8 +39,27 @@ encoder register image mirrored into the VCMD DRAM pool, located by the
   is linear in bitrate (440000 / 1760000 / 3520000).
 - `regs_I1.txt`, `regs_P2.txt`, `regs_P3.txt` — early frames of a GOP. NOTE: the
   DRAM mirror at the first marker holds the IDR/setup program, so these do **not**
-  yet expose P-frame reference/DPB register state — that is the main unobserved
-  gap, to be resolved in Stage 0 by decoding a P-frame command buffer.
+  yet expose P-frame reference/DPB register state — RESOLVED in `stage0/` (below).
+
+## stage0/ — the completed static picture (2026-08-22)
+
+Stage 0 of the feasibility plan: IDR WREG submission order + P-frame DPB register
+state + register image extended to swreg400. Write-up: `docs/blob-replacement.md`
+stage "2026-08-22 — Stage 0 complete". This resolved the last MEDIUM-HIGH gap;
+H.264 confidence is now high. Captured with `tools/stage0dump.py` (parses venc_ko
+pool bases live from `/proc/ax_proc/mem_cmm_info`).
+
+- `idr_wreg_order.txt` — the ordered VCMD WREG program for one IDR (bulk swreg1..511
+  burst → ASIC-0x2000 secondary-bank pokes → swreg5 kick written last → STALL/readback).
+- `cmdbuf_IDR.txt` — the raw decoded IDR command buffer it was derived from.
+- `regimg_P_m0..m6` — a 7-slot ring of consecutive frames (frame_num 0..6) in one
+  coherent snapshot. The DPB evidence: swreg18 (ref luma) = previous frame's swreg15
+  (recon luma) across all 7 slots; recon buffers ping-pong. swreg191 = coding type
+  (0x14000000 IDR / 0x04000000 P).
+- `regimg_IDR_m0_*` — the IDR register image extended to swreg400 (only swreg320 =
+  0x400 is nonzero past the old swreg319 cutoff).
+- `ring_slots_P.txt` — derived DPB ping-pong table; `diff_IDR_vs_P.txt` — the
+  53-register IDR-vs-P diff (DPB regs + the RC/QP cluster).
 
 ## tools/
 

@@ -2247,3 +2247,81 @@ observed swreg247 — so header structure, §8.4 behaviour, and registers agree.
 through the public VCMD ioctls with our own YUV input, that a standard H.264 decoder
 accepts as a correct 1080p frame. If Stage 0's cmdbuf decode and Stage 1's replay land,
 confidence flips medium-high → high.
+
+### 2026-08-22 — Stage 0 complete: IDR WREG order + P-frame DPB state decoded (ATX .221)
+
+Ran the full Stage-0 program (read-only, on-device). All three deliverables landed and
+were re-derived from the preserved raw dumps in a separate verification pass. Device
+healthy throughout — `nanokvm` active, web 200, uptime monotonic (no watchdog reboot).
+Method: one `libkvm` session (`kvmv_init` → GOP 30 → 40+ `kvmv_read_img(1920,1080,
+type=3, 8000 kbps)`), venc_ko VCMD pool bases parsed **live** from
+`/proc/ax_proc/mem_cmm_info` (dynamic per run), snapshots taken *after* the IDR and after
+a late P-frame returned (encode complete = DRAM mirror settled). Tool + dumps preserved
+under `docs/reference/vcenc-open/stage0/` and `tools/stage0dump.py`.
+
+**This resolves the feasibility study's one MEDIUM-HIGH gap (P-frame reference/DPB
+state). H.264 confidence flips medium-high → high** — the static picture is now complete;
+what remains for a PoC is buffer management, not observation.
+
+**Deliverable 1 — register image extended swreg319 → swreg400.** Beyond the old cutoff
+the only nonzero register is **swreg320 = 0x00000400** (constant across all 7 ring slots,
+both IDR and P snapshots); swreg321..400 are all zero. The active encoder-core register
+file effectively ends by ~swreg320. Tail matches §8.5 (swreg319 = 0x00060460).
+
+**Deliverable 2 — VCMD WREG submission order for one IDR** (`stage0/idr_wreg_order.txt`,
+decoded from `stage0/cmdbuf_IDR.txt`; IDR confirmed by swreg11 frame_num=0, swreg191
+type=0x14000000, swreg12 input-luma=0x73c45000 = the capture-pool frame phys). The
+encoder-core register base is **ASIC byte 0x1000**, so image `swregN` = ASIC byte
+`0x1000 + N·4`. Ordered program:
+1. `RREG` len=1 @VCMD 0x68 → DRAM (param-block preamble).
+2. **`WREG` 511 words @ASIC 0x1004 = image swreg1..511 in one ascending burst** (swreg0 =
+   0x90101010 is the read-only ASIC-ID, never written; swreg321..511 are zero-fill).
+3. `WREG` len=1 @ASIC 0x2800, then **16× `WREG` len=1 @ASIC 0x2014, 0x2034 … 0x21f4**
+   (stride 0x20) — a *secondary register bank* at ASIC 0x2000, NOT part of the encoder-core
+   image. Purpose unconfirmed; a replay must reproduce these pokes.
+4. **`WREG` len=1 @ASIC 0x1014 = image swreg5, written LAST = the encode kick** (swreg5 =
+   0x3c044302 IDR / 0x3c044300 P — low byte is the frame-type/enable field).
+5. `STALL` (wait-for-core) → `RREG` 512 words @ASIC 0x1000 → DRAM `0x7381c800` (reads the
+   core registers back = the "register image" we dump) → `CLRINT` ×2 → `RREG` status → end.
+
+Load-bearing clarification: **the `0x90101010`-marked "register image" is the post-encode
+RREG *readback* (step 5), not the SW program; the WREG burst (step 2) is the program.**
+They agree word-for-word except swreg1 (a HW status-writeback reg) — the cmdbuf WREG
+payload matched the register image on 510/511 words including every DPB register.
+Opcode-label caveat (unchanged from §8): the decoder's non-WREG mnemonics are unreliable,
+but the RREG *destinations* are the exact DRAM pool phys we independently know
+(`0x7381c800` register image, `0x7382a000` status), which self-confirm the interpretation.
+The WREG addr/len decode (the load-bearing part) is trustworthy.
+
+**Deliverable 3 — P-frame reference/DPB register state (the main open gap).** Captured a
+7-slot ring of consecutive frames (frame_num 0..6) in one coherent snapshot
+(`stage0/ring_slots_P.txt`, backed by `stage0/regimg_P_m0..m6`) plus an IDR-vs-P
+53-register diff (`stage0/diff_IDR_vs_P.txt`). The decisive evidence: reordered by
+frame_num, **swreg18 (reference luma) = the *previous* frame's swreg15 (recon luma) at
+every step**, recon buffers ping-ponging `0x74de5000` ↔ `0x75003000` — textbook
+double-buffered single-reference IPPP. DPB register map (independently re-verified from
+the raw ring dumps):
+
+| swreg | role | evidence |
+|---|---|---|
+| swreg15 / swreg16 | current recon luma / chroma base | ping-pong 0x74de5000↔0x75003000, 0x75221000↔0x75320000 |
+| **swreg18 / swreg19** | **reference (L0[0]) luma / chroma base** | = previous frame's swreg15 / swreg16 across all 7 slots |
+| swreg60/62, swreg64/66 | current / reference auxiliary recon (compressed-ref / colmv class) | ref = previous frame's current |
+| swreg72, swreg74 | current / reference auxiliary buffer | ref = previous frame's current |
+| swreg11 (= swreg192) | frame_num / POC | 0 at IDR, +1 per frame |
+| swreg191 | coding type | 0x14000000 = IDR/intra, 0x04000000 = P/inter |
+
+At the IDR (frame_num 0) the reference pointers self-point at the recon buffers (swreg18 =
+swreg15 etc.) — an IDR has no real reference but HW still wants valid pointers. Other
+registers newly nonzero on P (from the diff, inter state): swreg111/112/113, swreg197/198
+(0xffc00000 / 0x00000e00), swreg17 (0xffd0007c). The rest of the 53-reg diff is the
+expected RC/QP cluster (swreg105–107 TARGETPICSIZE, 215–223 lambda/QP LUTs) from §8.4/§8.5,
+not DPB. The swreg60/62/72 exact roles (compressed-ref vs collocated-MV) are inferred from
+the double-buffer discipline + VC8000E architecture, not pinned to a header name.
+
+**Blockers for a Stage-1 fixed-QP IDR replay PoC: none newly found.** A replay now has the
+full swreg0..400 IDR program, the exact WREG order (bulk swreg1..511 → secondary-bank
+pokes → swreg5 kick last → STALL/readback), and the P-frame DPB semantics. Remaining work
+is buffer management: allocate CMM and patch the per-run phys pointers (swreg8/10 output,
+swreg12–16 input+recon, swreg18/19/64/66/74 references — all differ each run) and determine
+the meaning of the ASIC-0x2000 secondary-bank writes. Kick register is image swreg5.

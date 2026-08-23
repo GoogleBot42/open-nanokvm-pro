@@ -1,0 +1,50 @@
+=== IDR cmdbuf slot0 opcode order (encoder base=ASIC byte 0x1000) ===
+  byte0x2000  b0010068  RREG2?
+  byte0x2004  7382a06c  INT
+  byte0x2008  00000000  op0x00
+  byte0x200c  00000000  op0x00
+  byte0x2010  09ff1004  WREG image swreg1..511 (len=511)
+  byte0x2810  08012800  WREG bank@0x2800 len=1
+  byte0x2818  08012014  WREG bank@0x2014 len=1
+  byte0x2820  08012034  WREG bank@0x2034 len=1
+  byte0x2828  08012054  WREG bank@0x2054 len=1
+  byte0x2830  08012074  WREG bank@0x2074 len=1
+  byte0x2838  08012094  WREG bank@0x2094 len=1
+  byte0x2840  080120b4  WREG bank@0x20b4 len=1
+  byte0x2848  080120d4  WREG bank@0x20d4 len=1
+  byte0x2850  080120f4  WREG bank@0x20f4 len=1
+  byte0x2858  08012114  WREG bank@0x2114 len=1
+  byte0x2860  08012134  WREG bank@0x2134 len=1
+  byte0x2868  08012154  WREG bank@0x2154 len=1
+  byte0x2870  08012174  WREG bank@0x2174 len=1
+  byte0x2878  08012194  WREG bank@0x2194 len=1
+  byte0x2880  080121b4  WREG bank@0x21b4 len=1
+  byte0x2888  080121d4  WREG bank@0x21d4 len=1
+  byte0x2890  080121f4  WREG bank@0x21f4 len=1
+  byte0x2898  08011014  WREG image swreg5..5 (len=1)
+  byte0x28a0  48000001  STALL
+  byte0x28a4  00000000  op0x00
+  byte0x28a8  b2001000  RREG2?
+  byte0x28ac  7381c800  INT
+  byte0x28b0  00000000  op0x00
+  byte0x28b4  00000000  op0x00
+  byte0x28b8  d0001014  op0x1a
+  byte0x28bc  fffffffe  op0x1f
+  byte0x28c0  d0001004  op0x1a
+  byte0x28c4  ffffffff  op0x1f
+  byte0x28c8  b01b0000  RREG2?
+  byte0x28cc  7382a000  INT
+  byte0x28d0  00000000  op0x00
+  byte0x28d4  00000000  op0x00
+  byte0x28d8  c8000000  op0x19
+  byte0x28dc  00000000  op0x00
+  byte0x28e0  00000000  op0x00
+  byte0x28e4  00000000  op0x00
+  byte0x28e8  00000000  op0x00
+  byte0x28ec  00000000  op0x00
+  byte0x28f0  00000000  op0x00
+  byte0x28f4  00000000  op0x00
+  byte0x28f8  00000000  op0x00
+  byte0x28fc  00000000  op0x00
+  byte0x2900  00000000  op0x00
+slot0 IDR check: swreg11(frame_num)=0x00000000  swreg191(type)=0x14000000  swreg12(inY)=0x73c45000
