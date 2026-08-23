@@ -100,6 +100,19 @@ for pending/TODO/unverified markers still present in the tree:
   (module curation) DONE + CLOSED 2026-08-17: curated 12-of-22 loader
   shipped (a553f55), device-proven over 3 warm reboots; keep/drop table in
   blob-replacement.md ("Module curation"); cold-cycle datapoint rides #42.
+  2026-08-22: the ENCODER line advanced substantially. §8 device-tracing
+  complete (items 1–5): VCMD ABI hardware-confirmed 1:1 with the public
+  driver, hw_version_id/AsicConfig pinned, CBR rate control characterized as
+  stock VCEnc one-pass RC. A device-grounded feasibility study of a fully-open
+  VCEnc reimpl returned **GO for H.264 (medium-high)** (docs stages
+  "2026-08-22 …" + reference data in `docs/reference/vcenc-open/`). Epic #25
+  broken into children: **#44** (port the open VCMD kernel driver — the first
+  buildable step, priority/high), **#45** (EWL/CMM glue), **#46** (from-scratch
+  CBR controller), **#47** (VCEnc-core licensing decision — `needs-human`, the
+  gate on whether "fully blob-free" is the target). Main open technical gap:
+  P-frame/DPB register state (unobserved; cheap Stage-0 probe). Also this
+  session: **#27** (kernel initramfs rebuild) reprioritized priority/low →
+  **priority/high** per Jeremy (high priority for his blob-free goals).
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
