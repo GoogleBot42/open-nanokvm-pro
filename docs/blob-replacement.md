@@ -1074,12 +1074,16 @@ doesn't vanish.** Concretely:
 
 #### 8. Device-tracing experiments for the follow-up (device-side) phase
 
-> **Status (2026-08-22): items 1–3 DONE** — run on the ATX unit and written up in
-> the Test log stage "2026-08-22 — §8 device tracing". The VC8000E VCMD ABI is
-> hardware-confirmed (ioctl map 1:1 with the public driver, `hw_version_id =
-> 0x43421500` → eswin EIC7X `vc8000_vcmd_driver.c`, MMU off). Items 4 (RC
-> observability) and 5 (register-diff) are still open; item 5 is constrained by
-> idle MMIO clock-gating (windows read `0xdeadbeef` unless sampled mid-frame).
+> **Status (2026-08-22): items 1–5 DONE** — run on the ATX unit, written up in the
+> Test log stages "2026-08-22 — §8 device tracing" (1–3), "§8.4 RC observability"
+> (4), and "§8.5 … AsicConfig" (5). The VC8000E VCMD ABI is hardware-confirmed
+> (ioctl map 1:1 with the public driver, VCMD-engine `hw_version_id = 0x43421500`
+> = v1.5.0 → eswin EIC7X `vc8000_vcmd_driver.c`, MMU off, single core, H264+HEVC
+> core + separate JPEG). The CBR rate controller is stock VCEnc one-pass RC,
+> characterized with a measured reference trajectory (§8.4) — the RC "wall" is
+> bounded for CBR-KVM. Item 5's live register-diff is defeated by idle MMIO
+> clock-gating, so AsicConfig was read from the encoder register image mirrored in
+> the VCMD DRAM pool instead.
 
 To confirm the above static findings on the ATX unit once it's free (same safety
 envelope as prior stages: `/tmp/axwork` tmpfs, `nanokvm.service` stopped/restarted,
