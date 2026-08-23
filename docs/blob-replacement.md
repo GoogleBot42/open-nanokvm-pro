@@ -2149,3 +2149,101 @@ so treat any absolute width figure as provisional — qualitatively ≥1080p. (2
 is a driver register *image mirrored to DRAM*; the coherent decode plus the
 `0x88000000` probe-mask match are strong evidence it is the genuine fuse config, but
 strict proof would be a live read of `VCMD_base+0x1000+0x140` during `EWLInit`.
+
+### 2026-08-22 — VCEnc open-reimplementation feasibility: GO for H.264 (medium-high)
+
+Assessed whether a genuinely from-scratch, openly-licensed VCEnc core is buildable
+— independent host software that programs the VC8000E registers to emit valid H.264,
+driving the fixed-function silicon directly, using only public register knowledge +
+device observation (no proprietary VCEnc core, no EULA source). This supersedes the
+pre-§8 "impractical" verdict (§6 item 4), which predated the tracing phase. All work
+read-only (`/dev/mem` + headless libkvm); device left healthy. Reference dumps +
+tooling preserved under `docs/reference/vcenc-open/` (provenance + clean-room posture
+in its README).
+
+**Verdict: GO for H.264, medium-high confidence**, staged from a fixed-QP I-frame PoC.
+Two honest qualifiers: (1) the hard remainder is not register programming but
+**P-frame reference/DPB state + CBR rate control** — both bounded but real; (2)
+"openly-licensed" forces **clean-room-via-observation** discipline, because the best
+register/RC docs found (VeriSilicon `registertable.h`) are confidential/proprietary.
+
+**Decomposition — silicon does the hard DSP.** Intra/inter prediction, motion
+estimation, mode decision, transform/quant, CABAC/CAVLC, deblocking, reconstruction
+are all in the VC8000E, which emits complete slice NAL payloads. An open core produces
+only host bookkeeping per frame: the ASIC register program (a fixed template + a small
+delta), reference-picture/CMM buffer management, SPS/PPS NAL generation (standard,
+unencumbered), VCMD command-buffer assembly + submission over the public Hantro ioctls
+(nr 29/30/31), and rate control (a software QP loop, or fixed-QP for v1). The KVM
+envelope narrows it hard: 1080p, single-reference IPPP, one slice, low-latency.
+
+**Evidence — the register-program differential (device-measured, independently
+re-verified in this repo).** Captured the full encoder register image (swreg0..319)
+at 2000 (×2 repeats), 8000, and 16000 kbps and diffed:
+
+| Comparison | Registers differing |
+|---|---|
+| 2000 vs 2000 (same config — **noise floor**) | **1** (swreg82, a HW cycle counter) |
+| 2000 vs 8000 kbps | 20 |
+| 8000 vs 16000 kbps | 7 |
+| **Invariant template** | **300 of 320** |
+
+Every moved register is in the QP/rate-control cluster: `PIC_INIT_QP` (QP 36→32→26,
+matching §8.4's SPS `pic_init_qp`); `TARGETPICSIZE`/MIN/MAX (swreg105–107) = **440000
+/ 1760000 / 3520000, exactly linear in bitrate**; QP-derived lambda LUTs; CTB-RC model
+state (`CTB_RC_MODEL_PARAM`, `PREV_PIC_LUM_MAD`, `CTB_QP_SUM`); and HW-written output
+counters (`QP_SUM`, `TOTAL*` bit counters, `HW_PERFORMANCE` = the lone noise-floor
+register). Image alignment is anchored by `OUTPUT_STRM_BASE` (= the vendor ringbuffer
+phys), `OUTPUT_STRM_BUFFER_LIMIT` (= the captured NAL length), and `INPUT_Y_BASE` (=
+the capture-pool frame phys). So the per-frame program is a stable ~94% template plus
+a ≤20-register, semantically-clean, largely-computable delta. The register-programming
+problem is not the wall. (The open header `rate_control_picture.h` documents the RC
+state — `linReg` QP↔bits model, leaky-bucket HRD, `ctbRcModel.preFrameMad` → the
+observed swreg247 — so header structure, §8.4 behaviour, and registers agree.)
+
+**Hard parts / unknowns, rated by threat.**
+1. **P-frame reference/DPB register state — MEDIUM-HIGH, the main open gap.** Not yet
+   observed (the DRAM mirror at the first marker holds the IDR/setup program; the
+   early-frame captures hadn't emitted a P-frame). Off the I-frame PoC path; must be
+   characterized by decoding a P-frame command buffer (Stage 0). Characterizable by
+   observation — no known blocker, just unobserved.
+2. **CBR rate control — MEDIUM (bounded).** Entirely software (no bitrate register, no
+   HW CBR mode); algorithm family documented + measured (§8.4); a BSD-3 sibling
+   reference exists (STM32Cube `H264RateControl.c`, same linReg/virtual-buffer model);
+   **skippable via fixed-QP for v1.**
+3. Fixed-template completeness for arbitrary geometry — LOW/MEDIUM (KVM config is fixed;
+   start from the captured template, vary only addresses + QP).
+4. SPS/PPS/slice-header emission — LOW (standard; HW emits the slice payload already).
+5. VCMD cmdbuf assembly — LOW/MEDIUM (public format, decoded in §8; non-WREG opcode
+   labels still to confirm).
+6. **HEVC — DEFER.** Fuse confirms HW support; same framework, more DPB/RPS/CTU
+   complexity. Assess after H.264 IPPP.
+7. **Clean-room / licensing — MEDIUM, strategic not technical.** Implementation must
+   rest on our own device observations (`docs/reference/vcenc-open/`), the H.264 spec,
+   and permissive references — not the proprietary `registertable.h` or vendor DWARF.
+8. Loose ends (LOW): dump truncated at swreg319 (core spans ~0..400, ~75 uncaptured);
+   the `0x90101010` marker identity; the `HWMAXVIDEOWIDTH=640` fuse contradiction;
+   idle clock-gating blocks live-MMIO cross-check (DRAM mirror only).
+
+**Staged plan (cheapest first).**
+- **Stage 0 — finish the static picture (days, on-device, read-only).** Extend the
+  dump to swreg400; capture the ioctl sequence + decode the VCMD **WREG order** for one
+  IDR (the one thing no header gives); decode a **P-frame** cmdbuf to observe the
+  reference/DPB registers (resolves hard-part #1). First experiment: drive one fixed-QP
+  frame under `axvenctrace` + dump the cmdbuf/status/register pools → annotated WREG
+  program for the IDR. Pure extension of tooling already in `docs/reference/vcenc-open/`.
+- **Stage 1 — PoC (2–4 wks).** Record-and-replay **one fixed-QP IDR** in open code,
+  keeping the vendor `ax_venc.ko` (public ioctl ABI — no kernel work yet): allocate CMM
+  buffers, assemble the cmdbuf from the Stage-0 template with our own YUV input phys +
+  chosen QP, submit via ioctls 29/30/31, retrieve the NAL, wrap with our own SPS/PPS,
+  decode. **Milestone: an open-generated fixed-QP IDR that a standard decoder renders as
+  the correct 1080p frame.**
+- **Stage 2 — IPPP fixed-QP (1–2 mo).** Reference management + P-frame register program.
+- **Stage 3 — CBR (1–2 mo).** Reimplement linReg + leaky-bucket from §8.4 + BSD ref.
+- **Stage 4 — open EWL + port the eswin VCMD kernel driver (weeks)** to drop the vendor
+  `.ko` (clock/reset/power already open in-tree — no RE). This is issues #44/#45.
+- **Stage 5 — HEVC (assess after Stage 3).**
+
+**Smallest end-to-end proof:** one open-code-generated fixed-QP IDR NAL, submitted
+through the public VCMD ioctls with our own YUV input, that a standard H.264 decoder
+accepts as a correct 1080p frame. If Stage 0's cmdbuf decode and Stage 1's replay land,
+confidence flips medium-high → high.
