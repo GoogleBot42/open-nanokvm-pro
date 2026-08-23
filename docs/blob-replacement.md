@@ -1072,7 +1072,14 @@ doesn't vanish.** Concretely:
   syntax) is either open or legible. Whether to pursue (A) hinges on appetite for
   writing a rate controller and accepting fixed-QP as the fallback.
 
-#### 8. Device-tracing experiments for the follow-up (device-side) phase — DO NOT run here
+#### 8. Device-tracing experiments for the follow-up (device-side) phase
+
+> **Status (2026-08-22): items 1–3 DONE** — run on the ATX unit and written up in
+> the Test log stage "2026-08-22 — §8 device tracing". The VC8000E VCMD ABI is
+> hardware-confirmed (ioctl map 1:1 with the public driver, `hw_version_id =
+> 0x43421500` → eswin EIC7X `vc8000_vcmd_driver.c`, MMU off). Items 4 (RC
+> observability) and 5 (register-diff) are still open; item 5 is constrained by
+> idle MMIO clock-gating (windows read `0xdeadbeef` unless sampled mid-frame).
 
 To confirm the above static findings on the ATX unit once it's free (same safety
 envelope as prior stages: `/tmp/axwork` tmpfs, `nanokvm.service` stopped/restarted,
@@ -1938,3 +1945,101 @@ building/type-checking the open path on demand) and `kvm-encoder-geom-test` /
 non-1080p source available; the first 720p bring-up should be watched for the
 allocator flag byte (assumption 5), the nr54 partition struct (6) and shearing
 (2), in that order.
+
+### 2026-08-22 — §8 device tracing: VC8000E VCMD encoder ABI confirmed on hardware (ATX .221)
+
+Ran §8 experiments 1–3 (the read-only/trace-only set) on the live ATX unit to
+confirm the §§2–3 static findings against real silicon. Device stayed healthy
+throughout — uptime unbroken, no encoder hang, no watchdog reboot;
+`nanokvm.service` active and web UI 200 at start and end. A real H.264 lifecycle
+was driven headless via `libkvm` ctypes (`kvmv_init` → `kvmv_read_img(1920,1080,
+type=3)` → `kvmv_deinit`; real I-frame + P-frame emitted), with an LD_PRELOAD
+tracer (`axvenctrace.so`, magic-`'k'` filter, arg reads via `/proc/self/mem`
+`pread` at the exact `_IOC_SIZE` — no fixed-size over-read, the trap that bit the
+capture stages).
+
+Method verified off-device by review of the tracer + decoder source (in the
+session scratchpad): the `nr`/`dir`/`size` decode is the standard Linux `_IOC`
+layout, so the map below is a clean decode of a real trace. Traces themselves
+live in device tmpfs `/tmp/axwork` (`venc1.log`, `venc3.log`) — re-runnable, not
+persisted.
+
+**Exp 1 — venc `nr` → `HANTRO_IOCH_*` map (confirms §§2–3, 1:1).** Every ioctl to
+`/dev/ax_venc`/`/dev/ax_jenc` is magic `'k'` (0x6b). Traced `nr`/dir vs the public
+revyos/eswin `vc8000_driver.h`:
+
+| nr | dir | public `HANTRO_IOCH_*` | match |
+|---|---|---|---|
+| 25 | IOWR | `GET_CMDBUF_PARAMETER` | ✓ |
+| 28 | IOWR | `GET_VCMD_PARAMETER` | ✓ |
+| 29 | IOWR | `RESERVE_CMDBUF` | ✓ |
+| 30 | IOR | `LINK_RUN_CMDBUF` | ✓ |
+| 31 | IOR | `WAIT_CMDBUF` | ✓ |
+| 32 | IOR | `RELEASE_CMDBUF` | ✓ |
+| 50 | IOWR | `GET_VCMD_ENABLE` | ✓ |
+
+Every **core VCMD ioctl matches the public driver in both `nr` and direction.**
+Observed lifecycle order matches §2: Init (`GET_VCMD_PARAMETER`/`GET_CMDBUF_
+PARAMETER`) → per-frame `RESERVE_CMDBUF`(29) → `LINK_RUN_CMDBUF`(30) →
+`WAIT_CMDBUF`(31) → `RELEASE_CMDBUF`(32). Axera-extension `nr`s also seen (51, 70,
+71, 72, 79–83, 86–89 — channel/clock management, outside the public cmdbuf set;
+not needed to port the core ABI). **Correction to a possible §2 misreading:** the
+uniform `size=8` is *not* an Axera re-encoding — the public macros are themselves
+pointer-typed (`struct config_parameter *`), so `_IOC_SIZE = sizeof(pointer) = 8`
+on 64-bit. The args are pointers to the *standard public structs*, byte-compatible
+(e.g. jenc `GET_VCMD_PARAMETER` arg begins `03 00 01 00…` = `config_parameter.
+module_type=3`).
+
+**Exp 2 — VCMD command buffer for one H.264 frame (confirms §3).** The VCMD pools
+are DMA-coherent CMM carveouts (`venc_ko`/`jenc_ko` in
+`/proc/ax_proc/mem_cmm_info`), **dynamically allocated per `kvmv_init`** (phys
+differs each run). Decoded a textbook Hantro cmdbuf: `RREG` preamble → a large
+`WREG` burst into the encoder ASIC register bank → strided sub-block writes →
+`STALL` (wait-for-core) → `RREG` into the status pool → end/poll. The load-bearing
+cross-check: **cmdbuf `swreg11` (input-luma base) = `0x73c45000`, the exact
+capture-pool frame phys** — independent proof the decode is real and that capture
+feeds the encoder by raw physical address. All addresses in the cmdbuf are raw
+physical DRAM. *Caveat:* the decoder's VCMD opcode-mnemonic table (`pooldump2.py`)
+labels `RREG=0x0C`, whereas public `vcmdswhwregisters.h` uses `RREG=0x16`; the
+`WREG=0x01` decode (addr + 10-bit length) that the conclusions rest on is correct,
+but treat the exact non-WREG opcode labels as unconfirmed.
+
+**Exp 3 — `hw_version_id` + config.**
+- **`hw_version_id = 0x43421500`** (`0x4342` = the VeriSilicon VCMD signature;
+  public `HW_ID_1_0_C = 0x43421001`, so **same family, revision ~1.5.0**).
+  Build-date register `0x20221012` (2022-10-12). `ax_venc` = V3.0.0_20250319,
+  modinfo "VC8000 Vcmd driver"; `ax_jenc` = "VC9000 Vcmd driver". `/proc/iomem`:
+  `vsi_vcx@0x04010000`, `ax_jenc@0x04000000`.
+- **MMU/IOMMU: OFF** — the cmdbuf programs raw physical addresses directly into
+  the ASIC registers (no translation). A port must feed raw phys, not IOVAs.
+- **Single VCMD core.** H.264 confirmed working (I + P); JPEG is the same driver
+  (`ax_jenc`).
+- **Which public driver to port:** the **eswin `linux-6.6.18-EIC7X`
+  `vc8000_vcmd_driver.c`** (handles `HW_ID_1_2_1`+, closest to `0x43421500`) with
+  `vcmdregistertable.h` / `vcmdregisterenum.h` / `vcmdswhwregisters.h` from the
+  same tree; the revyos copy (gated to the older `HW_ID_1_0_C`) is a second
+  reference.
+
+**Two new hardware facts (not in §§1–7):**
+1. **MMIO clock-gating.** The venc/jenc register windows (`0x04010000` /
+   `0x04000000`) read `0xdeadbeef` via `/dev/mem` whenever idle — the VPU power
+   domain gates within µs of each synchronous frame. Post-hoc CPU register reads
+   are therefore impossible; the only CPU-visible register state is the
+   DMA-coherent DRAM pools (where `hw_id`/cmdbuf/status live). This is why the
+   VCEnc *encoder-core* AsicConfig bitmap (max width, codec bits) was **not**
+   cleanly extracted — a follow-up must decode it from the status-pool readback
+   region (status+0x2800, first word `0x90101010`) against `encswhwregisters.h`,
+   not from live MMIO.
+2. **Cmdbuf mapping path.** Userspace maps the VCMD pools via **`/dev/mem`** at
+   their phys (there were **zero** mmaps on the `ax_venc` fd), not
+   `hantrovcmd_mmap`. A from-source port must either expose the pool phys to
+   userspace or provide `hantrovcmd_mmap` — a small but real divergence from the
+   stock upstream mmap path.
+
+**Net.** §3's headline — the venc kernel↔user contract is *recoverable from public
+source* — is now hardware-confirmed, and the target driver revision is pinned
+(eswin EIC7X). The residual hard problem is unchanged and remains **userspace rate
+control** (§§5–7), plus the licence-encumbered VCEnc core. Remaining §8 items 4
+(RC observability) and 5 (`/dev/mem` register-diff) are not yet run; item 5 is
+now known to be constrained by the idle clock-gating above (registers read
+`0xdeadbeef` unless sampled mid-frame).
