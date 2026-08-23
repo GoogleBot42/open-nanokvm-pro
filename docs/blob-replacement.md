@@ -2101,3 +2101,47 @@ a measured reference trajectory to validate such a controller against. This
 meaningfully de-risks the §§5–7 "rate control is the historically hardest part"
 framing: for our use case it is a bounded, fully-observed feedback loop — with
 fixed-QP as the trivial fallback (acceptable for a mostly-static screen).
+
+### 2026-08-22 — §8.5 VCEnc encoder-core AsicConfig recovered (ATX .221)
+
+Closes the open AsicConfig item from the "§8 device tracing" stage above. The
+VC8000E encoder-core register image is mirrored to DRAM in the VCMD register pool
+(readable via `/dev/mem` despite the idle MMIO clock-gating). Primed 6 H.264 frames
+via `libkvm`, located the image by its `swreg0 = 0x90101010` marker at phys
+`0x7381c800`, and dumped `swreg0..319` with absolute phys per word (raw artifact
+preserved and re-decoded independently). Base alignment is anchored by two
+cross-checks in the same dump: `swreg8 (+0x20) = 0x749ce028` (output stream base,
+matching the vendor ringbuffer log) and **`swreg12 (+0x30) = 0x73c45000` (input
+luma = the capture frame phys)** — so the fuse offsets below are genuinely the
+encoder register image, not stray memory.
+
+The four `EWLReadAsicConfig` fuse words (`swreg` word-index → byte = index×4):
+
+| swreg | byte | raw | decode |
+|---|---|---|---|
+| 80 | 0x140 | `0x88da4280` | **H264=1, HEVC=1**, JPEG=0 (separate `ax_jenc` core), busType=6 (AXIAPB), busWidth=128-bit, CAVLC=1 |
+| 214 | 0x358 | `0x48500800` | roiAbsQp=1; `maxEncodedWidth` field (unit ambiguous — see caveat) |
+| 226 | 0x388 | `0x00a19200` | **ctbRcVersion=1** (HW supports CTB/row-level rate control) |
+| 287 | 0x47c | `0x00000000` | videoHeightExt / cscExt / scaler420 = 0 |
+
+Capability cross-check: `0x88da4280 & 0x88000000 = 0x88000000` lights up exactly
+bit31 (H264) + bit27 (HEVC), and `& 0x00008000` (JPEG) = 0 — a coherent, probe-
+matching bitmap, not a random RW register. This refines the §8 hardware facts:
+**single VCMD core, H.264+HEVC in the video core, JPEG on the separate `ax_jenc`
+core, ≥1080p capable, no MMU by config.** `ctbRcVersion=1` is a useful RC datum —
+the HW offers CTB/row-level rate control a from-source controller *could* exploit,
+though the frame-level CBR loop of §8.4 does not need it.
+
+**hw-ID clarification.** The `hw_version_id = 0x43421500` recorded in the first §8
+stage is the **VCMD command-engine** ID (product `0x4342`, decode → v1.5.0), *not*
+the VCEnc encoder-core ID — the two live in different register windows (VCMD engine
+vs the encoder core at VCMD_base+0x1000) and use different version-nibble layouts.
+The encoder-core capability set is the AsicConfig fuse block above, not the VCMD ID.
+This does not change the port-target guidance (eswin EIC7X `vc8000_vcmd_driver.c`).
+
+**Caveats.** (1) The `maxEncodedWidth` unit is genuinely ambiguous in VeriSilicon's
+own header (documented as both "pixels" and "unit = 8 pixels", version-dependent),
+so treat any absolute width figure as provisional — qualitatively ≥1080p. (2) This
+is a driver register *image mirrored to DRAM*; the coherent decode plus the
+`0x88000000` probe-mask match are strong evidence it is the genuine fuse config, but
+strict proof would be a live read of `VCMD_base+0x1000+0x140` during `EWLInit`.
