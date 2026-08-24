@@ -2387,3 +2387,53 @@ question (blob-free submission = #44).
 through the stock vendor `.ko` needs the nr70/nr83 setup, which the open driver port
 (#44) removes wholesale. Confidence unchanged on the open-encoder feasibility; the wall
 found is a driver-seam artifact, not a bitstream/register-program problem.
+
+### 2026-08-23 — Stage 1 PoC ACHIEVED: an open register program drives the encoder to a decodable 1080p IDR (ATX .221)
+
+Reached Stage 1's core milestone via the **LINK-time cmdbuf-content hijack** (Path B):
+an LD_PRELOAD `ioctl` hook lets libkvm establish all vendor state and call LINK(nr30) on
+its own cmdbuf, but rewrites the cmdbuf slot (`pool_base + cmdbuf_id·0x2000`, 32-bit
+`/dev/mem` writes) with our program the instant before the real LINK — so libkvm's own
+working LINK runs OUR register program. This sidesteps the vendor nr70/nr83 EFAULT seam
+(→ #44) and isolates the encoder-core question. Device healthy across ~20 hijack encodes;
+no hang, no reboot. Data + tools under `docs/reference/vcenc-open/stage1/` + `tools/`.
+
+**All three milestones passed, verified independently from the artifacts:**
+- **B0 (mechanism).** The hook fires at every LINK, self-copies the 570-word program into
+  the correct slot; the encode completes and swreg82 (cycle counter) **advances** (HW ran
+  — contrast the Stage-1 raw-ioctl attempt where it never did). Control IDR decodes to a
+  sharp 1920×1080 desktop (`stage1/frame_control.png`).
+- **B1 (QP control) + a real finding.** `PIC_INIT_QP` located off-device by diffing the
+  committed `regs_{B2000,C8000,D16000}.txt`: **swreg7 bits[31:26] = 36/32/26** (re-verified
+  in this repo — matches the §8.4 SPS `pic_init_qp`). But **`pic_init_qp` is header-only on
+  this HW**: forcing swreg7 reached the bitstream (slice `SliceQP` delta changed) yet did
+  **not** change frame size — the encoder recomputes `slice_qp_delta` so effective QP is
+  unchanged. Capturing full IDR programs at 8000 vs 400 kbps and diffing showed the entire
+  software QP difference is **13 registers: swreg7, swreg37, swreg105–107 (TARGETPICSIZE,
+  linear in bitrate), and swreg125–132 (an 8-entry quant/lambda table)**. The lambda regs
+  swreg219–223 are **0 in the SW program** (HW-computed) — editing them corrupts the
+  stream, a useful negative result. Forcing the full 13-register block at 8 Mbps yields an
+  IDR of **7839 B vs 12086 B control** (≈65%, matching a native 400 kbps encode = 7848 B to
+  within 9 bytes) that decodes to a correct, visibly coarser 1080p frame
+  (`stage1/frame_qpforced.png`). *Consistency requirement (expected, not a defect): the
+  coarser slice decodes cleanly only with the matching PPS (`pic_init_qp` 36 vs the 8k
+  stream's 32) — a from-source encoder emits header+slice together.*
+- **B2 (full open-program injection).** Overwriting the ENTIRE IDR slot with an
+  externally-supplied 570-word program (preserving this-run address registers, patching
+  `cmdbuf_size` in the LINK arg) and running it through libkvm's LINK produces decodable
+  1080p IDRs both for a self-captured 8k program and the cross-injected 400 kbps program.
+
+**Stage 1 is done: a complete, externally-supplied VC8000E register program drives this
+silicon to a valid, decodable, quality-controllable 1080p H.264 IDR — proven on
+hardware.** The register-program half of a from-source encoder is no longer a question
+mark; what remains is (a) blob-free *submission* (the open driver/EWL, #44/#45) and (b)
+generating these programs from scratch rather than by capture-and-patch — i.e. the
+from-scratch VCEnc core + CBR controller (#46/#47), with the effective-QP register block
+above (swreg7/37/105–107/125–132, lambda HW-computed) as the concrete control surface a
+CBR loop must drive. **Path B is now a validated on-hardware test harness** for that work:
+any candidate open-generated program can be injected at LINK and decoded end-to-end.
+
+Confidence **HIGH** — mechanism proven three independent ways, the QP-forced size matches
+a native low-bitrate encode to within 9 bytes, and both frames render as correct 1080p.
+Stage 2 (IPPP) is unblocked: the hook already fires on P-frame LINKs, and the DPB register
+semantics are pinned (Stage 0). No new blocker.

@@ -81,6 +81,23 @@ resolved by the open-driver port (#44), not here.
   (traced vendor-IDR capture), `tools/stage1_replay.py` (raw-ioctl replay;
   OWNFD/NOMEMCPY toggles).
 
+**Path B — LINK-time cmdbuf hijack (the Stage-1 PoC that WORKED, 2026-08-23).** An
+LD_PRELOAD `ioctl` hook lets libkvm set up all vendor state and call LINK on its own
+cmdbuf, but rewrites the cmdbuf slot with our program just before the real LINK — so
+libkvm's working LINK runs OUR register program. Proved an open register program drives
+the encoder to a decodable, quality-controllable 1080p IDR on hardware. Write-up:
+`docs/blob-replacement.md` stage "2026-08-23 — Stage 1 PoC ACHIEVED".
+
+- `frame_control.png` — B0 control: a sharp 1080p desktop, decoded through the hijack path.
+- `frame_qpforced.png` — B1: same scene, coarser, from forcing the effective-QP register
+  block (IDR 7839 B vs 12086 B control, matching a native 400 kbps encode).
+- `frame_b2self.png` — B2: full externally-supplied program injected, clean 1080p decode.
+- `slot8k.bin`, `slot400.bin` — complete captured IDR register programs (2280 B, 570 words)
+  at 8000 / 400 kbps — the known-good programs B1/B2 injected; the effective-QP delta is 13
+  registers (swreg7, 37, 105–107, 125–132).
+- tools: `tools/stage1hook.c` (the LINK-time hijack hook; copy/qp/edit/asm/dump modes),
+  `tools/stage1_hijack_drive.py` (libkvm encode under the hook).
+
 ## tools/
 
 Our own capture/decode tooling (libc-only C or python via device libkvm ctypes):
