@@ -1,0 +1,27 @@
+=== stage1 replay: prime one vendor IDR ===
+  read_img[0] rc=1 len=32
+  read_img[1] rc=2 len=8
+  read_img[2] rc=3 len=12023
+vendor NAL: 12023 bytes sha=c62d47cc73a94c41 head=0000000125b80002
+cmdbuf pool base=0x7380a000 len=0x10000 unit=0x2000
+live reg image @0x7381c800: sw8=0x749ce028 sw9(size)=12023 sw11=0 sw191=0x14000000 cc(sw82)=0x00201153
+ref HW output @0x749ce000 len 0x4000  sha=8aac604733000556  (NAL starts at +0x28)
+HW-buffer-vs-NAL body match at +0x28: False (12019 bytes)
+NAL body prefix 25b8000200003f00bf62b47ffc212a4c found in HW buffer at offset=0x2c
+IDR cmdbuf: slot=1 src_phys=0x7380c000 JMP@word566 cmdbuf_size=0x8e8
+using libkvm's initialized ax_venc fd=22 for raw VCMD ioctls
+RESERVE(29) rc=0 -> my cmdbuf_id=2 (slot cap=0x2000)  arg=00a41f00000000200000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+my slot phys=0x7380e000
+NOMEMCPY: linking native slot content, first word=0xb0010068
+memcpy skipped; native cmdbuf_size=0x8e8 ok=True
+LINK_RUN arg=00a41f000000e8080000020000000100
+LINK_RUN(30) rc=-1 errno=14 (Bad address) -- errno14 after run = benign copy_to_user writeback fault
+WAIT(31) rc=-1 errno=2 arg_after=00000000
+cc(sw82) before=0x00201153 after=0x00201153  changed=False
+sw9(out size) after=12023 (vendor NAL body=12019)
+OUTPUT identical (full 0x4000 region): True
+  V sha=8aac604733000556  R sha=8aac604733000556
+our HW-output NAL body (at 0x2c) == vendor NAL body: True
+RELEASE(32) rc=0 errno=0
+=== MILESTONE: output byte-identical=True AND hw re-ran(cc changed)=False ===
+=== stage1 replay done ===

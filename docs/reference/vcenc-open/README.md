@@ -61,6 +61,26 @@ pool bases live from `/proc/ax_proc/mem_cmm_info`).
 - `ring_slots_P.txt` — derived DPB ping-pong table; `diff_IDR_vs_P.txt` — the
   53-register IDR-vs-P diff (DPB regs + the RC/QP cluster).
 
+## stage1/ — raw-ioctl drive attempt (2026-08-23)
+
+Stage 1 tried to drive the encoder from open code over the public VCMD ioctls.
+Write-up: `docs/blob-replacement.md` stage "2026-08-23 — Stage 1". RESERVE(29)/
+RELEASE(32)/cmdbuf assembly work from independent open code; **LINK_RUN(30) EFAULTs**
+because the stock Axera `ax_venc.ko` reads per-frame state set by extension ioctls
+nr70/nr83 (an EWL↔.ko private seam) that an out-of-band reserve skips — properly
+resolved by the open-driver port (#44), not here.
+
+- `stage1_trace.log` — the full vendor per-frame ioctl sequence (the ABI ground
+  truth): nr70 frame-setup → nr83 ×2 → RESERVE(29) → LINK(30) → WAIT(31) →
+  RELEASE(32), with the exchange_parameter arg structs before/after each call.
+- `run.out`, `stage1_replay.log` — our replay attempts: RESERVE rc=0, LINK errno=14,
+  cycle-counter unchanged (HW never ran). The "OUTPUT identical" lines are false
+  positives (output buffer still held libkvm's prior frame).
+- `stage1_meta.txt` — captured pool bases + reference NAL metadata for the run.
+- tools: `tools/stage1trace.c` (ioctl arg-deref tracer), `tools/stage1_record.py`
+  (traced vendor-IDR capture), `tools/stage1_replay.py` (raw-ioctl replay;
+  OWNFD/NOMEMCPY toggles).
+
 ## tools/
 
 Our own capture/decode tooling (libc-only C or python via device libkvm ctypes):

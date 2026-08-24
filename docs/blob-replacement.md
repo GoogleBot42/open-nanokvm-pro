@@ -2325,3 +2325,65 @@ pokes → swreg5 kick last → STALL/readback), and the P-frame DPB semantics. R
 is buffer management: allocate CMM and patch the per-run phys pointers (swreg8/10 output,
 swreg12–16 input+recon, swreg18/19/64/66/74 references — all differ each run) and determine
 the meaning of the ASIC-0x2000 secondary-bank writes. Kick register is image swreg5.
+
+### 2026-08-23 — Stage 1: raw-ioctl drive — ABI recovered, RESERVE/assembly open, LINK blocked by a vendor-.ko private seam (ATX .221)
+
+First attempt to *drive* the encoder from open code over the public VCMD ioctl ABI
+(a write/drive path, not read-only: cmdbuf-pool writes + the four submission ioctls;
+no MMIO-register or firmware writes). Device healthy throughout — no encoder hang, no
+watchdog reboot across ~10 LINK attempts. Data + tools preserved under
+`docs/reference/vcenc-open/stage1/` (our observations + our tooling only).
+
+**Result: the milestone (a byte-identical NAL from our own submission) was NOT reached,
+but the path is now precisely characterized.** What works from independent open code and
+what walls off:
+
+- **VCMD ABI fully recovered and hardware-cross-checked.** The authoritative source is
+  eswin `linux-6.6.18-EIC7X` `drivers/staging/media/eswin/venc/vc8000_{driver.h,
+  vcmd_driver.c}` (public, dual MIT/GPL — cited, not vendored). `struct
+  exchange_parameter` (16 B): `u32 executing_time; u16 module_type; u16 cmdbuf_size;
+  u16 priority; u16 cmdbuf_id/*out*/; u16 core_id; u16 numa_id`. Ioctls (magic `'k'`):
+  RESERVE `_IOWR 29`, LINK_RUN `_IOR 30`, WAIT `_IOR 31`, RELEASE `_IOR 32`. Our
+  on-device trace of libkvm matches byte-for-byte: RESERVE writes back `cmdbuf_size`
+  (=slot cap `0x2000`) and `cmdbuf_id` at offset 0x0a; the actual program length
+  (`0x8e8`, JMP-aligned) is written into `cmdbuf_size` just before LINK. Cmdbuf pool
+  (from GET_CMDBUF_PARAMETER nr25, live): base `0x7380A000`, total `0x10000`, unit
+  `0x2000` → 8 slots, slot(id) = base + id·0x2000.
+- **RESERVE(29), RELEASE(32), and open cmdbuf assembly all work from independent raw
+  ioctls** (`rc=0` on both a fresh fd and libkvm's fd). We captured the vendor IDR
+  cmdbuf, matched this-run's IDR slot by its embedded physes (swreg8=0x749ce028 output,
+  swreg12=0x73c45000 input), and word-copied it into a freshly-reserved slot (readback
+  verified). *(Gotcha: glibc NEON/wide memcpy SIGBUSes on the non-cacheable Device
+  `/dev/mem` mapping — use 32-bit word accesses only.)*
+- **LINK_RUN(30) returns `-EFAULT` and the HW never runs** (swreg82 cycle counter
+  unchanged, output buffer untouched — the "output identical" seen in the raw log is a
+  false positive from the buffer still holding libkvm's prior frame). The arg marshaling
+  is faithful (byte-diff vs the vendor's traced LINK arg differs only in `cmdbuf_id`),
+  fd ownership is not it (fails on libkvm's fd and a fresh fd), and linking libkvm's own
+  *native* valid slot content (no memcpy) EFAULTs identically. The public 6.6.18
+  `link_and_run_cmdbuf` has no `-EFAULT` path at all, and dmesg is silent → the fault is
+  in an Axera-added user-access on a suppressed-log path in the on-device 4.19
+  `ax_venc.ko` (source NOT public — absent from `AXERA-TECH/ax620e_bsp_sdk` and
+  `sipeed/maix_ax620e_sdk`, which ship only prebuilt `libax_venc.so`).
+
+**Root cause (well-supported): a vendor per-frame EWL↔.ko private seam we skipped.** The
+full vendor trace (`stage1/stage1_trace.log`) shows the real per-frame submission is
+**nr70 (frame setup — passes a userspace VA at arg offset ~0x20) → nr83 ×2 → RESERVE(29)
+→ LINK_RUN(30) → WAIT(31) → RELEASE(32)**. nr70/nr83 are Axera-extension ioctls (the
+51/70–89 set noted in §8) that our out-of-band RESERVE→LINK skipped; Axera's
+`link_and_run` evidently reads state they register (a userspace descriptor VA), so an
+externally-reserved cmdbuf faults. This is exactly the "bounded libax_sys/CMM marshaling
+seam, confined to EWL" that §§1/6 predicted — i.e. **fully-blob-free RESERVE/LINK is
+properly the job of #44 (port the open eswin driver, whose LINK path is public and has no
+such fault) + #45 (open EWL), not a Stage-1 deliverable.** Stage 1's own goal —
+validating that our assembled register program drives a real encode — does not require
+solving this and should instead be reached by **LINK-time cmdbuf-content hijack** (let
+libkvm establish all vendor state and issue LINK on its own id, but overwrite the slot
+contents with our assembled program + chosen QP just before its LINK). That cleanly
+separates the encoder-core question (our register program) from the vendor-driver
+question (blob-free submission = #44).
+
+**Net:** the encoder can be *reserved and programmed* from open code today; *submission*
+through the stock vendor `.ko` needs the nr70/nr83 setup, which the open driver port
+(#44) removes wholesale. Confidence unchanged on the open-encoder feasibility; the wall
+found is a driver-seam artifact, not a bitstream/register-program problem.

@@ -1,0 +1,32 @@
+=== stage1 replay: prime one vendor IDR ===
+OPEN-KVM libkvm active (open Axera-MPI capture+encode, debug=1)
+[openkvm] SYS+pool up: 1920x1080 stride=1920 blk=4147200 B x 4, pool_base=0x7384c000 (blob-free)
+[openkvm] isp_model block allocated @0x74824000
+[openkvm] capture up 1920x1080 (blob-free, pool_base=0x7384c000)
+[openkvm] frame phys: api=0x73c45000 derived=0x73c45000 -> using api (blk 1)
+  read_img[0] rc=1 len=32
+  read_img[1] rc=2 len=8
+  read_img[2] rc=3 len=12128
+vendor NAL: 12128 bytes sha=d8bedc4bc1a403da head=0000000125b80002
+cmdbuf pool base=0x7380a000 len=0x10000 unit=0x2000
+live reg image @0x7381c800: sw8=0x749ce028 sw9(size)=12128 sw11=0 sw191=0x14000000 cc(sw82)=0x002011f0
+ref HW output @0x749ce000 len 0x4000  sha=0a0d741573254279  (NAL starts at +0x28)
+HW-buffer-vs-NAL body match at +0x28: False (12124 bytes)
+NAL body prefix 25b8000200003f00bf62b47ffc212a4c found in HW buffer at offset=0x2c
+IDR cmdbuf: slot=1 src_phys=0x7380c000 JMP@word566 cmdbuf_size=0x8e8
+using libkvm's initialized ax_venc fd=22 for raw VCMD ioctls
+RESERVE(29) rc=0 -> my cmdbuf_id=2 (slot cap=0x2000)  arg=00a41f00000000200000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+my slot phys=0x7380e000
+memcpy cmdbuf -> slot verify: True (first word=0xb0010068)
+LINK_RUN arg=00a41f000000e8080000020000000100
+LINK_RUN(30) rc=-1 errno=14 (Bad address) -- errno14 after run = benign copy_to_user writeback fault
+WAIT(31) rc=-1 errno=2 arg_after=00000000
+cc(sw82) before=0x002011f0 after=0x002011f0  changed=False
+sw9(out size) after=12128 (vendor NAL body=12124)
+OUTPUT identical (full 0x4000 region): True
+  V sha=0a0d741573254279  R sha=0a0d741573254279
+our HW-output NAL body (at 0x2c) == vendor NAL body: True
+RELEASE(32) rc=0 errno=0
+=== MILESTONE: output byte-identical=True AND hw re-ran(cc changed)=False ===
+[openkvm] capture teardown: 0 selector failures
+=== stage1 replay done ===
