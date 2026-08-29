@@ -52,6 +52,7 @@ It is not free, and the costs are real:
 | **OTA redesign** | `pkgs/update-package.nix` overlays *files* into `/kvmapp`, `/opt/lib`, `/usr/lib/modules`. A NixOS rootfs is a store closure; an update becomes "import a closure, `switch-to-configuration`". [updates.md](updates.md) has to be rewritten. |
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [known gaps](#known-gaps). |
 | **WiFi** | `aic8800_*.ko` + `/opt/firmware/aic8800/*.bin` also come only from the vendor rootfs; `pkgs/ax-ko-blobs.nix` does not carry them. |
+| **The `rc.local` glue** | Not just the module loader: `axemac.sh`, `npu_set_bw_limiter.sh`, a bare `devmem` poke, and **`S99checkboot`, which writes the A/B slot-bootable register on every boot**. All need units, and the register writes need the script text read off the device first. |
 | **Boot risk** | The rootfs is the one thing between U-Boot and a working device, `bootdelay=0` means there is no serial break-in, and recovery is physical AXDL. |
 
 **Exit condition for the frozen pin:** the rootfs can move back to
