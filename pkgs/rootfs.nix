@@ -449,18 +449,34 @@ pkgs.stdenvNoCC.mkDerivation {
       /usr/bin/axbox \
       /usr/sbin/axsyslogd \
       /usr/sbin/axklogd \
+      /usr/bin/axdmesg \
       /etc/init.d/axsyslogd \
       /etc/init.d/axklogd \
       /usr/lib/libax_syslog.so \
-      /opt/lib/libax_syslog.so ; do
+      /opt/lib/libax_syslog.so \
+      /usr/bin/kvm_ui_setup \
+      /usr/bin/ax_clk \
+      /usr/bin/ax_lookat ; do
       echo "rm $dead" >> "$script"
     done
     # The axbox set above (step 5b8): axbox is the closed multicall,
-    # ax{syslog,klog}d are its symlinks, /etc/init.d/{axsyslogd,axklogd} the
-    # (now caller-less) sysv wrappers, and libax_syslog.so is axbox's only
-    # non-libc DT_NEEDED -- verified: nothing else on the image DT_NEEDEDs or
-    # dlopens it (the /opt/lib copy is a second, equally unreferenced build).
-    # rsyslogd covers logging; see the rationale block in step 5b8.
+    # ax{syslog,klog,dmesg}d are its symlinks (axdmesg is caller-less but would
+    # dangle once axbox is gone), /etc/init.d/{axsyslogd,axklogd} the (now
+    # caller-less) sysv wrappers, and libax_syslog.so is axbox's only non-libc
+    # DT_NEEDED -- verified: nothing else on the image DT_NEEDEDs or dlopens it
+    # (the /opt/lib copy is a second, equally unreferenced build). rsyslogd
+    # covers logging; see the rationale block in step 5b8.
+    #
+    # Also dropped, same debugfs-delete pattern -- CLOSED vendor userspace ELFs
+    # with ZERO caller anywhere on the image (grep of every init script + systemd
+    # unit + kvmcomm script is empty):
+    #   kvm_ui_setup  6.5 MB closed Sipeed C++ (RPATH into a dev's ~/kvm_ui tree);
+    #                 its only mention was a string inside /kvmcomm/ui/kvm_ui,
+    #                 which we already delete. A stray, not even kvmcomm-launched.
+    #   ax_clk        14.5 KB closed Axera clock-poke tool.
+    #   ax_lookat     14.5 KB closed Axera /dev/mem peek/poke; referenced only by
+    #                 /soc/scripts/busmonitor.sh, a manual debug script never run
+    #                 at boot.
     #
     # NOTE the REAL paths /usr/bin, /usr/sbin: on this rootfs /bin, /sbin and
     # /lib are all SYMLINKS into usr/, and debugfs `rm` does not traverse them --
@@ -557,12 +573,13 @@ pkgs.stdenvNoCC.mkDerivation {
     # Both the real paths AND the /bin,/sbin symlink paths are checked: debugfs
     # `stat` follows symlinks, so the /bin/axbox form also proves the removal is
     # visible at the path the device actually uses.
-    for dead in /usr/bin/axbox /usr/sbin/axsyslogd /usr/sbin/axklogd \
-                /bin/axbox /sbin/axsyslogd /sbin/axklogd \
+    for dead in /usr/bin/axbox /usr/sbin/axsyslogd /usr/sbin/axklogd /usr/bin/axdmesg \
+                /bin/axbox /sbin/axsyslogd /sbin/axklogd /bin/axdmesg \
                 /usr/lib/libax_syslog.so /opt/lib/libax_syslog.so \
-                /etc/init.d/axsyslogd /etc/init.d/axklogd; do
+                /etc/init.d/axsyslogd /etc/init.d/axklogd \
+                /usr/bin/kvm_ui_setup /usr/bin/ax_clk /usr/bin/ax_lookat; do
       if debugfs -R "stat $dead" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
-        echo "ERROR: $dead still present in image (axbox removal, step 5b8)" >&2; exit 1
+        echo "ERROR: $dead still present in image (closed-blob removal, step 5b8/5d)" >&2; exit 1
       fi
     done
     # rsyslog must remain enabled -- it is what replaces axbox.

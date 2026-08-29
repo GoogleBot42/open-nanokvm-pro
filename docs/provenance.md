@@ -102,8 +102,10 @@ overlay (and won't return — the build fails if any survive):
 
 | Artifact | Size | Was |
 |---|---|---|
-| `/usr/bin/axbox` (+ `/usr/sbin/{axsyslogd,axklogd}` symlinks, `/etc/init.d/{axsyslogd,axklogd}`) | 44K | closed Axera BusyBox-1.32.0 syslog/klog multicall, started by `/etc/rc.local`. **Replaced by stock `rsyslogd`**, which the base already runs (`rsyslog.service` enabled in `multi-user.target.wants`, `Alias=syslog.service`) with `imuxsock` + `imklog` and `50-default.conf` writing `/var/log/{syslog,kern.log,auth.log}`. We ship `/etc/rc.local` without the two launch lines (`pkgs/rootfs/rc.local`, vendor original byte-pinned as `rc.local.vendor`). The base's other caller, `/etc/init.d/rcS`, is dead — `rcS.service`/`rc.service` are symlinks to `/dev/null`. |
+| `/usr/bin/axbox` (+ `/usr/sbin/{axsyslogd,axklogd}` and `/usr/bin/axdmesg` symlinks, `/etc/init.d/{axsyslogd,axklogd}`) | 44K | closed Axera BusyBox-1.32.0 syslog/klog multicall, started by `/etc/rc.local`. **Replaced by stock `rsyslogd`**, which the base already runs (`rsyslog.service` enabled in `multi-user.target.wants`, `Alias=syslog.service`) with `imuxsock` + `imklog` and `50-default.conf` writing `/var/log/{syslog,kern.log,auth.log}`. We ship `/etc/rc.local` without the two launch lines (`pkgs/rootfs/rc.local`, vendor original byte-pinned as `rc.local.vendor`). The base's other caller, `/etc/init.d/rcS`, is dead — `rcS.service`/`rc.service` are symlinks to `/dev/null`. `axdmesg` is a caller-less third symlink dropped so it doesn't dangle. |
 | `libax_syslog.so` (`/usr/lib` 35K + `/opt/lib` 256K) | 291K | axbox's only non-libc `DT_NEEDED`. Nothing else on the image links or dlopens it (checked against every `/opt/lib` `.so`, our `libkvm.so`, and `NanoKVM-Server`). |
+| `/usr/bin/kvm_ui_setup` | 6.5M | closed Sipeed C++ (dev-tree RPATH, links the closed `libax_*`/`libsns_dummy` set). A **stray** — not dpkg-owned, not in `kvmcomm.sh`'s target list, its only mention on the image was a string inside `/kvmcomm/ui/kvm_ui` (itself deleted). Zero callers. |
+| `/usr/bin/ax_clk`, `/usr/bin/ax_lookat` | 29K | closed Axera diagnostics (clock poke; `/dev/mem` peek/poke). No boot caller; `ax_lookat` is named only by `/soc/scripts/busmonitor.sh`, a manual debug script never run at boot. |
 | `/kvmcomm/ui/kvm_ui` | 8.5M | closed OSD app, only launched by disabled `kvmcomm.service` |
 | `/kvmcomm/vin/kvm_vin` | 792K | closed capture daemon |
 | `/kvmcomm/ui/frameforge` | 988K | closed compositor |
@@ -157,6 +159,36 @@ connections; all of the below fire on boot, a timer, or an explicit user action.
 
 The web UI's external URLs are all `href` links the user clicks (wiki, GitHub,
 socials) — no page-load egress.
+
+---
+
+## Audited, present-but-inert (not closed blobs to chase)
+
+A full dpkg-ownership diff of the retained rootfs (`/usr/{bin,sbin,lib,libexec}`,
+`/usr/local`, `/usr/lib/aarch64-linux-gnu`) found the following. None is a closed
+blob our stack executes, so none blocks blobless userspace — recorded so the
+audit is reproducible:
+
+- **The entire PiKVM/`kvmd` stack is inert.** The base ships a Sipeed-built
+  `pikvm` dpkg package (kvmd + `janus` + µStreamer + `libgpiod`, ~1,900 files).
+  It runs **only** if `/etc/kvm/server.txt` says `pikvm`; that file is absent, so
+  `kvmcomm.sh` writes the default `nanokvm` and never starts it. No `kvmd*` unit
+  has a `.wants` symlink. `janus`/`ustreamer`/`libgpiod` are open source anyway.
+  (We disable `kvmcomm.service` outright — see `pkgs/rootfs.nix` 5c.)
+- **`/usr/local` CPython 3.13** (built into `/usr/local`, not dpkg-managed) is the
+  system `python3` via `/etc/alternatives`. Open source, but unmanaged — a
+  supply-chain surface worth replacing when the rootfs goes from-source. Every
+  `#!/usr/bin/python3` on the device runs under it.
+- **Open dropped-in tools** (not dpkg, but not vendor/closed): `/usr/bin/gdb`,
+  `/usr/bin/strace`, `/opt/e2fs-static/*` (e2fsprogs 1.46.6, no caller),
+  `/opt/swupdate/*` (SWUpdate + libubootenv `fw_printenv`/`fw_setenv`, GPL/LGPL;
+  `S99checkota`'s calls to it are commented out), `/opt/usr/bin/tiny*` (tinyalsa,
+  no caller). All are from-source gaps for a fully-blobless build, not runtime
+  closed blobs.
+- **`/usr/bin/fw_printenv`** (the one that DOES run, via `S99checkboot`) is the
+  classic U-Boot 2020.04 tool — GPL, open, kept.
+- `/usr/lib/aarch64-linux-gnu` (1,074 entries): **zero** unowned files — no vendor
+  `.so` was hidden there.
 
 ---
 
