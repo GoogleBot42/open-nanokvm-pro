@@ -83,11 +83,17 @@ from-source `libsns_dummy.so` (which overwrites the vendor's). The remaining
 **42 files / 29.4 MB** (`libax_skel`, `libax_opal`,
 `libax_vo`, `libax_vdec`, `libax_audio*`, the 3A libs, every non-dummy
 `libsns_*`, …) are **present on disk but never dlopen'd or linked** by anything
-our stack runs. Deleting them from the image is a real blob reduction with no
-functional change, but it is not free of risk (a `libax_proton` ISP path could
-dlopen a 3A lib by name), so it wants a device confirmation
-(`lsof`/`/proc/*/maps` while streaming) before it ships — its own ticket.
-`libax_syslog.so` left this bucket by deletion, below.
+our stack runs. Evidence: the `DT_NEEDED` graph over all 50 `.so` (nothing in
+the 7-lib closure references anything outside it), and the only `.so`-name
+strings in `libax_proton.so` are its own `DT_NEEDED`s plus one soft
+`dlopen("/soc/lib/libisp_cjson.so")` — a path that **does not exist** on the
+image (`/soc` holds only `ko/` and `scripts/`), so that dlopen already fails
+harmlessly today. No 3A or sensor lib is named anywhere in it.
+
+Deleting the 42 is a real blob reduction with no expected functional change,
+but it wants one device confirmation (`lsof` / `/proc/<server>/maps` while
+streaming) before it ships — its own ticket. `libax_syslog.so` left this bucket
+by deletion, below.
 
 ### Closed binaries — REMOVED from the image
 
