@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# nixos-chroot-test -- prove the pure-Nix rootfs (issue #26) works on the
+# device's real 4.19.125 kernel WITHOUT booting it.
+#
+# This is step 3 of the validation ladder in docs/nixos-rootfs.md and the one
+# that matters: it turns "systemd 256's README says it supports 4.19" into
+# evidence, at zero boot risk.
+#
+#   tools/nixos-chroot-test            build if needed, ship, mount, chroot, check
+#   tools/nixos-chroot-test --cleanup  unmount and delete everything it made
+#
+# WHAT IT TOUCHES ON THE DEVICE
+#   One file: /root/nixos-rootfs-test/rootfs.ext4. Loop-mounted read-only at
+#   .../mnt with /proc /sys /dev bind-mounted in. It NEVER writes a block
+#   device -- not /dev/mmcblk0 (eMMC), not /dev/mmcblk1 (SD). --cleanup undoes
+#   everything; so does a reboot, for the mounts.
+#
+# WHY A LOOP MOUNT RATHER THAN COPYING THE CLOSURE
+#   The device has no Nix, so `nix-store --import` is unavailable, and a NixOS
+#   closure only works at its real /nix/store paths. Loop-mounting the built
+#   image gives exactly the filesystem that would be flashed, store already in
+#   place. CONFIG_BLK_DEV_LOOP=y in the vendor defconfig.
+#
+# WHAT IT PROVES / DOES NOT PROVE
+#   Proves: systemd 256 runs and parses the unit graph on this kernel; udev
+#   runs; the full DT_NEEDED chain of NanoKVM-Server and libkvm resolves; the
+#   patchelf'd libax_*.so dlopen. Does NOT prove: PID 1 boot, activation,
+#   networking, or capture. Those need a real boot -- SD card first.
+set -u
+
+here="$(cd "$(dirname "$0")" && pwd)"
+repo="$(dirname "$here")"
+kvmssh="$here/kvmssh"
+kvmscp="$here/kvmscp"
+checker="$here/nixos-chroot-check.sh"
+remote_dir=/root/nixos-rootfs-test
+
+die() { echo "nixos-chroot-test: $*" >&2; exit 1; }
+say() { printf '\n=== %s ===\n' "$*"; }
+
+[ -x "$kvmssh" ] || die "missing $kvmssh"
+[ -x "$kvmscp" ] || die "missing $kvmscp"
+[ -f "$checker" ] || die "missing $checker"
+
+if [ "${1:-}" = "--cleanup" ]; then
+    say "cleanup"
+    "$kvmssh" "umount $remote_dir/mnt/dev; umount $remote_dir/mnt/sys; umount $remote_dir/mnt/proc; umount $remote_dir/mnt; losetup -D; rm -rf $remote_dir; echo cleaned" \
+        2>/dev/null
+    echo "cleanup done (errors above are expected if nothing was mounted)."
+    exit 0
+fi
+
+say "build"
+img="$repo/result/nixos_rootfs.ext4"
+if [ ! -f "$img" ]; then
+    ( cd "$repo" && nix build .#nixos-rootfs ) || die "nix build .#nixos-rootfs failed"
+fi
+[ -f "$img" ] || die "no image at $img"
+
+# Store paths resolved on the BUILD host -- they are valid inside the image
+# too, because the image carries the same /nix/store.
+sys="$(readlink -f "$repo/result/system")" || die "no result/system"
+[ -d "$sys" ] || die "result/system does not resolve"
+# /opt/lib and /kvmapp are systemd.tmpfiles symlinks, created at BOOT -- they
+# do not exist in a chroot. Pull their store targets out of the tmpfiles rules
+# so the checks can address the real paths instead.
+tmprule() { grep -ohm1 "^L+ $1 .* \(/nix/store/[^ ]*\)$" "$sys"/etc/tmpfiles.d/*.conf 2>/dev/null \
+              | awk '{print $NF}'; }
+axlib="$(tmprule /opt/lib)"; axlib="${axlib%/lib}"
+kvmapp="$(tmprule /kvmapp)"
+[ -n "$axlib" ] || echo "warning: no axera-libs-nixos path found; dlopen checks will be skipped" >&2
+[ -n "$kvmapp" ] || echo "warning: no /kvmapp store path found; link checks will be skipped" >&2
+
+say "space check"
+bytes=$(stat -c%s "$img")
+echo "image     : $((bytes / 1024 / 1024)) MiB raw"
+free_kb=$("$kvmssh" "df -kP / | awk 'NR==2{print \$4}'" | tr -dc '0-9') \
+    || die "cannot reach the device"
+echo "device free: $((free_kb / 1024)) MiB on /"
+[ "$((bytes / 1024))" -lt "$free_kb" ] || die "not enough free space on the device rootfs"
+
+say "ship (gzip on the wire; no block device is written)"
+"$kvmssh" "mkdir -p $remote_dir/mnt" || die "mkdir failed"
+gzip -c "$img" | "$kvmssh" "gunzip > $remote_dir/rootfs.ext4" || die "transfer failed"
+"$kvmscp" "$checker" "$remote_dir/" || die "could not ship the check script"
+
+say "loop-mount read-only + bind /proc /sys /dev"
+"$kvmssh" "set -e
+    mount -o loop,ro $remote_dir/rootfs.ext4 $remote_dir/mnt
+    mount --bind /proc $remote_dir/mnt/proc
+    mount --bind /sys  $remote_dir/mnt/sys
+    mount --bind /dev  $remote_dir/mnt/dev
+    echo mounted" \
+    || die "mount failed -- run --cleanup, then check CONFIG_BLK_DEV_LOOP and dmesg"
+
+say "checks"
+"$kvmssh" "sh $remote_dir/nixos-chroot-check.sh '$remote_dir' '$sys' '$axlib' '$kvmapp'"
+rc=$?
+
+cat <<EOF
+
+The image is still mounted so you can poke at it:
+    tools/kvmssh 'chroot $remote_dir/mnt /bin/sh'
+Tear it all down with:
+    tools/nixos-chroot-test --cleanup
+EOF
+exit "$rc"

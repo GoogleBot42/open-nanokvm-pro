@@ -1,4 +1,5 @@
 { pkgs
+, crossPkgs
 , nixpkgsRootfs # a SEPARATE nixpkgs pin -- see the systemd ceiling below
 , axera-libs
 , ax-ko-blobs
@@ -63,6 +64,16 @@ let
   nanokvm = {
     inherit axera-libs ax-ko-blobs kernel kvm-encoder
       nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
+    # libkvm.so.0 DT_NEEDEDs libopus and libasound but its DT_RPATH is only
+    # "/opt/lib:<axera-libs>"; NanoKVM-Server's DT_RUNPATH
+    # ("$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib") carries no store path either.
+    # So both libraries must be STAGED into /opt/lib by the appliance module.
+    # They come from crossPkgs -- the exact builds libkvm and the server were
+    # compiled and linked against (pkgs/kvm-encoder.nix,
+    # pkgs/nanokvm-server.nix) -- rather than the rootfs pin's, so there is no
+    # version skew between what was linked and what is loaded.
+    opus = crossPkgs.libopus;
+    alsaLib = crossPkgs.alsa-lib;
   };
 
   eval = import (nixpkgsRootfs + "/nixos/lib/eval-config.nix") {
@@ -149,7 +160,21 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: no /nix/var/nix/profiles/system -- /sbin/init dangles" >&2; exit 1; }
     debugfs -R "stat ${toplevel}/init" rootfs.ext4 2>/dev/null | grep -q "Inode:" \
       || { echo "ERROR: stage-2 init missing from the image closure" >&2; exit 1; }
-    echo "  /sbin/init -> profile -> ${toplevel}/init: present."
+
+    # ...and it must be the stage-2 SCRIPT, not an ELF. 24.11's top-level.nix
+    # swaps <system>/init for a copy of the systemd binary whenever
+    # boot.initrd.systemd.enable is true -- and it does NOT consult
+    # boot.initrd.enable, so nothing else here would catch it. The vendor
+    # initramfs would exec that as PID 1 in initrd mode and the board would die
+    # silently. nixos/appliance.nix asserts the option; this asserts the
+    # artifact, because the option could be re-enabled by an imported profile.
+    debugfs -R "dump ${toplevel}/init $PWD/chk.init" rootfs.ext4 2>/dev/null
+    head -c 2 "$PWD/chk.init" | grep -q '#!' || {
+      echo "ERROR: ${toplevel}/init is not a '#!' script." >&2
+      echo "       boot.initrd.systemd.enable is probably on (see appliance.nix)." >&2
+      exit 1
+    }
+    echo "  /sbin/init -> profile -> ${toplevel}/init: present, and is a stage-2 script."
 
     # Android-sparse copy, the form the .axp carries (pkgs/image.nix swaps this
     # member in by basename).

@@ -51,8 +51,24 @@ let
   # the loader's default /lib search path. NixOS has no such path, so the same
   # libraries must be patchelf'd against this system's glibc/libstdc++ before
   # anything can dlopen them. Everything else about them is unchanged.
+  # This whole derivation is what becomes /opt/lib. It must be ONE derivation,
+  # not a patch step plus a copy: the patched .so carry rpaths naming their own
+  # store directory, so copying them elsewhere drags the intermediate into the
+  # closure and ships the entire vendor lib set twice.
+  #
+  # It also carries our FROM-SOURCE ISP dummy-sensor library (issue #30), and
+  # that is a provenance win the overlay build cannot claim. The MSP repo that
+  # `pkgs/axera-libs.nix` pins ships NO `libsns_dummy.so` at all -- only
+  # `libsns_dummy_bittrue.so`; that derivation's "WARN: libsns_dummy.so not
+  # found" has always been firing. On the vendor Ubuntu rootfs the file exists
+  # only because the retained vendor image carries a prebuilt copy at /opt/lib,
+  # which pkgs/rootfs.nix step [5a1] then overwrites with ours. A pure-Nix
+  # rootfs has no vendor image to inherit from, so here the from-source build
+  # is not an override -- it is the only source, and the blob has nowhere to
+  # come back from. It has to live in THIS directory because the capture
+  # backend dlopens it by bare name from libs whose rpath names /opt/lib.
   axLibs = pkgs.stdenv.mkDerivation {
-    pname = "axera-libs-nixos";
+    pname = "nanokvm-opt-lib";
     version = "3.0.0-msp";
     src = nanokvm.axera-libs;
     dontConfigure = true;
@@ -63,16 +79,35 @@ let
       pkgs.stdenv.cc.cc.lib # libstdc++ / libgcc_s
       pkgs.glibc
     ];
-    # The vendor set has genuine internal cycles and a few libs with no
+    # The vendor set has genuine internal cycles and several libs with no
     # consumer in our stack; a missing dep must not fail the whole build.
     autoPatchelfIgnoreMissingDeps = true;
     installPhase = ''
       mkdir -p "$out"
       cp -a "$src/lib" "$out/lib"
       chmod -R u+w "$out/lib"
+      install -m0755 ${nanokvm.libsns-dummy}/lib/libsns_dummy.so "$out/lib/libsns_dummy.so"
+
+      # libopus + libasound MUST live here. libkvm.so.0 DT_NEEDEDs both, and
+      # its DT_RPATH is exactly "/opt/lib:<axera-libs store path>" -- neither of
+      # which contains them. On the vendor Ubuntu rootfs they resolve anyway,
+      # from the distro's default loader path (/lib/aarch64-linux-gnu) and from
+      # /opt/usr/lib. NixOS has no default loader path, so without this the
+      # server dies at startup with "libasound.so.2: cannot open shared object
+      # file" -- the same class of failure as the DT_RPATH-vs-DT_RUNPATH trap in
+      # docs/architecture.md. Copied (not symlinked) so the SONAME resolves
+      # inside this one directory.
+      cp -aL ${nanokvm.opus}/lib/libopus.so*    "$out/lib/"
+      cp -aL ${nanokvm.alsaLib}/lib/libasound.so* "$out/lib/"
+      chmod -R u+w "$out/lib"
+
+      for must in libax_venc.so libsns_dummy.so libopus.so.0 libasound.so.2; do
+        test -e "$out/lib/$must" \
+          || { echo "ERROR: $must missing from /opt/lib -- the server will not start" >&2; exit 1; }
+      done
     '';
     meta.description =
-      "Axera media libraries (pkgs/axera-libs.nix) autoPatchelf'd for a NixOS rootfs";
+      "/opt/lib for the Nix rootfs: Axera media libs autoPatchelf'd for NixOS, plus our from-source libsns_dummy.so";
   };
 
   # ---- /soc/ko : the pinned prebuilt Axera media modules -----------------
@@ -142,6 +177,49 @@ in
   boot.initrd.enable = false; # the kernel embeds the vendor initramfs
   boot.kernel.enable = false; # our own 4.19.125 lives in its own partition
 
+  # THE TRAP, and why the assertion below is not paranoia:
+  # 24.11's system/activation/top-level.nix branches on
+  # `boot.initrd.systemd.enable` ALONE -- it never consults
+  # `boot.initrd.enable`. When that option is true, `$out/init` stops being the
+  # stage-2 SCRIPT and becomes a copy of the systemd ELF, meant to run as an
+  # initrd PID 1. Our vendor initramfs would then exec systemd-as-initrd as the
+  # real PID 1 and the board dies with no console (bootdelay=0, UART0 on hidden
+  # pads). It defaults false, so we are fine today -- but 24.11's
+  # profiles/image-based-appliance.nix sets it `mkDefault true`, and that
+  # profile is exactly what someone would reach for next (it also sets
+  # nix.enable = false and system.switch.enable = false). Fail the eval instead.
+  boot.initrd.systemd.enable = false;
+
+  assertions = [
+    {
+      assertion = !config.boot.initrd.systemd.enable;
+      message = ''
+        nixos/appliance.nix: boot.initrd.systemd.enable must stay false.
+        With it on, <system>/init becomes the systemd ELF instead of the NixOS
+        stage-2 script, and the vendor initramfs's `switch_root /realroot
+        /sbin/init` then execs an initrd-mode systemd as PID 1. The board has
+        no autoboot interrupt window and its console is on hidden pads, so that
+        failure is silent. See docs/nixos-rootfs.md.
+      '';
+    }
+    {
+      # The vendor kernel is built `# CONFIG_NAMESPACES is not set`, so
+      # unshare(CLONE_NEWUSER) returns EINVAL and any unit with
+      # PrivateUsers=true dies with status 217/USER. Mount namespaces are
+      # unconditional in Linux, which is why PrivateTmp=/ProtectSystem= still
+      # work -- but user namespaces genuinely do not exist here.
+      assertion = !(lib.any (u: (u.serviceConfig.PrivateUsers or false) == true)
+        (lib.attrValues config.systemd.services));
+      message = ''
+        nixos/appliance.nix: a unit sets PrivateUsers=true, but this board's
+        kernel has CONFIG_NAMESPACES=n -- user namespaces do not exist and the
+        unit will fail to start with 217/USER. (For the same reason
+        pkgs.buildFHSEnv, in either its bubblewrap or chroot form, cannot work
+        on this device at all.) See docs/nixos-rootfs.md.
+      '';
+    }
+  ];
+
   # Splice our modules tree in at the path the NixOS-patched kmod searches.
   # `boot.kernel.enable = false` skips the stock `ln -s ... $out/kernel-modules`,
   # so we add it back by hand; stage 2 then points /run/booted-system at it.
@@ -183,6 +261,23 @@ in
     # (libsns_dummy.so) needs the FHS path to exist.
     "d /opt 0755 root root - -"
     "L+ /opt/lib - - - - ${axLibs}/lib"
+    # /opt/usr/lib is the THIRD entry in NanoKVM-Server's DT_RUNPATH
+    # ($ORIGIN/dl_lib:/opt/lib:/opt/usr/lib -- pkgs/nanokvm-server.nix sets it
+    # by hand, and it contains NO store path at all). On the vendor rootfs this
+    # is where libopus lives. Point it at the same directory as /opt/lib so
+    # every entry in that RUNPATH resolves.
+    "d /opt/usr 0755 root root - -"
+    "L+ /opt/usr/lib - - - - ${axLibs}/lib"
+    # /bin/bash: the vendor scripts are #!/bin/bash (nanokvm.sh is
+    # #!/usr/bin/env bash, usbdev.sh and the /opt/scripts set are #!/bin/bash),
+    # and NixOS materialises only /bin/sh and /usr/bin/env by default.
+    "L+ /bin/bash - - - - ${pkgs.bash}/bin/bash"
+    # /usr/share/zoneinfo: the server derives the timezone by readlink()ing
+    # /etc/localtime and slicing on the literal "/usr/share/zoneinfo/"
+    # (service/vm/datetime.go). See the known gaps in docs/nixos-rootfs.md --
+    # this materialises the directory but does NOT by itself fix the readlink.
+    "d /usr/share 0755 root root - -"
+    "L+ /usr/share/zoneinfo - - - - ${pkgs.tzdata}/share/zoneinfo"
     # /soc -- module blobs + the curated loader, from our pins.
     "d /soc 0755 root root - -"
     "L+ /soc/ko - - - - ${axKo}"
@@ -371,7 +466,18 @@ in
     enable = true;
     settings.PermitRootLogin = "yes";
     settings.PasswordAuthentication = true;
+    # The vendor rootfs socket-activates sshd; keep that shape so the unit
+    # names below line up with what the server expects.
+    startWhenNeeded = true;
   };
+
+  # NanoKVM-Server toggles SSH by talking to org.freedesktop.systemd1 directly
+  # (utils/systemctl.go) using DEBIAN unit names -- `ssh.service` and
+  # `ssh.socket`. NixOS calls them `sshd.*`, so without these aliases the web
+  # UI's SSH switch silently does nothing. Aliases are cheap; patching the Go
+  # source would be another divergence to carry.
+  systemd.services.sshd.aliases = [ "ssh.service" ];
+  systemd.sockets.sshd.aliases = [ "ssh.socket" ];
 
   # LAN discovery, same role avahi plays on the vendor rootfs.
   services.avahi = {
@@ -421,14 +527,38 @@ in
     };
   };
 
+  # The server and the vendor scripts shell out to these BY BARE NAME, so they
+  # have to be on the system PATH. This list is derived from the live device
+  # (every `exec.Command` in the Go source, plus the vendor scripts' call
+  # graph) -- a missing entry here is a feature that silently stops working,
+  # not a build error.
   environment.systemPackages = with pkgs; [
-    busybox # devmem, and the shell tooling the vendor scripts assume
-    kmod
+    busybox # devmem, udhcpd/udhcpc, and the shell tooling the scripts assume
+    bash
+    kmod # insmod / rmmod / lsmod
     e2fsprogs
+    coreutils
+    gnugrep
+    gnused
+    gawk
+    procps # ps, pgrep, pkill
+    iproute2 # ip
+    nettools # ifconfig
+    iptables
+    openssl # nanokvm.sh regenerates the HTTPS cert+key
+    ethtool # /etc/init.d/axemac.sh (eth0 RPS/RFS + rx pause)
+    # NOTE: no `ether-wake`. The server's Wake-on-LAN route runs
+    # `ether-wake -b <MAC>`, which on the vendor rootfs comes from Debian
+    # net-tools. nixpkgs has no package providing that binary name (`wakeonlan`
+    # is a differently-named perl script), so WoL is a known gap -- see
+    # docs/nixos-rootfs.md.
+    alsa-utils # server audio test: `aplay -D plughw:UAC2Gadget,0 ...`
+    wpa_supplicant # wpa_cli, used by the network settings routes
+    shadow # `passwd root`, fed on stdin when the UI changes the password
+    tzdata
+    python3
     pciutils
     usbutils
-    iproute2
-    python3
   ];
 
   # Nothing here should ever try to build documentation into the image.
