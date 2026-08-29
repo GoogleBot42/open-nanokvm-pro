@@ -66,6 +66,7 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 | Blob or network-endpoint questions | `docs/provenance.md` |
 | Mini-display | `docs/mini-display.md` |
 | Capture-pipeline internals / RE history | `docs/blob-replacement.md` |
+| Open-encoder CMA unblock kernel + slot-B flash (#49) | `docs/vcmd-cma-unblock.md` |
 | Pure-Nix / NixOS rootfs (feasibility + scaffold, #26) | `docs/nixos-rootfs.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
 

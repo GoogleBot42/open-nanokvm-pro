@@ -2564,3 +2564,37 @@ the CMM allocator / a reserved-memory region) instead of `dma_alloc_attrs` — m
 but stays on the current kernel. #25 cannot close until one lands. Added to the unblock list:
 **flash a `CONFIG_CMA`-enabled kernel (or a VCMD reserved-memory carveout DTB)** — the single
 human action that converts Path B into a bring-up-only finish.
+
+### 2026-08-29 — #49: the CONFIG_CMA unblock kernel is built + ready to flash to `kernel_b` (approach chosen, ABI-proven)
+
+The Path-B wall above is now a ready-to-flash artifact. Both candidate unblocks were
+analysed; **approach 1 (a `CONFIG_CMA` kernel variant) is implemented** because it is the
+smaller blast radius — **zero driver change, zero DTB change, one partition flashed** — and its
+only theoretical risk (an `ax_*.ko` ABI disturbance) is disproven, not assumed:
+
+- **New opt-in flake outputs** (`pkgs/kernel.nix` gained `cmaSizeMBytes`, default `null`):
+  `.#kernel-cma` (Image+modules with `CONFIG_CMA=y` + `CONFIG_DMA_CMA=y` + a 16 MiB default CMA
+  area) and `.#kernel-slot-image-cma` (that Image → `ax_gzip -9` + signed 1 KB header for the
+  64 MB `kernel_b` slot). The default `.#kernel` and every shipping image are **byte-for-byte
+  unchanged** — the default kernel `.drv` hash is identical before/after (the CMA shell is
+  appended via `lib.optionalString`, empty in the default case).
+- **Vermagic byte-identical, verified empirically.** `CONFIG_CMA` is not a `VERMAGIC_STRING`
+  input (`include/linux/vermagic.h`). A module built by `.#kernel-cma` reads
+  `vermagic=4.19.125 SMP preempt mod_unload aarch64` — byte-for-byte equal to the vendor
+  `ax_cmm.ko`/`ax_venc.ko`. So the blobs still plain-`insmod`.
+- **`struct page` unchanged.** Its only config-gated field is under `CONFIG_MEMCG` (left off);
+  `CONFIG_CMA` adds none and reuses the existing pageblock migrate-type machinery — the exact
+  contrast with the `CONFIG_MEMCG` trap CLAUDE.md warns about. `CONFIG_CMA`'s `select`s
+  (`MEMORY_ISOLATION`, `MIGRATION`) are already `=y` in the defconfig, so nothing new is pulled.
+- **Why not DT carveout (approach 2):** it is DTB-only for kernel config but needs a driver
+  change (DT-probed device + `memory-region`/`of_reserved_mem_device_init`), a hand-placed phys
+  carveout inside `mem=256M`, and a second partition reflashed. Approach 1 dominates once
+  vermagic is shown identical.
+
+**Full reversible flash + Path-B bring-up plan: `docs/vcmd-cma-unblock.md`.** Slot A
+(`kernel` p14) is never touched; `dtb_b` (p13) already holds the correct patched DTB
+(`image.nix` writes it to both slots), so only `kernel_b` (p15) is written and rollback is a
+slot switch. `nix build .#vc8000-vcmd` still builds against this tree (vermagic identical).
+**Not device-verified** (host-only track): that the reserved CMA area satisfies the alloc on
+this board, and the exact SPL slot-register behaviour for forcing a slot-B boot — both are
+serial-confirmable human steps in the plan. Ticket #49.

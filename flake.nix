@@ -120,6 +120,16 @@
 
         kernel = callPkg ./pkgs/kernel.nix { inherit initramfs; };
 
+        # OPT-IN CMA kernel variant (issue #49): identical to `kernel` except it
+        # enables CONFIG_CMA + a 16 MiB default CMA area, so the open VC8000E
+        # VCMD driver's coherent DMA pools (3x2M FORCE_CONTIGUOUS) allocate --
+        # the wall proven on-device 2026-08-29. Purpose-built to flash to the
+        # REVERSIBLE kernel_b slot (see kernel-slot-image-cma below); the default
+        # `kernel`/images stay byte-for-byte unchanged. 16M rounds the 6M pool
+        # need well up and matches the mainline CMA default; CMA memory is
+        # movable-reclaimable, so it is not lost to general allocation.
+        kernel-cma = callPkg ./pkgs/kernel.nix { inherit initramfs; cmaSizeMBytes = 16; };
+
         # Open VC8000E VCMD command-engine driver (eswin EIC7X), ported
         # out-of-tree to the 4.19 kernel -- the kernel half of the blob-free
         # encode-submission path (issue #44). See pkgs/vc8000-vcmd.nix.
@@ -164,6 +174,32 @@
 
             Flash (reversible slot-B test):
               dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync'';
+        };
+
+        # Signed kernel_b partition image carrying the CMA variant (issue #49) --
+        # the ONE reversible flash that unblocks the open VC8000E VCMD driver.
+        # Flash to /dev/mmcblk0p15 (slot B), boot slot B, roll back by booting
+        # slot A. Same DTB as stock (no DTB change needed). See docs/vcmd-cma-unblock.md.
+        kernel-slot-image-cma = callPkg ./pkgs/slot-image.nix {
+          payload = "${kernel-cma}/Image";
+          pname = "nanokvm-pro-kernel-slot-image-cma";
+          version = "ax630c-kernel-b-cma";
+          artifact = "kernel_b.bin";
+          partSize = 64 * 1024 * 1024;
+          loadAddr = "0x40200000";
+          title = "kernel partition image (slot B, CMA variant #49)";
+          flashNotes = ''
+            TARGET partition: kernel_b  (A/B slot B), 64M
+              eMMC device   : /dev/mmcblk0p15   (p14 = slot A / stock kernel)
+
+            CONTENT: the from-source kernel with CONFIG_CMA + a 16M default CMA
+            area (pkgs/kernel.nix cmaSizeMBytes=16) so the open VC8000E VCMD
+            driver's coherent DMA pools allocate. Vermagic is byte-identical to
+            stock, so the vendor ax_*.ko still load. DTB is UNCHANGED from stock.
+
+            Flash (reversible slot-B test):
+              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync
+            Roll back: boot slot A (stock kernel, p14). See docs/vcmd-cma-unblock.md.'';
         };
 
         # Vendor-MPI capture default. The blob-free raw-ioctl backend ships
@@ -242,7 +278,8 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
-            initramfs kernel vc8000-vcmd dtb dtb-slot-image kernel-slot-image
+            initramfs kernel kernel-cma vc8000-vcmd dtb dtb-slot-image
+            kernel-slot-image kernel-slot-image-cma
             kvm-encoder kvm-encoder-open kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
