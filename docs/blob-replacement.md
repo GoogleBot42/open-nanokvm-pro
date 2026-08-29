@@ -2648,3 +2648,47 @@ fixed-QP stage README and the RE mining notes: input pixel format (sw17=0x30
 labelled NV12 but the capture block is 2 B/px), the kick low-nibble semantics,
 ~40 opaque registers, and the RC-enable bit. Fixed-QP 1080p IDR is reachable
 without cracking those (replay + repoint); P-frames and rate control are not.
+
+### 2026-08-30 — kernel-module (.ko) de-blobbing roadmap
+
+The `ax630c_vcmd_glue.c` shim is the pattern for retiring a vendor `.ko`: take
+an OPEN driver of the same hardware lineage, write a thin AX630C platform layer
+(DT clk/reset/IRQ — all already open in-tree), and drop the blob. But that only
+works where an open driver of that lineage EXISTS. Sorting the loaded blobs by
+tractability against that test:
+
+**Tractable — VC8000E VCMD family (open eswin/VeriSilicon lineage exists):**
+- `ax_venc` (video H.264/265): **being replaced now** (#44 driver done, #45
+  userspace Stage A proven). The shim replaces the blob, it doesn't wrap it.
+- `ax_jenc` (JPEG): the open driver already models a JPEG-encoder core
+  (`VCMD_TYPE_JPEG_ENCODER=3`, `VCMD_JENC_MODULE_TYPE_1=3`). Plausibly the same
+  driver with a second core wired at the jenc base `0x4000000` — IF jenc is
+  VCMD-driven on AX630C (unconfirmed; it may be direct-register). Cheapest next
+  blob to attempt after the venc path closes.
+- `ax_vdec` (video decode, VC8000D): not used by the KVM path; open VC8000D
+  lineage exists if ever needed.
+
+**High-value linchpin, RE-able but hard — `ax_cmm`:** the CMM allocator over the
+200 MB reserved carveout. Everything imports its `AX_OSAL_*`/pool symbols, so
+replacing it means re-implementing the inter-blob ABI, not just one driver. It
+is a bounded problem (a contiguous allocator + an ioctl surface) unlike the ISP,
+and Stage B needs *some* userspace CMM allocation anyway — so a minimal open CMM
+shim is on the critical path regardless. Medium effort, unblocks a lot.
+
+**The wall — the ISP/VIN capture stack:** `ax_proton` (2.3 MB ISP/VIN),
+`ax_mipi_rx`, `ax_gdc`, `ax_vpp`, `ax_ivps`. No open driver of this lineage
+exists. Capture is already blob-free at the *userspace* layer (libkvm speaks raw
+ioctls to these `.ko`), but the `.ko` themselves would have to be written from
+scratch against undocumented ISP registers — the same "no ISP has been fully RE'd
+without vendor docs" wall as §8. Keep as blobs; revisit only if a vendor GPL
+source drop or an open AX630C ISP effort appears.
+
+**Infrastructure (small, follow the CMM decision):** `ax_base`, `ax_sys`,
+`ax_pool` — thin glue/OSAL layers; only worth touching once `ax_cmm` is open,
+since they share its symbol ABI.
+
+Bottom line: the shim-and-replace pattern the user pointed at is exactly right
+for the VC8000E family (venc now, jenc next) and, with more effort, for `ax_cmm`.
+It does NOT reach the ISP stack — that has no open lineage to build glue against,
+so "expanding the shim" there means writing a full ISP driver blind, which stays
+out of scope.
