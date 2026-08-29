@@ -55,10 +55,13 @@ Scanned `docs/{updates,mini-display,architecture,blob-replacement}.md`
 for pending/TODO/unverified markers still present in the tree:
 
 - **`docs/updates.md`, "Hardware validation TODO" callout (around line
-  163–167):** the SPL→U-Boot A/B slot-B failover path has been reasoned
-  from source but **not yet exercised on hardware** — "treat dual-slot
-  writes as belt-and-suspenders, not a proven rollback guarantee." Mirrors
-  Gitea issue #10 (`hardware-validation`, `needs-human`, `priority/high`).
+  163–167):** the SPL→U-Boot A/B slot-B failover path was reasoned from
+  source. **2026-08-30: now EXERCISED on hardware** (during #49) — slot B
+  boots via `/etc/init.d/S99checkboot systemB`+reboot, and a kernel that
+  dies on slot B auto-fails-over to slot A in ~40s (BOOTABLE bits are
+  consume-once). Procedure in `docs/flashing-and-recovery.md` "Slot-B kernel
+  testing". Issue #10's *deliberate slot-corruption* failover is still not
+  the exact thing tested, but the failover mechanism itself is now proven.
 - **Issue #42 (2026-08-17, `needs-human`): USB HID to the host is dead** —
   ep0 enumeration failure; every software remedy exhausted (ladder in the
   kvm-device skill), and the 2026-08-17 cold power cycle changed nothing —
@@ -134,10 +137,20 @@ for pending/TODO/unverified markers still present in the tree:
   walled on both paths** (docs stage "2026-08-29 … finish-line"): Path B (open `.ko`)
   is flash-gated — `vcmd_mem_init` needs contiguous coherent DMA but the device has
   no `CONFIG_CMA` (proven on-device); Path A (drive vendor `ax_venc.ko`) needs
-  unpublished nr70/nr83 blob RE. **#49 filed + PRE-STAGED**: opt-in `.#kernel-cma`
-  variant (vermagic byte-identical → vendor `ax_*.ko` still load; default kernel
-  untouched) + reversible slot-B flash & bring-up plan (`docs/vcmd-cma-unblock.md`)
-  → #25 is one human reversible flash from a no-new-RE finish. Non-encoder blob work
+  unpublished nr70/nr83 blob RE.
+  **2026-08-30 — #49 RESOLVED + closed, and #45 Stage A PROVEN (no flash):** the CMA
+  kernel was flashed to slot B and DIES pre-init — `CONFIG_CMA`/`DMA_CMA` are
+  vermagic-invisible but ABI-breaking for the vendor blobs (struct device `cma_area`;
+  migratetype/`struct zone`), proven by slot-B bisection. Replaced with the open
+  driver declaring an 8 MB CMM-tail coherent carveout via
+  `dma_declare_coherent_memory()` on the SHIPPING kernel (+ open `clk_venc_eb`, real
+  GIC_SPI 93 IRQ). Open driver initialises + `/dev/es_venc` live. Then **#45 Stage A**:
+  `pkgs/vcenc-ewl` (`ewl_probe`) drives the full open VCMD cmdbuf lifecycle from
+  userspace (RESERVE→LINK→WAIT→RELEASE) — hardware DMAs encoder swreg0=0x90101010
+  into the mmap'd status pool. NO vendor lib, NO flash. `.#kernel-cma` outputs removed.
+  Remaining for #25: **#45 Stage B** (CMM frame buffers + replay `img_qp32.bin`
+  swreg1..511 with the 16 KEEP address regs repointed + userspace SPS/PPS). Blob-RE
+  roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
   the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
   bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42
   unused `/opt/lib` libs = 29.4 MB, needs a device `lsof`); **#26** NixOS rootfs
