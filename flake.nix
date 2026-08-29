@@ -130,6 +130,13 @@
         # movable-reclaimable, so it is not lost to general allocation.
         kernel-cma = callPkg ./pkgs/kernel.nix { inherit initramfs; cmaSizeMBytes = 16; };
 
+        # #49 DEBUG bisection variant: CMA + DMA_CMA compiled in but NO boot-time
+        # default area (CMA_SIZE_MBYTES=0). Discriminates "the 16M reservation
+        # kills early boot" from "CMA integration kills early boot" -- the 16M
+        # variant dies pre-init on slot B (2026-08-30 bring-up) while the
+        # identical non-CMA kernel boots there.
+        kernel-cma-nores = callPkg ./pkgs/kernel.nix { inherit initramfs; cmaSizeMBytes = 0; };
+
         # Open VC8000E VCMD command-engine driver (eswin EIC7X), ported
         # out-of-tree to the 4.19 kernel -- the kernel half of the blob-free
         # encode-submission path (issue #44). See pkgs/vc8000-vcmd.nix.
@@ -180,6 +187,18 @@
         # the ONE reversible flash that unblocks the open VC8000E VCMD driver.
         # Flash to /dev/mmcblk0p15 (slot B), boot slot B, roll back by booting
         # slot A. Same DTB as stock (no DTB change needed). See docs/vcmd-cma-unblock.md.
+        # #49 DEBUG: slot image for the no-reservation bisection kernel above.
+        kernel-slot-image-cma-nores = callPkg ./pkgs/slot-image.nix {
+          payload = "${kernel-cma-nores}/Image";
+          pname = "nanokvm-pro-kernel-slot-image-cma-nores";
+          version = "ax630c-kernel-b-cma-nores";
+          artifact = "kernel_b.bin";
+          partSize = 64 * 1024 * 1024;
+          loadAddr = "0x40200000";
+          title = "kernel partition image (slot B, CMA-noreserve bisection)";
+          flashNotes = "#49 bisection: CONFIG_CMA+DMA_CMA, CMA_SIZE_MBYTES=0.";
+        };
+
         kernel-slot-image-cma = callPkg ./pkgs/slot-image.nix {
           payload = "${kernel-cma}/Image";
           pname = "nanokvm-pro-kernel-slot-image-cma";
@@ -280,6 +299,7 @@
             boot boot-fsbl boot-atf boot-optee boot-uboot
             initramfs kernel kernel-cma vc8000-vcmd dtb dtb-slot-image
             kernel-slot-image kernel-slot-image-cma
+            kernel-cma-nores kernel-slot-image-cma-nores
             kvm-encoder kvm-encoder-open kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
