@@ -43,9 +43,9 @@
 
 /* ---- ABI structs (exact field order + sizes; ptr_t/dma_addr_t = 8B) ------ */
 
-/* vc8000_driver.h:264-277. 72 bytes on arm64. Only *phy_addr/*_hw_addr/
- * *_total_size/*_unit_size fields are filled by the driver; the two
- * *_virt_addr pointers are NOT written (kernel pointers anyway). */
+/* vc8000_driver.h:264-277. 72 bytes on arm64. Only the phys/hw-addr,
+ * total-size and unit-size fields are filled by the driver; the two
+ * virt-addr pointers are NOT written (kernel pointers anyway). */
 struct cmdbuf_mem_parameter {
 	uint32_t *cmd_virt_addr;     /* NOT written by driver */
 	uint64_t  cmd_phy_addr;      /* command pool base (busAddress) */
@@ -92,6 +92,8 @@ struct exchange_parameter {
 #define OPCODE_NOP      (0x03u << 27) /* 0x18000000 */
 #define OPCODE_RREG     (0x16u << 27) /* 0xB0000000 */
 #define OPCODE_JMP      (0x19u << 27) /* 0xC8000000 */
+#define OPCODE_STALL    (0x09u << 27) /* 0x48000000; bits[15:0]=sync value */
+#define OPCODE_CLRINT   (0x1au << 27) /* 0xD0000000; bits[15:0]=ASIC byte addr */
 #define JMP_IE_1        (1u << 25)    /* 0x02000000: interrupt on this JMP */
 #define JMP_RDY_1       (1u << 26)    /* 0x04000000: set by driver at link */
 #define WREG_FIX        (1u << 26)    /* write all N values to same address */
@@ -104,6 +106,11 @@ struct exchange_parameter {
 /* JMP tail word the driver validates (opcode must be OPCODE_JMP; set IE so a
  * normal completion interrupt fires -> WAIT wakes). */
 #define JMP_TAIL_WORD    (OPCODE_JMP | JMP_IE_1) /* 0xCA000000, RDY=0 */
+
+/* STALL: wait for the core to finish (captured value uses sync=1). */
+#define STALL_WORD(v)   (OPCODE_STALL | ((uint32_t)(v) & 0xFFFF))
+/* CLRINT: clear the core interrupt at ASIC byte addr `a` (next word = mask). */
+#define CLRINT_WORD(a)  (OPCODE_CLRINT | ((uint32_t)(a) & 0xFFFF))
 
 /* Core register file base inside the VCMD ASIC map (config_parameter). */
 #define SUBMODULE_MAIN_ADDR 0x1000

@@ -42,24 +42,30 @@ pkgs.stdenv.mkDerivation {
 
   buildPhase = ''
     runHook preBuild
+    # Stage A: submission-path prover (register readback).
     ${prefix}cc -static -O2 -Wall -Wextra -std=gnu11 -I. \
       ewl_probe.c -o ewl_probe
+    # Stage B: real 1080p fixed-QP IDR encode.
+    ${prefix}cc -static -O2 -Wall -std=gnu11 -I. \
+      ewl_encode.c -o ewl_encode
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/bin"
-    cp ewl_probe "$out/bin/"
+    cp ewl_probe ewl_encode "$out/bin/"
     runHook postInstall
   '';
 
-  # Confirm we actually produced a static aarch64 ELF (so a silent host-cc
+  # Confirm we actually produced static aarch64 ELFs (so a silent host-cc
   # fallback can't ship an x86 binary that "runs" in CI but not on the device).
   doInstallCheck = true;
   installCheckPhase = ''
-    ${prefix}readelf -h "$out/bin/ewl_probe" | grep -q AArch64 \
-      || { echo "ERROR: ewl_probe is not an AArch64 ELF" >&2; exit 1; }
+    for b in ewl_probe ewl_encode; do
+      ${prefix}readelf -h "$out/bin/$b" | grep -q AArch64 \
+        || { echo "ERROR: $b is not an AArch64 ELF" >&2; exit 1; }
+    done
   '';
 
   meta = {

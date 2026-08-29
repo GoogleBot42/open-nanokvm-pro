@@ -2692,3 +2692,52 @@ for the VC8000E family (venc now, jenc next) and, with more effort, for `ax_cmm`
 It does NOT reach the ISP stack — that has no open lineage to build glue against,
 so "expanding the shim" there means writing a full ISP driver blind, which stays
 out of scope.
+
+### 2026-08-30 (later still) — #45 Stage B: a real 1080p IDR driven blob-free through the open path
+
+`pkgs/vcenc-ewl/ewl_encode` drives one fixed-QP(32) 1080p H.264 IDR end-to-end
+through the open driver with **no vendor library and no ax_venc.ko**, and the
+encoder core executes and emits a valid slice. Device-proven, stable across
+repeated runs:
+
+```
+open(/dev/es_venc) -> GET_VCMD/CMDBUF_PARAMETER -> mmap pools
+  -> place frame buffers in spare CMM (relocate the captured layout by a fixed
+     page-aligned delta into 0x78000000+; /dev/mem, input+output only)
+  -> fill a synthetic input gradient
+  -> RESERVE -> build the 570-word IDR cmdbuf (img_qp32 swreg1..511 with the 16
+     address regs relocated; secondary-bank pokes + swreg5 kick replayed)
+  -> LINK_RUN -> WAIT(OK)
+READBACK: swreg82(cycles)=~2,117,246  swreg9(NALbytes)=21970  swreg1=0x0805
+NAL: start code @+0x29  nal_unit_type=5 (IDR slice)
+RESULT: PASS
+```
+
+The cycle counter (nonzero, varying per run) proves the core genuinely ran a
+1080p frame; `swreg9` gives the emitted byte count; and the output buffer holds
+a real H.264 IDR-slice NAL (`00 00 01 25 ...`, nal_unit_type=5). This is the
+register-program half (Stage 1 / fixed-QP stage) now driven through the fully
+open submission path (Stage A), closing the loop from `/dev/es_venc` to a
+bitstream with zero vendor code in the encode path.
+
+**Two things learned building it:**
+- Userspace only maps the input (fill) and output (read) regions; recon/aux
+  buffers are DMA'd by the encoder internally and never touched by the CPU, so
+  their (undecoded) sizes don't matter — relocating the whole captured layout by
+  one delta preserves every gap/alignment.
+- `/dev/mem` `O_SYNC` gives **Device** memory: libc `memset` (DC ZVA) faults on
+  it. Use explicit aligned stores. (The driver-mapped pools are writecombine /
+  Normal-NC and tolerate `memset`.)
+
+**Remaining for a fully DECODABLE stream (refinements, not this milestone):**
+1. **SPS/PPS** — the HW emits slice data only; prepend standard, unencumbered
+   SPS+PPS (the fixed-QP stage's `pps_patch.py` has a matching PPS,
+   `pic_init_qp=32`; SPS generation from source is the open piece). Then a host
+   decoder (ffmpeg) confirms the frame decodes.
+2. **Input pixel format** — the synthetic gradient encodes fine structurally,
+   but a *correct-looking* image needs the real input format resolved (sw17=0x30
+   labelled NV12 vs the 2 B/px capture block — still unresolved).
+3. **Proper CMM allocator** — replace the fixed-address `/dev/mem` placement with
+   a from-source allocator (the other half of #45's title). The driver already
+   maps coherent memory writecombine; a small alloc ioctl over an enlarged
+   carveout is the clean path.
