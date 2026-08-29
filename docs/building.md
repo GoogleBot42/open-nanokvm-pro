@@ -52,6 +52,7 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
 | `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |
 | `rootfs` | overlaid `ubuntu_rootfs_sparse.ext4` | vendor base + our libkvm + modules + service selection |
+| `nixos-rootfs` | NixOS `ext4` (+ sparse) | **scaffold, never booted** — pure-Nix rootfs, issue #26; built from the separate `nixpkgs-rootfs` pin. See [nixos-rootfs.md](nixos-rootfs.md) |
 | **`firmware-image`** | **`…-selfbuilt.axp`** | **the flashable eMMC image (default output)** |
 | `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
 | `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
