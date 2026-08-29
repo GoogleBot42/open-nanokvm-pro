@@ -124,6 +124,25 @@ for pending/TODO/unverified markers still present in the tree:
   (#46/#47). Note: a fully-blob-free raw-ioctl submit hits the vendor `.ko`'s
   nr70/nr83 EFAULT seam — that's #44's job, not a bug. Path B (the hijack) is
   now a validated on-hardware test harness for candidate open programs.
+  **2026-08-29 (overnight overseer campaign):** **#47 DECIDED + CLOSED** — fixed-QP
+  open v1 first (from-scratch, no vendor ref, no capture-patch; CBR #46 deferred).
+  The from-scratch **fixed-QP register-program generator (`gen_idr.py`) is DONE +
+  device-proven** (docs stage "2026-08-29 Fixed-QP …" + `docs/reference/vcenc-open/
+  stage-fixedqp/`; QP ladder 28–44 → decodable 1080p IDRs, swreg82 varies). **#44
+  open VCMD driver PORTED + cross-compiles** (vermagic-matched `.ko`; the open LINK
+  path removes the nr70/nr83 seam — confirmed from source). BUT **#25 submission is
+  walled on both paths** (docs stage "2026-08-29 … finish-line"): Path B (open `.ko`)
+  is flash-gated — `vcmd_mem_init` needs contiguous coherent DMA but the device has
+  no `CONFIG_CMA` (proven on-device); Path A (drive vendor `ax_venc.ko`) needs
+  unpublished nr70/nr83 blob RE. **#49 filed + PRE-STAGED**: opt-in `.#kernel-cma`
+  variant (vermagic byte-identical → vendor `ax_*.ko` still load; default kernel
+  untouched) + reversible slot-B flash & bring-up plan (`docs/vcmd-cma-unblock.md`)
+  → #25 is one human reversible flash from a no-new-RE finish. Non-encoder blob work
+  the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
+  bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42
+  unused `/opt/lib` libs = 29.4 MB, needs a device `lsof`); **#26** NixOS rootfs
+  verdict + green scaffold (nixos-24.11, systemd-256 kernel floor) with 4 review
+  defects fixed. All hardware flash/boot tests remain human-gated.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
