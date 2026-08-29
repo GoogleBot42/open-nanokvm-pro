@@ -49,7 +49,7 @@ four pinned inputs or `pkgs/kvm-encoder/src/`.
 
 | Blob | Origin | License | Why approved |
 |---|---|---|---|
-| `libax_*.so` (Axera media/NPU userspace) | `maix_ax620e_sdk_msp` → `pkgs/axera-libs.nix`; staged to `/opt/lib` | BSD-3, redistributable | Unavoidable on this SoC; the documented "link, don't rebuild" stance. Our server + `libkvm` link them. (`libsns_dummy.so` is no longer in this bucket — built from SDK source since 2026-08-16, `pkgs/libsns-dummy.nix`, issue #30.) |
+| `libax_*.so` (Axera media/NPU userspace) | **shipped** by the retained vendor rootfs at `/opt/lib` (part of the base `.axp`); `pkgs/axera-libs.nix` supplies the ABI-matched headers + link stubs at **build time only** — it stages nothing into the image | BSD-3, redistributable | Unavoidable on this SoC; the documented "link, don't rebuild" stance. Our `libkvm.so` `DT_NEEDED`s exactly **`libax_venc`, `libax_sys`, `libax_proton`, `libax_mipi`, `libax_ivps`** (+ transitive `libax_engine` → `libax_interpreter`) — ~2.99 MB, and the encoder-track blocker. The other ~43 files in `/opt/lib` are dead weight, see below. (`libsns_dummy.so` is no longer in this bucket — built from SDK source since 2026-08-16, `pkgs/libsns-dummy.nix`, issue #30.) |
 | `ax_*.ko` (22 media kernel modules **shipped**, **12 loaded**) | shipped by the retained **vendor rootfs at `/soc/ko`** (part of the base `.axp`); `/soc/scripts/auto_load_all_drv.sh` insmods them at boot with their required params — and since issue #39 that loader is **ours** (`pkgs/rootfs/ax-load-drv.sh`), loading only the 12-module dependency closure of `{ax_proton, ax_venc, ax_jenc}` | GPL-tagged, source unpublished | Same stance. The other 10 blobs (`hynitron_touch`, `ax_tdp`/`vo`/`fb`/`vdec`/`mipi_switch`/`audio`/`ddr_dfs`/`ive`/`avs`) are still **present on disk** but never loaded; they stay in `/soc/ko` so restoring the retained `auto_load_all_drv.sh.vendor` + rebooting is a complete rollback. Keep/drop rationale: [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39). Still NOT overlaid into `/usr/lib/modules` by us — `pkgs/ax-ko-blobs.nix` exists as a pinned reference but is deliberately not merged into the modules tree: doing so made `depmod` emit `of:` aliases that udev autoloaded parameter-less → `ax_cmm` panic → boot loop (bricked a device once; see [provenance nuance](#blobs-pending-a-decision) and the guard in `pkgs/rootfs.nix` step [4]). |
 | Vendor `.axp` overlay base (whole Ubuntu-arm64 rootfs + kept vendor boot members) | `pkgs/base-axp.nix`, sha256-pinned v1.0.15 | mixed (GPL/misc) | v1 low-risk base; a pure-nix rootfs is the long-term goal. Its retained *contents* are inventoried below. |
 
@@ -81,17 +81,41 @@ retained base rootfs. Listed here until explicitly approved or removed.
 | Component | Path | Runs when | Note |
 |---|---|---|---|
 | **aic8800 WiFi/BT** driver + firmware | `/soc/ko/aic8800_*.ko` + `/opt/firmware/aic8800/*.bin` | on-demand (`wifi.sh`) | Closed, but functionally required for wireless. Approve if WiFi is wanted; otherwise removable. |
-| **axbox syslog daemon** (`axsyslogd`/`axklogd`) | `/bin/axbox` + `/usr/lib/libax_syslog.so` | at boot (`rc.local`) | Closed Axera syslog multicall. Stock `rsyslogd` already runs alongside it — candidate to drop in favour of rsyslog. |
 | `eip_ax620e.bin` | kept vendor member of the `.axp` | flash-time (AXDL agent) | Proprietary Axera download/eFuse-init helper for the USB flasher; not a stored eMMC partition. |
 
-### Inert closed binaries — REMOVED from the image
+### Shipped but never loaded — `/opt/lib` dead weight
 
-Decided: these closed binaries from the disabled `kvmcomm` stack are deleted by
-the `pkgs/rootfs.nix` debugfs overlay (and won't return — the build fails if any
-survive):
+The retained vendor rootfs ships **50** `.so` files in `/opt/lib` (33.7 MB). Our
+runtime needs **7** of them: the `DT_NEEDED` closure of our `libkvm.so`
+(`libax_venc`, `libax_sys`, `libax_proton`, `libax_mipi`, `libax_ivps`) plus the
+transitive `libax_engine` → `libax_interpreter` — 2.99 MB — and our own
+from-source `libsns_dummy.so` (which overwrites the vendor's). The remaining
+**42 files / 29.4 MB** (`libax_skel`, `libax_opal`,
+`libax_vo`, `libax_vdec`, `libax_audio*`, the 3A libs, every non-dummy
+`libsns_*`, …) are **present on disk but never dlopen'd or linked** by anything
+our stack runs. Evidence: the `DT_NEEDED` graph over all 50 `.so` (nothing in
+the 7-lib closure references anything outside it), and the only `.so`-name
+strings in `libax_proton.so` are its own `DT_NEEDED`s plus one soft
+`dlopen("/soc/lib/libisp_cjson.so")` — a path that **does not exist** on the
+image (`/soc` holds only `ko/` and `scripts/`), so that dlopen already fails
+harmlessly today. No 3A or sensor lib is named anywhere in it.
+
+Deleting the 42 is a real blob reduction with no expected functional change,
+but it wants one device confirmation (`lsof` / `/proc/<server>/maps` while
+streaming) before it ships — its own ticket. `libax_syslog.so` left this bucket
+by deletion, below.
+
+### Closed binaries — REMOVED from the image
+
+Decided: these closed binaries are deleted by the `pkgs/rootfs.nix` debugfs
+overlay (and won't return — the build fails if any survive):
 
 | Artifact | Size | Was |
 |---|---|---|
+| `/usr/bin/axbox` (+ `/usr/sbin/{axsyslogd,axklogd}` and `/usr/bin/axdmesg` symlinks, `/etc/init.d/{axsyslogd,axklogd}`) | 44K | closed Axera BusyBox-1.32.0 syslog/klog multicall, started by `/etc/rc.local`. **Replaced by stock `rsyslogd`**, which the base already runs (`rsyslog.service` enabled in `multi-user.target.wants`, `Alias=syslog.service`) with `imuxsock` + `imklog` and `50-default.conf` writing `/var/log/{syslog,kern.log,auth.log}`. We ship `/etc/rc.local` without the two launch lines (`pkgs/rootfs/rc.local`, vendor original byte-pinned as `rc.local.vendor`). The base's other caller, `/etc/init.d/rcS`, is dead — `rcS.service`/`rc.service` are symlinks to `/dev/null`. `axdmesg` is a caller-less third symlink dropped so it doesn't dangle. |
+| `libax_syslog.so` (`/usr/lib` 35K + `/opt/lib` 256K) | 291K | axbox's only non-libc `DT_NEEDED`. Nothing else on the image links or dlopens it (checked against every `/opt/lib` `.so`, our `libkvm.so`, and `NanoKVM-Server`). |
+| `/usr/bin/kvm_ui_setup` | 6.5M | closed Sipeed C++ (dev-tree RPATH, links the closed `libax_*`/`libsns_dummy` set). A **stray** — not dpkg-owned, not in `kvmcomm.sh`'s target list, its only mention on the image was a string inside `/kvmcomm/ui/kvm_ui` (itself deleted). Zero callers. |
+| `/usr/bin/ax_clk`, `/usr/bin/ax_lookat` | 29K | closed Axera diagnostics (clock poke; `/dev/mem` peek/poke). No boot caller; `ax_lookat` is named only by `/soc/scripts/busmonitor.sh`, a manual debug script never run at boot. |
 | `/kvmcomm/ui/kvm_ui` | 8.5M | closed OSD app, only launched by disabled `kvmcomm.service` |
 | `/kvmcomm/vin/kvm_vin` | 792K | closed capture daemon |
 | `/kvmcomm/ui/frameforge` | 988K | closed compositor |
@@ -145,6 +169,36 @@ connections; all of the below fire on boot, a timer, or an explicit user action.
 
 The web UI's external URLs are all `href` links the user clicks (wiki, GitHub,
 socials) — no page-load egress.
+
+---
+
+## Audited, present-but-inert (not closed blobs to chase)
+
+A full dpkg-ownership diff of the retained rootfs (`/usr/{bin,sbin,lib,libexec}`,
+`/usr/local`, `/usr/lib/aarch64-linux-gnu`) found the following. None is a closed
+blob our stack executes, so none blocks blobless userspace — recorded so the
+audit is reproducible:
+
+- **The entire PiKVM/`kvmd` stack is inert.** The base ships a Sipeed-built
+  `pikvm` dpkg package (kvmd + `janus` + µStreamer + `libgpiod`, ~1,900 files).
+  It runs **only** if `/etc/kvm/server.txt` says `pikvm`; that file is absent, so
+  `kvmcomm.sh` writes the default `nanokvm` and never starts it. No `kvmd*` unit
+  has a `.wants` symlink. `janus`/`ustreamer`/`libgpiod` are open source anyway.
+  (We disable `kvmcomm.service` outright — see `pkgs/rootfs.nix` 5c.)
+- **`/usr/local` CPython 3.13** (built into `/usr/local`, not dpkg-managed) is the
+  system `python3` via `/etc/alternatives`. Open source, but unmanaged — a
+  supply-chain surface worth replacing when the rootfs goes from-source. Every
+  `#!/usr/bin/python3` on the device runs under it.
+- **Open dropped-in tools** (not dpkg, but not vendor/closed): `/usr/bin/gdb`,
+  `/usr/bin/strace`, `/opt/e2fs-static/*` (e2fsprogs 1.46.6, no caller),
+  `/opt/swupdate/*` (SWUpdate + libubootenv `fw_printenv`/`fw_setenv`, GPL/LGPL;
+  `S99checkota`'s calls to it are commented out), `/opt/usr/bin/tiny*` (tinyalsa,
+  no caller). All are from-source gaps for a fully-blobless build, not runtime
+  closed blobs.
+- **`/usr/bin/fw_printenv`** (the one that DOES run, via `S99checkboot`) is the
+  classic U-Boot 2020.04 tool — GPL, open, kept.
+- `/usr/lib/aarch64-linux-gnu` (1,074 entries): **zero** unowned files — no vendor
+  `.so` was hidden there.
 
 ---
 

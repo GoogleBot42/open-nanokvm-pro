@@ -31,11 +31,17 @@
 #       auto_load_all_drv.sh.vendor for on-device rollback, and step [5b7]
 #       byte-compares the base .axp's copy against our pin so a base bump that
 #       changes the loader fails the build.
+#   - /etc/rc.local -> our copy with the axbox syslog daemon DROPPED. The vendor
+#       rc.local starts /etc/init.d/{axsyslogd,axklogd} -> /bin/axbox, a CLOSED
+#       Axera BusyBox multicall; stock rsyslogd already runs alongside it, so
+#       axbox is redundant. The pristine vendor script is pinned as
+#       pkgs/rootfs/rc.local.vendor and byte-compared in step [5b8].
 #   - inert CLOSED vendor binaries REMOVED: the disabled kvmcomm stack's closed
-#       kvm_ui/kvm_vin/frameforge + its display .ko, and the vendor swupdate
-#       self-updater. Exact paths only (debugfs has no recursive rm); the live
-#       kvmcomm scripts/edid/lt6911_manage.ko and swupdate fw_printenv/fw_setenv
-#       are KEPT. See docs/provenance.md.
+#       kvm_ui/kvm_vin/frameforge + its display .ko, the vendor swupdate
+#       self-updater, and the axbox syslog pair (/bin/axbox, its /sbin symlinks,
+#       and libax_syslog.so). Exact paths only (debugfs has no recursive rm); the
+#       live kvmcomm scripts/edid/lt6911_manage.ko and swupdate
+#       fw_printenv/fw_setenv are KEPT. See docs/provenance.md.
 #
 # ---------------------------------------------------------------------------
 # /lib SYMLINK PITFALL (this bug shipped once -- do NOT reintroduce it):
@@ -327,6 +333,61 @@ pkgs.stdenvNoCC.mkDerivation {
     emit_file "${./rootfs/ax-load-drv.vendor.sh}" "$vloader.vendor" 0100755
     emit_file "${./rootfs/ax-load-drv.sh}"        "$vloader"        0100755
 
+    # 5b8. DROP the axbox syslog daemon (docs/provenance.md). The vendor
+    # /etc/rc.local starts /etc/init.d/{axsyslogd,axklogd}, which start-stop-daemon
+    # /sbin/{axsyslogd,axklogd} -> both symlinks to /bin/axbox, a CLOSED Axera
+    # BusyBox-1.32.0 multicall linked against /usr/lib/libax_syslog.so. Stock
+    # rsyslogd already runs on this base (rsyslog.service is enabled in
+    # multi-user.target.wants and Alias=syslog.service) with imuxsock + imklog
+    # loaded and 50-default.conf writing /var/log/{syslog,kern.log,auth.log} --
+    # so axbox is a redundant SECOND syslog+klog pair. We ship an rc.local
+    # without the two launch lines and delete the binaries in step 5d.
+    #
+    # The base's other caller, /etc/init.d/rcS, is dead: /usr/lib/systemd/system/
+    # rcS.service and rc.service are symlinks to /dev/null (masked), so nothing
+    # runs it. /etc/rc.local itself runs via systemd-rc-local-generator ->
+    # rc-local.service (ConditionFileIsExecutable=/etc/rc.local), so our copy
+    # must stay executable -- mode 0755 below.
+    #
+    # Same guard shape as the module loader: the vendor rc.local is asserted
+    # BYTE-IDENTICAL to our pin, so a base .axp bump that changes rc.local fails
+    # the build instead of silently dropping whatever the vendor added.
+    rclocal="/etc/rc.local"
+    if ! debugfs -R "stat $rclocal" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+      echo "ERROR: $rclocal missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    debugfs -R "dump $rclocal $PWD/chk.vrclocal" rootfs.ext4 2>/dev/null
+    cmp -s "$PWD/chk.vrclocal" "${./rootfs/rc.local.vendor}" || {
+      echo "ERROR: the base .axp's $rclocal differs from" >&2
+      echo "       pkgs/rootfs/rc.local.vendor. Re-derive our rc.local from the" >&2
+      echo "       new vendor script (drop only the axsyslogd/axklogd lines)" >&2
+      echo "       and re-pin both files." >&2
+      exit 1
+    }
+    # Content asserts on OUR rc.local (fail in-build, never on the device).
+    ourrc="${./rootfs/rc.local}"
+    if grep -Eq 'axsyslogd|axklogd|axbox' "$ourrc"; then
+      # comments explaining the removal are fine; actual invocations are not
+      if grep -Ev '^[[:space:]]*#' "$ourrc" | grep -Eq 'axsyslogd|axklogd|axbox'; then
+        echo "ERROR: our rc.local still launches axbox (axsyslogd/axklogd)" >&2; exit 1
+      fi
+    fi
+    # every load-bearing vendor line must survive the edit
+    for need in \
+      '/etc/init.d/axemac.sh' \
+      '/soc/scripts/auto_load_all_drv.sh' \
+      '/soc/scripts/npu_set_bw_limiter.sh' \
+      'devmem 0x10030028' \
+      '/etc/init.d/S99checkboot' \
+      '/etc/init.d/S99checkota' \
+      'sysdev.service' ; do
+      grep -qF "$need" "$ourrc" \
+        || { echo "ERROR: our rc.local lost the vendor line '$need'" >&2; exit 1; }
+    done
+    echo "  rc.local: vendor pinned + axbox launch removed, vendor lines asserted."
+    emit_file "$ourrc" "$rclocal" 0100755
+
     # 5c. systemd stack selection.
     # The pinned vendor base ships TWO independent KVM app stacks and enables the
     # WRONG one for our purposes:
@@ -384,9 +445,44 @@ pkgs.stdenvNoCC.mkDerivation {
       /kvmcomm/ko/rotary_encoder.ko \
       /kvmcomm/ko/lt6911_manage.ko \
       /kvmcomm/ko/wireguard.ko \
-      /opt/swupdate/bin/swupdate ; do
+      /opt/swupdate/bin/swupdate \
+      /usr/bin/axbox \
+      /usr/sbin/axsyslogd \
+      /usr/sbin/axklogd \
+      /usr/bin/axdmesg \
+      /etc/init.d/axsyslogd \
+      /etc/init.d/axklogd \
+      /usr/lib/libax_syslog.so \
+      /opt/lib/libax_syslog.so \
+      /usr/bin/kvm_ui_setup \
+      /usr/bin/ax_clk \
+      /usr/bin/ax_lookat ; do
       echo "rm $dead" >> "$script"
     done
+    # The axbox set above (step 5b8): axbox is the closed multicall,
+    # ax{syslog,klog,dmesg}d are its symlinks (axdmesg is caller-less but would
+    # dangle once axbox is gone), /etc/init.d/{axsyslogd,axklogd} the (now
+    # caller-less) sysv wrappers, and libax_syslog.so is axbox's only non-libc
+    # DT_NEEDED -- verified: nothing else on the image DT_NEEDEDs or dlopens it
+    # (the /opt/lib copy is a second, equally unreferenced build). rsyslogd
+    # covers logging; see the rationale block in step 5b8.
+    #
+    # Also dropped, same debugfs-delete pattern -- CLOSED vendor userspace ELFs
+    # with ZERO caller anywhere on the image (grep of every init script + systemd
+    # unit + kvmcomm script is empty):
+    #   kvm_ui_setup  6.5 MB closed Sipeed C++ (RPATH into a dev's ~/kvm_ui tree);
+    #                 its only mention was a string inside /kvmcomm/ui/kvm_ui,
+    #                 which we already delete. A stray, not even kvmcomm-launched.
+    #   ax_clk        14.5 KB closed Axera clock-poke tool.
+    #   ax_lookat     14.5 KB closed Axera /dev/mem peek/poke; referenced only by
+    #                 /soc/scripts/busmonitor.sh, a manual debug script never run
+    #                 at boot.
+    #
+    # NOTE the REAL paths /usr/bin, /usr/sbin: on this rootfs /bin, /sbin and
+    # /lib are all SYMLINKS into usr/, and debugfs `rm` does not traverse them --
+    # `rm /bin/axbox` fails SILENTLY (same trap as the /lib modules tree; see the
+    # header). debugfs `stat` DOES resolve symlinks, which is why the step-[6]
+    # assertion below catches this rather than papering over it.
 
     # ---- 6. apply overlay in a single debugfs -w pass ----
     echo "=== [6] apply overlay (debugfs -w) ==="
@@ -471,6 +567,32 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     echo "  removed closed binaries: kvm_ui/kvm_vin/swupdate -- verified absent in image."
 
+    # Sanity: the axbox syslog daemon is GONE and rsyslog is still the enabled
+    # logger (step 5b8). Same "test the OUTPUT" idiom -- debugfs stat exits 0 on
+    # a missing path.
+    # Both the real paths AND the /bin,/sbin symlink paths are checked: debugfs
+    # `stat` follows symlinks, so the /bin/axbox form also proves the removal is
+    # visible at the path the device actually uses.
+    for dead in /usr/bin/axbox /usr/sbin/axsyslogd /usr/sbin/axklogd /usr/bin/axdmesg \
+                /bin/axbox /sbin/axsyslogd /sbin/axklogd /bin/axdmesg \
+                /usr/lib/libax_syslog.so /opt/lib/libax_syslog.so \
+                /etc/init.d/axsyslogd /etc/init.d/axklogd \
+                /usr/bin/kvm_ui_setup /usr/bin/ax_clk /usr/bin/ax_lookat; do
+      if debugfs -R "stat $dead" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+        echo "ERROR: $dead still present in image (closed-blob removal, step 5b8/5d)" >&2; exit 1
+      fi
+    done
+    # rsyslog must remain enabled -- it is what replaces axbox.
+    debugfs -R "stat $wants/rsyslog.service" rootfs.ext4 2>/dev/null | grep -q "Type: symlink" \
+      || { echo "ERROR: rsyslog.service not enabled in image -- axbox removal would leave no syslog" >&2; exit 1; }
+    # and our rc.local must have landed, byte-identical, still executable.
+    debugfs -R "dump $rclocal $PWD/chk.rclocal" rootfs.ext4 2>/dev/null
+    cmp -s "$PWD/chk.rclocal" "${./rootfs/rc.local}" \
+      || { echo "ERROR: $rclocal in image != our rc.local" >&2; exit 1; }
+    debugfs -R "stat $rclocal" rootfs.ext4 2>/dev/null | grep -qE "Mode: +0755" \
+      || { echo "ERROR: $rclocal is not mode 0755 -- rc-local.service would not run it" >&2; exit 1; }
+    echo "  axbox: /bin/axbox + libax_syslog.so removed, rc.local swapped, rsyslog enabled -- verified in image."
+
     # Sanity: the motd-news beacon is disabled (file present with ENABLED=0).
     debugfs -R "cat /etc/default/motd-news" rootfs.ext4 2>/dev/null | grep -qx "ENABLED=0" \
       || { echo "ERROR: /etc/default/motd-news missing or not ENABLED=0 in image" >&2; exit 1; }
@@ -554,10 +676,17 @@ pkgs.stdenvNoCC.mkDerivation {
                                                 ax_jenc), see issue #39
       /soc/scripts/auto_load_all_drv.sh.vendor <- pristine vendor loader, kept for
                                                 on-device rollback (restore + reboot)
+      /etc/rc.local                          <- vendor script minus the axbox
+                                                syslog launch (rsyslogd covers it);
+                                                pkgs/rootfs/rc.local.vendor is the
+                                                pinned original, byte-compared
     removed         : inert CLOSED vendor binaries from the disabled kvmcomm stack
                       (kvm_ui, frameforge, kvm_vin, and its display .ko:
-                      fbtft/fb_jd9853/f_udisp_drv/gpio_keys/rotary_encoder/wireguard)
-                      plus the vendor swupdate self-updater (/opt/swupdate/bin/swupdate).
+                      fbtft/fb_jd9853/f_udisp_drv/gpio_keys/rotary_encoder/wireguard),
+                      the vendor swupdate self-updater (/opt/swupdate/bin/swupdate),
+                      and the axbox syslog daemon (/bin/axbox, /sbin/axsyslogd,
+                      /sbin/axklogd, /etc/init.d/axsyslogd, /etc/init.d/axklogd,
+                      /usr/lib/libax_syslog.so, /opt/lib/libax_syslog.so).
                       KEPT: /kvmcomm/scripts, /kvmcomm/edid, lt6911_manage.ko, and
                       swupdate fw_printenv/fw_setenv. See docs/provenance.md.
     method          : debugfs -w in-place edit (no root), sif uid/gid 0 to keep

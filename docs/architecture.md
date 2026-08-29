@@ -275,7 +275,9 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
   both Go log lines and `libkvm`'s C-side output. Rotated by our
   `/etc/logrotate.d/nanokvm` (size 10M, `copytruncate` — mandatory, the server
   holds the fd open for its lifetime) via the vendor base's daily
-  `logrotate.timer`.
+  `logrotate.timer`. System logging is stock **`rsyslogd`** only: the vendor's
+  closed `axbox` syslog/klog daemon, which `/etc/rc.local` used to start
+  alongside it, is removed from the image (`docs/provenance.md`).
 - **Vendor `wifi.service`** (`/etc/systemd/system/wifi.service`, `Type=simple`,
   `Restart=on-failure`, `RestartSec=3`) runs `/opt/scripts/wifi.sh start`, which
   `exit 1`s whenever `aic8800_fdrv` is already loaded. That turns "nothing to do"
@@ -302,8 +304,10 @@ build that the AX630C doesn't support.
 - **From source:** boot chain, kernel + DTS, `lt6911_manage.ko`, our `libkvm`, the
   Go server, the React web UI.
 - **Pinned blobs, unavoidable on this SoC:**
-  - `libax_*.so` / `libsns_dummy.so` — Axera userspace media libs. **BSD-3,
-    redistributable.** Staged to `/opt/lib`.
+  - `libax_*.so` — Axera userspace media libs, **BSD-3, redistributable**,
+    shipped at `/opt/lib` by the retained vendor rootfs (`pkgs/axera-libs.nix`
+    is a build-time headers/link input, it stages nothing). `libkvm` needs five
+    of them plus two transitive; `libsns_dummy.so` is ours from source.
   - `ax_*.ko` — Axera media kernel modules (venc/mipi/proton/ivps/…). GPL-tagged
     but source not published. They must `insmod` into our from-source kernel, so
     the kernel's `vermagic` (defconfig + GCC) must match — see
