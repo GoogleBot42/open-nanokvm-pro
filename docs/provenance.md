@@ -22,8 +22,19 @@ re-pinned or the vendor base `.axp` changes.
 
 Genuinely compiled from pinned sources — verified, no prebuilt artifact
 substituted: the **boot chain** (SPL/ATF/OP-TEE/U-Boot), the **kernel** + DTS +
-`lt6911_manage.ko`, our **`libkvm.so`** (`pkgs/kvm-encoder/src/`), the **Go
-server**, the **React web UI**, and the **`axdl`** host flasher.
+`lt6911_manage.ko`, the **embedded kernel initramfs** (`pkgs/initramfs.nix`),
+our **`libkvm.so`** (`pkgs/kvm-encoder/src/`), the **Go server**, the **React web
+UI**, and the **`axdl`** host flasher.
+
+The initramfs baked into the `Image` used to be the vendor SDK's prebuilt tree —
+five aarch64 blobs (`busybox` 1.37.0, `e2fsck`, `ld-linux-aarch64.so.1`,
+`libc.so.6`, `libuuid.so.1.3.0`). Since issue #27 it is built by
+`pkgs/initramfs.nix` from **static (musl) nixpkgs busybox 1.37.0 + e2fsprogs
+`e2fsck`**; being static, the loader and both libraries are gone rather than
+replaced. The vendor `/init` and `/show_iostat` **shell scripts** are still used
+byte-for-byte — they encode the board's boot contract (partition numbers, LED
+triggers, USB-MSC recovery gadget, `device_key`/MAC derivation), and they are
+source, not blobs.
 
 The only `fetch*` calls outside the four pinned flake inputs are
 `pkgs/base-axp.nix` (`fetchurl`, sha256-pinned) and `pkgs/axdl.nix`
@@ -41,7 +52,6 @@ four pinned inputs or `pkgs/kvm-encoder/src/`.
 | `libax_*.so` (Axera media/NPU userspace) | `maix_ax620e_sdk_msp` → `pkgs/axera-libs.nix`; staged to `/opt/lib` | BSD-3, redistributable | Unavoidable on this SoC; the documented "link, don't rebuild" stance. Our server + `libkvm` link them. (`libsns_dummy.so` is no longer in this bucket — built from SDK source since 2026-08-16, `pkgs/libsns-dummy.nix`, issue #30.) |
 | `ax_*.ko` (22 media kernel modules **shipped**, **12 loaded**) | shipped by the retained **vendor rootfs at `/soc/ko`** (part of the base `.axp`); `/soc/scripts/auto_load_all_drv.sh` insmods them at boot with their required params — and since issue #39 that loader is **ours** (`pkgs/rootfs/ax-load-drv.sh`), loading only the 12-module dependency closure of `{ax_proton, ax_venc, ax_jenc}` | GPL-tagged, source unpublished | Same stance. The other 10 blobs (`hynitron_touch`, `ax_tdp`/`vo`/`fb`/`vdec`/`mipi_switch`/`audio`/`ddr_dfs`/`ive`/`avs`) are still **present on disk** but never loaded; they stay in `/soc/ko` so restoring the retained `auto_load_all_drv.sh.vendor` + rebooting is a complete rollback. Keep/drop rationale: [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39). Still NOT overlaid into `/usr/lib/modules` by us — `pkgs/ax-ko-blobs.nix` exists as a pinned reference but is deliberately not merged into the modules tree: doing so made `depmod` emit `of:` aliases that udev autoloaded parameter-less → `ax_cmm` panic → boot loop (bricked a device once; see [provenance nuance](#blobs-pending-a-decision) and the guard in `pkgs/rootfs.nix` step [4]). |
 | Vendor `.axp` overlay base (whole Ubuntu-arm64 rootfs + kept vendor boot members) | `pkgs/base-axp.nix`, sha256-pinned v1.0.15 | mixed (GPL/misc) | v1 low-risk base; a pure-nix rootfs is the long-term goal. Its retained *contents* are inventoried below. |
-| **Embedded kernel initramfs**: `busybox` (1.37.0), `e2fsck`, `ld-linux-aarch64.so.1` + `libc.so.6` (glibc 2.35), `libuuid.so.1.3.0` | `maix_ax620e_sdk` `build/projects/.../initramfs/`, packed verbatim into the kernel `Image` by `pkgs/kernel.nix` | GPL-2.0 / LGPL-2.1 / BSD-3 | Load-bearing: busybox `init` does the `switch_root` to the real rootfs, `e2fsck` fscks it. A self-built kernel ships these five. To go blob-free later, rebuild this tree from nixpkgs busybox/e2fsprogs/glibc. |
 
 ### Build-time only (do not ship, but shape outputs)
 

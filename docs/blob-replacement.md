@@ -97,7 +97,7 @@ commitments, not more experiments.
 
 Video is the largest *executing* blob set left, but not the only closed code —
 see `provenance.md` for the full inventory (aic8800 WiFi, `ax_gzip` build tool,
-initramfs binaries, `eip_ax620e.bin`, the vendor base rootfs). This document is
+`eip_ax620e.bin`, the vendor base rootfs). This document is
 about the **HDMI-capture → H.264/MJPEG-encode path** only.
 
 ---

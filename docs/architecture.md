@@ -46,7 +46,7 @@ BootROM (mask ROM, unbrickable)
               └─► OP-TEE / bl32 (3.21)
                     └─► U-Boot 2020.04 (bl33)
                           └─► Linux 4.19.125  + DTB
-                                └─► vendor initramfs /init
+                                └─► embedded initramfs /init
                                       └─► switch_root → /realroot → systemd
 ```
 
@@ -54,9 +54,11 @@ BootROM (mask ROM, unbrickable)
   strap (the `User` button) at reset — it does not probe. The SD path is
   **file-based** (FAT32 + named images), not raw-offset; see
   [flashing-and-recovery.md](flashing-and-recovery.md#sd-card-boot).
-- The kernel embeds the **vendor initramfs**, whose `/init` reads `root=` from the
+- The kernel embeds an **initramfs**, whose `/init` reads `root=` from the
   cmdline and does `switch_root /realroot /sbin/init`. Removing it breaks the root
-  mount — it must stay (`INITRAMFS_SOURCE`).
+  mount — it must stay (`INITRAMFS_SOURCE`). It is built by `pkgs/initramfs.nix`:
+  the vendor `/init` + `/show_iostat` scripts verbatim over a **static busybox +
+  `e2fsck` from nixpkgs**, so no vendor binary is packed into the `Image`.
 - **Secure boot** is gated on the efuse `SECURE_BOOT_EN`
   (`COMM_SYS_BOND_OPT @ 0x02340098`, bit 26). On the units checked it reads **0
   (off)**, so self-signed/unsigned firmware boots. Boot derivations default to the

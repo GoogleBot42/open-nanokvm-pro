@@ -1,4 +1,4 @@
-{ pkgs, crossPkgs, maix_ax620e_sdk, maix_ax620e_sdk_kernel, maix_ax620e_sdk_msp, ... }:
+{ pkgs, crossPkgs, initramfs, maix_ax620e_sdk, maix_ax620e_sdk_kernel, maix_ax620e_sdk_msp, ... }:
 
 # ---------------------------------------------------------------------------
 # Linux 4.19.125 kernel + NanoKVM-Pro DTS + open lt6911_manage.ko (from source).
@@ -109,14 +109,12 @@ pkgs.stdenv.mkDerivation {
   # The kernel never mounts root= itself, so without the embedded initramfs it
   # reaches an empty rootfs with no /init and never mounts the SD/eMMC root.
   #
-  # The initramfs content is a vendor artifact in the SDK build repo at
-  #   build/projects/${project}/initramfs/  (init + show_iostat + busybox tree +
-  #   e2fsck + libc/ld/libuuid). We reproduce the vendor gen_initramfs.sh exactly
-  # (create proc/sys/dev, chmod +x init, pack newc cpio, force root:root
-  # ownership to match CONFIG_INITRAMFS_ROOT_UID/GID=0), then point
-  # CONFIG_INITRAMFS_SOURCE at the generated .cpio (uncompressed, matching the
-  # defconfig's CONFIG_INITRAMFS_COMPRESSION_NONE). gen_initramfs_list.sh uses a
-  # single *.cpio source directly, so the archive is embedded byte-for-byte.
+  # We build that cpio ourselves from nixpkgs (pkgs/initramfs.nix: static
+  # busybox + e2fsck, vendor /init script kept verbatim) -- no vendor binary is
+  # packed into the Image. CONFIG_INITRAMFS_SOURCE points at that store cpio;
+  # gen_initramfs_list.sh passes a single *.cpio source straight through, so
+  # the archive is embedded byte-for-byte, uncompressed (matching the
+  # defconfig's CONFIG_INITRAMFS_COMPRESSION_NONE).
   configurePhase = ''
     runHook preConfigure
 
@@ -151,21 +149,9 @@ pkgs.stdenv.mkDerivation {
     export LIBC=glibc
     export KROOT="$TMPDIR/sdk/kernel/${kernelSubdir}"
 
-    # ---- Reproduce the vendor initramfs cpio (load-bearing, see note above) --
-    # build/projects/${project}/gen_initramfs.sh does exactly this: cd into the
-    # prebuilt initramfs/ tree, ensure proc/sys/dev exist, chmod +x init, then
-    # `find . | cpio -o --format=newc`. We add `-R 0:0` so archive ownership is
-    # root:root (the vendor builds as root; CONFIG_INITRAMFS_ROOT_UID/GID=0).
-    initramfsSrc="${maix_ax620e_sdk}/build/projects/${project}/initramfs"
-    initramfsDir="$TMPDIR/initramfs"
-    initramfsCpio="$TMPDIR/initramfs_rootfs.cpio"
-    cp -a "$initramfsSrc" "$initramfsDir"
-    chmod -R u+w "$initramfsDir"
-    mkdir -p "$initramfsDir"/proc "$initramfsDir"/sys "$initramfsDir"/dev
-    chmod +x "$initramfsDir/init"
-    ( cd "$initramfsDir" && find . -print0 \
-        | cpio --null -o --format=newc -R 0:0 ) > "$initramfsCpio"
-    echo "initramfs cpio: $(stat -c%s "$initramfsCpio") bytes"
+    # ---- From-source initramfs cpio (load-bearing, see note above) ----------
+    initramfsCpio="${initramfs}/initramfs_rootfs.cpio"
+    echo "initramfs cpio: $(stat -c%s "$initramfsCpio") bytes ($initramfsCpio)"
 
     cd "$KROOT"
 
