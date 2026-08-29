@@ -69,6 +69,17 @@ platform layer, and stands up a minimal char-device instance:
    form on <5.0 (our 4.19). Two call sites updated.
 3. **`pfn_to_phys()`** — arm64 4.19 has no `pfn_to_phys()`; compat macro to the
    generic `PFN_PHYS()` (`#include <linux/pfn.h>`).
+4. **`hantrovcmd_mmap` maps by bus/phys directly** — the upstream mmap gates on
+   `pool.phy_address` (from `vmalloc_to_pfn`) and calls `dma_mmap_coherent`.
+   On AX630C the pools live in a `dma_declare_coherent_memory()` carveout
+   *outside* kernel-managed DRAM (`mem=` boundary), where `phy_address !=
+   busAddress` and `dma_mmap_coherent`'s declared-region path returns ENXIO.
+   Fixed to accept the `busAddress` (the value `GET_CMDBUF_PARAMETER` actually
+   hands userspace) and to map with a plain `remap_pfn_range` + writecombine
+   prot — the same result the vendor stack got via `/dev/mem`, minus the
+   STRICT_DEVMEM / no-struct-page hazards. Proven 2026-08-30 by the userspace
+   submitter (`pkgs/vcenc-ewl`): full RESERVE→LINK→WAIT→RELEASE, hardware DMAs
+   the encoder register file into the mmap'd status pool.
 
 ### Build flags (`Makefile`)
 

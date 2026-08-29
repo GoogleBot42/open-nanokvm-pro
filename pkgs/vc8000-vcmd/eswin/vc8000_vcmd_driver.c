@@ -2271,12 +2271,22 @@ static int hantrovcmd_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	LOG_DBG("hantrovcmd_mmap, phy_addr=%llx\n", (long long unsigned int)phy_addr);
 
-	/** find the dma_addr that will be mmapped*/
-	if (phy_addr == vcmd_status_buf_mem_pool.phy_address) {
+	/** find the dma_addr that will be mmapped.
+	 * AX630C-PORT: match on EITHER busAddress or phy_address. The pools live
+	 * in a dma_declare_coherent_memory() carveout (glue), where
+	 * phy_address = pfn_to_phys(vmalloc_to_pfn(ioremap'd virt)) does NOT equal
+	 * busAddress (the dma_handle). GET_CMDBUF_PARAMETER hands userspace
+	 * busAddress (drv:1989-1990), so a mmap keyed only on phy_address rejects
+	 * the offset userspace actually has. Accepting busAddress makes the
+	 * driver self-consistent; dma_mmap_coherent(cpu_vaddr,bus_addr) then maps
+	 * the declared region correctly regardless of the passed offset. */
+	if (phy_addr == vcmd_status_buf_mem_pool.busAddress ||
+	    phy_addr == vcmd_status_buf_mem_pool.phy_address) {
 		cpu_vaddr = vcmd_status_buf_mem_pool.virtualAddress;
 		bus_addr = vcmd_status_buf_mem_pool.busAddress;
 		size = vcmd_status_buf_mem_pool.size;
-	} else if(phy_addr == vcmd_buf_mem_pool.phy_address) {
+	} else if(phy_addr == vcmd_buf_mem_pool.busAddress ||
+		  phy_addr == vcmd_buf_mem_pool.phy_address) {
 		cpu_vaddr = vcmd_buf_mem_pool.virtualAddress;
 		bus_addr = vcmd_buf_mem_pool.busAddress;
 		size = vcmd_buf_mem_pool.size;
@@ -2288,15 +2298,32 @@ static int hantrovcmd_mmap(struct file *filp, struct vm_area_struct *vma)
 	LOG_DBG("hantrovcmd_mmap, bus_addr=0x%llx, phy_addr=0x%llx, cpu_vaddr=0x%llx, size=%lx\n"
 		, (long long unsigned int)bus_addr, (long long unsigned int)phy_addr, (unsigned long long)cpu_vaddr, size);
 
-	/** vm_pgoff must be set as 0*/
-	vma->vm_pgoff = 0;
-	ret = dma_mmap_coherent(&venc_pdev->dev, vma, cpu_vaddr, bus_addr, size);
-	if (ret) {
-		LOG_ERR("hantrovcmd_mmap, dma_mmap_coherent failed, ret:%d\n", ret);
-		return ret;
+	/* AX630C-PORT: map the pool directly by its (fixed, reserved-carveout)
+	 * bus/phys address. dma_mmap_coherent's declared-region path is unreliable
+	 * here, and the pool lives outside kernel-managed DRAM (mem=... carveout),
+	 * so a plain remap_pfn_range with a non-cached prot -- matching the pool's
+	 * DMA-coherent kernel mapping -- is both correct and robust. This is what
+	 * the vendor stack achieved via /dev/mem, minus the STRICT_DEVMEM/no-struct-
+	 * page hazards of mapping a reserved region through /dev/mem. */
+	{
+		unsigned long user_bytes = vma->vm_end - vma->vm_start;
+		unsigned long pfn = (unsigned long)(bus_addr >> PAGE_SHIFT);
+
+		if (user_bytes > size) {
+			LOG_ERR("hantrovcmd_mmap, request %lu > pool %lu\n", user_bytes, size);
+			return -EINVAL;
+		}
+		vma->vm_pgoff = 0;
+		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+		ret = remap_pfn_range(vma, vma->vm_start, pfn, user_bytes,
+				      vma->vm_page_prot);
+		if (ret) {
+			LOG_ERR("hantrovcmd_mmap, remap_pfn_range failed, ret:%d\n", ret);
+			return ret;
+		}
 	}
 
-	return ret;
+	return 0;
 }
 
 /******************************************************************************

@@ -136,6 +136,11 @@
         # encode-submission path (issue #44). See pkgs/vc8000-vcmd.nix.
         vc8000-vcmd = callPkg ./pkgs/vc8000-vcmd.nix { };
 
+        # Open VC8000E userspace submitter -- userspace half of the blob-free
+        # encoder (#45). Stage A (ewl_probe) drives the full VCMD cmdbuf
+        # lifecycle from userspace and is device-proven. See pkgs/vcenc-ewl.nix.
+        vcenc-ewl = callPkg ./pkgs/vcenc-ewl.nix { };
+
         # Board dtb with the vendor reserved-memory / bootargs patch applied
         # (a plain `make dtbs` would omit it -- see pkgs/dtb.nix). The SD-root
         # dtb variant is built internally by pkgs/sd-image.nix.
@@ -257,7 +262,7 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
-            initramfs kernel vc8000-vcmd dtb dtb-slot-image
+            initramfs kernel vc8000-vcmd vcenc-ewl dtb dtb-slot-image
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy

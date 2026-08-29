@@ -2611,3 +2611,40 @@ driver (the block reads `0xDEADBEEF` unclocked; vendor userspace gates it per fr
 wires GIC_SPI 93 via `of_irq_get`. Result on the stock kernel: `module inserted. Major
 <241>`, `/dev/es_venc` live, init self-test cmdbufs completing with real interrupts. Full
 record: `docs/vcmd-cma-unblock.md`. Next: #45 open EWL (RESERVE→LINK→WAIT→RELEASE IDR).
+
+### 2026-08-30 (later) — #45 Stage A: blob-free userspace submission PROVEN on hardware
+
+The open userspace submitter (`pkgs/vcenc-ewl`, `ewl_probe`) drives the full
+open-driver cmdbuf lifecycle from userspace with **no vendor library and no
+ax_venc.ko** — the seam the vendor's nr70/nr83 setup ioctls used to gate is
+simply gone (the open LINK path is self-contained). Device-proven, stable over
+repeated runs:
+
+```
+open(/dev/es_venc) -> GET_VCMD_PARAMETER (hwid 0x43421500, core base 0x1000)
+  -> GET_CMDBUF_PARAMETER -> mmap(cmd pool)+mmap(status pool)
+  -> RESERVE_CMDBUF -> build a register-readback cmdbuf (the driver's own
+     minimal known-good program) -> LINK_RUN -> WAIT (status OK)
+  -> read encoder swreg0 = 0x90101010 (core ASIC ID) out of the status pool
+RESULT: PASS
+```
+
+This validates end-to-end: the ioctl/cmdbuf ABI (transcribed in
+`pkgs/vcenc-ewl/vcmd_abi.h`), the cmdbuf head/tail patch layout
+(`vcenc_cmdbuf.h`, matching the driver's `create_read_all_registers_cmdbuf`
+word-for-word), the pool mmap (needed an AX630C mmap fix — see
+`pkgs/vc8000-vcmd/PROVENANCE.md` port-edit 4), hardware execution, GIC_SPI 93
+IRQ completion, and status-pool readback.
+
+**What Stage A does NOT yet do:** a real encode. Stage B adds (a) CMM frame
+buffers (input YUV, output stream, 2 recon sets, aux) allocated from userspace
+CMM, (b) the encode register program — reuse the device-proven `img_qp32.bin`
+swreg1..511 payload (byte-identical to the captured `slot8k.bin` IDR) with the
+16 address registers (`KEEP_ADDR = 8,9,10,12,13,14,15,16,27,46,60,62,72,114,
+239,241`) repointed at our buffers, (c) the 0x2000 secondary-bank pokes and the
+swreg5 kick, (d) SPS/PPS emitted in userspace (HW emits slice data only;
+`pic_init_qp` must match). Open unknowns for Stage B are enumerated in the
+fixed-QP stage README and the RE mining notes: input pixel format (sw17=0x30
+labelled NV12 but the capture block is 2 B/px), the kick low-nibble semantics,
+~40 opaque registers, and the RC-enable bit. Fixed-QP 1080p IDR is reachable
+without cracking those (replay + repoint); P-frames and rate control are not.
