@@ -105,7 +105,11 @@
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
         boot-uboot = callPkg ./pkgs/boot-uboot.nix { inherit boot; };
 
-        kernel = callPkg ./pkgs/kernel.nix { };
+        # Embedded kernel initramfs (static busybox + e2fsck from nixpkgs, the
+        # vendor /init script kept verbatim). Baked into the kernel Image.
+        initramfs = callPkg ./pkgs/initramfs.nix { };
+
+        kernel = callPkg ./pkgs/kernel.nix { inherit initramfs; };
 
         # Open VC8000E VCMD command-engine driver (eswin EIC7X), ported
         # out-of-tree to the 4.19 kernel -- the kernel half of the blob-free
@@ -219,7 +223,7 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
-            kernel vc8000-vcmd dtb dtb-slot-image kernel-slot-image
+            initramfs kernel vc8000-vcmd dtb dtb-slot-image kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
