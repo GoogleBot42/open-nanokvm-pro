@@ -308,7 +308,9 @@ build that the AX630C doesn't support.
     [building.md](building.md#ax_ko-vermagic).
 - **Pinned base:** the vendor Ubuntu 22.04 arm64 rootfs (v1 decision — matches the
   on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
-  long-term north star.
+  long-term north star; the feasibility study, the systemd-vs-4.19 version wall
+  that shapes it, and a buildable (not yet booted) NixOS scaffold are in
+  [nixos-rootfs.md](nixos-rootfs.md).
 
 The authoritative, enforceable list of every pinned blob (shipped and build-time)
 and every runtime network endpoint — each with an explicit approval status — is

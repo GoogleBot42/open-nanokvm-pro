@@ -289,6 +289,28 @@ The image build asserts the `switch_root` contract (`/sbin/init` is a symlink,
 the system profile resolves, stage 2 is in the closure) before it installs,
 because that class of failure is invisible on a board with `bootdelay=0`.
 
+Current output: **1.6 GiB system closure → 2.4 GiB raw ext4 → 1.6 GiB sparse.**
+That is larger than the vendor rootfs member it would replace; trimming
+(`python3Minimal`, dropping `usbutils`/`pciutils`) is a follow-up, not a
+blocker — p17 is ~30 GB.
+
+### Two glibcs, one loader — do not "fix" this
+
+The image contains two glibcs: the 24.11 rootfs pin's, and the unstable pin's,
+which our cross-built `NanoKVM-Server` / `libkvm` / `libsns_dummy` carry as
+their `PT_INTERP`. That is fine and deliberate — but it constrains the
+`autoPatchelf` step on the Axera libs:
+
+`autoPatchelfHook` gives `libax_proton.so` an rpath for `libstdc++.so.6`
+(gcc-lib) and **no rpath entry for `libc.so.6`/`libm`/`libpthread`**. That is
+correct. Those resolve through the *running process's* loader, which for the
+server is the unstable glibc's `ld-linux-aarch64.so.1`, whose built-in default
+search path is its own matching `lib`. **Adding an explicit `${glibc}/lib` to
+the Axera libs' rpath would pin the 24.11 `libc.so.6` under an unstable
+`ld.so`** — a mismatched loader/libc pair, which is a crash, not a warning.
+Verify this in the [chroot smoke test](#validation-ladder), do not "harden" it
+at build time.
+
 ---
 
 ## Known gaps
