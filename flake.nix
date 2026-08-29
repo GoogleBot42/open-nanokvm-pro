@@ -5,6 +5,15 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
+    # SECOND nixpkgs pin, used ONLY by the pure-Nix rootfs scaffold
+    # (nixos/rootfs.nix, issue #26). It is deliberately older than the main
+    # pin: systemd declares a hard kernel floor and from v258 on that floor is
+    # 5.4, while this board is locked to a from-source Linux 4.19.125 by the
+    # ax_*.ko vermagic contract. nixos-24.11 ships systemd 256, the newest
+    # release whose systemd still lists 4.19 as above its RECOMMENDED
+    # baseline. Do not bump this without reading docs/nixos-rootfs.md.
+    nixpkgs-rootfs.url = "github:NixOS/nixpkgs/nixos-24.11";
+
     # Upstream Sipeed / Axera source repos, pinned by commit (`flake = false`
     # plain trees). No release tags exist upstream; these are main-branch
     # commits matching the on-device V3.0.0_20250319 SDK.
@@ -194,6 +203,16 @@
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
         };
 
+        # Pure-Nix rootfs (issue #26) -- a NixOS system closure packed into a
+        # rootless ext4, replacing the vendor Ubuntu base. SCAFFOLD: it builds,
+        # it has never booted. Evaluated against the SEPARATE nixpkgs-rootfs
+        # pin (systemd ceiling); see nixos/rootfs.nix + docs/nixos-rootfs.md.
+        nixos-rootfs = callPkg ./nixos/rootfs.nix {
+          nixpkgsRootfs = inputs.nixpkgs-rootfs;
+          inherit axera-libs ax-ko-blobs kernel kvm-encoder
+            nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
+        };
+
         # Final flashable .axp: our dtb/kernel/boot-chain/rootfs member-swapped
         # into a copy of the base .axp (pure zip rewrite).
         firmware-image = callPkg ./pkgs/image.nix {
@@ -218,7 +237,7 @@
             kvm-encoder kvm-encoder-open kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
-            base-axp rootfs firmware-image sd-image
+            base-axp rootfs nixos-rootfs firmware-image sd-image
             axdl;
 
           default = firmware-image;
