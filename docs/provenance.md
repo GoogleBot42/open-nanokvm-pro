@@ -75,11 +75,12 @@ retained base rootfs. Listed here until explicitly approved or removed.
 
 ### Shipped but never loaded — `/opt/lib` dead weight
 
-The retained vendor rootfs ships **51** files in `/opt/lib` (~30 MB). Our runtime
-needs **7** of them: the `DT_NEEDED` closure of our `libkvm.so`
+The retained vendor rootfs ships **50** `.so` files in `/opt/lib` (33.7 MB). Our
+runtime needs **7** of them: the `DT_NEEDED` closure of our `libkvm.so`
 (`libax_venc`, `libax_sys`, `libax_proton`, `libax_mipi`, `libax_ivps`) plus the
-transitive `libax_engine` → `libax_interpreter` — ~2.99 MB — and our own
-from-source `libsns_dummy.so`. The remaining ~43 (`libax_skel`, `libax_opal`,
+transitive `libax_engine` → `libax_interpreter` — 2.99 MB — and our own
+from-source `libsns_dummy.so` (which overwrites the vendor's). The remaining
+**42 files / 29.4 MB** (`libax_skel`, `libax_opal`,
 `libax_vo`, `libax_vdec`, `libax_audio*`, the 3A libs, every non-dummy
 `libsns_*`, …) are **present on disk but never dlopen'd or linked** by anything
 our stack runs. Deleting them from the image is a real blob reduction with no
