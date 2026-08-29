@@ -71,7 +71,26 @@ let
     specialArgs = { inherit nanokvm; };
   };
 
-  toplevel = eval.config.system.build.toplevel;
+  # GUARD: the systemd ceiling, enforced instead of only documented. systemd
+  # states a hard kernel floor in its README and raised it past this board at
+  # v258 ("Kernel versions below 5.4 are not supported at all"); v260 raised it
+  # again to 5.10. Our kernel is pinned at 4.19.125 by the ax_*.ko vermagic
+  # contract and cannot follow. So a bump of the nixpkgs-rootfs input must fail
+  # the build here, loudly, rather than produce an image that never reaches
+  # userspace on a board with no autoboot interrupt window.
+  systemdVersion = eval.config.systemd.package.version;
+  systemdOK = builtins.compareVersions systemdVersion "258" < 0;
+  checkSystemd = lib.throwIf (!systemdOK) ''
+    nixos/rootfs.nix: the nixpkgs-rootfs pin ships systemd ${systemdVersion},
+    whose declared MINIMUM kernel baseline is above this board's 4.19.125.
+    systemd 258 requires >= 5.4; systemd 260 requires >= 5.10. The kernel
+    cannot move while the prebuilt ax_*.ko media modules are vermagic-bound to
+    4.19.125 (docs/building.md). Pin nixpkgs-rootfs back to a branch shipping
+    systemd < 258 (nixos-24.11 = 256, nixos-25.05 = 257), or read
+    docs/nixos-rootfs.md before doing anything else.
+  '';
+
+  toplevel = checkSystemd eval.config.system.build.toplevel;
 
   # The one contract the vendor initramfs enforces: `switch_root /realroot
   # /sbin/init`. Everything else in here is the ordinary FHS skeleton a NixOS
