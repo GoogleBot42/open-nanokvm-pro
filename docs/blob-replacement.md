@@ -2476,3 +2476,49 @@ wired (currently `-1` → polling), (3) `enc_pm_runtime_*`/`enc_reset_system` dr
 DT clk/reset instead of no-ops, (4) on-device insmod + one IDR through the ioctl sequence
 vs the Stage-1 hijack-validated register program. Item 4 is RISKY (conflicts with the
 vendor `ax_venc.ko`) → serialized/human device session. Ticket #44.
+
+### 2026-08-29 — Fixed-QP stage: a from-scratch open VC8000E generator drives the silicon to QP-controllable 1080p IDRs (ATX .221)
+
+Per the #47 decision (fixed-QP open v1 first), the encoder-core question moves from
+"capture-and-patch a vendor program" (Stage 1) to **generate the register program from
+source**. Done and device-proven: `docs/reference/vcenc-open/stage-fixedqp/` (generator +
+Path B harness + register evidence; screen-capture bitstreams/pixels deliberately excluded).
+
+`gen_idr.py` emits the VC8000E encoder-core image (swreg1..511) for a chosen fixed QP + 1080p
+geometry. Register classification: **VCMD envelope + geometry + the 13-register QP block are
+computed/decoded from source**; the QP block uses scaling laws derived from our two committed
+anchor programs (quant table swreg125-132 × 2^((QP-32)/8), swreg37 × 2^((QP-32)/4),
+TARGETPICSIZE swreg105-107 content-calibrated, swreg7 pic_init_qp=QP with a matching PPS).
+At QP32 the generated image is byte-identical to the QP32 anchor; at QP36 it matches within
+<17 LSB. **Honest boundary:** ~40 template registers are `opaque` (role annotated, exact
+bitfields not decoded, copied from our invariant 1080p observation) — cracking them needs the
+public eswin VCEnc reference cross-walk, a follow-up, not a fixed-QP-1080p blocker.
+
+**Hardware validation (Path B image-overlay, `gen_hook.c` — overlays swreg1..511, preserves
+the 16 per-run address regs so no invented phys reaches DMA).** Device healthy throughout
+(nanokvm active, web 200, uptime monotonic 12 days, no watchdog reboot). QP ladder, all
+decoding to correct 1920×1080 of the live desktop:
+
+| QP | swreg82 (HW cycles) | IDR NAL |
+|----|---------------------|---------|
+| control | 0x00200d95 | 11489 B |
+| 28 | 0x0020225f | 17470 B |
+| 32 | 0x00200c8a | 11378 B |
+| 36 | 0x001ff76f | 7564 B |
+| 40 | 0x001fe688 | 4661 B |
+| 44 | 0x001fe681 | 3537 B |
+
+**Overseer-verified independently** (not from the agent's report): NAL sizes are monotonic in
+QP (re-derived from raw file sizes), swreg82 advances and varies per program (re-extracted from
+the raw `.regs` dumps → the HW genuinely executed each distinct program, contrast the Stage-1
+raw-ioctl attempt where it never advanced), all six decodes are distinct 1920×1080 8-bit RGB
+frames (dimensions + md5 checked), and `gen_idr.py` computes the QP block from the scaling laws
+rather than replaying a blob (spot-read).
+
+**Net:** the from-scratch register-program generator — the encoder-core half of a blob-free
+fixed-QP encoder — is proven on hardware. Confidence HIGH. Remaining for a *shipped* blobless
+encoder: (a) blob-free submission (the #44 open driver + #45 open EWL, replacing the Path B
+hijack), (b) integrate the generator into the open libkvm backend, (c) locate the RC-enable bit
+so fixed-QP can disable RC instead of driving TARGETPICSIZE, (d) crack the ~40 opaque template
+regs for full from-source (or accept them as a documented 1080p init constant). P-frames (Stage
+2) not attempted; DPB regs pinned (Stage 0), no new blocker. Tickets #25/#46/#47.
