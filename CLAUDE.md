@@ -30,6 +30,11 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   works from an SSH shell but crash-loops under systemd is this. See
   `docs/architecture.md` ("Load-bearing linker detail") and `pkgs/kvm-encoder.nix`.
 - Vendor `ax_*.ko` modules require an exact vermagic match — `docs/building.md`.
+  And vermagic match is NOT ABI safety: config flags can add `#ifdef` fields to
+  core structs the blobs touch (CONFIG_DMA_CMA → `struct device.cma_area`;
+  CONFIG_CMA → migratetype renumber → `struct zone`) and kill boot when the
+  blobs load — audit struct layout per flag. Proven the hard way in #49:
+  `docs/vcmd-cma-unblock.md`.
 - The device must run `nanokvm.service`, not the vendor `kvmcomm.service`, or the web
   UI is down — `docs/architecture.md` ("The two app stacks").
 - The app tree is copied to tmpfs at boot: hot patches must land in BOTH `/kvmapp`
