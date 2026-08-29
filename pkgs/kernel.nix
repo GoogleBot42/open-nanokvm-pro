@@ -1,15 +1,13 @@
 { pkgs, crossPkgs, initramfs, maix_ax620e_sdk, maix_ax620e_sdk_kernel, maix_ax620e_sdk_msp
-, # ---- OPT-IN CMA variant (issue #49) --------------------------------------
-  # When non-null, enable a default CMA area of this many MiB so the open
-  # VC8000E VCMD driver's coherent DMA pools (dma_alloc_attrs FORCE_CONTIGUOUS,
-  # 3x2M) can allocate -- the wall proven on-device 2026-08-29. `null` (default)
-  # builds the SHIPPING kernel byte-for-byte unchanged. This is purely additive:
-  # CONFIG_CMA is NOT a vermagic component (include/linux/vermagic.h -- verified)
-  # and does NOT resize `struct page` (only CONFIG_MEMCG does, and it stays off),
-  # so the vendor ax_*.ko still load. See the CMA-variant note below and
-  # docs/blob-replacement.md (#49).
-  cmaSizeMBytes ? null
 , ... }:
+
+# NOTE (#49): do NOT add a CONFIG_CMA/CONFIG_DMA_CMA variant here. It is
+# vermagic-invisible but ABI-breaking for the vendor ax_*.ko (DMA_CMA adds
+# `cma_area` to struct device; CMA renumbers the migratetype enum and resizes
+# struct zone freelists) -- proven on device 2026-08-30: CMA kernels die
+# pre-init when the blobs load. The open VC8000E driver uses
+# dma_declare_coherent_memory() over a CMM-tail carveout instead, which works
+# on this unmodified kernel. See docs/vcmd-cma-unblock.md.
 
 # ---------------------------------------------------------------------------
 # Linux 4.19.125 kernel + NanoKVM-Pro DTS + open lt6911_manage.ko (from source).
@@ -71,43 +69,9 @@ let
   project = "AX630C_emmc_arm64_k419_sipeed_nanokvm";
   release = "4.19.125";
 
-  # CMA variant selector. `cmaSizeMBytes == null` -> the shipping kernel,
-  # emitted byte-for-byte unchanged (every conditional below collapses to the
-  # empty string via lib.optionalString, so the derivation hash is identical).
-  cmaVariant = cmaSizeMBytes != null;
-  pnameSuffix = if cmaVariant then "-cma" else "";
-
-  # CMA-variant shell fragments, APPENDED to existing configurePhase lines so
-  # that when cmaVariant is false they are "" and the phase (hence the drvPath)
-  # is byte-for-byte the shipping kernel's. arm64 bootmem calls
-  # dma_contiguous_reserve() unconditionally (arch/arm64/mm/init.c), reserving
-  # CONFIG_CMA_SIZE_MBYTES from managed DRAM as the global default CMA area; the
-  # VCMD driver's bare platform_device has no per-device cma_area, so
-  # dma_alloc_attrs(FORCE_CONTIGUOUS) falls back to that area (dev_get_cma_area)
-  # and its 3x2M coherent pools allocate. No DTB/cmdline change needed.
-  cmaConfigSnippet = pkgs.lib.optionalString cmaVariant (
-    "\n    # ---- CMA variant (issue #49): enable CONFIG_CMA + a default CMA area so"
-    + "\n    # the open VC8000E VCMD driver's FORCE_CONTIGUOUS coherent pools allocate."
-    + "\n    # Not a VERMAGIC_STRING input (include/linux/vermagic.h) and adds no field"
-    + "\n    # to struct page (only CONFIG_MEMCG does, left off) -- vendor ax_*.ko still load."
-    + "\n    bash ./scripts/config --file build/.config \\"
-    + "\n      --enable CMA \\"
-    + "\n      --enable DMA_CMA \\"
-    + "\n      --enable CMA_SIZE_SEL_MBYTES \\"
-    + "\n      --set-val CMA_SIZE_MBYTES ${toString cmaSizeMBytes}"
-  );
-  cmaGuardSnippet = pkgs.lib.optionalString cmaVariant (
-    "\n    # CMA variant: confirm the allocator survived olddefconfig (a dropped"
-    + "\n    # Kconfig dependency would silently restore the non-CMA wall)."
-    + "\n    for opt in CONFIG_CMA=y CONFIG_DMA_CMA=y CONFIG_CMA_SIZE_MBYTES=${toString cmaSizeMBytes}; do"
-    + "\n      grep -qx \"$opt\" build/.config \\"
-    + "\n        || { echo \"ERROR: $opt missing -- CMA variant did not take.\" >&2; exit 1; }"
-    + "\n    done"
-    + "\n    echo \"CMA variant active: ${toString cmaSizeMBytes}M default CMA area.\""
-  );
 in
 pkgs.stdenv.mkDerivation {
-  pname = "nanokvm-pro-kernel${pnameSuffix}";
+  pname = "nanokvm-pro-kernel";
   version = release;
 
   src = maix_ax620e_sdk_kernel;
@@ -206,7 +170,7 @@ pkgs.stdenv.mkDerivation {
     # SDK-relative path does not resolve in the sandbox). A single *.cpio source
     # is embedded directly, uncompressed (CONFIG_INITRAMFS_COMPRESSION_NONE).
     bash ./scripts/config --file build/.config \
-      --set-str INITRAMFS_SOURCE "$initramfsCpio"${cmaConfigSnippet}
+      --set-str INITRAMFS_SOURCE "$initramfsCpio"
     make O=build olddefconfig
 
     # Guard: the embedded initramfs is required to reach userspace (switch_root).
@@ -229,7 +193,7 @@ pkgs.stdenv.mkDerivation {
     if grep -qx 'CONFIG_MODVERSIONS=y' build/.config; then
       echo "ERROR: CONFIG_MODVERSIONS on -- prebuilt ax_*.ko have no __versions." >&2
       exit 1
-    fi${cmaGuardSnippet}
+    fi
 
     runHook postConfigure
   '';
@@ -274,9 +238,7 @@ pkgs.stdenv.mkDerivation {
   dontPatchELF = true;
 
   meta = {
-    description = "NanoKVM-Pro Linux ${release} kernel (Image + board dtb + modules incl. lt6911_manage.ko), from source, ax_*.ko-vermagic-compatible"
-      + pkgs.lib.optionalString cmaVariant
-        " -- CMA variant (${toString cmaSizeMBytes}M default area) for the open VC8000E VCMD driver (#49)";
+    description = "NanoKVM-Pro Linux ${release} kernel (Image + board dtb + modules incl. lt6911_manage.ko), from source, ax_*.ko-vermagic-compatible";
     license = pkgs.lib.licenses.gpl2Only;
     platforms = pkgs.lib.platforms.linux;
   };

@@ -262,6 +262,53 @@ ssh root@<device> 'systemctl status nanokvm; ss -tlnp | grep -E ":(80|443)"; \
 
 ---
 
+## Slot-B kernel testing (proven procedure, 2026-08-30)
+
+The A/B machinery gives a fully reversible, serial-free way to boot-test a
+kernel from the running system. Everything below was proven on hardware
+during the #49 bring-up (good kernel → boots slot B; bad kernel → dies,
+watchdog fires, SPL auto-fails-over to slot A, device back on SSH in ~40s;
+slot A never written).
+
+**How slot selection actually works.** `TOP_CHIPMODE_GLB_BACKUP0`
+(`0x02390024`, `_SET` +4 / `_CLR` +8) holds `SLOTA=BIT(2)`, `SLOTB=BIT(3)`,
+`SLOTA_BOOTABLE=BIT(4)`, `SLOTB_BOOTABLE=BIT(5)`. The SPL's
+`select_slot_ab()` (boot/bl1/core/boot/boot.c; the flashed p1 SPL was
+disassembled and matches) treats the BOOTABLE bit as **consume-once**: a
+slot bit whose BOOTABLE bit is clear means "that slot already failed once" →
+fall back to the other slot. On every successful boot,
+`/etc/init.d/S99checkboot start` re-arms the *current* slot's BOOTABLE bit
+(steady state on slot A: `0x14`). The register survives warm reboot, raw
+chip reset (`COMM_ABORT_CFG` = `0x023400A8` bit 0), and the whole boot chain
+(verified with a canary bit).
+
+**Procedure:**
+
+1. Back up + write the test kernel to `kernel_b` = `/dev/mmcblk0p15`
+   (`.#kernel-slot-image` packaging is hardware-proven; hash-verify with
+   drop_caches as always). Never touch p14 (slot A).
+2. Arm slot B **with the vendor script** — NOT a raw `SLOTB` poke, which
+   leaves `SLOTB_BOOTABLE` clear and silently falls back to A:
+   ```
+   /etc/init.d/S99checkboot systemB     # sets SLOTB|SLOTB_BOOTABLE, clears SLOTA
+   reboot
+   ```
+3. Verify over SSH (**no serial exists on this unit** — the console is
+   hidden-pad UART0). Make the test kernel self-identifying (a config
+   fingerprint in `/proc`, `uname -v`, …) and check `fw_printenv bootsystem`
+   → `B` plus the fingerprint. Three outcomes:
+   - fingerprint + `bootsystem=B` → slot B booted the test kernel;
+   - SSH back but `bootsystem=A` → the test kernel died and failover worked
+     (register shows the consumed pattern, e.g. `0x14`);
+   - no SSH in ~4 min → power-cycle (never observed; failover handled every
+     bad kernel tested).
+4. A successful slot-B boot re-arms `SLOTB_BOOTABLE`, so the device *stays*
+   on B across reboots. Return with `/etc/init.d/S99checkboot systemA` +
+   `reboot`, and restore p15's content if you wrote a scratch kernel.
+
+`kernel_b` (p15) currently holds the boot-proven current default kernel, so
+slot B is a valid rescue/test slot at rest.
+
 ## Serial console
 
 - **UART0 / `ttyS0` @ `0x4880000`** is the primary console, on hidden pads. **Both**

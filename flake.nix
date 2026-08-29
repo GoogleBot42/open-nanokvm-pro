@@ -120,22 +120,16 @@
 
         kernel = callPkg ./pkgs/kernel.nix { inherit initramfs; };
 
-        # OPT-IN CMA kernel variant (issue #49): identical to `kernel` except it
-        # enables CONFIG_CMA + a 16 MiB default CMA area, so the open VC8000E
-        # VCMD driver's coherent DMA pools (3x2M FORCE_CONTIGUOUS) allocate --
-        # the wall proven on-device 2026-08-29. Purpose-built to flash to the
-        # REVERSIBLE kernel_b slot (see kernel-slot-image-cma below); the default
-        # `kernel`/images stay byte-for-byte unchanged. 16M rounds the 6M pool
-        # need well up and matches the mainline CMA default; CMA memory is
-        # movable-reclaimable, so it is not lost to general allocation.
-        kernel-cma = callPkg ./pkgs/kernel.nix { inherit initramfs; cmaSizeMBytes = 16; };
-
-        # #49 DEBUG bisection variant: CMA + DMA_CMA compiled in but NO boot-time
-        # default area (CMA_SIZE_MBYTES=0). Discriminates "the 16M reservation
-        # kills early boot" from "CMA integration kills early boot" -- the 16M
-        # variant dies pre-init on slot B (2026-08-30 bring-up) while the
-        # identical non-CMA kernel boots there.
-        kernel-cma-nores = callPkg ./pkgs/kernel.nix { inherit initramfs; cmaSizeMBytes = 0; };
+        # NOTE (#49, resolved 2026-08-30): there is deliberately NO CMA kernel
+        # variant. CONFIG_CMA/CONFIG_DMA_CMA are vermagic-invisible but ABI-
+        # BREAKING for the vendor ax_*.ko blobs -- DMA_CMA adds `cma_area` to
+        # struct device (include/linux/device.h) and CMA renumbers the
+        # migratetype enum / resizes struct zone freelists -- proven on device:
+        # both CMA kernels (16M and 0-reserve) die pre-init on slot B while the
+        # identical non-CMA kernel boots there. The open VC8000E driver gets its
+        # coherent pools from dma_declare_coherent_memory() over a CMM-tail
+        # carveout instead (pkgs/vc8000-vcmd/ax630c_vcmd_glue.c), which runs on
+        # the SHIPPING kernel. Full record: docs/vcmd-cma-unblock.md.
 
         # Open VC8000E VCMD command-engine driver (eswin EIC7X), ported
         # out-of-tree to the 4.19 kernel -- the kernel half of the blob-free
@@ -187,40 +181,6 @@
         # the ONE reversible flash that unblocks the open VC8000E VCMD driver.
         # Flash to /dev/mmcblk0p15 (slot B), boot slot B, roll back by booting
         # slot A. Same DTB as stock (no DTB change needed). See docs/vcmd-cma-unblock.md.
-        # #49 DEBUG: slot image for the no-reservation bisection kernel above.
-        kernel-slot-image-cma-nores = callPkg ./pkgs/slot-image.nix {
-          payload = "${kernel-cma-nores}/Image";
-          pname = "nanokvm-pro-kernel-slot-image-cma-nores";
-          version = "ax630c-kernel-b-cma-nores";
-          artifact = "kernel_b.bin";
-          partSize = 64 * 1024 * 1024;
-          loadAddr = "0x40200000";
-          title = "kernel partition image (slot B, CMA-noreserve bisection)";
-          flashNotes = "#49 bisection: CONFIG_CMA+DMA_CMA, CMA_SIZE_MBYTES=0.";
-        };
-
-        kernel-slot-image-cma = callPkg ./pkgs/slot-image.nix {
-          payload = "${kernel-cma}/Image";
-          pname = "nanokvm-pro-kernel-slot-image-cma";
-          version = "ax630c-kernel-b-cma";
-          artifact = "kernel_b.bin";
-          partSize = 64 * 1024 * 1024;
-          loadAddr = "0x40200000";
-          title = "kernel partition image (slot B, CMA variant #49)";
-          flashNotes = ''
-            TARGET partition: kernel_b  (A/B slot B), 64M
-              eMMC device   : /dev/mmcblk0p15   (p14 = slot A / stock kernel)
-
-            CONTENT: the from-source kernel with CONFIG_CMA + a 16M default CMA
-            area (pkgs/kernel.nix cmaSizeMBytes=16) so the open VC8000E VCMD
-            driver's coherent DMA pools allocate. Vermagic is byte-identical to
-            stock, so the vendor ax_*.ko still load. DTB is UNCHANGED from stock.
-
-            Flash (reversible slot-B test):
-              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync
-            Roll back: boot slot A (stock kernel, p14). See docs/vcmd-cma-unblock.md.'';
-        };
-
         # Vendor-MPI capture default. The blob-free raw-ioctl backend ships
         # alpha-only for now: flip `openCapture = true` here for a preview-channel
         # cut (as v2.1.0-alpha.1 did), and flip back before the next stable.
@@ -297,9 +257,8 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
-            initramfs kernel kernel-cma vc8000-vcmd dtb dtb-slot-image
-            kernel-slot-image kernel-slot-image-cma
-            kernel-cma-nores kernel-slot-image-cma-nores
+            initramfs kernel vc8000-vcmd dtb dtb-slot-image
+            kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package

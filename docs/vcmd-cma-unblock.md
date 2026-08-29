@@ -1,236 +1,112 @@
-# The one reversible flash that unblocks the open VC8000E encoder (#49)
+# #49 resolved: the open VC8000E driver runs on the SHIPPING kernel — no flash
 
-The open VeriSilicon VC8000E VCMD driver (`#44`, flake output `.#vc8000-vcmd`)
-loads on-device, but `vc8000e_vcmd_init → vcmd_mem_init` needs **3× 2 MB
-physically-contiguous *coherent* DMA** (`dma_alloc_attrs(…, DMA_ATTR_FORCE_CONTIGUOUS)`)
-before it claims any MMIO. The shipping kernel has **`CONFIG_CMA` not set**, and
-the 200 MB CMM carveout (`0x73800000–0x7FFFFFFF`) is reserved *outside*
-kernel-managed DRAM — so no allocator can satisfy those pools. Proven on-device
-2026-08-29 (`docs/blob-replacement.md`, "#25 finish-line probe"): first insmod
-NULL-derefs → watchdog reboot; with the fail-safe null-check the second insmod
-aborts cleanly with `dma_alloc_attrs(2097152) FAILED (no CMA?)` →
-`vcmd_mem_init failed (-12)`.
-
-This is the **single human action** that converts the open-driver bring-up
-(`#44`/`#45`) from "blocked" into "no-new-RE finish": flash a purpose-built
-kernel that carries a CMA area, to the **reversible `kernel_b` slot**.
-
----
-
-## Decision: CONFIG_CMA kernel variant (approach 1), kernel-Image-only
-
-Two approaches were analysed (see the safety section for the full reasoning):
-
-1. **CONFIG_CMA kernel variant** — enable `CONFIG_CMA` + `CONFIG_DMA_CMA` + a
-   16 MiB default CMA area. arm64 bootmem auto-reserves it; the driver's bare
-   platform device falls back to that default area, so its `FORCE_CONTIGUOUS`
-   pools allocate. **Zero driver change, zero DTB change, one partition flashed.**
-2. **VCMD reserved-memory DT carveout** — a `shared-dma-pool` region bound to the
-   device via `of_reserved_mem_device_init`. DTB-only for kernel config, but needs
-   a driver change (turn the `register_simple` platform device into a DT-probed
-   one with a `memory-region` phandle), a hand-placed phys carveout inside
-   `mem=256M`, and a second partition (`dtb_b`) reflashed.
-
-**Approach 1 is implemented and recommended.** It has the strictly smaller blast
-radius: the encoder driver stays byte-for-byte as-is, no device-tree address
-guessing, and only `kernel_b` is touched. Its only theoretical downside vs (2) —
-"a kernel-config change could disturb the `ax_*.ko` ABI" — is **disproven by
-evidence below**: the vermagic string is byte-identical and `struct page` is
-unchanged, so the vendor blobs load exactly as before. Approach (2)'s
-"config-change-free" edge is therefore moot.
-
-Flake outputs (opt-in; the default `.#kernel` and every shipping image are
-**byte-for-byte unchanged** — the default kernel's `.drv` hash is identical):
-
-| Output | What |
-|---|---|
-| `.#kernel-cma` | the kernel `Image` + modules, `CONFIG_CMA=y` + 16 MiB default CMA area (`pkgs/kernel.nix`, `cmaSizeMBytes = 16`) |
-| `.#kernel-slot-image-cma` | that Image → `ax_gzip -9` + 1 KB signed header, sized for the 64 MB `kernel_b` partition |
-
----
-
-## Safety verdict: SAFE to flash to `kernel_b`
-
-**Blast radius:** one partition, `kernel_b` = `/dev/mmcblk0p15` (A/B slot B).
-Slot A (`kernel` = p14) is never touched. `dtb_b` (p13) already holds the correct
-patched DTB — our `image.nix` writes the same signed dtb to both `dtb` and
-`dtb_b`, and the same from-source kernel to both `kernel` and `kernel_b` — so a
-slot-B boot uses a matching, known-good DTB with **no DTB flash required**.
-
-**Rollback:** boot slot A. Because slot A was never written, rollback is a slot
-switch, not a restore.
-
-**ABI safety — the decisive question, answered with evidence:**
-
-- **Vermagic is byte-identical.** `VERMAGIC_STRING` (`include/linux/vermagic.h`)
-  is built only from `UTS_RELEASE`, `SMP`, `PREEMPT`, `MODULE_UNLOAD`,
-  `MODVERSIONS`, `MODULE_ARCH_VERMAGIC`, `RANDSTRUCT` — **`CONFIG_CMA` is not a
-  component.** Verified empirically: a module built by `.#kernel-cma`
-  (`lt6911_manage.ko`) carries `vermagic=4.19.125 SMP preempt mod_unload
-  aarch64`, byte-for-byte equal to the vendor `ax_cmm.ko` / `ax_venc.ko`. So the
-  blobs still `insmod` with no `--force-vermagic` (`MODVERSIONS` stays off; no
-  `__versions` CRC gate). The in-build guards in `pkgs/kernel.nix` fail loudly if
-  `kernelrelease`, `SMP/PREEMPT/MODULE_UNLOAD`, or `MODVERSIONS` ever drift.
-- **`struct page` is unchanged**, so `ax_cmm`'s page arithmetic is unaffected.
-  In `include/linux/mm_types.h` the only config-gated field of `struct page` is
-  under `CONFIG_MEMCG` — which stays **off** (`# CONFIG_MEMCG is not set`).
-  `CONFIG_CMA` adds no `struct page` field; it reuses the existing pageblock
-  migrate-type machinery (`MIGRATE_CMA`, a value in the already-3-bit
-  pageblock-type field, not a new bit). This is the exact contrast CLAUDE.md
-  warns about: `CONFIG_MEMCG` *would* resize `struct page` and break the blobs'
-  inter-module page math — `CONFIG_CMA` does not. The two symbols `CONFIG_CMA`
-  `select`s (`MEMORY_ISOLATION`, `MIGRATION`) are **already `=y`** in the vendor
-  defconfig, so enabling CMA pulls in no new subsystem.
-- **Memory pressure is near-zero.** CMA memory is movable/reclaimable: until the
-  driver claims a pool, the 16 MiB is available to the page allocator for movable
-  allocations. It is not carved out of general use the way a fixed reserved-memory
-  region would be.
-
-**What could NOT be verified without a device boot** (honest boundary):
-
-- That the reserved 16 MiB default CMA area actually lands and that
-  `dma_alloc_attrs(FORCE_CONTIGUOUS)` then succeeds on *this* board at
-  `mem=…` — the source path is fully traced (arm64 `dma_contiguous_reserve()` →
-  `dma_contiguous_default_area` → `dev_get_cma_area()` fallback), but the
-  allocation itself is only confirmable on-device (step B4 below).
-- The exact, reliable way to *force* a slot-B boot on this unit (the SPL's
-  slot-register behaviour at cold boot). The mechanism and a candidate method are
-  documented below. Confirmation is over SSH, not serial: the CMA kernel is
-  self-identifying (`CmaTotal` in `/proc/meminfo` — the stock kernel has no CMA),
-  so which kernel actually booted is decidable from a shell. If forcing slot B
-  proves unreliable, fall back to approach (2) or to an interactive-U-Boot
-  build — neither is needed if the register method works.
-
----
-
-## Flash + bring-up plan (reversible)
-
-Legend: **[HOST]** = the build box; **[DEVICE]** = over SSH on the NanoKVM-Pro;
-**[HUMAN]** = only the owner can do this (physical presence).
-
-> **No serial on this unit.** The boot console is UART0 on *hidden pads*
-> (`docs/flashing-and-recovery.md`, "Serial console"); the exposed header is
-> UART1, which the boot chain never logs to. Serial bring-up was never done and
-> would need soldering. The plan below is therefore written **serial-free**:
-> slot confirmation uses the CMA kernel's `/proc/meminfo` fingerprint over SSH,
-> and the human's role is reduced to power-cycling if the device goes dark.
-
-### A. Build + stage the artifact — [HOST]
+**Outcome (2026-08-30, all device-proven):** the open VCMD driver
+(`.#vc8000-vcmd`) fully initialises on the unmodified shipping kernel —
+coherent pools allocated, clock enabled, real IRQ wired, init self-test
+cmdbufs completing through the engine:
 
 ```
-nix build .#kernel-slot-image-cma -L
-# → result/kernel_b.bin  (ax_gzip -9 + 1 KB signed header; magic 0x55543322 @ off 4)
+ax630c-venc-vcmd: coherent carveout 0x7f800000+0x800000 declared
+ax630c-venc-vcmd: clk_venc_eb enabled
+[es_venc:vc] module inserted. Major <241>
+ax630c-venc-vcmd: VC8000E VCMD driver initialised (base 0x4010000)
+/proc/interrupts:  52: ... GIC-0 125 Level  es_venc_vcmd_drv
 ```
 
-Sanity (host): `result/kernel_b.bin` is < 64 MB and its `FLASH-NOTES.txt` names
-`kernel_b` / `/dev/mmcblk0p15`.
+The CMA kernel flash this document originally proposed is **dead and
+removed** (`.#kernel-cma` / `.#kernel-slot-image-cma` no longer exist). This
+file is the record of why, and of what replaced it.
 
-### B. Flash slot B + boot it — [DEVICE], with a [HUMAN] on power-cycle standby
+---
 
-> `mmcblk0` is eMMC. **Never write `mmcblk0p14` (slot A) or any other partition.**
-> Only `mmcblk0p15` (`kernel_b`) is written here. Back it up first so the test is
-> perfectly reversible even at the partition level.
+## Finding 1: CONFIG_CMA is an ABI break for the vendor blobs
 
-1. **Back up the current `kernel_b`** (so slot B itself is restorable):
-   ```
-   # [DEVICE]
-   dd if=/dev/mmcblk0p15 of=/tmp/kernel_b.stock.img bs=1M
-   ```
-   Copy it to the host; verify magic `2233 5455` at offset 4
-   (`xxd -s4 -l4 /tmp/kernel_b.stock.img`).
+The original safety analysis here claimed the CMA variant was blob-safe
+because vermagic is byte-identical and `struct page` is unchanged. Both facts
+are true — and insufficient. Flashed to slot B, the CMA kernel (and a
+`CMA_SIZE_MBYTES=0` bisection variant, ruling out the reservation itself)
+**dies a few seconds into boot** — exactly when the curated loader insmods the
+vendor `ax_*.ko` — then the watchdog fires and the SPL fails over to slot A.
+The identical kernel without CMA boots fine from the same slot. Root cause,
+from the vendor tree:
 
-2. **Write the CMA kernel to `kernel_b`** (`/dev/mmcblk0p15`) and hash-verify —
-   drop caches before read-back so you verify the medium, not the page cache:
-   ```
-   # copy result/kernel_b.bin to the device first (tools/kvmscp), then [DEVICE]:
-   dd if=/root/kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync
-   sync; echo 3 > /proc/sys/vm/drop_caches
-   sz=$(stat -c%s /root/kernel_b.bin)
-   cmp -n "$sz" /root/kernel_b.bin /dev/mmcblk0p15 && echo "VERIFY OK"
-   ```
+- **`CONFIG_DMA_CMA` adds a field to `struct device`**:
+  `include/linux/device.h` line ~1023, `#ifdef CONFIG_DMA_CMA struct cma
+  *cma_area;` — every member after it shifts for every consumer, including
+  the prebuilt blobs.
+- **`CONFIG_CMA` renumbers the migratetype enum** (`include/linux/mmzone.h`):
+  `MIGRATE_CMA` is inserted *before* `MIGRATE_ISOLATE`, changing
+  `MIGRATE_ISOLATE`'s value and `MIGRATE_TYPES` — which sizes
+  `struct zone`'s `free_area[].free_list[MIGRATE_TYPES]` arrays, so
+  `struct zone` layout changes too (and `#if defined CONFIG_COMPACTION ||
+  defined CONFIG_CMA` gates further zone fields).
 
-3. **Force a slot-B boot, then reboot.** Slot selection: U-Boot's
-   `set_slot_ab()` (`arch/arm/mach-axera/ax620e/ax620e.c`) reads
-   `TOP_CHIPMODE_GLB_BACKUP0` = **`0x02390024`** and sets env `bootsystem` from it
-   (`SLOTA=BIT(2)=0x4`, `SLOTB=BIT(3)=0x8`); `do_axera_boot()`
-   (`cmd/axera/boot/axera_boot.c`) then loads `kernel_b`+`dtb_b` when
-   `bootsystem=="B"`. The register has write-1-to-set / write-1-to-clear aliases
-   `_SET=0x02390028` / `_CLR=0x0239002C`. Candidate method from Linux (uses
-   busybox `devmem`; confirm the tool exists on the rootfs):
-   ```
-   # [DEVICE] select slot B: set SLOTB, clear SLOTA
-   devmem 0x02390028 32 0x8    # BACKUP0_SET  <- SLOTB
-   devmem 0x0239002C 32 0x4    # BACKUP0_CLR  <- SLOTA
-   reboot
-   ```
-   (`bootdelay=0`, so there is no interactive U-Boot prompt; the register is
-   the lever. U-Boot's `From slotb boot` line goes to the hidden UART0 pads —
-   not observable on this unit — so the slot is confirmed in step 4 instead.)
+Lesson, now also recorded in `pkgs/kernel.nix`: **vermagic + struct page is
+not an ABI proof**. Any config flag must be audited for `#ifdef` fields in
+every core struct the blobs touch (`struct device`, `struct zone`,
+migratetype values, …) before assuming the blobs survive.
 
-4. **[DEVICE] confirm which kernel booted** — the CMA kernel is
-   self-identifying, so SSH replaces serial here. Three outcomes:
-   - **SSH back + CMA present** → slot B booted the flashed kernel. Proceed to C.
-     ```
-     grep Cma /proc/meminfo        # expect CmaTotal:  ~16384 kB
-     dmesg | grep -i cma           # expect: "cma: Reserved 16 MiB at 0x..."
-     uname -r                      # 4.19.125 (unchanged)
-     ```
-   - **SSH back + no `CmaTotal` line** → still the stock kernel: the SPL
-     re-derived the slot before U-Boot read the register. Harmless (slot A was
-     never touched) — stop and reassess; see the honest boundary above.
-   - **No SSH within ~3 minutes** → the slot-B boot hung. **[HUMAN]**
-     power-cycle the unit. A cold cycle likely resets `GLB_BACKUP0` (it is a
-     warm-boot scratch register) and falls back to slot A — this is untested;
-     if the device still doesn't come up, AXDL recovery
-     (`docs/flashing-and-recovery.md`) is the proven backstop and slot A
-     remains intact throughout.
+## Finding 2 (the replacement): dma_declare_coherent_memory on the shipping kernel
 
-### C. Path-B open-driver bring-up — [DEVICE] (RISKY, serialized session)
+`vcmd_mem_init` needs 3× 2MB physically-contiguous *coherent* DMA. The 4.19
+`dma_alloc_attrs()` consults a device's **declared coherent region first**
+(`include/linux/dma-mapping.h`), before any CMA/dma_ops path — and
+`dma_declare_coherent_memory` is compiled in and **exported** on the shipping
+kernel. So the glue (`pkgs/vc8000-vcmd/ax630c_vcmd_glue.c`) now:
 
-This conflicts with the vendor encoder modules and must follow the device safety
-envelope. `vcmd_reserve_IO` does `request_mem_region(0x04010000)`, which the
-loaded vendor `ax_venc` holds (`04010000-… : vsi_vcx`), so the vendor venc/jenc
-must be unloaded first (refcount clears with the app stopped):
+1. **Declares an 8MB coherent carveout** at module load
+   (`coherent_base=0x7F800000`, `coherent_size=0x800000`, both module
+   params) — the top of the 200MB CMM carveout (`0x73800000–0x7FFFFFFF`).
+   ax_cmm allocates bottom-up first-fit (verified: all 9 boot blocks sit at
+   `0x738xxxxx`), so the tail is untouched until CMM usage exceeds 192MB;
+   during encoder bring-up the vendor app stack — the only large CMM
+   consumer — is stopped anyway. A permanent home for these 8MB (shrinking
+   CMM via its boot config, or a proper carveout) is #45 integration work.
+2. **Enables the block clock** via the *open, in-tree* clk driver: the DT node
+   `venc@4010000` (compatible `"axera, venc-encoder"` — note the space) has
+   `clocks = <&vpu_clk AX620X_CLK_VENC_EB>` = `clk_venc_eb`
+   (`drivers/clk/axera/clk-ax620e.c`). Unclocked, the whole `0x4010000` block
+   reads the `0xDEADBEEF` bus poison — the vendor stack gates this clock
+   on/off around *each frame* from userspace (caught live: hwid
+   `0x43421500` visible only ~4/200 polls during active encode). The glue
+   holds the clock for the driver's lifetime. Reset needs no touching — the
+   block already runs when clocked.
+3. **Wires the real IRQ** with `of_irq_get()` on the same DT node (GIC_SPI 93
+   per the dtsi; maps to a live GIC hwirq even though the node is
+   `status="disabled"` and unbound). Without it the core's initial self-test
+   cmdbuf completes in hardware but nothing wakes the wait queue and insmod
+   hangs in `wait_event_interruptible` (observed; recoverable with `kill -9`).
+
+**Bring-up procedure (shipping kernel, no flash):**
 
 ```
 # [DEVICE]
-systemctl stop nanokvm            # release the encoder
-rmmod ax_jenc ax_venc             # free the vsi_vcx mem region + core
-insmod /path/to/ax630c_venc_vcmd.ko   # nix build .#vc8000-vcmd -> ax630c_venc_vcmd.ko
-dmesg | tail -20
-# SUCCESS looks like: "ax630c-venc-vcmd: VC8000E VCMD driver initialised (base 0x4010000)"
-#   and NO "dma_alloc_attrs(2097152) FAILED (no CMA?)" / "vcmd_mem_init failed (-12)".
+systemctl stop nanokvm
+rmmod ax_jenc ax_venc                  # frees the vsi_vcx mem region
+insmod ax630c_venc_vcmd.ko             # nix build .#vc8000-vcmd
+dmesg | grep ax630c-venc-vcmd          # expect the 4 lines quoted above
+# restore: rmmod ax630c_venc_vcmd; insmod /soc/ko/ax_venc.ko /soc/ko/ax_jenc.ko
+#          (separate insmod calls); systemctl start nanokvm
 ```
 
-A clean `vcmd_mem_init` (three 2 MB coherent pools allocated) is the milestone
-this flash exists to reach. Driving one IDR through
-`RESERVE→LINK→WAIT→RELEASE` is the next step (`#45` open EWL) and is out of scope
-here.
+Known cosmetic wart: `vcmd_mem_init` prints a bogus `phy_address` with a WARN
+backtrace — it calls `virt_to_phys()` on the memremap'd (non-linear) pool
+mapping. The `busAddress` used for hardware is correct (inside the carveout).
+Worth fixing in the core later.
 
-### D. Rollback — [DEVICE]
+**Next (#45):** drive an IDR through `RESERVE→LINK→WAIT→RELEASE` via
+`/dev/es_venc` with an open EWL, then the frame-buffer glue → closes #25.
 
-Slot A was never written, so rollback is a slot switch:
+## Finding 3: the A/B slot-B test harness works (and how)
 
-```
-# [DEVICE] select slot A again
-devmem 0x02390028 32 0x4    # BACKUP0_SET  <- SLOTA
-devmem 0x0239002C 32 0x8    # BACKUP0_CLR  <- SLOTB
-reboot
-# after SSH returns: grep Cma /proc/meminfo  -> no CmaTotal line = stock slot-A kernel
-```
+Proven end-to-end while chasing this (full procedure now in
+`docs/flashing-and-recovery.md`, "Slot-B kernel testing"): vendor
+`/etc/init.d/S99checkboot systemB` + `reboot` boots slot B; the SPL's
+BOOTABLE bits are consume-once (a raw `SLOTB`-only register poke silently
+falls back to A); a kernel that dies on slot B auto-fails-over to slot A in
+~40s with no recovery hazard; and verification is over SSH by making the
+test kernel self-identifying — no serial exists on this unit.
 
-To also restore `kernel_b` to stock, `dd` `/tmp/kernel_b.stock.img` back to
-`/dev/mmcblk0p15` (same verify-with-drop-caches discipline). If a slot-B boot
-ever hangs before Linux, the SPL/watchdog failover or a physical AXDL re-flash
-recovers the unit (`docs/flashing-and-recovery.md`); slot A remains intact
-throughout.
-
----
-
-## Why not just make this the default kernel?
-
-The shipping kernel is deliberately left byte-identical: this is a purpose-built
-bring-up kernel for a reversible slot-B experiment, not a firmware change. Once
-the open encoder path is proven end-to-end on the CMA kernel and integrated
-(`#44`/`#45`/`#25`), folding `CONFIG_CMA` into the default `.#kernel` (and sizing
-the area to the final pool footprint) is a small, separately-reviewed follow-up.
+Bonus result: the **current default kernel (with the #27 nixpkgs-rebuilt
+initramfs) is hardware-boot-proven** via this harness, and `kernel_b` (p15)
+now permanently holds that proven image.

@@ -26,6 +26,9 @@
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
+#include <linux/clk.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
 
 #include "vc8000_driver.h"      /* struct vcmd_config, extern venc_pdev, ABI */
 
@@ -39,6 +42,41 @@
  */
 #define AX630C_VENC_VCMD_BASE       (0x04010000UL)
 #define AX630C_VENC_VCMD_IRQ        (-1)   /* not wired yet; -1 disables request_irq */
+
+/*
+ * Coherent-pool carveout (issue #49, the no-flash path). The shipping kernel
+ * has no CMA, so vcmd_mem_init()'s three 2MB dma_alloc_attrs(FORCE_CONTIGUOUS)
+ * pools cannot come from the page allocator. Instead we declare a fixed
+ * physically-contiguous region for this device with
+ * dma_declare_coherent_memory(); dma_alloc_attrs() consults the device's
+ * declared region FIRST (include/linux/dma-mapping.h), so the pools allocate
+ * from it with no kernel or DTB change.
+ *
+ * Default region: the TOP 8MB of the 200MB CMM carveout
+ * (0x73800000-0x7FFFFFFF, outside kernel-managed DRAM). ax_cmm allocates
+ * bottom-up first-fit, so the top is untouched until CMM usage exceeds 192MB
+ * -- and during open-encoder bring-up the vendor app stack (the only big CMM
+ * consumer) is stopped. Both knobs are module parameters so the region can be
+ * moved once a permanent carveout is decided (#45).
+ */
+static unsigned long coherent_base = 0x7F800000UL;
+static unsigned long coherent_size = 0x00800000UL;   /* 8MB: 3x2MB pools + slack */
+module_param(coherent_base, ulong, 0444);
+MODULE_PARM_DESC(coherent_base, "phys base of the coherent DMA carveout");
+module_param(coherent_size, ulong, 0444);
+MODULE_PARM_DESC(coherent_size, "size of the coherent DMA carveout (0 = don't declare)");
+
+/*
+ * VENC block clock. The vendor DTS declares venc@4010000 with
+ * clocks = <&vpu_clk AX620X_CLK_VENC_EB> ("clk_venc_eb"), served by the OPEN
+ * in-tree clk driver (drivers/clk/axera/clk-ax620e.c). The vendor stack gates
+ * this clock on/off around each encode from userspace; unclocked, the whole
+ * 0x4010000 block reads the 0xDEADBEEF bus poison (hwid probe fails). We hold
+ * it enabled for the driver's lifetime. Reset is left as-is: the block already
+ * runs when clocked (proven live during vendor encodes), so vpu_reset_async is
+ * already deasserted.
+ */
+static struct clk *venc_clk;
 
 /* --- symbols the VCMD core (eswin/vc8000_vcmd_driver.c) imports --- */
 struct platform_device *venc_pdev = NULL;
@@ -65,6 +103,57 @@ EXPORT_SYMBOL(enc_pm_runtime_get);
 EXPORT_SYMBOL(enc_pm_runtime_put);
 EXPORT_SYMBOL(enc_reset_system);
 
+/*
+ * Linux IRQ for the VCMD engine, resolved from the DT node (GIC_SPI 93 in the
+ * vendor dtsi). Without it the core's initial self-test cmdbuf completes in
+ * hardware but nothing wakes the wait queue and insmod hangs (proven on
+ * device). of_irq_get() creates the GIC mapping even though the node is
+ * status="disabled" and unbound.
+ */
+static int venc_irq = -1;
+
+static int ax630c_venc_clk_on(void)
+{
+	/* Note the space in the vendor compatible string: "axera, venc-encoder". */
+	struct device_node *np = of_find_compatible_node(NULL, NULL,
+							 "axera, venc-encoder");
+	if (!np) {
+		pr_err("ax630c-venc-vcmd: no 'axera, venc-encoder' DT node\n");
+		return -ENODEV;
+	}
+	venc_irq = of_irq_get(np, 0);
+	if (venc_irq <= 0) {
+		pr_warn("ax630c-venc-vcmd: of_irq_get failed (%d), running without IRQ\n",
+			venc_irq);
+		venc_irq = -1;
+	}
+	venc_clk = of_clk_get(np, 0);
+	of_node_put(np);
+	if (IS_ERR(venc_clk)) {
+		pr_err("ax630c-venc-vcmd: of_clk_get failed: %ld\n",
+		       PTR_ERR(venc_clk));
+		venc_clk = NULL;
+		return -ENODEV;
+	}
+	if (clk_prepare_enable(venc_clk)) {
+		pr_err("ax630c-venc-vcmd: clk_prepare_enable failed\n");
+		clk_put(venc_clk);
+		venc_clk = NULL;
+		return -EIO;
+	}
+	pr_info("ax630c-venc-vcmd: clk_venc_eb enabled\n");
+	return 0;
+}
+
+static void ax630c_venc_clk_off(void)
+{
+	if (venc_clk) {
+		clk_disable_unprepare(venc_clk);
+		clk_put(venc_clk);
+		venc_clk = NULL;
+	}
+}
+
 static int __init ax630c_vcmd_init(void)
 {
 	int ret;
@@ -86,14 +175,42 @@ static int __init ax630c_vcmd_init(void)
 	}
 	dma_coerce_mask_and_coherent(&venc_pdev->dev, DMA_BIT_MASK(32));
 
+	if (coherent_size) {
+		ret = dma_declare_coherent_memory(&venc_pdev->dev,
+						  coherent_base, coherent_base,
+						  coherent_size,
+						  DMA_MEMORY_EXCLUSIVE);
+		if (ret) {
+			pr_err("ax630c-venc-vcmd: dma_declare_coherent_memory(0x%lx, 0x%lx) failed: %d\n",
+			       coherent_base, coherent_size, ret);
+			platform_device_unregister(venc_pdev);
+			venc_pdev = NULL;
+			return ret;
+		}
+		pr_info("ax630c-venc-vcmd: coherent carveout 0x%lx+0x%lx declared\n",
+			coherent_base, coherent_size);
+	}
+
+	ret = ax630c_venc_clk_on();
+	if (ret) {
+		if (coherent_size)
+			dma_release_declared_memory(&venc_pdev->dev);
+		platform_device_unregister(venc_pdev);
+		venc_pdev = NULL;
+		return ret;
+	}
+
 	/* Single VC8000E encoder core (JPEG/jenc is a separate device on AX630C). */
 	venc_vcmd_core_num = 1;
 	vc8000e_vcmd_core_array[0].vcmd_base_addr = AX630C_VENC_VCMD_BASE;
-	vc8000e_vcmd_core_array[0].vcmd_irq       = AX630C_VENC_VCMD_IRQ;
+	vc8000e_vcmd_core_array[0].vcmd_irq       = venc_irq;
 
 	ret = vc8000e_vcmd_init();
 	if (ret) {
 		pr_err("ax630c-venc-vcmd: vc8000e_vcmd_init failed: %d\n", ret);
+		ax630c_venc_clk_off();
+		if (coherent_size)
+			dma_release_declared_memory(&venc_pdev->dev);
 		platform_device_unregister(venc_pdev);
 		venc_pdev = NULL;
 		return ret;
@@ -106,7 +223,10 @@ static int __init ax630c_vcmd_init(void)
 static void __exit ax630c_vcmd_exit(void)
 {
 	vc8000e_vcmd_cleanup();
+	ax630c_venc_clk_off();
 	if (venc_pdev) {
+		if (coherent_size)
+			dma_release_declared_memory(&venc_pdev->dev);
 		platform_device_unregister(venc_pdev);
 		venc_pdev = NULL;
 	}
