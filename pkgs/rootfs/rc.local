@@ -13,7 +13,7 @@
 #     libax_syslog.so are deleted from the image; see docs/provenance.md.
 #   - `mkdir -p /opt/data/AXSyslog/kernel` is GONE with it: that directory
 #     existed only as axbox's log sink.  (The unreferenced debug helper
-#     /scripts/kmemleak_scan.sh also writes there; it has no caller on the
+#     /soc/scripts/kmemleak_scan.sh also writes there; it has no caller on the
 #     image and mkdir -p's nothing it needs at boot.)
 #
 # Everything else is load-bearing and MUST stay:

@@ -85,8 +85,13 @@ pkgs.stdenv.mkDerivation {
       exit 1
     fi
 
-    ( cd "$tree" && find . -print0 \
-        | cpio --null -o --format=newc -R 0:0 ) > initramfs_rootfs.cpio
+    # Deterministic archive: normalize every mtime to the epoch, sort the
+    # entries, and pass --reproducible so the newc headers carry no build-time
+    # mtime/inode noise -- otherwise the cpio (and the kernel Image that embeds
+    # it) is not bit-reproducible, breaking the "verifiable from source" story.
+    find "$tree" -exec touch -h -d @0 {} +
+    ( cd "$tree" && find . -print0 | LC_ALL=C sort -z \
+        | cpio --null -o --format=newc -R 0:0 --reproducible ) > initramfs_rootfs.cpio
 
     runHook postBuild
   '';
