@@ -95,18 +95,25 @@ switch, not a restore.
   allocation itself is only confirmable on-device (step B4 below).
 - The exact, reliable way to *force* a slot-B boot on this unit (the SPL's
   slot-register behaviour at cold boot). The mechanism and a candidate method are
-  documented below, but the human must confirm it over serial (look for
-  `From slotb boot`). If forcing slot B proves unreliable, fall back to approach
-  (2) or to an interactive-U-Boot build — neither is needed if the register
-  method works.
+  documented below. Confirmation is over SSH, not serial: the CMA kernel is
+  self-identifying (`CmaTotal` in `/proc/meminfo` — the stock kernel has no CMA),
+  so which kernel actually booted is decidable from a shell. If forcing slot B
+  proves unreliable, fall back to approach (2) or to an interactive-U-Boot
+  build — neither is needed if the register method works.
 
 ---
 
 ## Flash + bring-up plan (reversible)
 
 Legend: **[HOST]** = the build box; **[DEVICE]** = over SSH on the NanoKVM-Pro;
-**[SERIAL]** = UART0 console (`ttyS0`, 115200), needed to *watch* the slot boot;
-**[HUMAN]** = only the owner can do this (physical/flash/serial).
+**[HUMAN]** = only the owner can do this (physical presence).
+
+> **No serial on this unit.** The boot console is UART0 on *hidden pads*
+> (`docs/flashing-and-recovery.md`, "Serial console"); the exposed header is
+> UART1, which the boot chain never logs to. Serial bring-up was never done and
+> would need soldering. The plan below is therefore written **serial-free**:
+> slot confirmation uses the CMA kernel's `/proc/meminfo` fingerprint over SSH,
+> and the human's role is reduced to power-cycling if the device goes dark.
 
 ### A. Build + stage the artifact — [HOST]
 
@@ -118,7 +125,7 @@ nix build .#kernel-slot-image-cma -L
 Sanity (host): `result/kernel_b.bin` is < 64 MB and its `FLASH-NOTES.txt` names
 `kernel_b` / `/dev/mmcblk0p15`.
 
-### B. Flash slot B + boot it — [HUMAN]/[DEVICE]/[SERIAL]
+### B. Flash slot B + boot it — [DEVICE], with a [HUMAN] on power-cycle standby
 
 > `mmcblk0` is eMMC. **Never write `mmcblk0p14` (slot A) or any other partition.**
 > Only `mmcblk0p15` (`kernel_b`) is written here. Back it up first so the test is
@@ -156,18 +163,27 @@ Sanity (host): `result/kernel_b.bin` is < 64 MB and its `FLASH-NOTES.txt` names
    devmem 0x0239002C 32 0x4    # BACKUP0_CLR  <- SLOTA
    reboot
    ```
-   **[SERIAL] confirm** the U-Boot log prints `From slotb boot` (and that the
-   kernel banner/boot proceeds). If it prints `From slota boot`, the SPL
-   re-derived the slot before U-Boot read it — do not proceed; see the honest
-   boundary above. (`bootdelay=0`, so there is no interactive U-Boot prompt; the
-   register is the lever.)
+   (`bootdelay=0`, so there is no interactive U-Boot prompt; the register is
+   the lever. U-Boot's `From slotb boot` line goes to the hidden UART0 pads —
+   not observable on this unit — so the slot is confirmed in step 4 instead.)
 
-4. **[DEVICE] confirm CMA is active** on the booted kernel:
-   ```
-   grep Cma /proc/meminfo        # expect CmaTotal:  ~16384 kB
-   dmesg | grep -i cma           # expect: "cma: Reserved 16 MiB at 0x..."
-   uname -r                      # 4.19.125 (unchanged)
-   ```
+4. **[DEVICE] confirm which kernel booted** — the CMA kernel is
+   self-identifying, so SSH replaces serial here. Three outcomes:
+   - **SSH back + CMA present** → slot B booted the flashed kernel. Proceed to C.
+     ```
+     grep Cma /proc/meminfo        # expect CmaTotal:  ~16384 kB
+     dmesg | grep -i cma           # expect: "cma: Reserved 16 MiB at 0x..."
+     uname -r                      # 4.19.125 (unchanged)
+     ```
+   - **SSH back + no `CmaTotal` line** → still the stock kernel: the SPL
+     re-derived the slot before U-Boot read the register. Harmless (slot A was
+     never touched) — stop and reassess; see the honest boundary above.
+   - **No SSH within ~3 minutes** → the slot-B boot hung. **[HUMAN]**
+     power-cycle the unit. A cold cycle likely resets `GLB_BACKUP0` (it is a
+     warm-boot scratch register) and falls back to slot A — this is untested;
+     if the device still doesn't come up, AXDL recovery
+     (`docs/flashing-and-recovery.md`) is the proven backstop and slot A
+     remains intact throughout.
 
 ### C. Path-B open-driver bring-up — [DEVICE] (RISKY, serialized session)
 
@@ -191,7 +207,7 @@ this flash exists to reach. Driving one IDR through
 `RESERVE→LINK→WAIT→RELEASE` is the next step (`#45` open EWL) and is out of scope
 here.
 
-### D. Rollback — [HUMAN]/[DEVICE]/[SERIAL]
+### D. Rollback — [DEVICE]
 
 Slot A was never written, so rollback is a slot switch:
 
@@ -200,7 +216,7 @@ Slot A was never written, so rollback is a slot switch:
 devmem 0x02390028 32 0x4    # BACKUP0_SET  <- SLOTA
 devmem 0x0239002C 32 0x8    # BACKUP0_CLR  <- SLOTB
 reboot
-# [SERIAL] confirm "From slota boot"
+# after SSH returns: grep Cma /proc/meminfo  -> no CmaTotal line = stock slot-A kernel
 ```
 
 To also restore `kernel_b` to stock, `dd` `/tmp/kernel_b.stock.img` back to
