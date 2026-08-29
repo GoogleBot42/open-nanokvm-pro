@@ -129,8 +129,30 @@ let
     runtimeInputs = [ pkgs.kmod pkgs.coreutils pkgs.gnused pkgs.gnugrep ];
     # The vendor script is not shellcheck-clean and must not be "fixed".
     checkPhase = "";
+    # RUN THE VENDOR SCRIPT VERBATIM. writeShellApplication defaults to injecting
+    # `set -o errexit -o nounset -o pipefail`; under `nounset` the vendor script
+    # dies on its own bug -- get_cmm_param reads $OS_MEM_MIN_SIZE but the file
+    # defines OS_MEM_MIN_SZIE (a typo) -- so ax-modules.service would fail and
+    # nanokvm.service (Requires=it) would never start: no capture, no web UI. It
+    # is ALSO fragile under errexit (already-loaded insmod/rmmod, the `mem=` grep
+    # miss) and pipefail. bashOptions=[] runs it exactly as the Ubuntu overlay
+    # does under plain `bash` via rc.local -- the empty $OS_MEM_MIN_SIZE at
+    # get_cmm_param is harmless because both if/else branches immediately
+    # recompute os_mem_size from the correctly-spelled OS_MEM_MIN_SZIE.
+    bashOptions = [ ];
     text = builtins.readFile ../pkgs/rootfs/ax-load-drv.sh;
   };
+
+  # ---- ether-wake compat shim (Wake-on-LAN) ------------------------------
+  # The server's WoL route runs exactly `ether-wake -b <MAC>`
+  # (service/network/wol.go). That binary is Debian net-tools; nixpkgs ships no
+  # package providing the name. wakeonlan (a maintained tool) sends the same
+  # magic packet and broadcasts by default, so a one-line shim closes the gap
+  # without patching the Go source. Only `-b <MAC>` is ever passed, so taking the
+  # last argument as the MAC is sufficient and exact.
+  etherWakeShim = pkgs.writeShellScriptBin "ether-wake" ''
+    exec ${pkgs.wakeonlan}/bin/wakeonlan "''${@: -1}"
+  '';
 
   # ---- /kvmapp : the app tree the service model copies to tmpfs ----------
   # Layout is the vendor's (server/{NanoKVM-Server,web,dl_lib}, version), so
@@ -163,6 +185,49 @@ let
     grep -q lt6911_manage "$out/lib/modules/${release}/modules.dep" \
       || { echo "ERROR: lt6911_manage missing from modules.dep" >&2; exit 1; }
   '';
+
+  # ---- The PATH contract for NanoKVM-Server and its script children -------
+  # environment.systemPackages does NOT set a systemd unit's PATH: the built
+  # nanokvm.service would otherwise carry only NixOS's default 5-package unit
+  # PATH, and every bare-name `exec.Command` in the server -- and every bare-name
+  # tool the vendor scripts it shells out to assume -- would fail to resolve.
+  # A missing entry is a feature that silently stops working, not a build error.
+  #
+  # Derived from the live device's tool set PLUS a full grep of the server's Go
+  # source (every exec.Command / `sh -c` first-word: ip ifconfig openssl passwd
+  # aplay wpa_cli python systemctl timedatectl reboot chronyc ether-wake ps pgrep
+  # grep sed awk rm touch insmod rmmod lsmod fw_printenv fw_setenv devmem
+  # udhcpc/udhcpd hostapd ...). The server is the PARENT of usbdev.sh / wifi.sh /
+  # mount_emmc.py, so those scripts inherit this PATH too.
+  #
+  # Known-absent, left as documented gaps in docs/nixos-rootfs.md (not on PATH):
+  #   * chronyc    -- we run timesyncd, not chrony; the manual-NTP button no-ops.
+  #   * dpkg/tailscale -- Debian OTA and the tailscale extension are out of scope.
+  # (ether-wake IS provided, via the etherWakeShim above.)
+  serverPath = with pkgs; [
+    etherWakeShim    # `ether-wake -b <MAC>` -> wakeonlan (WoL)
+    coreutils        # rm touch cat cp ln mkdir printf stat sync head tail tr wc cut date echo basename chmod
+    bash             # bash + sh
+    gnugrep          # grep
+    gnused           # sed
+    gawk             # awk
+    procps           # ps pgrep pkill
+    util-linux       # mount, kill, and the rest of the base util set the scripts assume
+    kmod             # insmod rmmod lsmod (the module loader + usbdev.sh)
+    iproute2         # ip
+    nettools         # ifconfig, hostname
+    iptables         # usbdev.sh NCM/NAT rules
+    openssl          # nanokvm.sh regenerates the HTTPS cert+key
+    ethtool          # axemac.sh (eth0 rx pause)
+    wpa_supplicant   # wpa_cli (+ wpa_supplicant) -- the WiFi status/list routes
+    hostapd          # wifi.sh AP mode (vendor script still to be provided)
+    alsa-utils       # aplay -- the audio-test route
+    shadow           # passwd root (fed on stdin when the UI changes the password)
+    systemd          # systemctl timedatectl reboot hostnamectl (server drives these by bare name)
+    python3          # `python` (a symlink in this pkg) -- user .py scripts + cua
+    ubootTools       # fw_printenv / fw_setenv -- /boot/configs + the boot-slot scripts
+    busybox          # devmem + udhcpc/udhcpd; LAST so real tools above win the lookup
+  ];
 in
 {
   # =====================================================================
@@ -361,9 +426,18 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [ "network.target" "ax-modules.service" ];
     requires = [ "ax-modules.service" ];
+    # THE unit PATH the server + its script children resolve bare names through.
+    # environment.systemPackages does not reach a unit; this does.
+    path = serverPath;
     serviceConfig = {
       Type = "simple";
       WorkingDirectory = "/dev/shm/kvmapp/server";
+      # LD_LIBRARY_PATH=/opt/lib is the documented, load-bearing fallback for the
+      # bare-name dlopen chain (libsns_dummy.so, and libkvm's libopus/libasound
+      # DT_NEEDEDs) -- see docs/nixos-rootfs.md "the fallback ladder". It adds
+      # only /opt/lib (media libs), never a glibc, so it cannot create the
+      # mismatched-loader/libc crash that an explicit ${glibc}/lib would.
+      Environment = "LD_LIBRARY_PATH=/opt/lib";
       ExecStartPre = "${pkgs.bash}/bin/sh -c '${pkgs.coreutils}/bin/rm -rf /dev/shm/kvmapp && ${pkgs.coreutils}/bin/cp -rL /kvmapp /dev/shm/kvmapp && ${pkgs.coreutils}/bin/chmod -R u+w /dev/shm/kvmapp'";
       ExecStart = "/dev/shm/kvmapp/server/NanoKVM-Server";
       Restart = "on-failure";
@@ -408,7 +482,15 @@ in
   # exact hostname form are UNVERIFIED against the device.
   systemd.services.nanokvm-identity = {
     description = "Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)";
-    wantedBy = [ "network-pre.target" ];
+    # `wantedBy = network-pre.target` alone is PASSIVE: nothing in this closure
+    # pulls network-pre.target (it is a firewall/networkd hook and the firewall
+    # is disabled), so the unit would never run and every boot would keep the
+    # kernel-random MAC. Pull it via multi-user.target and only ORDER it before
+    # network-pre.target -- per systemd.special(7), Wants= creates the pull that
+    # WantedBy on a passive target cannot. (before= keeps the MAC set before any
+    # network unit brings the link up.)
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-pre.target" ];
     before = [ "network-pre.target" "systemd-networkd.service" ];
     after = [ "local-fs.target" ];
     unitConfig.ConditionPathExists = "/device_key";
@@ -459,6 +541,47 @@ in
     };
   };
 
+  # 5g. Confirm the active A/B boot slot on every boot -- the S99checkboot
+  # equivalent. The vendor init script reads `bootsystem=` with fw_printenv and
+  # writes the SoC boot-slot register (devmem 0x2390028 32 0x10 for slot A, 0x20
+  # for slot B) so the bootloader keeps booting the slot that just came up;
+  # without it, an OTA to the other slot is never confirmed and the board can
+  # fall back (docs/nixos-rootfs.md "S99checkboot is load-bearing, confirmed").
+  #
+  # It is GATED on /etc/fw_env.config: the libubootenv fw_printenv/fw_setenv this
+  # depends on (docs/provenance.md) needs that file to locate the U-Boot
+  # environment on eMMC, and its exact contents (device/offset/size of the env)
+  # are NOT recoverable host-side -- they must be read off the device. Until the
+  # file is provided the unit is inert BY DESIGN: writing 0x2390028 for a guessed
+  # slot could break A/B fallback, exactly the blind devmem write the project
+  # refuses to make. The register semantics themselves are transcribed verbatim
+  # from the RE, so the moment /etc/fw_env.config lands (a documented capture
+  # TODO) this becomes correct with no further code change.
+  #
+  # NOTE: S99checkota (fw_setenv clears of upgrade_slot{a,b}_available) is part
+  # of the OTA-commit flow, not boot confirmation, and belongs with the OTA
+  # redesign (docs/nixos-rootfs.md gap 5) -- deliberately not reproduced here.
+  systemd.services.nanokvm-checkboot = {
+    description = "Confirm the active A/B boot slot (S99checkboot equivalent)";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "local-fs.target" ];
+    unitConfig.ConditionPathExists = "/etc/fw_env.config";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    path = with pkgs; [ ubootTools busybox gnugrep gnused ];
+    script = ''
+      # Only ever write the register for a slot fw_printenv DEFINITELY reports.
+      slot=$(fw_printenv -n bootsystem 2>/dev/null | tr -d '[:space:]') || slot=""
+      case "$slot" in
+        a|A) echo "checkboot: slot A -> 0x2390028=0x10"; devmem 0x2390028 32 0x10 ;;
+        b|B) echo "checkboot: slot B -> 0x2390028=0x20"; devmem 0x2390028 32 0x20 ;;
+        *)   echo "checkboot: bootsystem='$slot' not a/b -- refusing to write the slot register" >&2 ;;
+      esac
+    '';
+  };
+
   # =====================================================================
   # 6. Base system
   # =====================================================================
@@ -466,18 +589,34 @@ in
     enable = true;
     settings.PermitRootLogin = "yes";
     settings.PasswordAuthentication = true;
-    # The vendor rootfs socket-activates sshd; keep that shape so the unit
-    # names below line up with what the server expects.
-    startWhenNeeded = true;
+    # MUST be false. With startWhenNeeded=true, 24.11's sshd module defines only
+    # `services."sshd@"` (a template) + `sockets.sshd` -- there is NO plain
+    # `sshd.service`, so aliasing `ssh.service` onto it fabricates an empty,
+    # ExecStart-less unit that systemd refuses to load, and the web UI's SSH
+    # ENABLE path (StartService("ssh.service") -> EnableUnitFiles + RestartUnit)
+    # fails. With it false the module defines a real persistent `sshd.service`
+    # (ExecStart=`${sshd} -D -f ...`, Type=simple, Restart=always,
+    # WantedBy=multi-user.target) -- which is also what Debian ships as the
+    # `ssh.service` the server drives. sshd then runs from boot, matching how
+    # the device is reached today (tools/kvmssh).
+    startWhenNeeded = false;
   };
 
   # NanoKVM-Server toggles SSH by talking to org.freedesktop.systemd1 directly
-  # (utils/systemctl.go) using DEBIAN unit names -- `ssh.service` and
-  # `ssh.socket`. NixOS calls them `sshd.*`, so without these aliases the web
-  # UI's SSH switch silently does nothing. Aliases are cheap; patching the Go
-  # source would be another divergence to carry.
+  # (utils/systemctl.go, service/vm/ssh.go) using DEBIAN unit names. Its PRIMARY,
+  # error-checked operations are all on `ssh.service`:
+  #   EnableSSH  -> StartService("ssh.service", enable=true)  (EnableUnitFiles + RestartUnit)
+  #   DisableSSH -> StopService("ssh.service", disable=true)  (systemctl stop + disable)
+  #   GetSSHState-> IsServiceRunning("ssh.service") || IsServiceRunning("ssh.socket")
+  # The `ssh.socket` operations are all best-effort (`_ = ...`, errors ignored),
+  # and isSSHRunning tolerates a socket lookup that errors. So aliasing
+  # `ssh.service` onto the real daemon makes the toggle fully work end to end.
+  #
+  # We deliberately do NOT alias `ssh.socket`: startWhenNeeded=false means there
+  # is no `sockets.sshd` to alias, and referencing `systemd.sockets.sshd` here
+  # would fabricate a ListenStream-less socket that systemd refuses to load --
+  # strictly worse than an absent unit, which the server already handles.
   systemd.services.sshd.aliases = [ "ssh.service" ];
-  systemd.sockets.sshd.aliases = [ "ssh.socket" ];
 
   # LAN discovery, same role avahi plays on the vendor rootfs.
   services.avahi = {
@@ -527,17 +666,18 @@ in
     };
   };
 
-  # The server and the vendor scripts shell out to these BY BARE NAME, so they
-  # have to be on the system PATH. This list is derived from the live device
-  # (every `exec.Command` in the Go source, plus the vendor scripts' call
-  # graph) -- a missing entry here is a feature that silently stops working,
-  # not a build error.
+  # Login shells + any unit without its own `path=`. The nanokvm.service PATH
+  # contract lives in `serverPath` (see the let block and 5c above); this list
+  # is the interactive/system-wide superset so an admin over SSH, and the vendor
+  # scripts a human runs by hand, find the same tools. A missing entry is a
+  # feature that silently stops working, not a build error.
   environment.systemPackages = with pkgs; [
     busybox # devmem, udhcpd/udhcpc, and the shell tooling the scripts assume
     bash
     kmod # insmod / rmmod / lsmod
     e2fsprogs
     coreutils
+    util-linux # mount + the base util set the vendor scripts assume
     gnugrep
     gnused
     gawk
@@ -547,11 +687,8 @@ in
     iptables
     openssl # nanokvm.sh regenerates the HTTPS cert+key
     ethtool # /etc/init.d/axemac.sh (eth0 RPS/RFS + rx pause)
-    # NOTE: no `ether-wake`. The server's Wake-on-LAN route runs
-    # `ether-wake -b <MAC>`, which on the vendor rootfs comes from Debian
-    # net-tools. nixpkgs has no package providing that binary name (`wakeonlan`
-    # is a differently-named perl script), so WoL is a known gap -- see
-    # docs/nixos-rootfs.md.
+    ubootTools # fw_printenv / fw_setenv -- /boot/configs + the A/B boot-slot scripts
+    etherWakeShim # `ether-wake -b <MAC>` -> wakeonlan (WoL); see the shim above
     alsa-utils # server audio test: `aplay -D plughw:UAC2Gadget,0 ...`
     wpa_supplicant # wpa_cli, used by the network settings routes
     shadow # `passwd root`, fed on stdin when the UI changes the password

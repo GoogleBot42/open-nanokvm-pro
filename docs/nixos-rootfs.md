@@ -312,8 +312,18 @@ leftover **PiKVM** accounts (`kvmd`, `kvmd-vnc`, `kvmd-janus`, …) and
 - **Debian systemd unit names.** The server drives units over D-Bus
   (`org.freedesktop.systemd1`) by literal name: `ssh.service`, `ssh.socket`,
   `avahi-daemon.service`, `kvm-sleep.service`, `tailscaled.service`. NixOS
-  calls sshd `sshd.*`, so the web UI's SSH toggle would silently do nothing;
-  the appliance module adds `ssh.service`/`ssh.socket` aliases.
+  calls sshd `sshd.*`, so the web UI's SSH toggle would silently do nothing.
+  The appliance module runs sshd as a **persistent daemon**
+  (`services.openssh.startWhenNeeded = false`) and aliases `ssh.service` onto
+  the real `sshd.service`. It does **not** alias `ssh.socket`: with a persistent
+  daemon there is no `sockets.sshd` to alias, and the server's `ssh.socket`
+  operations are all best-effort (`_ = …`, errors ignored) while `isSSHRunning`
+  tolerates the socket lookup failing — so the toggle works end to end through
+  `ssh.service` alone, and a fabricated ListenStream-less socket (which systemd
+  refuses to load) would be strictly worse. `startWhenNeeded = true` was the
+  original scaffold value and was a real defect: 24.11's sshd module then
+  defines only `services."sshd@"` + `sockets.sshd`, so the `ssh.service` alias
+  fabricated an empty ExecStart-less unit and the enable path failed.
 - **The web bundle must sit beside the binary.** `router/router.go` serves
   `dirname(os.Executable())/web`, which is why `/kvmapp/server/` has that
   layout and why the tmpfs copy preserves it.
@@ -392,11 +402,30 @@ Notable decisions inside `nixos/appliance.nix`:
   glibc/libstdc++; `/opt/lib`, `/soc/ko`, `/soc/scripts` and `/kvmapp` are
   `systemd.tmpfiles` symlinks into store paths.
 - `nanokvm-identity.service` reproduces the initramfs's MAC/hostname
-  derivation, which would otherwise be lost.
+  derivation, which would otherwise be lost. It is pulled by `multi-user.target`
+  with `wants = ["network-pre.target"]` (not `wantedBy = network-pre.target`,
+  which is passive and never fires in this closure — a fixed defect).
 - `nanokvm-grow-rootfs.service` grows the root online instead of relying on
   `/opt/e2fs-static`.
+- `nanokvm-checkboot.service` reproduces `S99checkboot`'s A/B slot register
+  write, gated on `/etc/fw_env.config` (see gap below).
+- `nanokvm.service` carries an explicit **`path` (`serverPath`)** — the full
+  bare-name command contract the server and its script children exec through
+  (`environment.systemPackages` does not set a unit's PATH), plus
+  `Environment=LD_LIBRARY_PATH=/opt/lib` for the bare-name dlopen chain.
+- The curated module loader runs **verbatim** (`writeShellApplication` with
+  `bashOptions = []`): the default `set -u` would kill it on the vendor script's
+  own `$OS_MEM_MIN_SIZE`/`OS_MEM_MIN_SZIE` typo, taking `ax-modules.service` and
+  therefore `nanokvm.service` down with it.
 - `nix.enable = false` — no Nix on the appliance; the rootfs is a fixed closure
   produced by the build host.
+
+**Four defects found in review, all fixed (2026-08-29):** the `ssh.service`
+alias over a socket-activated sshd (fabricated an empty unit); the passive
+`nanokvm-identity` `wantedBy` (random MAC every boot); the strict-mode module
+loader (no capture, no web UI); and `nanokvm.service`'s missing PATH (every
+bare-name `exec.Command` unresolved). Each is documented at its call site in
+`nixos/appliance.nix`.
 
 The image build asserts the `switch_root` contract (`/sbin/init` is a symlink,
 the system profile resolves, stage 2 is in the closure) before it installs,
@@ -521,14 +550,33 @@ Ordered by how much they block a boot-test.
    descriptor value overridable by `/boot/usb.{vid,pid,serialnumber,…}`.
    Either vendor the script (small, auditable, still vendor-derived text) or
    reimplement the configfs setup from source.
-3. **The `rc.local` items have no NixOS equivalent.** `axemac.sh` (eth0
-   RPS/RFS + `ethtool -A eth0 rx on`), `npu_set_bw_limiter.sh start`, the bare
-   `devmem 0x10030028 32 0x000006A0`, and **`S99checkboot`, which writes the
-   A/B slot-bootable register on every boot** (`devmem 0x2390028 32 0x10|0x20`,
-   chosen from `fw_printenv bootsystem=`). The scaffold implements none of
-   them, deliberately: a mis-transcribed `devmem` write is not a mistake worth
-   making blind, and the exact script text needs to be read off the device
-   first.
+
+   > **TODO (device capture, HID-critical).** The whole `/kvmapp/scripts/`
+   > directory is vendor-only and absent from our `kvmapp` derivation — this
+   > also blocks the `nanokvm.sh`/`nanokvm_pre.sh` supervisor (gap 1). Capture
+   > it host-side once, e.g. `tools/kvmscp device:/kvmapp/scripts
+   > pkgs/rootfs/kvmapp-scripts/`, review + license-note the text, then stage it
+   > into `kvmapp` at `server/../scripts` so all three literal paths
+   > (`/kvmapp/scripts/usbdev.sh` ×2, `/dev/shm/kvmapp/scripts/usbdev.sh`)
+   > resolve after the tmpfs copy. Cannot be done from the build host alone.
+3. **The remaining `rc.local` items.** `S99checkboot` now HAS an equivalent —
+   `nanokvm-checkboot.service` writes the A/B slot register
+   (`devmem 0x2390028 32 0x10|0x20`, chosen from `fw_printenv bootsystem`), the
+   register semantics transcribed verbatim from the RE. It is **gated on
+   `/etc/fw_env.config`** and inert until that file is present, because
+   libubootenv's `fw_printenv` needs it to find the U-Boot env on eMMC and its
+   contents (env device/offset/size) are not recoverable host-side — writing a
+   guessed slot could break A/B fallback.
+   > **TODO (device capture).** Read `/etc/fw_env.config` off the device (or
+   > derive it from the eMMC env partition) and ship it, then `nanokvm-checkboot`
+   > becomes live with no code change. Verify `fw_printenv bootsystem` returns
+   > `a`/`b` on the unit before trusting the register write.
+
+   Still unimplemented, and deliberately so (each needs the exact script text /
+   register intent read off the device first): `axemac.sh` (eth0 RPS/RFS +
+   `ethtool -A eth0 rx on`), `npu_set_bw_limiter.sh start`, and the bare
+   `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` (the OTA-commit
+   `fw_setenv` clears) belongs with the OTA redesign (gap 5), not here.
 4. **WiFi is lost.** `aic8800_{bsp,fdrv,btlpm}.ko` live in the vendor rootfs's
    `/soc/ko` (26 modules there; `pkgs/ax-ko-blobs.nix` carries only the 22
    `ax_*.ko`), and their firmware is 28 files under `/opt/firmware/aic8800/`.
@@ -536,17 +584,22 @@ Ordered by how much they block a boot-test.
    as "approve if wanted" in [provenance.md](provenance.md).
 5. **OTA.** `pkgs/update-package.nix` and [updates.md](updates.md) assume a
    file-overlay rootfs. Unresolved.
-6. **Timezone reporting is subtly wrong.** `service/vm/datetime.go` derives the
-   zone by `os.Readlink("/etc/localtime")` and slicing on the literal
+6. **Timezone reporting is subtly wrong** (display-only; `timedatectl
+   set-timezone` still works). `service/vm/datetime.go` reads the zone by
+   `os.Readlink("/etc/localtime")` and slicing on the literal
    `"/usr/share/zoneinfo/"`. On NixOS the link target is `/etc/zoneinfo/<TZ>`,
-   the slice misses, and the fallback returns `../../../etc/zoneinfo/UTC` as
-   the "timezone". The module materialises `/usr/share/zoneinfo`, which is
-   necessary but not sufficient — `/etc/localtime` still has to point through
-   it.
-7. **Wake-on-LAN is lost.** The server runs `ether-wake -b <MAC>`; that binary
-   comes from Debian `net-tools` and nixpkgs has no package providing it
-   (`wakeonlan` is a differently-named perl script). Needs a small shim or a
-   patch to the Go route.
+   the slice misses, and the fallback returns `../../../etc/zoneinfo/UTC`. The
+   module materialises `/usr/share/zoneinfo` (necessary, not sufficient). Left
+   as a TODO because the two clean fixes both have a catch: a `tmpfiles L+
+   /etc/localtime → /usr/share/zoneinfo/<TZ>` is rewritten back to the
+   `/etc/zoneinfo` form by the next runtime `timedatectl set-timezone`, and
+   patching the slice literal in `datetime.go` is a `pkgs/nanokvm-server.nix`
+   change (server lane, not rootfs). Recommended fix: teach the Go slice to also
+   accept `/etc/zoneinfo/`.
+7. **Wake-on-LAN — FIXED.** The server runs `ether-wake -b <MAC>`; nixpkgs has
+   no `ether-wake`, so the appliance ships a one-line `ether-wake` shim
+   (`etherWakeShim`) that maps it onto `wakeonlan` (same magic packet, broadcast
+   by default). On `serverPath` and `systemPackages`. Untested on hardware.
 8. **`/opt/etc`** (173 MB of Axera sensor tuning `.ini` files) and
    **`/kvmcomm/edid/*`** are unaudited. The ISP is bypassed on the KVM path, so
    the sensor tuning data is probably dead weight — but "probably" is not
