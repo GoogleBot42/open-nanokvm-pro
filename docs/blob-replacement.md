@@ -2437,3 +2437,42 @@ Confidence **HIGH** — mechanism proven three independent ways, the QP-forced s
 a native low-bitrate encode to within 9 bytes, and both frames render as correct 1080p.
 Stage 2 (IPPP) is unblocked: the hook already fires on P-frame LINKs, and the DPB register
 semantics are pinned (Stage 0). No new blocker.
+
+### 2026-08-29 — #44: open VC8000E VCMD driver ported + cross-compiles against the 4.19 kernel; submission-path seam confirmed removed
+
+The kernel half of blob-free encode *submission* is now real code. The open eswin
+EIC7X VCMD command-engine driver (`github.com/eswincomputing/linux-stable`,
+`linux-6.6.18-EIC7X` @ `fc6038c`, `drivers/staging/media/eswin/venc/`, dual
+**MIT/GPL-2.0** VeriSilicon 2019) is vendored (VCMD subset only — 10 files; the
+EIC7700 platform/AXI-FE/MMU/dma-heap layers deliberately excluded) at
+`pkgs/vc8000-vcmd/eswin/` and ported out-of-tree to our kernel via
+`pkgs/vc8000-vcmd.nix` (flake output `.#vc8000-vcmd`). Provenance + full port notes:
+`pkgs/vc8000-vcmd/PROVENANCE.md`.
+
+- **Cross-compiles clean, insmod-loadable in principle** (overseer-verified, not just
+  reported): `nix build .#vc8000-vcmd` → `ax630c_venc_vcmd.ko`, ELF aarch64
+  relocatable, `vermagic: 4.19.125 SMP preempt mod_unload aarch64` (byte-identical to
+  the vendor `ax_*.ko` magic → plain-insmod), `license GPL`, `depends:` empty, all
+  undefined symbols are standard exported kernel symbols (no dangling eswin/dma-heap/axife).
+- **Port patch (6.6.18→4.19) is minimal**, confined to `vc8000_vcmd_driver.c` (other 9
+  vendored files pristine): `access_ok()` 2-arg→3-arg shim, `pfn_to_phys`→`PFN_PHYS`,
+  dma-heap `#ifdef`-gated out, Makefile `-std=gnu11` (the eswin source is C11; 4.19
+  defaults modules to gnu89). Our own AX630C platform glue (`ax630c_vcmd_glue.c`, GPL-2.0)
+  replaces the excluded eswin probe: registers a DMA-capable platform device, one encoder
+  core at the device-traced base `0x04010000`.
+- **The Stage-1 nr70/nr83 EFAULT seam is removed wholesale — confirmed from source.** The
+  public userspace contract is `GET_CMDBUF_PARAMETER(25) → RESERVE(29) → [write program
+  into the mmap'd pool slot] → LINK_RUN(30) → WAIT(31) → RELEASE(32)`. `LINK_RUN` is
+  `_IOR(MAGIC, 30, u16 *)` and reads **only** a `cmdbuf_id` (`__get_user`), then operates
+  exclusively on the kernel's own `cmdbuf_virtualAddress` of the shared pool — **no
+  `copy_from_user` of any userspace VA in the reserve/link path, and no nr70/nr83 in the
+  ioctl set at all** (verified by grepping the vendored driver). So the open EWL (#45) can
+  drive submission with no frame-setup ioctl — closing the 2026-08-23 Stage-1 diagnosis.
+
+**GO on the port (HIGH confidence)** for the compile + submission-path milestones (both
+independently re-derived). NOT yet proven: driving a real encode through it, which needs
+(1) a real AX630C DT node + reserved-memory carveout for the VCMD pools, (2) the VCMD IRQ
+wired (currently `-1` → polling), (3) `enc_pm_runtime_*`/`enc_reset_system` driving real
+DT clk/reset instead of no-ops, (4) on-device insmod + one IDR through the ioctl sequence
+vs the Stage-1 hijack-validated register program. Item 4 is RISKY (conflicts with the
+vendor `ax_venc.ko`) → serialized/human device session. Ticket #44.
