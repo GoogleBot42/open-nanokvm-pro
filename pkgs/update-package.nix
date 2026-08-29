@@ -55,6 +55,13 @@
 #                                                on are already loaded.
 #     soc/scripts/auto_load_all_drv.sh.vendor    pristine vendor loader kept for
 #                                                on-device rollback (restore + reboot).
+#     etc/rc.local                               vendor rc.local minus the axbox
+#                                                syslog launch (rsyslogd covers
+#                                                logging). Overlay-only: the OTA
+#                                                cannot delete /bin/axbox itself,
+#                                                it just stops starting it. Must
+#                                                stay MODE 755 -- rc-local.service
+#                                                has ConditionFileIsExecutable.
 #
 #   partitions/      vendor-format SIGNED partition images (magic 0x55543322 @ off 4),
 #                    fixed naming contract consumed by install()'s image->partition map:
@@ -236,6 +243,32 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
     fi
     echo "  module loader: curated set OK ($nins insmod lines) + .vendor rollback copy"
+
+    # --- drop the axbox syslog daemon (mirrors pkgs/rootfs.nix [5b8]). The
+    # vendor /etc/rc.local starts /etc/init.d/{axsyslogd,axklogd} -> /bin/axbox,
+    # a closed Axera BusyBox multicall; stock rsyslogd already covers logging.
+    # An OTA is an overlay (`cp -a rootfs/. /`) and cannot DELETE files, so this
+    # only stops the launch -- /bin/axbox and libax_syslog.so stay on an upgraded
+    # device until it is re-flashed with an image built by pkgs/rootfs.nix.
+    # Takes effect on the NEXT REBOOT (rc.local runs at boot).
+    #
+    # LOAD-BEARING: rc.local must land EXECUTABLE. rc-local.service carries
+    # ConditionFileIsExecutable=/etc/rc.local -- a 0644 rc.local would silently
+    # stop running, taking auto_load_all_drv.sh with it (no media modules -> dead
+    # capture). Hence the chmod + the mode assertion below.
+    cp ${./rootfs/rc.local} "$rfs/etc/rc.local"
+    chmod 755 "$rfs/etc/rc.local"
+    [ -x "$rfs/etc/rc.local" ] \
+      || { echo "ERROR: staged /etc/rc.local is not executable (rc-local.service would skip it)" >&2; exit 1; }
+    if grep -Ev '^[[:space:]]*#' "$rfs/etc/rc.local" | grep -Eq 'axsyslogd|axklogd|axbox'; then
+      echo "ERROR: shipped rc.local still launches axbox" >&2; exit 1
+    fi
+    for need in '/soc/scripts/auto_load_all_drv.sh' '/etc/init.d/S99checkboot' \
+                '/etc/init.d/axemac.sh' 'devmem 0x10030028'; do
+      grep -qF "$need" "$rfs/etc/rc.local" \
+        || { echo "ERROR: shipped rc.local lost the vendor line '$need'" >&2; exit 1; }
+    done
+    echo "  rc.local: axbox launch removed, vendor lines + exec bit asserted"
 
     # --- mini-display status daemon (pkgs/nanokvm-display.nix): daemon + fonts
     # under /opt/nanokvm-display, systemd unit, enabled via wants-symlink (the

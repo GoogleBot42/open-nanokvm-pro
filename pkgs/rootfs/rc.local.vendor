@@ -1,0 +1,24 @@
+#!/bin/bash
+
+mkdir -p /opt/data/AXSyslog/kernel
+
+bash /etc/init.d/axemac.sh
+
+chmod 755 /soc/scripts/auto_load_all_drv.sh
+bash /soc/scripts/auto_load_all_drv.sh
+
+chmod 755 /soc/scripts/npu_set_bw_limiter.sh
+bash /soc/scripts/npu_set_bw_limiter.sh start
+
+devmem 0x10030028 32 0x000006A0
+
+bash /etc/init.d/axsyslogd start
+bash /etc/init.d/axklogd start
+chmod 755 /etc/init.d/S99checkboot
+bash /etc/init.d/S99checkboot start
+chmod 755 /etc/init.d/S99checkota
+bash /etc/init.d/S99checkota start
+
+if ! systemctl is-active --quiet sysdev.service; then
+    systemctl enable --now sysdev.service
+fi

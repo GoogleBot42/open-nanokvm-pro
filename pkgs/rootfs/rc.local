@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+# open-nanokvm-pro /etc/rc.local -- the vendor script minus the axbox syslog
+# daemon.  Kept line-for-line identical to pkgs/rootfs/rc.local.vendor except:
+#
+#   - `bash /etc/init.d/axsyslogd start` and `bash /etc/init.d/axklogd start`
+#     are GONE.  Those launched /bin/axbox (a closed Axera BusyBox-1.32.0
+#     multicall) via the /sbin/axsyslogd and /sbin/axklogd symlinks.  Stock
+#     rsyslogd already runs on this base (rsyslog.service is enabled in
+#     multi-user.target.wants and aliases syslog.service) with imuxsock +
+#     imklog loaded, writing /var/log/{syslog,kern.log,auth.log} -- so axbox
+#     was a redundant second syslog/klog pair.  /bin/axbox and
+#     libax_syslog.so are deleted from the image; see docs/provenance.md.
+#   - `mkdir -p /opt/data/AXSyslog/kernel` is GONE with it: that directory
+#     existed only as axbox's log sink.  (The unreferenced debug helper
+#     /scripts/kmemleak_scan.sh also writes there; it has no caller on the
+#     image and mkdir -p's nothing it needs at boot.)
+#
+# Everything else is load-bearing and MUST stay:
+#   axemac.sh                 -- programs the MAC address
+#   auto_load_all_drv.sh      -- our curated 12-module /soc/ko loader (#39)
+#   npu_set_bw_limiter.sh     -- NPU DDR bandwidth cap
+#   devmem 0x10030028         -- SoC pad/clock poke the vendor does here
+#   S99checkboot / S99checkota-- A/B slot bookkeeping via fw_printenv/fw_setenv
+#   sysdev.service            -- vendor device-node service
+#
+# This file runs because /etc/rc.local is executable: systemd-rc-local-generator
+# pulls rc-local.service (ConditionFileIsExecutable=/etc/rc.local) into
+# multi-user.target.  /etc/init.d/rcS -- the base's other axsyslogd caller -- is
+# dead: /usr/lib/systemd/system/rcS.service and rc.service are symlinks to
+# /dev/null (masked), so nothing invokes it.
+
+bash /etc/init.d/axemac.sh
+
+chmod 755 /soc/scripts/auto_load_all_drv.sh
+bash /soc/scripts/auto_load_all_drv.sh
+
+chmod 755 /soc/scripts/npu_set_bw_limiter.sh
+bash /soc/scripts/npu_set_bw_limiter.sh start
+
+devmem 0x10030028 32 0x000006A0
+
+chmod 755 /etc/init.d/S99checkboot
+bash /etc/init.d/S99checkboot start
+chmod 755 /etc/init.d/S99checkota
+bash /etc/init.d/S99checkota start
+
+if ! systemctl is-active --quiet sysdev.service; then
+    systemctl enable --now sysdev.service
+fi
