@@ -2522,3 +2522,45 @@ hijack), (b) integrate the generator into the open libkvm backend, (c) locate th
 so fixed-QP can disable RC instead of driving TARGETPICSIZE, (d) crack the ~40 opaque template
 regs for full from-source (or accept them as a documented 1080p init constant). P-frames (Stage
 2) not attempted; DPB regs pinned (Stage 0), no new blocker. Tickets #25/#46/#47.
+
+### 2026-08-29 — #25 finish-line probe: blob-free SUBMISSION is walled on BOTH paths (encoder-core stays done) (ATX .221)
+
+Pushed for the last userspace-blob gate — a blob-free *encode submission* (kill the
+`libax_venc/sys/ivps/proton` linkage), the only piece of #25 left after the encoder-core
+generator (fixed-QP stage). **Both routes are walled; the encoder-core half is unchanged and
+device-proven.** Device stayed healthy (two watchdog reboots during the driver-load probe,
+recovered clean each time via the curated loader; vendor stack restored, web 200 at end).
+
+**Path B (load the open #44 driver) — empirically walled at a kernel-flash gate.** The ported
+`ax630c_venc_vcmd.ko` loads, but `vc8000e_vcmd_init → vcmd_mem_init` needs 3× 2 MB physically
+contiguous *coherent* DMA (`dma_alloc_attrs(DMA_ATTR_FORCE_CONTIGUOUS)`) before any MMIO claim.
+On this device `/proc/config.gz` has **`CONFIG_CMA` not set**, `mem=824M`, and the 200 MB CMM
+carveout (`0x73800000–0x7FFFFFFF`) is reserved *outside* kernel-managed DRAM — so no allocator
+can satisfy it. Proven on hardware: first insmod → the stock code never null-checks the alloc →
+NULL deref → **kernel panic → watchdog reboot** (recovered). With a fail-safe added (null-check →
+`-ENOMEM`, committed this change) the second insmod aborts cleanly: `dma_alloc_attrs(2097152)
+FAILED (no CMA?)` → `vcmd_mem_init failed (-12)` → clean module-load abort, no reboot, call
+trace at `vcmd_mem_init+0x140`. **Unblock = a kernel/DTB reflash** with `CONFIG_CMA`+a CMA area,
+or a VCMD reserved-memory DT carveout — a human action (no flash attempted). Secondary wall
+confirmed in source: `vcmd_reserve_IO` does `request_mem_region(0x04010000)`, held by the loaded
+vendor (`04010000-0401006b : vsi_vcx`), so a real load also needs `rmmod ax_jenc ax_venc` first
+(refcount-clears with nanokvm stopped).
+
+**Path A (drive the vendor `ax_venc.ko` from open code) — walled behind unpublished-blob RE.**
+On-device disasm of `/soc/ko/ax_venc.ko`: same `hantrovcmd_*` VCMD lineage as the open eswin
+source + Axera OSAL wrappers + the extension ioctls; one `hantrovcmd_ioctl` (0x2198 B, 44
+`copy_from_user` sites, ~90-entry decision tree). The per-frame trace shows nr70 passes a struct
+whose offset 0x20 is a **userspace VA** consumed by `link_and_run`; nr70/nr83 arg structs are
+pointer-dense vendor-EWL private state. Replicating them in open C means byte-matching both the
+unpublished `libax_venc.so` and `ax_venc.ko` layouts — genuine multi-session specialist RE, no
+flash but not a session job. This is the exact vendor-private seam Stage-1 (2026-08-23) deferred.
+
+**Honest #25 status:** encoder-core register-program generation = **DONE, device-proven**;
+blob-free submission = **blocked**, with two precise remaining routes: (a) the human flash above
+→ then Path B is a no-new-RE bring-up (unload vendor venc → insmod → drive RESERVE→LINK→WAIT→
+RELEASE with a live CMM frame) + the #45 open frame-buffer allocator; or (b) a no-flash #45
+variant that reworks `vcmd_mem_init` to back the VCMD pools from the existing CMM carveout (via
+the CMM allocator / a reserved-memory region) instead of `dma_alloc_attrs` — more driver work,
+but stays on the current kernel. #25 cannot close until one lands. Added to the unblock list:
+**flash a `CONFIG_CMA`-enabled kernel (or a VCMD reserved-memory carveout DTB)** — the single
+human action that converts Path B into a bring-up-only finish.

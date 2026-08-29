@@ -3706,6 +3706,14 @@ int vcmd_mem_init(void)
 			vcmd_buf_mem_pool.size, &dma_handle,
 			GFP_KERNEL, DMA_ATTR_FORCE_CONTIGUOUS);
 
+	/* AX630C-PORT: fail-safe. On a kernel without CONFIG_CMA a 2MB
+	 * DMA_ATTR_FORCE_CONTIGUOUS coherent alloc can return NULL; the original
+	 * code never checks and then dereferences NULL -> kernel panic. Bail. */
+	if (!vcmd_buf_mem_pool.virtualAddress) {
+		LOG_ERR("AX630C-PORT: vcmd_buf_mem_pool dma_alloc_attrs(%zu) FAILED (no CMA?)\n",
+				(size_t)vcmd_buf_mem_pool.size);
+		return -ENOMEM;
+	}
 	vcmd_buf_mem_pool.busAddress = (unsigned long long)dma_handle;
 	vcmd_buf_mem_pool.phy_address = pfn_to_phys(vmalloc_to_pfn(vcmd_buf_mem_pool.virtualAddress));
 
@@ -3731,6 +3739,10 @@ int vcmd_mem_init(void)
 			vcmd_status_buf_mem_pool.size, &dma_handle,
 			GFP_KERNEL, DMA_ATTR_FORCE_CONTIGUOUS);
 
+	if (!vcmd_status_buf_mem_pool.virtualAddress) {	/* AX630C-PORT: fail-safe */
+		LOG_ERR("AX630C-PORT: vcmd_status_buf_mem_pool dma_alloc_attrs FAILED\n");
+		return -ENOMEM;
+	}
 	vcmd_status_buf_mem_pool.busAddress = (unsigned long long)dma_handle;
 	vcmd_status_buf_mem_pool.phy_address = pfn_to_phys(vmalloc_to_pfn(vcmd_status_buf_mem_pool.virtualAddress));
 
@@ -3756,6 +3768,10 @@ int vcmd_mem_init(void)
 			vcmd_registers_mem_pool.size, &dma_handle,
 			GFP_KERNEL, DMA_ATTR_FORCE_CONTIGUOUS);
 
+	if (!vcmd_registers_mem_pool.virtualAddress) {	/* AX630C-PORT: fail-safe */
+		LOG_ERR("AX630C-PORT: vcmd_registers_mem_pool dma_alloc_attrs FAILED\n");
+		return -ENOMEM;
+	}
 	vcmd_registers_mem_pool.busAddress = (unsigned long long)dma_handle;
 	vcmd_registers_mem_pool.phy_address = pfn_to_phys(vmalloc_to_pfn(vcmd_registers_mem_pool.virtualAddress));
 
@@ -4717,8 +4733,12 @@ static void printk_vcmd_register_debug(const void *hwregs, char *info)
 
 int vc8000e_vcmd_init(void)
 {
-	vcmd_mem_init();
+	int ret = vcmd_mem_init();	/* AX630C-PORT: honor the return (was ignored -> panic on NULL) */
 
+	if (ret) {
+		LOG_ERR("AX630C-PORT: vcmd_mem_init failed (%d); aborting init\n", ret);
+		return ret;
+	}
 	return hantroenc_vcmd_init();
 }
 
