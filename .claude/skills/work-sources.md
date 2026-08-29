@@ -109,10 +109,21 @@ for pending/TODO/unverified markers still present in the tree:
   broken into children: **#44** (port the open VCMD kernel driver — the first
   buildable step, priority/high), **#45** (EWL/CMM glue), **#46** (from-scratch
   CBR controller), **#47** (VCEnc-core licensing decision — `needs-human`, the
-  gate on whether "fully blob-free" is the target). Main open technical gap:
-  P-frame/DPB register state (unobserved; cheap Stage-0 probe). Also this
+  gate on whether "fully blob-free" is the target). Also this
   session: **#27** (kernel initramfs rebuild) reprioritized priority/low →
   **priority/high** per Jeremy (high priority for his blob-free goals).
+  2026-08-23: **Stages 0 and 1 both done** (docs stages "2026-08-23 …",
+  data under `docs/reference/vcenc-open/stage0|stage1/`). Stage 0 closed the
+  old "main gap" — P-frame/DPB register state is now decoded (swreg18/19 =
+  prev-frame recon; IDR WREG order + kick swreg5 pinned). **Stage 1 PoC
+  ACHIEVED on hardware:** an open, externally-supplied VC8000E register
+  program drives the encoder to a decodable, QP-controllable 1080p IDR (via a
+  LINK-time cmdbuf hijack — the effective-QP control surface is swreg7/37/
+  105–107/125–132). The register-program half of a from-source encoder is
+  proven; remaining encoder work is submission (#44/#45) + program generation
+  (#46/#47). Note: a fully-blob-free raw-ioctl submit hits the vendor `.ko`'s
+  nr70/nr83 EFAULT seam — that's #44's job, not a bug. Path B (the hijack) is
+  now a validated on-hardware test harness for candidate open programs.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.

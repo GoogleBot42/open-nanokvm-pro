@@ -47,8 +47,20 @@ multi-step campaign, resume the same agent with `SendMessage` (it keeps the tool
   auth failure).
 - Stop/restart `nanokvm.service` around anything that grabs the capture/encoder
   hardware; leave it RUNNING + web 200 at the end.
-- **Read-only only**: ioctl tracing, `/dev/mem` reads/mmap, static disasm. NO
-  register writes to the live device, NO firmware writes.
+- **Default is read-only**: ioctl tracing, `/dev/mem` reads/mmap, static disasm.
+  Prefer this; most RE/tracing tasks never need to write anything.
+- **Drive path (only when the task explicitly requires exercising hardware, e.g. a
+  replay/PoC).** Driving a block through the vendor's own **public ioctl ABI** (the
+  normal operation path — e.g. the VC8000E VCMD `RESERVE`/`LINK_RUN`/`WAIT`/`RELEASE`
+  cmdbuf ioctls) and writing into the driver-allocated DMA pools it hands you is
+  PERMITTED, and must be stated as permitted in the brief. Guardrails: (a) still NO
+  `/dev/mem` **register**/MMIO writes and NO firmware/block-device writes — those stay
+  forbidden; (b) every physical address you put in a command buffer must come from the
+  live vendor allocation this run (read it back — never invent or hand-pick a phys), so
+  DMA stays inside valid carveouts; (c) a malformed submission may hang the block →
+  warm watchdog reboot, which is SAFE and recovers (poll & continue, back off to
+  last-known-good). This is what makes an on-device replay/PoC reversible; the Stage-1
+  encoder PoC ran this way with no reboot.
 - One unit (the ATX unit). USB HID to host is dead (issue #42, hardware) — ignore
   it, it's unrelated to video/capture/encode.
 - A bad trace can hang the block → watchdog reboot. That's a warm reset and SAFE
