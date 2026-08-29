@@ -2598,3 +2598,16 @@ slot switch. `nix build .#vc8000-vcmd` still builds against this tree (vermagic 
 **Not device-verified** (host-only track): that the reserved CMA area satisfies the alloc on
 this board, and the exact SPL slot-register behaviour for forcing a slot-B boot — both are
 serial-confirmable human steps in the plan. Ticket #49.
+
+### 2026-08-30 — #49 resolved on hardware: open VCMD driver initialises on the SHIPPING kernel (no flash)
+
+Supersedes the paragraph above. The CMA path was flashed to slot B and is **dead** —
+CONFIG_CMA/CONFIG_DMA_CMA break the vendor-blob ABI (`struct device` gains `cma_area`;
+migratetype renumbering resizes `struct zone`): the blobs' insmod kills the kernel pre-init,
+proven by slot-B bisection. The wall fell anyway, with **zero flash**: the glue now declares
+an 8MB CMM-tail coherent carveout via exported `dma_declare_coherent_memory()` (consulted
+by `dma_alloc_attrs` before any CMA path), holds `clk_venc_eb` through the open in-tree clk
+driver (the block reads `0xDEADBEEF` unclocked; vendor userspace gates it per frame), and
+wires GIC_SPI 93 via `of_irq_get`. Result on the stock kernel: `module inserted. Major
+<241>`, `/dev/es_venc` live, init self-test cmdbufs completing with real interrupts. Full
+record: `docs/vcmd-cma-unblock.md`. Next: #45 open EWL (RESERVE→LINK→WAIT→RELEASE IDR).
