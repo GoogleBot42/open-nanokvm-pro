@@ -175,6 +175,15 @@ files, so it is its own cycle:
    on the host (`ffmpeg -i out.h264 -frames:v 1 out.png`); never leave the
    device with nanokvm stopped.
 
+   **md5-verify TEST binaries too, not just deployed app files** (cost a
+   cycle 2026-08-31): the Bash tool resets cwd between calls, so a
+   `nix build --out-link result-X` can land the fresh symlink in the WRONG
+   directory while a stale `result-X` from an earlier session sits at the
+   repo root — the scp then ships the old binary and the "fixed" test
+   reproduces the old failure byte-identically. Always
+   `md5sum result-X/bin/<tool>` locally + on-device before interpreting a
+   test result.
+
 Full bring-up rationale: docs/vcmd-cma-unblock.md ("Bring-up procedure").
 
 **#50 (FIXED 2026-08-31, docs/blob-replacement.md "#50 FIXED"):** the openvenc
