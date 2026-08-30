@@ -74,6 +74,10 @@ let
     # version skew between what was linked and what is loaded.
     opus = crossPkgs.libopus;
     alsaLib = crossPkgs.alsa-lib;
+    # Soft-MJPEG (#51): an openVenc libkvm additionally DT_NEEDEDs
+    # libjpeg.so.8. Taken from kvm-encoder's passthru so it is the exact
+    # jpeg8-ABI libjpeg-turbo build libkvm linked against.
+    jpeg = kvm-encoder.libjpeg8;
   };
 
   eval = import (nixpkgsRootfs + "/nixos/lib/eval-config.nix") {

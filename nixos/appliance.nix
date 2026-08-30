@@ -99,9 +99,12 @@ let
       # inside this one directory.
       cp -aL ${nanokvm.opus}/lib/libopus.so*    "$out/lib/"
       cp -aL ${nanokvm.alsaLib}/lib/libasound.so* "$out/lib/"
+      # libjpeg.so.8 backs the openVenc soft-MJPEG path (#51); harmless
+      # ballast when the image carries the vendor-encoder libkvm instead.
+      cp -aL ${nanokvm.jpeg}/lib/libjpeg.so*    "$out/lib/"
       chmod -R u+w "$out/lib"
 
-      for must in libax_venc.so libsns_dummy.so libopus.so.0 libasound.so.2; do
+      for must in libax_venc.so libsns_dummy.so libopus.so.0 libasound.so.2 libjpeg.so.8; do
         test -e "$out/lib/$must" \
           || { echo "ERROR: $must missing from /opt/lib -- the server will not start" >&2; exit 1; }
       done

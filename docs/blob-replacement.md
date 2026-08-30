@@ -3050,3 +3050,34 @@ real oops (`[#2]`, exact trace) and confirmed the dangling-global caveat.
 The gate lives in shared capture code, so `kvm-encoder-open` (vendor-encoder,
 shipped) also stops issuing nr138 — harmless there (venc present) and it
 removes the latent arming. Closes #50.
+
+### 2026-08-31 — #51 DONE: blob-free MJPEG via from-source soft-JPEG (hardware-proven)
+
+The openvenc backend now serves MJPEG with **zero blobs and zero hardware
+encode**: `kvm_venc_open.c` gained a `PT_MJPEG` session that maps each capture
+frame for CPU read (`kvm_frame_map`, the preview module's cached
+AX_SYS_Mmap-or-/dev/mem route, now exported), de-interleaves the packed YUYV
+rows into planar iMCU rows, and hands them to libjpeg-turbo's
+`jpeg_write_raw_data` as raw YCbCr 4:2:2 — no color conversion, no scaling,
+parametric in geometry (the MJPEG path has no 1080p bake-in; only H.264's
+register program does). The whole JPEG is one pack, which is exactly what
+`libkvm.c` serves for MJPEG. libjpeg errors longjmp back and cost one frame,
+not the process; the `jpeg_mem_dest` regrow-adoption is handled (jdatadst.c
+does NOT free a caller-provided buffer it outgrows).
+
+Link/deploy contract: the openVenc build links `-ljpeg` against a
+**jpeg8-ABI** libjpeg-turbo (`crossPkgs.libjpeg_turbo.override { enableJpeg8
+= true; }`, exported as `kvm-encoder.passthru.libjpeg8`) so the DT_NEEDED is
+`libjpeg.so.8` — the soname (and `LIBJPEG_8.0` symbol versions, verified) the
+device's Ubuntu 22.04 multiarch path ships. The NixOS appliance stages the
+same build into /opt/lib (nixos/appliance.nix).
+
+**Hardware proof (2026-08-31, clean boot, vcmd loaded, ax_venc/ax_jenc
+removed):** `/api/stream/mjpeg` streamed 91 frames in ~10 s (**~9 fps** at
+1080p q80, ~100 KB/frame, `[openvenc] MJPEG up: 1920x1080 from-source
+soft-JPEG q=80`), a pulled frame decodes as a clean correctly-colored
+1920×1080 JPEG of the live host screen, `grep -c libax /proc/<pid>/maps` = 0;
+switching back to `h264-direct` streamed decodable NALs (both channel-switch
+directions exercised). ~9 fps soft-encode on the A53s is acceptable for the
+no-WebRTC fallback this path exists for. Closes #51; the openvenc default
+switch (#25) now gates on #17 (non-1080p) + #46 (rate control) only.

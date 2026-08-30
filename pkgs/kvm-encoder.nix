@@ -15,9 +15,11 @@
 #           driver + the #45/#25 EWL, fixed-QP(32), sources shared with
 #           pkgs/vcenc-ewl). ZERO vendor libraries are linked -- the last
 #           libax_* leaves the process. Needs ax630c_venc_vcmd.ko loaded
-#           instead of ax_venc.ko/ax_jenc.ko on the device. v1 limits:
-#           H.264-only (no MJPEG), 1080p-only, fixed QP (bitrate knobs
-#           accepted+ignored; gop honored).
+#           instead of ax_venc.ko/ax_jenc.ko on the device. MJPEG is a
+#           from-source SOFTWARE JPEG (#51): libjpeg-turbo raw-4:2:2 encode
+#           of the mapped YUYV capture frame, no hardware. v1 limits:
+#           1080p-only H.264, fixed QP (bitrate knobs accepted+ignored;
+#           gop honored).
 
 # ---------------------------------------------------------------------------
 # libkvm.so -- our REAL open capture + hardware-encode backend for the AX630C.
@@ -61,6 +63,13 @@ assert openVenc -> openCapture;   # the open encoder presumes the open capture p
 
 let
   cc = "${crossPkgs.stdenv.cc.targetPrefix}gcc";
+  # Soft-JPEG MJPEG path (#51): libjpeg-turbo built with the jpeg8 ABI so the
+  # recorded DT_NEEDED is libjpeg.so.8 -- the soname the device's Ubuntu 22.04
+  # multiarch path actually ships (nixpkgs' default is the jpeg62 ABI, whose
+  # libjpeg.so.62 exists nowhere on the target). The NixOS appliance stages
+  # this same build into /opt/lib (nixos/appliance.nix); exported as passthru
+  # so it can't skew from what libkvm linked against.
+  libjpeg8 = crossPkgs.libjpeg_turbo.override { enableJpeg8 = true; };
   # Capture backend selection (see openCapture above).
   # kvm_capture_geom.c holds the parametric geometry payloads (#17). It is
   # compiled ONLY on the open path -- the vendor-MPI build is untouched.
@@ -77,7 +86,7 @@ let
   # only -lax_mipi; the rest stay for the encoder until it too is replaced.
   # Device-verified: this set produces real H.264 from blob-free capture.
   # With openVenc the encoder is ours too and NO vendor lib is linked at all.
-  captureLibs = if openVenc then (pkgs.lib.optionalString axsysProbe "-lax_sys")
+  captureLibs = if openVenc then ("-ljpeg" + pkgs.lib.optionalString axsysProbe " -lax_sys")
                 else if openCapture
                 then "-lax_venc -lax_sys -lax_ivps -lax_proton"
                 else "-lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps";
@@ -96,7 +105,8 @@ crossPkgs.stdenv.mkDerivation {
   # <alsa/asoundlib.h>) and cross libs are injected by the cc-wrapper via
   # buildInputs; on-device the .so's (libopus.so.0 / libasound.so.2) resolve
   # from the standard multiarch path.
-  buildInputs = [ axera-libs crossPkgs.libopus crossPkgs.alsa-lib ];
+  buildInputs = [ axera-libs crossPkgs.libopus crossPkgs.alsa-lib ]
+    ++ pkgs.lib.optionals openVenc [ libjpeg8 ];
 
   # patchelf: pin the RUNPATH deterministically (see buildPhase). The nix
   # ld-wrapper rewrites -rpath and drops our /opt/lib entry, so we set it by hand.
@@ -164,6 +174,10 @@ crossPkgs.stdenv.mkDerivation {
   dontStrip = true;
   dontPatchELF = true;
   dontFixup = true;
+
+  # The exact jpeg8-ABI libjpeg-turbo the openVenc build links (see above);
+  # consumed by nixos/rootfs.nix so /opt/lib stages the matching .so.
+  passthru = { inherit libjpeg8; };
 
   meta = {
     description = "libkvm.so -- open capture+encode backend implementing kvm_vision.h over the Axera AX_VENC pipeline (cross-built aarch64)";

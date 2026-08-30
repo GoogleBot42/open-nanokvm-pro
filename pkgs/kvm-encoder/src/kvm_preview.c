@@ -104,6 +104,11 @@ static void *map_phys(uint64_t phys, uint32_t size)
     return s_map[slot].virt;
 }
 
+const void *kvm_frame_map(uint64_t phys, uint32_t size)
+{
+    return map_phys(phys, size);
+}
+
 void kvm_preview_reset(void)
 {
     for (unsigned i = 0; i < sizeof(s_map)/sizeof(s_map[0]); i++) {

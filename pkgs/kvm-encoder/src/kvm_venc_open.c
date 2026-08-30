@@ -22,12 +22,18 @@
  * the standalone prover (pkgs/vcenc-ewl: vcmd_abi.h, vcenc_cmdbuf.h,
  * vcenc_encode.h, vcenc_header.h, img_qp32_payload.h) -- one source of truth.
  *
+ * MJPEG (#51) is a from-source SOFTWARE path: the captured frame is packed
+ * YUYV -- exactly JPEG's YCbCr 4:2:2 -- so each session frame is mapped for
+ * CPU read (kvm_frame_map), de-interleaved row-wise into planar iMCU rows and
+ * handed to libjpeg-turbo's jpeg_write_raw_data (no color conversion, no
+ * scaling, any geometry). The VCMD hardware is not involved; the whole JPEG
+ * is served as one pack, which is what libkvm.c expects for MJPEG.
+ *
  * v1 LIMITS (fixed-QP stage; the #46 seams -- per-frame QP input and
  * per-frame emitted-size readback -- are already in the builder API):
- *  - H.264 only: PT_MJPEG create fails (no open JPEG path yet; the server
- *    treats it as IMG_VENC_ERROR and H.264 streaming is unaffected).
- *  - 1920x1080 only: the register program is 1080p-specific. Other source
- *    geometries fail create until the geometry registers are derived.
+ *  - H.264: 1920x1080 only; the register program is 1080p-specific. Other
+ *    source geometries fail create until the geometry registers are derived.
+ *    (MJPEG is parametric already.)
  *  - Rate control: fixed QP32. fps/bitrate/rc-mode knobs are accepted and
  *    ignored (quality-priority mode); gop is honored (IDR period).
  *
@@ -42,14 +48,18 @@
 #include <stdint.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <setjmp.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+
+#include <jpeglib.h>
 
 #include "ax_base_type.h"
 #include "ax_global_type.h"
 #include "ax_venc_comm.h"
 #include "kvm_pipeline.h"
+#include "kvm_preview.h"   /* kvm_frame_map: CPU view of a captured frame */
 
 #include "vcmd_abi.h"
 #include "vcenc_cmdbuf.h"
@@ -78,6 +88,147 @@ static struct {
     uint32_t nalu_num;
 } V = { .fd = -1, .chn = -1 };
 
+/* ---------------- MJPEG session (from-source soft-JPEG, #51) --------------
+ * libjpeg's default error handler exit()s the process; route errors through
+ * setjmp instead so a bad frame costs one frame, not the server. */
+struct mj_err { struct jpeg_error_mgr pub; jmp_buf env; };
+
+static void mj_error_exit(j_common_ptr ci)
+{
+    struct mj_err *e = (struct mj_err *)ci->err;
+    (*ci->err->output_message)(ci);
+    longjmp(e->env, 1);
+}
+
+static struct {
+    int      active;
+    int      chn;
+    uint32_t w, h;
+    struct jpeg_compress_struct cj;
+    struct mj_err jerr;
+    /* jpeg_mem_dest buffer. The lib swaps in a malloc'd replacement when a
+     * frame outgrows it (WITHOUT freeing ours -- jdatadst.c frees only its
+     * own intermediates), so the send path adopts the replacement. jsz is a
+     * struct field, not a local, to keep it off the setjmp-clobber list. */
+    unsigned char *jout;
+    unsigned long  jout_cap, jsz;
+    uint32_t jout_len;
+    int      ready;
+    uint8_t *rows;   /* 1 cached copy row + 8-row planar Y/Cb/Cr staging */
+} M;
+
+static void mj_down(void)
+{
+    if (!M.active) return;
+    jpeg_destroy_compress(&M.cj);
+    free(M.rows);
+    free(M.jout);
+    memset(&M, 0, sizeof M);
+}
+
+static int mj_create(int chn, int w, int h, int qlty)
+{
+    if (w <= 0 || h <= 0 || (w & 1)) {
+        fprintf(stderr, "[openvenc][FAIL] MJPEG %dx%d unsupported "
+                        "(YUYV needs an even width)\n", w, h);
+        return -1;
+    }
+    memset(&M, 0, sizeof M);
+    M.w = (uint32_t)w; M.h = (uint32_t)h;
+
+    /* copy row (w*2) + 8 Y rows (8w) + 8 Cb + 8 Cr rows (4w each) */
+    M.rows = malloc((size_t)M.w * 18);
+    M.jout_cap = 1u << 20;
+    M.jout = malloc(M.jout_cap);
+    if (!M.rows || !M.jout) goto fail;
+
+    M.cj.err = jpeg_std_error(&M.jerr.pub);
+    M.jerr.pub.error_exit = mj_error_exit;
+    if (setjmp(M.jerr.env)) {           /* create-time libjpeg failure */
+        jpeg_destroy_compress(&M.cj);
+        goto fail;
+    }
+    jpeg_create_compress(&M.cj);
+    M.cj.image_width      = M.w;
+    M.cj.image_height     = M.h;
+    M.cj.input_components = 3;
+    M.cj.in_color_space   = JCS_YCbCr;
+    jpeg_set_defaults(&M.cj);
+    /* qlty is the server's MJPEG quality knob, already ~[50,100] */
+    jpeg_set_quality(&M.cj, qlty < 1 ? 80 : (qlty > 100 ? 100 : qlty), TRUE);
+    M.cj.raw_data_in = TRUE;
+    /* YUYV == YCbCr 4:2:2: Y sampled 2x horizontally, chroma at full height */
+    M.cj.comp_info[0].h_samp_factor = 2; M.cj.comp_info[0].v_samp_factor = 1;
+    M.cj.comp_info[1].h_samp_factor = 1; M.cj.comp_info[1].v_samp_factor = 1;
+    M.cj.comp_info[2].h_samp_factor = 1; M.cj.comp_info[2].v_samp_factor = 1;
+
+    M.active = 1; M.chn = chn;
+    fprintf(stderr, "[openvenc] MJPEG up: %ux%u from-source soft-JPEG q=%d\n",
+            M.w, M.h, qlty);
+    return 0;
+fail:
+    free(M.rows); free(M.jout);
+    memset(&M, 0, sizeof M);
+    fprintf(stderr, "[openvenc][FAIL] MJPEG session bring-up\n");
+    return -1;
+}
+
+static int mj_send(AX_VIDEO_FRAME_INFO_T *frame)
+{
+    AX_VIDEO_FRAME_T *vf = &frame->stVFrame;
+    if (!vf->u64PhyAddr[0]) return -1;
+    uint32_t stride = vf->u32PicStride[0] ? vf->u32PicStride[0] : M.w;
+    if (stride & 1) stride = M.w;       /* YUYV macropixels need even stride */
+    uint32_t fsz = vf->u32FrameSize ? vf->u32FrameSize : stride * 2 * M.h;
+    const uint8_t *src = kvm_frame_map(vf->u64PhyAddr[0], fsz);
+    if (!src) return -1;
+
+    unsigned char *old = M.jout;        /* set before setjmp, never changed */
+    M.jsz = M.jout_cap;
+    if (setjmp(M.jerr.env)) {           /* mid-encode libjpeg failure */
+        jpeg_abort_compress(&M.cj);     /* session stays usable */
+        if (M.jout != old) { free(old); M.jout_cap = M.jsz; }
+        M.ready = 0;
+        return -1;
+    }
+    jpeg_mem_dest(&M.cj, &M.jout, &M.jsz);
+    jpeg_start_compress(&M.cj, TRUE);
+
+    uint8_t *tmp = M.rows;
+    uint8_t *py  = tmp + (size_t)M.w * 2;
+    uint8_t *pcb = py  + (size_t)M.w * 8;
+    uint8_t *pcr = pcb + (size_t)(M.w / 2) * 8;
+    JSAMPROW yr[8], cbr[8], crr[8];
+    for (int i = 0; i < 8; i++) {
+        yr[i]  = py  + (size_t)M.w * i;
+        cbr[i] = pcb + (size_t)(M.w / 2) * i;
+        crr[i] = pcr + (size_t)(M.w / 2) * i;
+    }
+    JSAMPARRAY planes[3] = { yr, cbr, crr };
+
+    while (M.cj.next_scanline < M.cj.image_height) {
+        for (uint32_t i = 0; i < 8; i++) {
+            uint32_t sy = M.cj.next_scanline + i;
+            if (sy >= M.h) sy = M.h - 1;          /* replicate the last row */
+            /* one bulk copy out of the uncached CMM mapping, then
+             * de-interleave from cache */
+            memcpy(tmp, src + (size_t)sy * stride * 2, (size_t)M.w * 2);
+            const uint8_t *p = tmp;
+            uint8_t *y = yr[i], *cb = cbr[i], *cr = crr[i];
+            for (uint32_t x = 0; x < M.w / 2; x++, p += 4) {
+                *y++  = p[0]; *y++ = p[2];
+                *cb++ = p[1]; *cr++ = p[3];
+            }
+        }
+        jpeg_write_raw_data(&M.cj, planes, 8);
+    }
+    jpeg_finish_compress(&M.cj);
+    if (M.jout != old) { free(old); M.jout_cap = M.jsz; }  /* adopt regrown */
+    M.jout_len = (uint32_t)M.jsz;       /* term_destination: bytes written */
+    M.ready = 1;
+    return 0;
+}
+
 static void venc_open_down(void)
 {
     if (V.fb_map)      { munmap(V.fb_map, ENC_LAYOUT_SPAN); V.fb_map = NULL; }
@@ -92,9 +243,11 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
                     int fps, int gop, int qlty, int rc_mode)
 {
     (void)fps; (void)rc_mode;
+    if (V.fd >= 0) venc_open_down();
+    if (M.active)  mj_down();
+    if (type == PT_MJPEG) return mj_create(chn, w, h, qlty);
     if (type != PT_H264) {
-        fprintf(stderr, "[openvenc][FAIL] payload type %d unsupported "
-                        "(open encoder is H.264-only; no MJPEG path)\n", (int)type);
+        fprintf(stderr, "[openvenc][FAIL] payload type %d unsupported\n", (int)type);
         return -1;
     }
     if ((uint32_t)w != ENC_WIDTH || (uint32_t)h != ENC_HEIGHT) {
@@ -102,7 +255,6 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
                         "is 1080p-only for now)\n", w, h);
         return -1;
     }
-    if (V.fd >= 0) venc_open_down();
 
     V.fd = open(VCMD_DEV_NODE, O_RDWR);
     if (V.fd < 0) {
@@ -157,12 +309,14 @@ void kvm_venc_destroy(int chn)
 {
     (void)chn;
     venc_open_down();
+    mj_down();
 }
 
-void kvm_venc_module_deinit(void) { venc_open_down(); }
+void kvm_venc_module_deinit(void) { venc_open_down(); mj_down(); }
 
 int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
 {
+    if (M.active) return (chn == M.chn) ? mj_send(frame) : -1;
     if (V.fd < 0 || chn != V.chn) return -1;
     AX_VIDEO_FRAME_T *vf = &frame->stVFrame;
     if (!vf->u64PhyAddr[0]) return -1;
@@ -247,6 +401,15 @@ out:
 int kvm_venc_get(int chn, AX_VENC_STREAM_T *st, int timeout_ms)
 {
     (void)timeout_ms;   /* encode is synchronous in kvm_venc_send */
+    if (M.active) {     /* MJPEG: the whole JPEG is one pack, no NALs */
+        if (chn != M.chn || !M.ready) return -1;
+        memset(st, 0, sizeof *st);
+        st->stPack.pu8Addr      = M.jout;
+        st->stPack.u32Len       = M.jout_len;
+        st->stPack.enCodingType = AX_VENC_INTRA_FRAME;
+        M.ready = 0;
+        return 0;
+    }
     if (V.fd < 0 || chn != V.chn || !V.pack_ready) return -1;
     memset(st, 0, sizeof *st);
     st->stPack.pu8Addr      = V.pack;
