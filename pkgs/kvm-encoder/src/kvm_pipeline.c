@@ -247,7 +247,10 @@ void kvm_cap_release(AX_IMG_INFO_T *img)
 
 #endif /* !KVM_OPEN_CAPTURE (vendor capture backend) */
 
-/* ---------------- VENC ---------------- */
+/* ---------------- VENC ----------------
+ * Vendor AX_VENC backend. Compiled out when KVM_OPEN_VENC selects the
+ * blob-free VC8000E backend in kvm_venc_open.c. */
+#ifndef KVM_OPEN_VENC
 static AX_BOOL g_vencInit = AX_FALSE;
 
 int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
@@ -378,6 +381,8 @@ int kvm_venc_set_gop(int chn, int gop)
     rc.stH264Cbr.u32Gop = gop;
     return AX_VENC_SetRcParam(chn, &rc);
 }
+
+#endif /* !KVM_OPEN_VENC (vendor AX_VENC backend) */
 
 /* ---------------- lt6911 source poll ---------------- */
 static int read_int_file(const char *path, int *out)

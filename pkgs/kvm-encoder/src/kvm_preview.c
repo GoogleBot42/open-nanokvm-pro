@@ -86,11 +86,13 @@ static void *map_phys(uint64_t phys, uint32_t size)
         if (!s_map[slot].virt) break;
     if (slot == sizeof(s_map)/sizeof(s_map[0])) return NULL;  /* reset() clears */
 
+#ifndef KVM_OPEN_VENC   /* fully-open build links no libax_sys: devmem only */
     void *v = AX_SYS_Mmap(phys, size);
     if (v) {
         s_map[slot] = (typeof(s_map[0])){ phys, size, v, 0, 0 };
         return v;
     }
+#endif
 
     if (s_devmem_fd < 0) s_devmem_fd = open("/dev/mem", O_RDONLY | O_SYNC);
     if (s_devmem_fd < 0) return NULL;
@@ -108,8 +110,10 @@ void kvm_preview_reset(void)
         if (!s_map[i].virt) continue;
         if (s_map[i].devmem)
             munmap((void *)((uintptr_t)s_map[i].virt & ~4095UL), s_map[i].maplen);
+#ifndef KVM_OPEN_VENC
         else
             AX_SYS_Munmap(s_map[i].virt, s_map[i].size);
+#endif
         s_map[i].virt = NULL;
     }
     s_tab_ok = 0;

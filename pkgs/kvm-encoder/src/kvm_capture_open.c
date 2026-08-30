@@ -263,11 +263,15 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
      * without it, and libax_venc also pins AX_VIN_PRIV_FindMeStat (libax_proton)
      * + AX_IVPS_* (libax_ivps). Our capture uses raw ioctls for everything else;
      * this initializes libax_sys's userspace CMM/pool state for the encoder. It
-     * coexists with the raw allocator below (device-verified: real H.264 out). */
+     * coexists with the raw allocator below (device-verified: real H.264 out).
+     * With the OPEN encoder (KVM_OPEN_VENC) no vendor lib is linked at all --
+     * nothing to initialize. */
+#ifndef KVM_OPEN_VENC
     if (AX_SYS_Init() != 0)
         fprintf(stderr, "[openkvm][WARN] AX_SYS_Init failed (encoder may not init)\n");
     else
         c->sysInit = AX_TRUE;   /* set now so a failed init still deinits it */
+#endif
 
     S.fo  = open("/dev/ax_os_mem",  O_RDWR);
     S.fs  = open("/dev/ax_sys",     O_RDWR);
@@ -330,7 +334,10 @@ void kvm_sys_deinit(kvm_cap_ctx *c)
     int *fds[] = { &S.fpr, &S.fm, &S.fp, &S.fc, &S.fs, &S.fo, &S.fmem };
     for (unsigned i = 0; i < sizeof(fds)/sizeof(fds[0]); i++)
         if (*fds[i] >= 0) { close(*fds[i]); *fds[i] = -1; }
+#ifndef KVM_OPEN_VENC
     if (c->sysInit) { AX_SYS_Deinit(); c->sysInit = AX_FALSE; }
+#endif
+    c->sysInit = AX_FALSE;
 }
 
 /* ============================ capture bring-up ============================ */
@@ -530,7 +537,12 @@ int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
     uint64_t derived = S.pool_base
                      + (uint64_t)KVM_POOL_METASIZE * KVM_POOL_BLKCNT_OPEN
                      + (uint64_t)blkidx * S.g.blk_pitch;
+#ifndef KVM_OPEN_VENC
     uint64_t api = AX_POOL_Handle2PhysAddr((AX_BLK)handle);
+#else
+    uint64_t api = 0;   /* no libax_sys linked; the measured layout is the
+                         * device-verified source of truth */
+#endif
     uint64_t phys = (api >= S.pool_base && api + S.g.blk_size <= S.pool_base + S.g.pool_span)
                   ? api : derived;
     if (!S.phys_logged) {

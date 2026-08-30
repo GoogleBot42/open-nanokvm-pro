@@ -63,6 +63,20 @@
 #define ENC_BULK_NREGS     511
 #define ENC_SECBANK_2800   0x44u
 
+/* Captured-layout geometry, shared by every open-EWL consumer (the ewl_encode
+ * test tool and libkvm's KVM_OPEN_VENC backend). The whole captured buffer
+ * layout is allocated as ONE block and every address register relocated by
+ * (block_bus - ENC_LAYOUT_BASE); the sub-page offsets in swreg8/10 survive
+ * because both the allocator and the captured bases are page-aligned. */
+#define ENC_LAYOUT_BASE   0x73c45000u  /* min captured address reg (sw12) */
+#define ENC_LAYOUT_SPAN   0x02b00000u  /* to max reg base (sw27) + 4MB slack */
+#define ENC_OUT_PAGE_OFF  ((0x749ce028u & ~0xfffu) - ENC_LAYOUT_BASE) /* sw8 page */
+#define ENC_STREAM_SUBOFF (0x749ce028u & 0xfffu)  /* HW start code in that page */
+#define ENC_OUT_LIMIT     0x004047d8u  /* programmed swreg9 output byte limit */
+#define ENC_WIDTH         1920u        /* the register program is 1080p-only */
+#define ENC_HEIGHT        1080u
+#define ENC_QP_FIXED      32u          /* the img_qp32 program's sw7 QP */
+
 /* Frame-type register values (captured; see header comment). */
 #define ENC_SW5_IDR        0x3c044302u
 #define ENC_SW5_P          0x3c044300u
@@ -110,6 +124,11 @@ struct vcenc_frame {
 	uint32_t qp;         /* per-frame QP seam (#46); must be 32 for now */
 	uint32_t p17;        /* sw17 P value (0 => ENC_SW17_P) */
 	int      pinter;     /* 1 => replay ENC_PINTER for P frames */
+	uint32_t input_phys; /* 0 => the relocated layout's own input region;
+	                      * else an absolute bus address of a packed-YUYV
+	                      * 1080p frame (e.g. straight out of the capture
+	                      * pool -- zero-copy). Page alignment not required;
+	                      * sw13/14 keep their captured relative offsets. */
 };
 
 /*
@@ -177,6 +196,15 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t delta,
 		int k = ENC_KEEP_ADDR[i];
 		if (sw1[k - 1])
 			sw1[k - 1] += delta;
+	}
+
+	/* external input frame: absolute bus address, sw13/14 mirroring the
+	 * captured relative offsets (sw13-sw12 = 2*W*H exactly, sw14 = sw13 +
+	 * W*H; packed YUYV ignores the chroma bases but the regs must be sane) */
+	if (fr->input_phys) {
+		sw1[12 - 1] = fr->input_phys;
+		sw1[13 - 1] = fr->input_phys + 0x3f4800u;
+		sw1[14 - 1] = fr->input_phys + 0x3f4800u + 0x1fa400u;
 	}
 
 	/* secondary bank @0x2800 = 0x44 (undecoded; replayed) */

@@ -5,9 +5,13 @@
  *
  * Model: the AX_VENC encoder returns ONE NAL/pack per AX_VENC_GetStream call,
  * whose NALU type we translate to the kvmv return codes (SPS/PPS/I/P). Each
- * read_img returns one encoded unit copied into a malloc'd buffer the caller
- * frees via kvmv_free_data. Pipeline auto-inits on first read_img at the
- * requested WxH; type 0 -> MJPEG, else H.264.
+ * read_img returns one encoded unit in a LIBRARY-OWNED buffer, valid until
+ * the next video call: the Go server copies via C.GoBytes and NEVER calls
+ * kvmv_free_data (verified against the pinned server source), so a malloc
+ * per NAL would leak at up to 120 Hz. Same ownership rule the audio path
+ * (s_aout) has always used. kvmv_free_data stays ABI-compatible and is a
+ * no-op for the library-owned buffer. Pipeline auto-inits on first read_img
+ * at the requested WxH; type 0 -> MJPEG, else H.264.
  *
  * Audio: REAL HDMI-audio capture+encode. The LT6911UXC HDMI-RX de-embeds the
  * HDMI audio onto an I2S link exposed as ALSA capture card "Lt6911UXC". We
@@ -80,6 +84,21 @@ static void cache_nal(uint8_t **dst, uint32_t *dlen, const uint8_t *src, uint32_
     uint8_t *n = realloc(*dst, len);
     if (!n) return;
     memcpy(n, src, len); *dst = n; *dlen = len;
+}
+
+/* The library-owned serve buffer every video read returns (see header
+ * comment). Grown on demand, reused across calls; the server copies the
+ * bytes out (C.GoBytes) before its next call, so one buffer suffices. */
+static uint8_t *s_serve = NULL; static uint32_t s_serve_cap = 0;
+
+static uint8_t *serve_buf(uint32_t len)
+{
+    if (len > s_serve_cap) {
+        uint8_t *n = realloc(s_serve, len);
+        if (!n) return NULL;
+        s_serve = n; s_serve_cap = len;
+    }
+    return s_serve;
 }
 
 void kvmv_init(uint8_t _debug_info_en)
@@ -191,7 +210,7 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
     if (s_pend_len == 0) return IMG_NOT_EXIST;
 
     if (type == 0) {  /* MJPEG: whole pack is one image */
-        uint8_t *b = malloc(s_pend_len);
+        uint8_t *b = serve_buf(s_pend_len);
         if (!b) return IMG_NOT_EXIST;   /* pack kept; retried on the next call */
         memcpy(b, s_pend, s_pend_len);
         *out = b; *olen = s_pend_len; s_pend_len = 0;
@@ -200,7 +219,7 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
 
     /* H264: iterate NALs. Fall back to whole-pack if encoder didn't split. */
     if (s_pend_num == 0) {
-        uint8_t *b = malloc(s_pend_len);
+        uint8_t *b = serve_buf(s_pend_len);
         if (!b) return IMG_NOT_EXIST;   /* pack kept; retried on the next call */
         memcpy(b, s_pend, s_pend_len);
         *out = b; *olen = s_pend_len; s_pend_len = 0;
@@ -211,7 +230,7 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
     AX_VENC_NALU_INFO_T *ni = &s_nalu[s_pend_idx];
     uint32_t off = ni->u32NaluOffset, len = ni->u32NaluLength;
     if (off + len > s_pend_len) { len = (off < s_pend_len) ? s_pend_len - off : 0; }
-    uint8_t *b = malloc(len ? len : 1);
+    uint8_t *b = serve_buf(len ? len : 1);
     if (!b) return IMG_NOT_EXIST;       /* cursor not advanced; NAL retried */
     s_pend_idx++;
     memcpy(b, s_pend + off, len);
@@ -278,7 +297,7 @@ int kvmv_get_sps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 {
     pthread_mutex_lock(&s_lock);
     if (!s_sps) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
-    uint8_t *b = malloc(s_sps_len);
+    uint8_t *b = serve_buf(s_sps_len);
     if (!b) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
     memcpy(b, s_sps, s_sps_len);
     *_pp_kvm_data = b; *_p_kvmv_data_size = s_sps_len;
@@ -290,7 +309,7 @@ int kvmv_get_pps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 {
     pthread_mutex_lock(&s_lock);
     if (!s_pps) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
-    uint8_t *b = malloc(s_pps_len);
+    uint8_t *b = serve_buf(s_pps_len);
     if (!b) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
     memcpy(b, s_pps, s_pps_len);
     *_pp_kvm_data = b; *_p_kvmv_data_size = s_pps_len;
@@ -300,7 +319,14 @@ int kvmv_get_pps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 
 int kvmv_free_data(uint8_t **_pp_kvm_data)
 {
-    if (_pp_kvm_data && *_pp_kvm_data) { free(*_pp_kvm_data); *_pp_kvm_data = NULL; }
+    /* Video buffers are library-owned (s_serve) -- never free them. The Go
+     * server never calls this; a legacy caller passing our buffer back just
+     * gets its pointer cleared. */
+    if (_pp_kvm_data && *_pp_kvm_data) {
+        if (*_pp_kvm_data != s_serve)
+            free(*_pp_kvm_data);
+        *_pp_kvm_data = NULL;
+    }
     return 0;
 }
 
@@ -606,6 +632,7 @@ void kvmv_deinit(void)
     free(s_sps); s_sps = NULL; s_sps_len = 0;
     free(s_pps); s_pps = NULL; s_pps_len = 0;
     free(s_pend); s_pend = NULL; s_pend_cap = s_pend_len = 0; s_pend_num = s_pend_idx = 0;
+    free(s_serve); s_serve = NULL; s_serve_cap = 0;
     pthread_mutex_unlock(&s_lock);
 
     pthread_mutex_lock(&s_alock);

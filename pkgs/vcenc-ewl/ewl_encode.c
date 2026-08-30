@@ -53,18 +53,18 @@
  * embedded in swreg8/10 survive. Userspace touches only the INPUT (fill) and
  * OUTPUT (read) regions inside the driver's writecombine mmap of the block;
  * recon/aux are DMA'd by the encoder internally. */
-#define LAYOUT_BASE 0x73c45000u   /* min captured address reg (sw12, input Y) */
-#define LAYOUT_SPAN 0x02b00000u   /* to max reg base (sw27 0x76306300) + 4MB slack */
+#define LAYOUT_BASE ENC_LAYOUT_BASE
+#define LAYOUT_SPAN ENC_LAYOUT_SPAN
 
 #define IN_FILL_LEN 0x007e9000u                  /* (sw14 + W*H) - sw12: full input extent */
-#define OUT_OFF    ((0x749ce028u & ~0xfffu) - LAYOUT_BASE)  /* sw8 page - sw12 */
+#define OUT_OFF     ENC_OUT_PAGE_OFF             /* sw8 page - sw12 */
 #define OUT_MAP_LEN 0x00500000u                  /* 5MB window, covers sw9 limit */
-#define OUT_LIMIT  0x004047d8u                   /* swreg9 (output byte limit) */
-#define STREAM_OFF (0x749ce028u & 0xfffu)        /* stream start in the sw8 page */
+#define OUT_LIMIT   ENC_OUT_LIMIT                /* swreg9 (output byte limit) */
+#define STREAM_OFF  ENC_STREAM_SUBOFF            /* stream start in the sw8 page */
 
-#define ENC_QP     32u                           /* the img_qp32 program's sw7 QP */
-#define ENC_W      1920u
-#define ENC_H      1080u
+#define ENC_QP      ENC_QP_FIXED
+#define ENC_W       ENC_WIDTH
+#define ENC_H       ENC_HEIGHT
 
 /* 32-bit aligned stores (kept from the /dev/mem days; also fine on the
  * driver's writecombine mapping). */

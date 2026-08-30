@@ -2865,3 +2865,63 @@ Remaining for #25: kvm-app integration — put the open EWL behind the vendor
 venc call sites so the web UI streams through it (then libax_venc/libax_sys/
 libax_proton leave the encode path), with #46 or fixed-QP as the v1 rate
 strategy.
+
+### 2026-08-30 — #25: kvm-app integration — the web UI streamed BLOB-FREE (one teardown bug open)
+
+`pkgs/kvm-encoder/src/kvm_venc_open.c` (build flag `KVM_OPEN_VENC`, flake
+package `kvm-encoder-openvenc`) replaces libkvm's vendor AX_VENC backend with
+the open VC8000E session behind the existing `kvm_venc_*` seam: per-frame
+from-source cmdbuf with **swreg12 pointed straight at the capture-pool frame**
+(open capture emits packed YUYV 4:2:2 — the encoder's exact input format, so
+the hand-off is zero-copy with no conversion), recon/aux rotation and GOP as
+in the IPPP entry above, from-source SPS/PPS prepended at each IDR, and the
+pack handed to libkvm.c's existing NAL splitter (so the load-bearing return
+codes 1/2/3/4 the Go server keys on are produced unchanged). With
+`openVenc = true` the link line drops **every** vendor library — libkvm.so's
+DT_NEEDED is just opus/asound/libc — and the small `#ifdef` seams remove the
+AX_SYS_Init/`AX_POOL_Handle2PhysAddr`/`AX_SYS_Mmap` calls that only existed
+for the closed encoder (frame phys comes from the device-verified measured
+pool layout; preview maps via its existing /dev/mem fallback).
+
+**Device-proven over the REAL streaming path** (swap-run-restore: open
+`ax630c_venc_vcmd.ko` in place of `ax_venc`/`ax_jenc`, openvenc libkvm.so hot
+in both trees): the server's own `wss /api/stream/h264/direct` endpoint
+delivered 240 messages — from-source SPS(16 B) + PPS(8 B), then keyframe-
+flagged 11.4 KB IDRs and ~450 B P frames of the live HDMI desktop at a clean
+60 fps timestamp cadence, GOP 30 (8 IDRs) — while
+`grep -c libax /proc/<server-pid>/maps` read **0**. The full userspace video
+path (capture → encode → web transport) ran with zero vendor code.
+
+**Fixed along the way — libkvm video buffers leaked.** The Go server never
+calls `kvmv_free_data` (verified in the pinned server source: `C.GoBytes`
+then drop, all three read paths), so libkvm.c's malloc-per-NAL leaked at up
+to 120 Hz. Video reads now return a library-owned grow-on-demand serve
+buffer, the same ownership rule the audio path always had; `kvmv_free_data`
+stays ABI-compatible (no-op for the serve buffer).
+
+**OPEN BUG — the one thing between this and default-on:** `systemctl stop
+nanokvm` while the live openvenc session + open capture stack were up caused
+a hard device reboot (10:54:01, clean self-recovery from slot A; no serial on
+this unit so no panic trace). Standalone ewl_encode runs close the same fd
+dozens of times without incident, and vendor-path service stops are equally
+clean — the crash needs the full app teardown ordering (our driver release
+with capture still live, then raw-ioctl capture teardown + pool exit without
+libax_sys). Suspects, in order: (1) open-driver release interacting with the
+live capture teardown, (2) CMM framebuf/coherent carveout collision under
+full-app allocator pressure, (3) a side effect of dropping AX_SYS_Init on the
+raw pool-exit path. Until it is diagnosed the openvenc build stays strictly
+test-only (deploy-iterate hot swap, restore after); the shipped image and the
+deployed device keep `kvm-encoder-open` (vendor encoder, now with the leak
+fix).
+
+Server-contract facts recovered for this work (pinned `nanokvm-pro-src` rev,
+citations in the 2026-08-30 session log): one NAL per `kvmv_read_img` call;
+the return code IS the classifier (the direct path's keyframe flag is
+literally `result == 3`); Annex-B in-band SPS/PPS mandatory (no Go binding
+for `kvmv_get_sps/pps_frame`; WebCodecs configured without `description`);
+the server never requests keyframes (WebRTC PLI is read and discarded) — a
+`_qlty` change forcing a channel rebuild is the system's only IDR-on-demand
+lever, which the openvenc backend preserves (rebuild ⇒ new session ⇒ IDR);
+MJPEG is user-visible (menu + automatic no-WebRTC fallback) — v1 openvenc
+fails MJPEG create loudly; the follow-up plan is a from-source software JPEG
+(YUYV is already 4:2:2 — `jpeg_write_raw_data` needs no color conversion).

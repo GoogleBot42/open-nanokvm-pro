@@ -1,4 +1,4 @@
-{ pkgs, crossPkgs, axera-libs, openCapture ? false, ... }:
+{ pkgs, crossPkgs, axera-libs, openCapture ? false, openVenc ? false, ... }:
 
 # openCapture (default false): select the capture backend.
 #   false -> vendor-MPI capture (kvm_pipeline.c; links libax_sys/mipi/proton).
@@ -9,6 +9,15 @@
 #            Device-verified end-to-end (real H.264 from blob-free capture);
 #            teardown is the least-exercised path. Default stays off so the
 #            shipped image is unchanged.
+#
+# openVenc (default false; requires openCapture): select the encode backend.
+#   true -> BLOB-FREE H.264 encode (kvm_venc_open.c over the open #44 VCMD
+#           driver + the #45/#25 EWL, fixed-QP(32), sources shared with
+#           pkgs/vcenc-ewl). ZERO vendor libraries are linked -- the last
+#           libax_* leaves the process. Needs ax630c_venc_vcmd.ko loaded
+#           instead of ax_venc.ko/ax_jenc.ko on the device. v1 limits:
+#           H.264-only (no MJPEG), 1080p-only, fixed QP (bitrate knobs
+#           accepted+ignored; gop honored).
 
 # ---------------------------------------------------------------------------
 # libkvm.so -- our REAL open capture + hardware-encode backend for the AX630C.
@@ -48,6 +57,8 @@
 #       we also add to RUNPATH).
 # ---------------------------------------------------------------------------
 
+assert openVenc -> openCapture;   # the open encoder presumes the open capture path
+
 let
   cc = "${crossPkgs.stdenv.cc.targetPrefix}gcc";
   # Capture backend selection (see openCapture above).
@@ -55,13 +66,19 @@ let
   # compiled ONLY on the open path -- the vendor-MPI build is untouched.
   captureSrc  = if openCapture then "kvm_capture_open.c kvm_capture_geom.c" else "";
   captureDef  = pkgs.lib.optionalString openCapture "-DKVM_OPEN_CAPTURE";
+  # Encode backend selection (see openVenc above). kvm_venc_open.c shares the
+  # register-program/cmdbuf/SPS-PPS sources with pkgs/vcenc-ewl via -I.
+  vencSrc     = pkgs.lib.optionalString openVenc "kvm_venc_open.c";
+  vencDef     = pkgs.lib.optionalString openVenc "-DKVM_OPEN_VENC -I${./vcenc-ewl}";
   # Direct link deps. The blob-free capture code CALLS none of the AX libs (raw
   # ioctls), but the closed encoder (libax_venc) hard-pins libax_sys
   # (AX_SYS_Init; else AX_VENC_Init => AX_ERR_NOT_INIT), libax_proton
   # (AX_VIN_PRIV_FindMeStat) and libax_ivps (AX_IVPS_*). So the open build drops
   # only -lax_mipi; the rest stay for the encoder until it too is replaced.
   # Device-verified: this set produces real H.264 from blob-free capture.
-  captureLibs = if openCapture
+  # With openVenc the encoder is ours too and NO vendor lib is linked at all.
+  captureLibs = if openVenc then ""
+                else if openCapture
                 then "-lax_venc -lax_sys -lax_ivps -lax_proton"
                 else "-lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps";
 in
@@ -98,10 +115,11 @@ crossPkgs.stdenv.mkDerivation {
     # so the Go server fails to load libkvm.so ("GLIBC_2.38 not found"). gnu17
     # drops the only >2.35 symbol; the rest are <= 2.34 and load fine on 2.35.
     echo "capture backend: ${if openCapture then "BLOB-FREE (kvm_capture_open.c)" else "vendor MPI (kvm_pipeline.c)"}"
-    ${cc} -shared -fPIC -O2 -Wall -std=gnu17 ${captureDef} \
+    echo "encode  backend: ${if openVenc then "BLOB-FREE (kvm_venc_open.c, fixed-QP32)" else "vendor AX_VENC (kvm_pipeline.c)"}"
+    ${cc} -shared -fPIC -O2 -Wall -std=gnu17 ${captureDef} ${vencDef} \
       -I. -I${axera-libs}/include \
       -Wl,-soname,libkvm.so.0 \
-      libkvm.c kvm_pipeline.c kvm_preview.c ${captureSrc} \
+      libkvm.c kvm_pipeline.c kvm_preview.c ${captureSrc} ${vencSrc} \
       -L${axera-libs}/lib \
       ${captureLibs} \
       -lopus -lasound \

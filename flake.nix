@@ -195,6 +195,13 @@
         # path is built and type-checked on demand:
         #   nix build .#kvm-encoder-open -L
         kvm-encoder-open = callPkg ./pkgs/kvm-encoder.nix { inherit axera-libs; openCapture = true; };
+        # FULLY blob-free libkvm: open capture + the open VC8000E encoder
+        # (#25; fixed-QP32, H.264-only, 1080p-only). Links ZERO vendor libs;
+        # needs ax630c_venc_vcmd.ko on the device instead of ax_venc/ax_jenc:
+        #   nix build .#kvm-encoder-openvenc -L
+        kvm-encoder-openvenc = callPkg ./pkgs/kvm-encoder.nix {
+          inherit axera-libs; openCapture = true; openVenc = true;
+        };
         # Host-side 1080p byte-identity proof for the open backend's parametric
         # geometry (#17). See pkgs/kvm-encoder-geom-test.nix.
         kvm-encoder-geom-test = callPkg ./pkgs/kvm-encoder-geom-test.nix { };
@@ -264,7 +271,7 @@
             boot boot-fsbl boot-atf boot-optee boot-uboot
             initramfs kernel vc8000-vcmd vcenc-ewl dtb dtb-slot-image
             kernel-slot-image
-            kvm-encoder kvm-encoder-open kvm-encoder-geom-test
+            kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-rootfs firmware-image sd-image
