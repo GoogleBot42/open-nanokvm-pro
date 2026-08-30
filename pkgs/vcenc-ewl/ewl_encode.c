@@ -15,12 +15,13 @@
  *   - swreg9 (output byte count) within the programmed limit
  *   - the emitted NAL type matches the frame type (5 = IDR, 1 = P)
  *
- * Usage: ewl_encode [out.h264] [nframes] [gop] [mode]
+ * Usage: ewl_encode [out.h264] [nframes] [gop] [mode] [WxH]
  *   nframes  total frames to encode (default 1)
  *   gop      IDR period; 0 = IDR only at frame 0 (default)
  *   mode     yuyv (default; moving test card -- frame 0 is bit-compatible
  *            with the Stage C/D static card), gradient, nv12 (static
  *            format-hypothesis fills kept for regression)
+ *   WxH      geometry (default 1920x1080; any even size in the #17 envelope)
  * Env knobs (P-frame experiment fallbacks, see vcenc_encode.h):
  *   EWL_P17=<hex>   override the P-frame swreg17 value
  *   EWL_PINTER=1    replay the captured warmed-up inter-state registers
@@ -44,27 +45,13 @@
 #include "vcenc_encode.h"
 #include "vcenc_header.h"
 
-/* Buffer relocation: allocate the whole captured buffer layout as ONE block
- * from the driver's from-source CMM allocator (HANTRO_IOCH_ALLOC_FRAMEBUF) and
- * relocate every address register by (block_bus - LAYOUT_BASE). One block
- * preserves every gap/alignment the vendor used, which sidesteps the
- * (undecoded) per-buffer sizes; the delta stays page-aligned because both the
- * allocator and the captured bases are page-aligned, so sub-page offsets
- * embedded in swreg8/10 survive. Userspace touches only the INPUT (fill) and
- * OUTPUT (read) regions inside the driver's writecombine mmap of the block;
- * recon/aux are DMA'd by the encoder internally. */
-#define LAYOUT_BASE ENC_LAYOUT_BASE
-#define LAYOUT_SPAN ENC_LAYOUT_SPAN
-
-#define IN_FILL_LEN 0x007e9000u                  /* (sw14 + W*H) - sw12: full input extent */
-#define OUT_OFF     ENC_OUT_PAGE_OFF             /* sw8 page - sw12 */
-#define OUT_MAP_LEN 0x00500000u                  /* 5MB window, covers sw9 limit */
-#define OUT_LIMIT   ENC_OUT_LIMIT                /* swreg9 (output byte limit) */
-#define STREAM_OFF  ENC_STREAM_SUBOFF            /* stream start in the sw8 page */
-
+/* Buffers: one framebuf block from the driver's from-source CMM allocator
+ * (HANTRO_IOCH_ALLOC_FRAMEBUF) laid out by the computed vcenc_geom floorplan.
+ * Userspace touches only the INPUT (fill) and OUTPUT (read) regions inside
+ * the driver's writecombine mmap; recon/aux are DMA'd by the encoder. */
 #define ENC_QP      ENC_QP_FIXED
-#define ENC_W       ENC_WIDTH
-#define ENC_H       ENC_HEIGHT
+
+static uint32_t EW = 1920, EH = 1080;   /* runtime geometry (argv 5) */
 
 /* 32-bit aligned stores (kept from the /dev/mem days; also fine on the
  * driver's writecombine mapping). */
@@ -85,19 +72,19 @@ static void *map_pool(int fd, uint64_t phys, uint32_t size)
  * matches the Stage C/D static card), black 100x100 square bottom-right. */
 static uint8_t card_luma(uint32_t x, uint32_t y, uint32_t n)
 {
-	uint32_t sx = (16 * n) % (ENC_W - 100), sy = (8 * n) % (ENC_H - 100);
+	uint32_t sx = (16 * n) % (EW - 100), sy = (8 * n) % (EH - 100);
 	if (x - sx < 100 && y - sy < 100) return 235;
-	if (x >= ENC_W - 100 && y >= ENC_H - 100) return 16;
+	if (x >= EW - 100 && y >= EH - 100) return 16;
 	return (uint8_t)(16 + (x / 240) * 31);
 }
 
 /* Fill the packed-YUYV region for frame n: one 32-bit store per pixel pair
- * [Y0 U Y1 V], neutral chroma. */
-static void fill_yuyv(volatile uint32_t *in, uint32_t n)
+ * [Y0 U Y1 V], neutral chroma. Lines at the geom stride (== EW px). */
+static void fill_yuyv(volatile uint32_t *in, uint32_t stride, uint32_t n)
 {
-	for (uint32_t y = 0; y < ENC_H; y++)
-		for (uint32_t x = 0; x < ENC_W; x += 2)
-			in[(y * ENC_W + x) / 2] =
+	for (uint32_t y = 0; y < EH; y++)
+		for (uint32_t x = 0; x < EW; x += 2)
+			in[(y * stride + x) / 2] =
 				(uint32_t)card_luma(x, y, n)
 				| 0x8000u
 				| ((uint32_t)card_luma(x + 1, y, n) << 16)
@@ -114,6 +101,20 @@ int main(int argc, char **argv)
 	int pinter = getenv("EWL_PINTER") ? atoi(getenv("EWL_PINTER")) : 0;
 	setvbuf(stdout, NULL, _IONBF, 0);
 
+	if (argc > 5 && sscanf(argv[5], "%ux%u", &EW, &EH) != 2) {
+		fprintf(stderr, "bad geometry '%s' (want WxH)\n", argv[5]);
+		return 1;
+	}
+	vcenc_geom g;
+	{
+		const char *why;
+		if (vcenc_geom_check((int)EW, (int)EH, &why) ||
+		    vcenc_geom_build(&g, (int)EW, (int)EH)) {
+			fprintf(stderr, "%ux%u unsupported (%s)\n", EW, EH,
+				why ? why : "geometry");
+			return 1;
+		}
+	}
 	if (!nframes) nframes = 1;
 	if (p17 || pinter)
 		printf("P-KNOBS: p17=0x%08x pinter=%d\n", p17 ? p17 : ENC_SW17_P, pinter);
@@ -133,38 +134,38 @@ int main(int argc, char **argv)
 	uint8_t *status_pool = map_pool(fd, mem.status_phy_addr, mem.status_total_size);
 	if (!cmd_pool || !status_pool) { fprintf(stderr, "pool mmap failed\n"); return 1; }
 
-	/* Allocate the whole relocated layout from the driver's from-source CMM
+	/* Allocate the computed floorplan from the driver's from-source CMM
 	 * allocator and mmap it (writecombine) through the driver -- no /dev/mem. */
-	struct framebuf_parameter fbp = { .size = LAYOUT_SPAN };
+	struct framebuf_parameter fbp = { .size = g.span };
 	if (ioctl(fd, HANTRO_IOCH_ALLOC_FRAMEBUF, &fbp) < 0) {
 		perror("ALLOC_FRAMEBUF"); return 1;
 	}
-	uint32_t buf_delta = (uint32_t)(fbp.bus_addr - LAYOUT_BASE);
-	uint8_t *fb_map = mmap(NULL, LAYOUT_SPAN, PROT_READ | PROT_WRITE,
+	uint8_t *fb_map = mmap(NULL, g.span, PROT_READ | PROT_WRITE,
 			       MAP_SHARED, fd, (off_t)fbp.bus_addr);
 	if (fb_map == MAP_FAILED) { perror("mmap(framebuf)"); return 1; }
-	volatile uint32_t *in_map = (volatile uint32_t *)fb_map; /* layout base == input Y (sw12) */
-	volatile uint32_t *out_map = (volatile uint32_t *)(fb_map + OUT_OFF);
-	printf("FRAMEBUF: alloc 0x%08lx+0x%x (delta 0x%x)  in +0  out +0x%x\n",
-	       fbp.bus_addr, LAYOUT_SPAN, buf_delta, OUT_OFF);
+	volatile uint32_t *in_map = (volatile uint32_t *)(fb_map + g.off_in);
+	volatile uint32_t *out_map = (volatile uint32_t *)(fb_map + g.off_out);
+	uint32_t in_fill_len = 4 * EW * EH;    /* (sw14 + W*H) - sw12 */
+	printf("FRAMEBUF: alloc 0x%08lx+0x%x (%ux%u)  in +0x%x  out +0x%x\n",
+	       fbp.bus_addr, g.span, EW, EH, g.off_in, g.off_out);
 
 	/* Neutral 0x80 across the whole input extent once (covers the packed
 	 * region between frames of the static modes and the tail always). */
-	dev_fill32(in_map, IN_FILL_LEN, 0x80808080u);
+	dev_fill32(in_map, in_fill_len, 0x80808080u);
 
 	/* Static fills for the format-regression modes (once). */
 	if (strcmp(mode, "nv12") == 0) {
 		volatile uint8_t *in8 = (volatile uint8_t *)in_map;
-		for (uint32_t o = 0; o < ENC_W * ENC_H; o++)
-			in8[o] = card_luma(o % ENC_W, o / ENC_W, 0);
+		for (uint32_t o = 0; o < EW * EH; o++)
+			in8[o] = card_luma(o % EW, o / EW, 0);
 	} else if (strcmp(mode, "gradient") == 0) {
 		volatile uint8_t *in8 = (volatile uint8_t *)in_map;
-		for (uint32_t o = 0; o < IN_FILL_LEN; o++)
+		for (uint32_t o = 0; o < in_fill_len; o++)
 			in8[o] = (uint8_t)((o >> 6) ^ (o >> 12));
 	}
 
 	/* Clear the output region once so we can see what the encoder wrote. */
-	dev_fill32(out_map, OUT_MAP_LEN, 0);
+	dev_fill32(out_map, g.out_limit & ~3u, 0);
 
 	FILE *f = NULL;
 	if (outfile) {
@@ -178,7 +179,7 @@ int main(int argc, char **argv)
 		int is_idr = (gopn == 0);
 
 		if (strcmp(mode, "yuyv") == 0)
-			fill_yuyv(in_map, n);
+			fill_yuyv(in_map, g.stride, n);
 
 		struct exchange_parameter ex;
 		memset(&ex, 0, sizeof ex);
@@ -195,7 +196,8 @@ int main(int argc, char **argv)
 			.frame_num = gopn, .qp = ENC_QP, .p17 = p17, .pinter = pinter,
 		};
 		uint32_t *slot = cmd_pool + (uint32_t)id * (mem.cmd_unit_size / 4);
-		ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, buf_delta, core_dst, &fr);
+		ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, (uint32_t)fbp.bus_addr, &g,
+		                                           core_dst, &fr);
 		ex.numa_id = 0;
 
 		if (ioctl(fd, HANTRO_IOCH_LINK_RUN_CMDBUF, &ex) < 0) { perror("LINK_RUN_CMDBUF"); break; }
@@ -207,11 +209,11 @@ int main(int argc, char **argv)
 
 		/* The HW writes the 4-byte start code at the stream base; the
 		 * NAL header follows it. */
-		volatile uint8_t *sb = (volatile uint8_t *)out_map + STREAM_OFF;
+		volatile uint8_t *sb = (volatile uint8_t *)out_map + ENC_STREAM_SUBOFF;
 		int nut = sb[4] & 0x1f;
 
 		int frame_ok = (wid == CMDBUF_EXE_STATUS_OK) && swreg82 > 0
-			&& swreg9 > 0 && swreg9 <= OUT_LIMIT
+			&& swreg9 > 0 && swreg9 <= g.out_limit
 			&& nut == (is_idr ? 5 : 1);
 		printf("frame %3u: %s wait=%u bytes=%-6u cycles=%-8u nal=%d %s\n",
 		       n, is_idr ? "IDR" : "P  ", wid, swreg9, swreg82, nut,
@@ -220,7 +222,7 @@ int main(int argc, char **argv)
 		if (frame_ok && f) {
 			if (is_idr) {
 				uint8_t hdr[128];
-				uint32_t hlen = vcenc_write_sps(hdr, ENC_W, ENC_H);
+				uint32_t hlen = vcenc_write_sps(hdr, EW, EH);
 				hlen += vcenc_write_pps(hdr + hlen, ENC_QP);
 				fwrite(hdr, 1, hlen, f);
 				total_bytes += hlen;

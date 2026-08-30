@@ -1919,11 +1919,12 @@ ever been observed. Each assumption is a no-op at 1920×1080:
    `@0x10`) are line strides **in pixels** — they equal the width in the
    capture, sit immediately after a `{width,height}` pair, and correspond to
    the single `nWidthStride` the vendor-MPI structs set for those same calls.
-2. Stride is padded up to 16 px (32 B) — `KVM_GEOM_STRIDE_ALIGN`. No measured
-   alignment rule exists; 16 px matches the AX DMA/VENC habit, is a no-op for
-   every standard HDMI width except 1366 (→1376), and can only over-size a
-   pool block, never under-size one. `BlkSize` follows the stride for the same
-   reason. If a non-1080p bring-up ever shears, set the knob to 2.
+2. ~~Stride is padded up to 16 px (32 B) — `KVM_GEOM_STRIDE_ALIGN`.~~
+   **RESOLVED 2026-08-31 (the knob is now 2, stride == width):** the encoder
+   reads input lines packed at the TRUE width — a 1376-px-stride fill of a
+   1366-wide encode sheared exactly 10 px/row through the open encoder — and
+   the vendor MPI programs `nWidthStride = w` at every VIN stage. See the
+   2026-08-31 stage entry.
 3. CreatePipe (nr35) genuinely has no stride field — the captured bytes at
    `@0x24` are zero for nr35 while nr42's are `0x780`.
 4. The vendor's second `SetDevAttr` keeps `@0xdc` and the `{01,02,03}` lane
@@ -3081,3 +3082,74 @@ switching back to `h264-direct` streamed decodable NALs (both channel-switch
 directions exercised). ~9 fps soft-encode on the A53s is acceptable for the
 no-WebRTC fallback this path exists for. Closes #51; the openvenc default
 switch (#25) now gates on #17 (non-1080p) + #46 (rate control) only.
+
+### 2026-08-31 — #17 encoder geometry: openvenc is parametric (17-geometry vendor differential)
+
+The open H.264 encoder's last hard-coded 1080p — the frozen `img_qp32`
+register program and the relocated captured buffer layout — is replaced by
+closed-form geometry laws (`pkgs/vcenc-ewl/vcenc_geom.h`) and a **computed
+floorplan**. The whole capture→encode open path now supports any even
+geometry in 64×64..1920×1200.
+
+**Method: differential-probe the VENDOR encoder, no source changes needed.**
+The blocker was test data: the device has one HDMI source and it is 1080p.
+Two facts dissolved it: (a) the deployed `libkvm.so` exports its internal
+`kvm_venc_*` wrappers, so ctypes can drive the vendor `AX_VENC` at ANY
+channel geometry; (b) `AX_VENC` in unlink mode accepts a synthetic YUYV frame
+from an `AX_POOL` block (`u32BlkId` must be a real pool block — `BlkId=0` is
+accepted-then-dropped, `Fail2` counter; `0xFFFFFFFF` is refused NOT_PERM at
+send). `docs/reference/vcenc-open/geom-probe/venc_geom_probe.py` encodes 6
+frames at a chosen WxH and dumps the live cmdbuf WREG programs (all 511 regs,
+IDR + P) from the `venc_ko` CMM pool. Run at **17 geometries** (640×480 →
+1920×1200, including the full partial-macroblock width sweep 1360..1374).
+An EDID-forcing detour (write a 720p-only EDID via the writable
+`/proc/lt6911_info/edid` — SPI-flash program + verify + auto chip restart,
+the vendor UI's own switch path) was proven to work chip-side but the
+attached gamescope HTPC pins its output mode regardless of EDID identity,
+even across an ATX-reset reboot; stock E54 EDID restored, byte-verified.
+
+**Laws recovered (all 17/17 exact; `vcenc_geom.h` header comment is the
+reference).** Highlights: `sw5` packs `align16(W)/2` and `align16(H)+3`;
+`sw9 = 2WH+0xffd8`; the sw208–213/237 "frame dimension band" resolves to
+whole-MB + partial-px fields (`sw210`) and a `ceil(mbw/4)*16` pitch
+(`sw212/213/237` hi16); `sw134 = floor(2^28/(Wp·Hp))`; `sw245/246` are
+reciprocals of mbw at 2^16/2^18 precision; `sw193` carries **crop flags**
+(`|0x40` when `align16(W)-W >= 8`, `|0x10` for the H analog); `sw38` is
+`W*64` plus small partial-dim fixups. **Two of gen_idr.py's 1080p-derived
+"laws" were coincidences**: `sw2` lo16 is a constant 240 (not `2*mbw`) and
+`sw237` lo16 a constant 0x44 (not `mbh` — 68 == 0x44 at 1080p, pure luck).
+Buffer sizing laws: recon dims pad W to 4 MBs and H to 64 (`Wp×Hp`); luma
+pitch `Wp·Hp + align4k(16 B/MB)`, chroma `align4k(Wp·Hp/2)`, `sw239` class
+1 B/MB, `sw62 = sw60 + align64(MBs/2)`, `sw46` a constant 0x12000; where the
+vendor's packing fit no closed form (`sw60`, `sw10` classes) our floorplan
+uses a proven upper bound (vendor pitch ≤ bound at all 17 points; the vendor
+packs the next buffer at the pitch, so HW write extent ≤ pitch always).
+
+**Stride discovery — capture assumption A2 RESOLVED (was wrong).** A
+1366-wide encode filled at a 1376-px stride came out sheared by exactly
+10 px/row: the VC8000E reads input lines packed at the **true width**, and
+the vendor MPI likewise programs `nWidthStride = w` everywhere. Capture's
+`KVM_GEOM_STRIDE_ALIGN` is now 2 (stride == width); `sw261` hi16 is the
+CODED width `align16(W)`, not an input stride. Refilled at width, 1366×768
+decodes clean.
+
+**Proof.** Host: `nix build .#checks.<sys>.open-venc-geometry` — golden
+vectors for all 17 vendor geometries (auto-generated, no transcription) +
+bit-identity of the builder vs `img_qp32` at 1080p for every non-address
+register + envelope. Hardware (open driver, `ax_venc/ax_jenc` removed):
+`ewl_encode <out> 20 8 yuyv WxH` passed **20/20 frames at 1920×1080,
+1280×720, 1366×768, 800×600 and 1920×1200**, every stream decoding to a
+pixel-perfect moving test card (P-frames ~100–160 B). Live path: openvenc
+libkvm deployed → wss `h264-direct` streamed the real host desktop at
+1920×1080 with **0 libax mappings**, MJPEG ~9.5 fps; SPS now emits proper
+right-crop and a computed `level_idc` (1080p60 = L4.2, was hardcoded L4.0).
+Vendor deployment restored after the session.
+
+**What #17 still needs before openvenc can be the shipped default:** one
+hardware bring-up of the (already parametric, identity-tested) open CAPTURE
+at a real non-1080p source — the encoder can be fed synthetically but VIN
+cannot. The suspects list is unchanged (os_mem flag byte `0xf0` vs the
+Stage-3 `0x70` at 720p H.264 = suspect #1, `nr54` partition_info = #2); the
+stride suspect is retired (resolved above, in capture's favor). Needs a
+human: set the HTPC to 720p output (gamescope ignores EDID) or attach any
+non-1080p source; then watch `[openkvm] capture up WxH` + a clean stream.

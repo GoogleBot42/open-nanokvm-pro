@@ -211,6 +211,9 @@
         # Host-side 1080p byte-identity proof for the open backend's parametric
         # geometry (#17). See pkgs/kvm-encoder-geom-test.nix.
         kvm-encoder-geom-test = callPkg ./pkgs/kvm-encoder-geom-test.nix { };
+        # Host-side geometry-law proof for the open ENCODER (#17): 17 golden
+        # vendor vectors + 1080p template identity. See pkgs/vcenc-geom-test.nix.
+        vcenc-geom-test = callPkg ./pkgs/vcenc-geom-test.nix { };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
 
@@ -279,6 +282,7 @@
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
+            vcenc-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-rootfs firmware-image sd-image
@@ -291,6 +295,7 @@
         #   nix build .#checks.x86_64-linux.open-capture-geometry -L
         checks = {
           open-capture-geometry = kvm-encoder-geom-test;
+          open-venc-geometry = vcenc-geom-test;
         };
 
         # `nix run .#axdl -- --file result/*.axp --wait-for-device`

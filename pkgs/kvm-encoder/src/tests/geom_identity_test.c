@@ -229,16 +229,19 @@ static void test_720p_vectors(void)
     chk_mem("dev_attr non-geometry bytes", a, b, sizeof a);
 }
 
-/* 1366x768 is the one common HDMI mode whose width is not 16-px aligned. */
+/* 1366x768 is the one common HDMI mode whose width is not 16-px aligned.
+ * Stride == width (align 2): hardware-proven 2026-08-31 -- the VC8000E reads
+ * input lines packed at the true width (a 1376-stride fill sheared 10 px/row)
+ * and the vendor MPI programs nWidthStride = w. */
 static void test_stride_padding(void)
 {
     kvm_geom g;
-    printf("\n[1366x768 -- the only standard mode that needs stride padding]\n");
+    printf("\n[1366x768 -- the only standard mode with a non-16-aligned width]\n");
     if (kvm_geom_build(&g, 1366, 768) != 0) { printf("  FAIL  1366x768 rejected\n"); failures++; return; }
-    chk_u64("stride padded to 16 px", (uint64_t)g.stride, 1376);
+    chk_u64("stride == width",        (uint64_t)g.stride, 1366);
     chk_u64("nr48 width @0x08",       u32le(g.chn_attr, 0x08), 1366);
-    chk_u64("nr48 stride@0x10",       u32le(g.chn_attr, 0x10), 1376);
-    chk_u64("BlkSize uses stride",    g.blk_size, 1376u * 768u * 2u);
+    chk_u64("nr48 stride@0x10",       u32le(g.chn_attr, 0x10), 1366);
+    chk_u64("BlkSize uses stride",    g.blk_size, 1366u * 768u * 2u);
 }
 
 static void expect(int w, int h, int want_ok)

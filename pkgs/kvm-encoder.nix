@@ -17,9 +17,9 @@
 #           libax_* leaves the process. Needs ax630c_venc_vcmd.ko loaded
 #           instead of ax_venc.ko/ax_jenc.ko on the device. MJPEG is a
 #           from-source SOFTWARE JPEG (#51): libjpeg-turbo raw-4:2:2 encode
-#           of the mapped YUYV capture frame, no hardware. v1 limits:
-#           1080p-only H.264, fixed QP (bitrate knobs accepted+ignored;
-#           gop honored).
+#           of the mapped YUYV capture frame, no hardware. H.264 geometry is
+#           parametric (#17: vcenc_geom laws, 64x64..1920x1200 even dims).
+#           v1 limit: fixed QP (bitrate knobs accepted+ignored; gop honored).
 
 # ---------------------------------------------------------------------------
 # libkvm.so -- our REAL open capture + hardware-encode backend for the AX630C.

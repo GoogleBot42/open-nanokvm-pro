@@ -56,6 +56,7 @@
 #include <string.h>
 #include "vcmd_abi.h"
 #include "vcenc_cmdbuf.h"
+#include "vcenc_geom.h"
 #include "img_qp32_payload.h"
 
 #define ENC_CMDBUF_WORDS   570
@@ -63,52 +64,22 @@
 #define ENC_BULK_NREGS     511
 #define ENC_SECBANK_2800   0x44u
 
-/* Captured-layout geometry, shared by every open-EWL consumer (the ewl_encode
- * test tool and libkvm's KVM_OPEN_VENC backend). The whole captured buffer
- * layout is allocated as ONE block and every address register relocated by
- * (block_bus - ENC_LAYOUT_BASE); the sub-page offsets in swreg8/10 survive
- * because both the allocator and the captured bases are page-aligned. */
-#define ENC_LAYOUT_BASE   0x73c45000u  /* min captured address reg (sw12) */
-#define ENC_LAYOUT_SPAN   0x02b00000u  /* to max reg base (sw27) + 4MB slack */
-#define ENC_OUT_PAGE_OFF  ((0x749ce028u & ~0xfffu) - ENC_LAYOUT_BASE) /* sw8 page */
-#define ENC_STREAM_SUBOFF (0x749ce028u & 0xfffu)  /* HW start code in that page */
-#define ENC_OUT_LIMIT     0x004047d8u  /* programmed swreg9 output byte limit */
-#define ENC_WIDTH         1920u        /* the register program is 1080p-only */
-#define ENC_HEIGHT        1080u
+/* The buffer layout is a COMPUTED floorplan (vcenc_geom.h) in one framebuf
+ * block; every address register is written as block_base + geom offset. The
+ * device-proven program carries three sub-page offsets, preserved here. */
+#define ENC_STREAM_SUBOFF 0x028u       /* sw8: HW start code in the out page */
+#define ENC_S10_SUBOFF    0x008u       /* sw10 side-buffer write pointer     */
+#define ENC_S27_SUBOFF    0x300u       /* sw27 (captured; content-zero OK)   */
 #define ENC_QP_FIXED      32u          /* the img_qp32 program's sw7 QP */
 
-/* Frame-type register values (captured; see header comment). */
-#define ENC_SW5_IDR        0x3c044302u
-#define ENC_SW5_P          0x3c044300u
+/* Frame-type register values (captured; see header comment). swreg5 itself
+ * is geometry-dependent (vcenc_geom.sw5) with type bits |0x02 IDR / |0 P. */
 #define ENC_SW17_P         0xffd0007cu   /* keeps the 0x30 format bits */
 #define ENC_SW170_P        0x00199a00u
 #define ENC_SW171_P        0x00287a00u
 #define ENC_SW173_P        0x0000066au
 #define ENC_SW191_P        0x04000000u
 #define ENC_SW193_P        0x00200119u
-
-/* Per-run DMA address registers to relocate. All are addresses EXCEPT
- * swreg9 (output byte-limit, kept as-is). Zero-valued entries (the
- * reference regs at an IDR) are left at 0. */
-static const int ENC_KEEP_ADDR[] = {8,10,12,13,14,15,16,18,19,27,46,
-				    60,62,64,66,72,74,114,239,241};
-#define ENC_KEEP_ADDR_N ((int)(sizeof(ENC_KEEP_ADDR)/sizeof(ENC_KEEP_ADDR[0])))
-
-/* Double-buffered per-frame banks (captured-layout addresses; relocated with
- * everything else). Bank A = what the frame-0 img_qp32 program uses. */
-struct enc_ppreg { int cur, ref; uint32_t a, b; };
-static const struct enc_ppreg ENC_PP[] = {
-	{ 15, 18, 0x74de5000u, 0x75003000u },  /* recon luma */
-	{ 16, 19, 0x75221000u, 0x75320000u },  /* recon chroma */
-	{ 60, 64, 0x75429000u, 0x7542f000u },  /* aux recon (compressed-ref class) */
-	{ 62, 66, 0x7542a000u, 0x75430000u },
-	{ 72, 74, 0x74fe3000u, 0x75201000u },  /* aux (colmv class) */
-};
-#define ENC_PP_N ((int)(sizeof(ENC_PP)/sizeof(ENC_PP[0])))
-#define ENC_SW114_A 0x75435000u
-#define ENC_SW114_B 0x75436000u
-#define ENC_SW239_EVEN 0x75427000u  /* 241 = previous frame's 239 */
-#define ENC_SW239_ODD  0x75425000u
 
 /* Optional warmed-up inter-state fallback (captured f1 values; off by
  * default -- the fixed-QP program zeroes these and the primary hypothesis
@@ -124,23 +95,24 @@ struct vcenc_frame {
 	uint32_t qp;         /* per-frame QP seam (#46); must be 32 for now */
 	uint32_t p17;        /* sw17 P value (0 => ENC_SW17_P) */
 	int      pinter;     /* 1 => replay ENC_PINTER for P frames */
-	uint32_t input_phys; /* 0 => the relocated layout's own input region;
-	                      * else an absolute bus address of a packed-YUYV
-	                      * 1080p frame (e.g. straight out of the capture
-	                      * pool -- zero-copy). Page alignment not required;
-	                      * sw13/14 keep their captured relative offsets. */
+	uint32_t input_phys; /* 0 => the floorplan's own input region; else an
+	                      * absolute bus address of a packed-YUYV frame at
+	                      * the geom's size/stride (e.g. straight out of the
+	                      * capture pool -- zero-copy). Page alignment not
+	                      * required; sw13/14 = +2WH / +3WH. */
 };
 
 /*
  * Build one frame's encode cmdbuf into `buf`.
  *   buf            : cmdbuf slot (cmd_pool + id*0x2000), >= 0x8e8 bytes
- *   delta          : added to every nonzero ENC_KEEP_ADDR register
- *                    (page-aligned, preserving sub-page offsets in swreg8/10)
+ *   base           : bus address of the framebuf block holding g's floorplan
+ *   g              : geometry (register laws + floorplan offsets)
  *   core_status_dst: hw/bus addr where the RREG(512,0x1000) readback lands
  *   fr             : frame parameters (frame_num selects IDR/P + bank parity)
  * Returns the cmdbuf byte size, or 0 on unsupported parameters.
  */
-static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t delta,
+static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t base,
+						 const vcenc_geom *g,
 						 uint64_t core_status_dst,
 						 const struct vcenc_frame *fr)
 {
@@ -164,47 +136,72 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t delta,
 		buf[w++] = img_qp32[i];
 	sw1 = buf + 5;
 
+	/* geometry-law registers (identical to the template at 1920x1080;
+	 * see vcenc_geom.h for the per-field derivations) */
+	sw1[5 - 1]   = g->sw5 | 0x02u;         /* IDR type bits; kick adds |1 */
+	sw1[9 - 1]   = g->sw9;
+	sw1[38 - 1]  = g->sw38;
+	sw1[105 - 1] = g->targetpicsize;
+	sw1[106 - 1] = g->targetpicsize;
+	sw1[107 - 1] = g->targetpicsize;
+	sw1[134 - 1] = g->sw134;
+	sw1[193 - 1] = g->sw193_idr;
+	sw1[210 - 1] = g->sw210;
+	sw1[212 - 1] = g->sw212;
+	sw1[213 - 1] = g->sw213;
+	sw1[237 - 1] = g->sw237;
+	sw1[245 - 1] = g->sw245;
+	sw1[246 - 1] = g->sw246;
+	sw1[261 - 1] = g->sw261;
+
 	/* frame_num / POC (slice-header inputs; u(16) in our SPS) */
 	sw1[11 - 1]  = fr->frame_num & 0xffffu;
 	sw1[192 - 1] = fr->frame_num & 0xffffu;
 
+	/* DMA addresses from the computed floorplan */
+	sw1[8 - 1]  = base + g->off_out + ENC_STREAM_SUBOFF;
+	sw1[10 - 1] = base + g->off_s10 + ENC_S10_SUBOFF;
+	sw1[27 - 1] = base + g->off_s27 + ENC_S27_SUBOFF;
+	sw1[46 - 1] = base + g->off_s46;
+	sw1[15 - 1] = base + g->off_luma[parity];
+	sw1[16 - 1] = base + g->off_chroma[parity];
+	sw1[60 - 1] = base + g->off_s60[parity];
+	sw1[62 - 1] = base + g->off_s60[parity] + g->s62off;
+	sw1[72 - 1] = base + g->off_s72[parity];
+	sw1[114 - 1] = base + g->off_s114[parity];
+	sw1[239 - 1] = base + g->off_s239[parity];
+	sw1[241 - 1] = base + g->off_s239[!parity];
+
 	if (!is_idr) {
 		/* frame-type constants */
-		sw1[5 - 1]   = ENC_SW5_P;
+		sw1[5 - 1]   = g->sw5;         /* P type bits are 0 */
 		sw1[17 - 1]  = fr->p17 ? fr->p17 : ENC_SW17_P;
 		sw1[170 - 1] = ENC_SW170_P;
 		sw1[171 - 1] = ENC_SW171_P;
 		sw1[173 - 1] = ENC_SW173_P;
 		sw1[191 - 1] = ENC_SW191_P;
-		sw1[193 - 1] = ENC_SW193_P;
-		/* current/reference bank selection */
-		for (i = 0; i < ENC_PP_N; i++) {
-			sw1[ENC_PP[i].cur - 1] = parity ? ENC_PP[i].b : ENC_PP[i].a;
-			sw1[ENC_PP[i].ref - 1] = parity ? ENC_PP[i].a : ENC_PP[i].b;
-		}
+		sw1[193 - 1] = g->sw193_p;
+		/* reference (L0[0]) = the other bank = previous frame's recon;
+		 * at an IDR these stay 0 (template default, device-proven) */
+		sw1[18 - 1] = base + g->off_luma[!parity];
+		sw1[19 - 1] = base + g->off_chroma[!parity];
+		sw1[64 - 1] = base + g->off_s60[!parity];
+		sw1[66 - 1] = base + g->off_s60[!parity] + g->s62off;
+		sw1[74 - 1] = base + g->off_s72[!parity];
 		if (fr->pinter)
 			for (i = 0; i < ENC_PINTER_N; i++)
 				sw1[ENC_PINTER[i].reg - 1] = ENC_PINTER[i].val;
 	}
-	/* per-frame scratch + swapped pair (also alternate at IDR parity) */
-	sw1[114 - 1] = parity ? ENC_SW114_B : ENC_SW114_A;
-	sw1[239 - 1] = parity ? ENC_SW239_ODD  : ENC_SW239_EVEN;
-	sw1[241 - 1] = parity ? ENC_SW239_EVEN : ENC_SW239_ODD;
 
-	/* relocate the nonzero address registers */
-	for (i = 0; i < ENC_KEEP_ADDR_N; i++) {
-		int k = ENC_KEEP_ADDR[i];
-		if (sw1[k - 1])
-			sw1[k - 1] += delta;
-	}
-
-	/* external input frame: absolute bus address, sw13/14 mirroring the
-	 * captured relative offsets (sw13-sw12 = 2*W*H exactly, sw14 = sw13 +
-	 * W*H; packed YUYV ignores the chroma bases but the regs must be sane) */
-	if (fr->input_phys) {
-		sw1[12 - 1] = fr->input_phys;
-		sw1[13 - 1] = fr->input_phys + 0x3f4800u;
-		sw1[14 - 1] = fr->input_phys + 0x3f4800u + 0x1fa400u;
+	/* input frame: external bus address (zero-copy from the capture pool)
+	 * or the floorplan's own input region; sw13 = +2WH, sw14 = +3WH
+	 * (packed YUYV ignores the chroma bases but the regs must be sane) */
+	{
+		uint32_t in = fr->input_phys ? fr->input_phys
+		                             : base + g->off_in;
+		sw1[12 - 1] = in;
+		sw1[13 - 1] = in + 2u * g->w * g->h;
+		sw1[14 - 1] = in + 3u * g->w * g->h;
 	}
 
 	/* secondary bank @0x2800 = 0x44 (undecoded; replayed) */

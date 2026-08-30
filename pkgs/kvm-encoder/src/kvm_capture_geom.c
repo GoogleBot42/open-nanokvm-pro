@@ -40,7 +40,8 @@
  *       kernel struct reorders enough that @0xdc cannot be matched to it by
  *       offset arithmetic. Handing the encoder u32PicStride = width is
  *       separately device-confirmed (Stage 6: the H.264 is not sheared).
- *   A2. Stride is padded up to KVM_GEOM_STRIDE_ALIGN pixels (see the header).
+ *   A2. RESOLVED 2026-08-31: stride == width (align 2), hardware-proven --
+ *       see KVM_GEOM_STRIDE_ALIGN in the header.
  *   A3. CreatePipe (nr35) genuinely has no stride field: the captured bytes at
  *       @0x24 are ZERO for nr35 while nr42's are 0x780, i.e. the vendor sends
  *       a shorter effective struct for create. We reproduce that exactly.
@@ -204,10 +205,9 @@ int kvm_geom_build(kvm_geom *g, int w, int h)
     memset(g, 0, sizeof(*g));
     if (kvm_geom_check(w, h, NULL) != 0) return -1;
 
-    /* Assumption A2 (see the file header): pad the line stride up. This is a
-     * no-op at 1920 and at every other standard width except 1366 -> 1376.
-     * If a non-1080p bring-up ever produces sheared/garbage frames, the first
-     * experiment is KVM_GEOM_STRIDE_ALIGN = 2 (stride == width). */
+    /* Stride == width for every even width (align 2, hardware-proven -- see
+     * KVM_GEOM_STRIDE_ALIGN in the header). Formerly assumption A2 (align 16),
+     * falsified 2026-08-31: the encoder reads lines packed at the true width. */
     int stride = align_up_i(w, KVM_GEOM_STRIDE_ALIGN);
 
     g->w = w; g->h = h; g->stride = stride;

@@ -31,9 +31,10 @@
  *
  * v1 LIMITS (fixed-QP stage; the #46 seams -- per-frame QP input and
  * per-frame emitted-size readback -- are already in the builder API):
- *  - H.264: 1920x1080 only; the register program is 1080p-specific. Other
- *    source geometries fail create until the geometry registers are derived.
- *    (MJPEG is parametric already.)
+ *  - H.264 geometry: parametric (#17) over the capture envelope
+ *    (64x64..1920x1200, even dims) via the vcenc_geom register laws +
+ *    computed floorplan (derived from a 17-geometry vendor differential,
+ *    docs/reference/vcenc-open/geom-probe/).
  *  - Rate control: fixed QP32. fps/bitrate/rc-mode knobs are accepted and
  *    ignored (quality-priority mode); gop is honored (IDR period).
  *
@@ -73,9 +74,9 @@ static struct {
     uint32_t *cmd_pool;
     uint8_t  *status_pool;
     struct cmdbuf_mem_parameter mem;
-    uint64_t fb_bus;             /* framebuf block (relocated layout) */
+    uint64_t fb_bus;             /* framebuf block (computed floorplan) */
     uint8_t  *fb_map;
-    uint32_t delta;              /* fb_bus - ENC_LAYOUT_BASE */
+    vcenc_geom g;                /* session geometry (#17) */
     uint32_t gop;                /* IDR period; 0 = IDR only at start */
     uint32_t n;                  /* session frame counter */
     int      stride_warned;
@@ -231,7 +232,7 @@ static int mj_send(AX_VIDEO_FRAME_INFO_T *frame)
 
 static void venc_open_down(void)
 {
-    if (V.fb_map)      { munmap(V.fb_map, ENC_LAYOUT_SPAN); V.fb_map = NULL; }
+    if (V.fb_map)      { munmap(V.fb_map, V.g.span); V.fb_map = NULL; }
     if (V.cmd_pool)    { munmap(V.cmd_pool, V.mem.cmd_total_size); V.cmd_pool = NULL; }
     if (V.status_pool) { munmap(V.status_pool, V.mem.status_total_size); V.status_pool = NULL; }
     if (V.fd >= 0)     { close(V.fd); V.fd = -1; }   /* framebuf freed on close */
@@ -250,10 +251,13 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
         fprintf(stderr, "[openvenc][FAIL] payload type %d unsupported\n", (int)type);
         return -1;
     }
-    if ((uint32_t)w != ENC_WIDTH || (uint32_t)h != ENC_HEIGHT) {
-        fprintf(stderr, "[openvenc][FAIL] %dx%d unsupported (register program "
-                        "is 1080p-only for now)\n", w, h);
-        return -1;
+    {
+        const char *why;
+        if (vcenc_geom_check(w, h, &why) || vcenc_geom_build(&V.g, w, h)) {
+            fprintf(stderr, "[openvenc][FAIL] %dx%d unsupported (%s)\n",
+                    w, h, why ? why : "geometry");
+            return -1;
+        }
     }
 
     V.fd = open(VCMD_DEV_NODE, O_RDWR);
@@ -278,15 +282,14 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
         goto fail;
     }
 
-    struct framebuf_parameter fbp = { .size = ENC_LAYOUT_SPAN };
+    struct framebuf_parameter fbp = { .size = V.g.span };
     if (ioctl(V.fd, HANTRO_IOCH_ALLOC_FRAMEBUF, &fbp) < 0) goto fail;
     V.fb_bus = fbp.bus_addr;
-    V.delta  = (uint32_t)(fbp.bus_addr - ENC_LAYOUT_BASE);
-    V.fb_map = mmap(NULL, ENC_LAYOUT_SPAN, PROT_READ | PROT_WRITE,
+    V.fb_map = mmap(NULL, V.g.span, PROT_READ | PROT_WRITE,
                     MAP_SHARED, V.fd, (off_t)fbp.bus_addr);
     if (V.fb_map == MAP_FAILED) { V.fb_map = NULL; goto fail; }
 
-    V.pack = malloc(ENC_OUT_LIMIT + 256);   /* SPS+PPS headroom over the HW limit */
+    V.pack = malloc(V.g.out_limit + 256);   /* SPS+PPS headroom over the HW limit */
     if (!V.pack) goto fail;
 
     V.gop = (gop > 0 && gop <= 1024) ? (uint32_t)gop : 30;
@@ -294,10 +297,10 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     V.chn = chn;
     V.pack_ready = 0;
     V.stride_warned = 0;
-    fprintf(stderr, "[openvenc] up: hwid=0x%08x framebuf 0x%llx+0x%x (delta 0x%x) "
+    fprintf(stderr, "[openvenc] up: hwid=0x%08x %ux%u framebuf 0x%llx+0x%x "
                     "fixed-QP%u gop=%u qlty-req=%d (ignored)\n",
-            cfg.vcmd_hw_version_id, (unsigned long long)V.fb_bus,
-            ENC_LAYOUT_SPAN, V.delta, ENC_QP_FIXED, V.gop, qlty);
+            cfg.vcmd_hw_version_id, V.g.w, V.g.h,
+            (unsigned long long)V.fb_bus, V.g.span, ENC_QP_FIXED, V.gop, qlty);
     return 0;
 fail:
     fprintf(stderr, "[openvenc][FAIL] session bring-up: %s\n", strerror(errno));
@@ -320,11 +323,12 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     if (V.fd < 0 || chn != V.chn) return -1;
     AX_VIDEO_FRAME_T *vf = &frame->stVFrame;
     if (!vf->u64PhyAddr[0]) return -1;
-    if (vf->u32PicStride[0] && vf->u32PicStride[0] != ENC_WIDTH && !V.stride_warned) {
-        /* the register program bakes the 1920-px stride; a mismatched frame
-         * would encode sheared -- refuse loudly, once per session */
+    if (vf->u32PicStride[0] && vf->u32PicStride[0] != V.g.stride && !V.stride_warned) {
+        /* the register program's input stride is align16(w) px == the open
+         * capture stride; a mismatched frame would encode sheared -- refuse
+         * loudly, once per session */
         fprintf(stderr, "[openvenc][FAIL] frame stride %u != %u\n",
-                vf->u32PicStride[0], ENC_WIDTH);
+                vf->u32PicStride[0], V.g.stride);
         V.stride_warned = 1;
         return -1;
     }
@@ -348,7 +352,8 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
         .input_phys = (uint32_t)vf->u64PhyAddr[0],
     };
     uint32_t *slot = V.cmd_pool + (uint32_t)id * (V.mem.cmd_unit_size / 4);
-    ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, V.delta, core_dst, &fr);
+    ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, (uint32_t)V.fb_bus, &V.g,
+                                               core_dst, &fr);
     ex.numa_id = 0;
 
     int rc = -1;
@@ -359,7 +364,7 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     volatile uint32_t *rr = (volatile uint32_t *)
         (V.status_pool + STATUS_SLOT_REG_OFF(id, 0));
     uint32_t bytes = rr[9], cycles = rr[82];
-    if (wid != CMDBUF_EXE_STATUS_OK || !cycles || !bytes || bytes > ENC_OUT_LIMIT) {
+    if (wid != CMDBUF_EXE_STATUS_OK || !cycles || !bytes || bytes > V.g.out_limit) {
         fprintf(stderr, "[openvenc][FAIL] frame %u: wait=%u bytes=%u cycles=%u\n",
                 V.n, wid, bytes, cycles);
         goto out;
@@ -371,7 +376,7 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     uint32_t off = 0;
     V.nalu_num = 0;
     if (is_idr) {
-        uint32_t sps = vcenc_write_sps(V.pack, ENC_WIDTH, ENC_HEIGHT);
+        uint32_t sps = vcenc_write_sps(V.pack, V.g.w, V.g.h);
         uint32_t pps = vcenc_write_pps(V.pack + sps, ENC_QP_FIXED);
         V.nalu[0] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = 0, .u32NaluLength = sps };
         V.nalu[0].unNaluType.enH264EType = AX_H264E_NALU_SPS;
@@ -380,7 +385,7 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
         off = sps + pps;
         V.nalu_num = 2;
     }
-    volatile uint8_t *sb = (volatile uint8_t *)V.fb_map + ENC_OUT_PAGE_OFF
+    volatile uint8_t *sb = (volatile uint8_t *)V.fb_map + V.g.off_out
                          + ENC_STREAM_SUBOFF;
     for (uint32_t i = 0; i < bytes; i++) V.pack[off + i] = sb[i];
     V.nalu[V.nalu_num] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = off,

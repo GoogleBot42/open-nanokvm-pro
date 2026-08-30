@@ -45,14 +45,14 @@
 #define KVM_GEOM_W_ALIGN  2   /* hard: one YUYV macropixel is 2 px            */
 #define KVM_GEOM_H_ALIGN  2   /* hard: progressive frame, 2-line chroma pair  */
 
-/* Line-stride alignment, in PIXELS (x2 for bytes). ASSUMPTION -- the RE record
- * never captured a non-1080p bring-up, so no measured alignment rule exists.
- * 16 px = 32 B is the AX DMA/VENC habit (VENC macroblocks are 16 px; AX buffer
- * helpers align strides to 32 B) and is a NO-OP for every standard HDMI width
- * we can receive except 1366 (-> 1376). Padding up can only ever make the pool
- * block larger than the hardware needs; an under-aligned stride could make the
- * VIN DMA round up internally and write past the end of a block. */
-#define KVM_GEOM_STRIDE_ALIGN 16
+/* Line-stride alignment, in PIXELS (x2 for bytes). Was 16 (assumption A2);
+ * set to 2 on hardware evidence (2026-08-31, #17): the VC8000E reads input
+ * lines packed at the TRUE width -- a 1366-wide encode filled at a 1376-px
+ * stride came out sheared by exactly 10 px/row through the open encoder, and
+ * the vendor-MPI backend likewise programs nWidthStride = w (kvm_pipeline.c)
+ * for every VIN stage. Stride == width for every even width; the align-2
+ * floor is the YUYV macropixel. */
+#define KVM_GEOM_STRIDE_ALIGN 2
 
 /* Everything a bring-up needs that depends on {w,h}. */
 typedef struct {
