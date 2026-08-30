@@ -2741,3 +2741,49 @@ bitstream with zero vendor code in the encode path.
    a from-source allocator (the other half of #45's title). The driver already
    maps coherent memory writecombine; a small alloc ioctl over an enlarged
    carveout is the clean path.
+
+### 2026-08-30 (Stage C) — fully decodable blob-free stream + input pixel format RESOLVED
+
+Refinements 1 and 2 above are done, device-proven. `ewl_encode` now emits a
+complete `.h264` (SPS+PPS+IDR) that **ffmpeg decodes with zero errors** — the
+definitive host-decoder proof of the blob-free encode path.
+
+**From-source SPS/PPS (`pkgs/vcenc-ewl/vcenc_header.h`).** The HW emits slice
+NALs only, and the SPS fields must agree with the slice-header bit layout the
+core writes. Those were pinned by parsing our own Stage B IDR slice bit-by-bit:
+after `first_mb_in_slice=0, slice_type=I, pps_id=0` the layout fits exactly one
+clean interpretation — `frame_num` u(16) (so `log2_max_frame_num_minus4=12`),
+`idr_pic_id=1`, `pic_order_cnt_type=0` with `pic_order_cnt_lsb` u(16),
+`slice_qp_delta=0` (SliceQP = PPS `pic_init_qp` = the register program's sw7),
+deblocking-control-present with a zero-offset header, then two CABAC alignment
+ones landing precisely on a byte boundary. Confirmation: our PPS writer
+regenerates the vendor-captured QP32 PPS RBSP (`ee 06 72`) **byte-identically**;
+ffmpeg reports Main@L4.0 1920×1080 and decodes clean. Syntax is written straight
+from ITU-T H.264 §7.3.2; parameters come from our own device observation.
+
+**swreg9 semantics fix.** `swreg9` counts stream bytes from the stream base —
+buffer offset 0x28 (`swreg8 & 0xfff`), where the HW writes the 4-byte start
+code — not from the buffer base. Stage B's original file write measured from the
+scan hit at +0x29 and so dropped the last 40 bytes, which showed up as an ffmpeg
+"error while decoding MB 96 67, bytestream -5" ~150 MBs before the end. Copying
+`[0x28, 0x28+swreg9)` decodes with no errors.
+
+**Input pixel format = packed YUYV 4:2:2 (2 B/px), sw17=0x30's "NV12" label
+refuted.** Three test-card encodes in one run (`ewl_encode` pattern modes), same
+register program, only the input fill differing:
+
+| hypothesis | fill at sw12 | NAL bytes | decode |
+|---|---|---|---|
+| `yuyv` | packed [Y U Y V], 2 B/px | 730 | **the exact test card, pixel-perfect** (8 gray bars 16→233, white 100×100 TL, black 100×100 BR, neutral chroma, correct orientation/stride) |
+| `nv12` | planar Y + CbCr at sw13 | 1639 | packed-422 aliasing signature: top half green/pink (chroma decoded from luma bytes), bottom half gray (the 0x80 fill) |
+| `gradient` | byte gradient | 21970 | structured noise (as before) |
+
+The plane geometry already said this: sw13−sw12 = 0x3f4800 = **2·W·H** exactly
+(and sw14−sw13 = W·H) — the "Y plane" is the whole 2 B/px packed buffer; packed
+modes ignore the Cb/Cr base registers. It also closes the pipeline loop: open
+capture reads **YUYV** out of the CMM pool (Stage 6), so the encoder consumes
+capture output directly — no format conversion sits between them.
+
+Per policy the `.h264`/`.png` artifacts are not committed (the test-card decodes
+are synthetic, but the rule stays uniform); the code + this record re-derive
+everything. Remaining for #45: refinement 3, the from-source CMM allocator.

@@ -22,7 +22,15 @@
  * format, which the RE records leave unresolved -- that is refinement, not this
  * milestone. The synthetic input here just gives the core something to encode.
  *
- * Usage: ewl_encode [out.h264]
+ * Usage: ewl_encode [out.h264] [gradient|yuyv|nv12]
+ *
+ * The pattern modes settle the input-pixel-format question: a recognizable
+ * luma test card (8 vertical bars, white top-left corner square, black
+ * bottom-right corner square) is laid out under each format hypothesis;
+ * whichever decodes into the clean card is the real input format.
+ *   yuyv: packed 4:2:2 [Y U Y V] at sw12, 2 B/px (matches the sw13-sw12 plane
+ *         size 0x3f4800 = 2*W*H exactly; packed modes ignore sw13/sw14)
+ *   nv12: planar Y at sw12 + interleaved CbCr at sw13
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +45,7 @@
 #include "vcmd_abi.h"
 #include "vcenc_cmdbuf.h"
 #include "vcenc_encode.h"
+#include "vcenc_header.h"
 
 /* Buffer relocation: place the captured buffer layout in spare CMM by adding a
  * fixed page-aligned delta. Userspace only touches the INPUT (fill) and OUTPUT
@@ -53,6 +62,11 @@
 #define OUT_BASE   ((0x749ce028u & ~0xfffu) + BUF_DELTA)   /* relocated swreg8 base */
 #define OUT_MAP_LEN 0x00500000u                            /* 5MB, covers sw9 limit */
 #define OUT_LIMIT  0x004047d8u                             /* swreg9 */
+#define STREAM_OFF (0x749ce028u & 0xfffu)                  /* stream start in the mapped page */
+
+#define ENC_QP     32u                                     /* the img_qp32 program's sw7 QP */
+#define ENC_W      1920u
+#define ENC_H      1080u
 
 /* NOTE: /dev/mem O_SYNC gives Device memory -- libc memset (DC ZVA) FAULTS on
  * it. Use only explicit aligned loads/stores on these mappings. */
@@ -78,9 +92,20 @@ static void *map_pool(int fd, uint64_t phys, uint32_t size)
 	return p == MAP_FAILED ? NULL : p;
 }
 
+/* Test-card luma at pixel (x,y): 8 vertical bars 16..233, white 100x100
+ * square top-left, black 100x100 square bottom-right. Orientation- and
+ * stride-sensitive on purpose. */
+static uint8_t card_luma(uint32_t x, uint32_t y)
+{
+	if (x < 100 && y < 100) return 235;
+	if (x >= ENC_W - 100 && y >= ENC_H - 100) return 16;
+	return (uint8_t)(16 + (x / 240) * 31);
+}
+
 int main(int argc, char **argv)
 {
 	const char *outfile = argc > 1 ? argv[1] : NULL;
+	const char *mode = argc > 2 ? argv[2] : "gradient";
 	setvbuf(stdout, NULL, _IONBF, 0);
 
 	int fd = open(VCMD_DEV_NODE, O_RDWR);
@@ -105,12 +130,29 @@ int main(int argc, char **argv)
 	printf("FRAMEBUF: in 0x%08x+0x%x  out 0x%08x+0x%x  (delta 0x%x)\n",
 	       IN_Y_BASE, IN_MAP_LEN, OUT_BASE, OUT_MAP_LEN, BUF_DELTA);
 
-	/* Lay a gradient into the input span (byte stores are Device-mem-safe) so
-	 * the core has non-trivial content to encode. */
+	/* Fill the input under the selected format hypothesis (byte stores are
+	 * Device-mem-safe). Everything beyond the format's own extent gets
+	 * neutral 0x80 so no stale bytes leak into the encode. */
 	uint32_t in_bytes = (IN_END > IN_Y_BASE) ? (IN_END - IN_Y_BASE) : 0;
 	if (in_bytes > IN_MAP_LEN) in_bytes = IN_MAP_LEN;
-	for (uint32_t o = 0; o < in_bytes; o++)
-		in_map[o] = (uint8_t)((o >> 6) ^ (o >> 12));
+	printf("INPUT: %s test pattern\n", mode);
+	if (strcmp(mode, "yuyv") == 0) {
+		/* Packed 4:2:2 [Y U Y V], 2 B/px at sw12. */
+		for (uint32_t o = 0; o < in_bytes; o++) {
+			uint32_t p = o / 2;
+			in_map[o] = (o & 1) ? 0x80
+				: (p < ENC_W * ENC_H ? card_luma(p % ENC_W, p / ENC_W) : 0x80);
+		}
+	} else if (strcmp(mode, "nv12") == 0) {
+		/* Planar Y at sw12; CbCr (at sw13 = sw12 + 0x3f4800) and
+		 * everything else neutral. */
+		for (uint32_t o = 0; o < in_bytes; o++)
+			in_map[o] = o < ENC_W * ENC_H
+				? card_luma(o % ENC_W, o / ENC_W) : 0x80;
+	} else {
+		for (uint32_t o = 0; o < in_bytes; o++)
+			in_map[o] = (uint8_t)((o >> 6) ^ (o >> 12));
+	}
 
 	/* Clear the output region so we can see what the encoder wrote. */
 	dev_clear(out_map, OUT_MAP_LEN);
@@ -167,13 +209,25 @@ int main(int argc, char **argv)
 	int idr = (nut == 5);
 	int ok = (wid == CMDBUF_EXE_STATUS_OK) && ran && nal_ok && idr;
 
-	if (ok && outfile && sc >= 0 && swreg9 <= OUT_MAP_LEN) {
-		/* Write the raw slice NAL from the start code onward. A decodable
-		 * stream needs SPS+PPS prepended (HW emits slice data only) -- that
-		 * is the next refinement; here we save the proven slice. */
+	if (ok && outfile && swreg9 + STREAM_OFF <= OUT_MAP_LEN) {
+		/* Emit a complete decodable stream: from-source SPS+PPS (the HW
+		 * emits slice data only), then the slice -- swreg9 bytes starting
+		 * at the stream base (buffer offset STREAM_OFF, where the HW put
+		 * the 4-byte start code). */
+		uint8_t hdr[128];
+		uint32_t hlen = vcenc_write_sps(hdr, ENC_W, ENC_H);
+		hlen += vcenc_write_pps(hdr + hlen, ENC_QP);
+		uint8_t *slice = malloc(swreg9);
+		volatile uint8_t *sb = (volatile uint8_t *)out_map + STREAM_OFF;
+		for (uint32_t i = 0; i < swreg9; i++) slice[i] = sb[i];
 		FILE *f = fopen(outfile, "wb");
-		if (f) { fwrite(nal + sc, 1, (swreg9 > (uint32_t)sc) ? swreg9 - sc : 0, f);
-			fclose(f); printf("wrote slice NAL to %s\n", outfile); }
+		if (f) {
+			fwrite(hdr, 1, hlen, f);
+			fwrite(slice, 1, swreg9, f);
+			fclose(f);
+			printf("wrote SPS+PPS+IDR stream (%u bytes) to %s\n", hlen + swreg9, outfile);
+		}
+		free(slice);
 	}
 	free(nal);
 
