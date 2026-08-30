@@ -45,7 +45,7 @@ pkgs.stdenv.mkDerivation {
     # Stage A: submission-path prover (register readback).
     ${prefix}cc -static -O2 -Wall -Wextra -std=gnu11 -I. \
       ewl_probe.c -o ewl_probe
-    # Stage B: real 1080p fixed-QP IDR encode.
+    # Multi-frame fixed-QP session driver: 1080p IDR + P frames, GOP loop.
     ${prefix}cc -static -O2 -Wall -std=gnu11 -I. \
       ewl_encode.c -o ewl_encode
     runHook postBuild

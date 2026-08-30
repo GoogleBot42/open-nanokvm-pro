@@ -2816,3 +2816,52 @@ params → framebuf ALLOC + driver mmap → YUYV input fill → RESERVE → from
 570-word cmdbuf (register program + relocation) → LINK → WAIT → readback →
 from-source SPS/PPS + slice → decodable 1080p H.264. Zero vendor code, zero
 vendor kernel modules, zero `/dev/mem`.
+
+### 2026-08-30 — #25: P-frames + GOP sessions through the open path (IPPP device-proven)
+
+`ewl_encode` is now a multi-frame fixed-QP session driver — per-frame cmdbuf
+construction, reference/recon buffer rotation, and optional periodic IDR
+(`ewl_encode out.h264 <nframes> <gop>`). Device-proven on the first attempt:
+a 10-frame IPPP run and a 20-frame GOP-8 run both decode in host ffmpeg with
+zero errors and the exact programmed I/P cadence (ffprobe), the moving test
+card (white square gliding 16px/frame) tracks pixel-perfect across every
+decoded frame — at ~130–270 bytes per P frame that is only possible via real
+motion-compensated prediction against the reconstructed reference, not intra
+coding — and the 1-frame regression stream stays **bit-identical** to Stage D
+(md5-equal to the Stage C/D artifact).
+
+The P-frame register program (`pkgs/vcenc-ewl/vcenc_encode.h`) is derived
+entirely from our own Stage-0 ring captures, unlocked by one decisive
+observation: the fixed-QP program runs with the CBR run's lambda LUTs
+(sw215–223), bit-budget state (sw183, 243/244/247/248, 318) and warmed-up
+inter state (sw111–113, 197/198) **all zero** — so P frames keep them zero
+too, and the overlay reduces to:
+
+- frame-type constants: sw5 `0x3c044300` (kick = value|1), sw17 `0xffd0007c`
+  (keeps the 0x30 format bits), sw170/171/173, sw191 `0x04000000`, sw193
+  `0x00200119` — all identical across the CBR and fixed-QP captures at like
+  frame types, so type- not RC-dependent;
+- sw11/sw192 = frame_num (HW writes slice-header `frame_num` and
+  `pic_order_cnt_lsb` from these; both u(16) in our SPS; reset at each IDR);
+- the double-buffered bank ping-pong pinned by the 7-slot ring, parity =
+  frame_num&1 (bank A = what the frame-0 img_qp32 program uses): current
+  recon sw15/16 vs reference sw18/19 (= previous frame's recon), aux pairs
+  sw60/62 vs sw64/66 and sw72 vs sw74, scratch sw114 alternating, and the
+  sw239/241 pair swapping each frame (241 = previous frame's 239);
+- a GOP-restart IDR is a **plain frame-0 replay** — no warmed-state mimicry
+  (the vendor's mid-session sw17/sw193 variants turned out unnecessary).
+
+Fallback knobs for the two genuinely ambiguous clusters (`EWL_P17`,
+`EWL_PINTER` replaying the captured warmed-up inter state) were built and
+never needed.
+
+#46 seams are in place by construction: QP is a per-frame input to the
+cmdbuf builder (`struct vcenc_frame.qp`) and the emitted frame size (sw9) is
+read back per frame — a rate controller is a module that picks the number.
+Only QP32 has a derived register program so far; `gen_qp28..48.regs` hold
+the evidence for deriving the QP-dependent register set when needed.
+
+Remaining for #25: kvm-app integration — put the open EWL behind the vendor
+venc call sites so the web UI streams through it (then libax_venc/libax_sys/
+libax_proton leave the encode path), with #46 or fixed-QP as the v1 rate
+strategy.
