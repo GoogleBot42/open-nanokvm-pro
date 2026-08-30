@@ -2693,6 +2693,17 @@ It does NOT reach the ISP stack — that has no open lineage to build glue again
 so "expanding the shim" there means writing a full ISP driver blind, which stays
 out of scope.
 
+**Standing direction (Jeremy, 2026-08-30): the end goal is a kernel with ZERO
+vendor blobs — the ISP stack included.** The tractability ordering above still
+governs sequencing, but "keep as blobs" entries are waypoints, not endpoints:
+`ax_proton`/VIN is last-not-never (a from-scratch driver against undocumented
+registers is accepted as eventual work), and the aic8800 WiFi/BT blobs may
+simply be DROPPED rather than replaced — no WiFi ever is an acceptable
+outcome (bears on #28). Consequence for interim work like the #50 fix: open
+code that satisfies a blob's inter-module contract (registration shims, OSAL
+stubs) is scaffolding — each absorbed contract is also a piece of the ABI map
+needed to retire the blob it talks to.
+
 ### 2026-08-30 (later still) — #45 Stage B: a real 1080p IDR driven blob-free through the open path
 
 `pkgs/vcenc-ewl/ewl_encode` drives one fixed-QP(32) 1080p H.264 IDR end-to-end
