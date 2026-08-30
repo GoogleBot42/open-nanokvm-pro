@@ -155,3 +155,24 @@ work). This one does NOT live in the `/kvmapp` trees — no dual-tree dance:
   `docs/architecture.md`) — do not re-investigate this from
   scratch; if it resurfaces, check that the patchelf step ran and that
   `readelf -d libkvm.so` shows `RPATH` (not `RUNPATH`).
+
+# Variant: open-encoder test cycle (vc8000-vcmd + vcenc-ewl)
+
+The iteration loop for open VC8000E encoder work (#25 family) — used
+repeatedly and validated 2026-08-30. This swaps kernel modules, not app
+files, so it is its own cycle:
+
+1. `nix build .#vcenc-ewl .#vc8000-vcmd`
+2. `tools/kvmscp <ewl bin(s)> <.ko> /tmp/`
+3. On the device (one `tools/kvmssh` invocation, so a failure mid-script
+   still leaves you a shell to recover from):
+   `systemctl stop nanokvm && rmmod ax_jenc ax_venc && insmod /tmp/ax630c_venc_vcmd.ko`
+   → run the test binary →
+   `rmmod ax630c_venc_vcmd && insmod /soc/ko/ax_venc.ko && insmod /soc/ko/ax_jenc.ko && systemctl start nanokvm`
+   (separate insmods; ax_jenc depends on ax_venc, so rmmod jenc-first /
+   insmod venc-first).
+4. Pull outputs with `tools/kvmssh 'cat /tmp/out.h264' > local` and verify
+   on the host (`ffmpeg -i out.h264 -frames:v 1 out.png`); never leave the
+   device with nanokvm stopped.
+
+Full bring-up rationale: docs/vcmd-cma-unblock.md ("Bring-up procedure").
