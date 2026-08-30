@@ -156,8 +156,23 @@ for pending/TODO/unverified markers still present in the tree:
   encoder input == open capture output); Stage D added the **from-source CMM
   allocator** (`pkgs/vc8000-vcmd/framebuf_alloc.c`, ioctls 36/37, per-fd ownership)
   and retired `/dev/mem` — allocator run bit-identical to the fixed-address run.
-  Remaining for #25 (see its 2026-08-30 status comment): P-frames through the open
-  path, multi-frame session/GOP loop, kvm-app integration, RC (#46 or fixed-QP v1).
+  **2026-08-30 (same day, later) — P-frames + GOP + kvm-app integration ALL
+  device-proven:** `vcenc_encode.h` is a per-frame builder (Stage-0-derived P
+  overlay + recon/aux ping-pong; GOP restart = plain frame-0 replay; QP is a
+  per-frame input = the #46 seam); 10-frame IPPP and 20-frame GOP-8 streams
+  decode clean, moving test card tracks pixel-perfect. Then
+  `kvm_venc_open.c` (`.#kvm-encoder-openvenc`, ZERO vendor libs) put the open
+  encoder behind libkvm's venc seam (zero-copy: capture YUYV phys straight
+  into swreg12) and **the server's real wss h264-direct endpoint streamed live
+  HDMI blob-free** (0 libax mappings in the process). Bonus fix: libkvm's
+  malloc-per-NAL leaked (Go never frees) → library-owned serve buffer,
+  deployed. **#50 filed + ROOT-CAUSED the same day** (vendor ax_proton oopses
+  on VIN-owner exit whenever ax_venc.ko is absent; coexistence impossible —
+  MMIO+IRQ held; matrix in docs/blob-replacement.md).
+  Remaining for #25: fix #50 (RE the VIN-model registration ax_venc performs
+  through the ax_base/OSAL seam — two-function disassembly job), MJPEG
+  fallback (soft-JPEG, input already 4:2:2), RC (#46 or ship fixed-QP v1),
+  non-1080p encoder geometry (register program is 1080p-only).
   Blob-RE roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
   the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
   bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42

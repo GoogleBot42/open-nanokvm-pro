@@ -176,3 +176,28 @@ files, so it is its own cycle:
    device with nanokvm stopped.
 
 Full bring-up rationale: docs/vcmd-cma-unblock.md ("Bring-up procedure").
+
+**#50 CRASH TRAP (proven 2026-08-30, docs/blob-replacement.md "#50
+ROOT-CAUSED"):** with `ax_venc.ko` absent, ANY process that brought VIN up
+and then exits — the openvenc server under SIGKILL **or** a graceful
+`systemctl stop` — oopses the kernel in vendor `ax_proton.ko`
+(`panic_on_oops=1` default ⇒ hard reboot; the reboot self-recovers but wipes
+/tmp staging, so re-scp everything after). Standalone ewl_* runs are safe
+(they never touch VIN). For any openvenc-APP test cycle:
+- `echo 0 > /proc/sys/kernel/panic_on_oops` first (oops then lands in dmesg
+  and the box survives),
+- an oopsed task wedges in do_exit and hangs every later `systemctl
+  stop/restart` of the unit — plan a `reboot` at the end of the cycle,
+- never chain a second experiment after an oops without rebooting.
+
+**Variant: openvenc libkvm (fully blob-free video).** Build
+`.#kvm-encoder-openvenc`; deploy libkvm.so/.so.0 into BOTH trees (stage+mv);
+module swap as above (our ko replaces venc+jenc — coexistence is impossible,
+vendor venc holds the VCMD MMIO + IRQ). Headless end-to-end verification of
+the real web path: on-device
+`curl -sk -X POST -d "mode=h264-direct" https://127.0.0.1/api/stream/mode`
+(localhost bypasses auth) then `python3 tools/wsgrab.py out.h264 120 30`
+(scp it over; stdlib-only) — it prints per-NAL type/size lines and writes a
+decodable Annex-B stream; `grep -c libax /proc/$(pgrep NanoKVM-Server)/maps`
+should read 0. Restore = vendor libkvm back into both trees + vendor module
+insmod + restart (or reboot, which restores modules via the boot loader).
