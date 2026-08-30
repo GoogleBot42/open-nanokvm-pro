@@ -2914,6 +2914,57 @@ test-only (deploy-iterate hot swap, restore after); the shipped image and the
 deployed device keep `kvm-encoder-open` (vendor encoder, now with the leak
 fix).
 
+### 2026-08-30 (later) — #50 ROOT-CAUSED: vendor ax_proton oops on VIN-owner exit whenever ax_venc.ko is absent (openvenc code exonerated)
+
+The teardown reboot was bisected on hardware in one afternoon; every finding
+below is a captured kernel trace or a clean control, not inference. Method:
+`panic_on_oops=0` for each repro (the oops then lands in dmesg and the device
+survives — the reboots were `panic_on_oops=1` + `panic=5` escalating an
+ordinary oops), a `dmesg -w` SSH tap, and a reboot after every oops (an
+oopsed task wedges in `do_exit` and hangs any later `systemctl stop` of its
+unit — "Fixing recursive fault but reboot is needed").
+
+The oops, identical in every reproduction:
+`vin_model_manager_deinit+0x44 [ax_proton]` ← `ax_vin_glb_exit_by_exception`
+← `ax_isp_close` ← `osal_release` ← `__fput` — a wild read/write of
+garbage pointers (freed/never-initialized memory; one fault address was
+literal ASCII string bytes) while ax_proton cleans up after a process that
+brought VIN up and then died.
+
+The experiment matrix that pins the one causal variable:
+
+| config at process death (live VIN) | death | result |
+|---|---|---|
+| openvenc libkvm, venc/jenc rmmod'd, open VCMD ko | SIGKILL | **oops** |
+| openvenc + AX_SYS_Init restored (libax_sys linked) | SIGKILL | **oops** (libax_sys exonerated) |
+| VENDOR libkvm, venc/jenc rmmod'd, no open ko at all | SIGKILL | **oops** (openvenc exonerated) |
+| vendor libkvm, venc/jenc NEVER loaded (loader edit) | SIGKILL | **oops** (dangling-unload theory dead) |
+| openvenc, venc absent | graceful `systemctl stop` | **oops** (= the original 10:54 reboot) |
+| stock: vendor libkvm + vendor modules | SIGKILL mid-stream | **clean** (control) |
+
+**Conclusion: ax_proton's exception-exit path hard-depends on state that
+`ax_venc.ko` provides at insmod** (a VIN "model" registration through the
+ax_base/OSAL seam). With ax_venc loaded the cleanup walk is fine; without it
+— removed OR never loaded — the walk dereferences garbage. This is a latent
+vendor-blob bug from Sipeed's "all modules always loaded" world; the openvenc
+deployment merely exposes it because the open encoder requires vendor venc
+GONE — coexistence is impossible: ax_venc holds `request_mem_region` on the
+VCMD register window (our insmod fails "NO ANY HW found") and the same
+interrupt line (GIC-0 125 = SPI 93+32).
+
+Also ruled out on the way: CMM carveout collision (live `mem_cmm_info` under
+the full openvenc app tops out ~0x7543A000, far below the 0x78000000 framebuf
+block and 0x7F800000 coherent region).
+
+**Fix path (the real one):** RE the model registration ax_venc.ko performs
+against ax_base/ax_proton at insmod — disassemble `vin_model_manager_deinit`
+(what it walks) and ax_venc's init (what it registers), then provide that
+registration openly, either from `ax630c_vcmd_glue.c` at our insmod or as a
+tiny stub module. Bounded two-function RE, device-re-subagent material.
+**Interim for openvenc testing:** deploy with `panic_on_oops=0` and reboot
+after any service stop that had a live video session; the deployed device and
+shipped images stay on the vendor encoder meanwhile.
+
 Server-contract facts recovered for this work (pinned `nanokvm-pro-src` rev,
 citations in the 2026-08-30 session log): one NAL per `kvmv_read_img` call;
 the return code IS the classifier (the direct path's keyframe flag is

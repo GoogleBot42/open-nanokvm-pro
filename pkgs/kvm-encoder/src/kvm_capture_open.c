@@ -266,7 +266,7 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
      * coexists with the raw allocator below (device-verified: real H.264 out).
      * With the OPEN encoder (KVM_OPEN_VENC) no vendor lib is linked at all --
      * nothing to initialize. */
-#ifndef KVM_OPEN_VENC
+#if !defined(KVM_OPEN_VENC) || defined(KVM_OPENVENC_AXSYS_PROBE)
     if (AX_SYS_Init() != 0)
         fprintf(stderr, "[openkvm][WARN] AX_SYS_Init failed (encoder may not init)\n");
     else
@@ -334,7 +334,7 @@ void kvm_sys_deinit(kvm_cap_ctx *c)
     int *fds[] = { &S.fpr, &S.fm, &S.fp, &S.fc, &S.fs, &S.fo, &S.fmem };
     for (unsigned i = 0; i < sizeof(fds)/sizeof(fds[0]); i++)
         if (*fds[i] >= 0) { close(*fds[i]); *fds[i] = -1; }
-#ifndef KVM_OPEN_VENC
+#if !defined(KVM_OPEN_VENC) || defined(KVM_OPENVENC_AXSYS_PROBE)
     if (c->sysInit) { AX_SYS_Deinit(); c->sysInit = AX_FALSE; }
 #endif
     c->sysInit = AX_FALSE;

@@ -202,6 +202,12 @@
         kvm-encoder-openvenc = callPkg ./pkgs/kvm-encoder.nix {
           inherit axera-libs; openCapture = true; openVenc = true;
         };
+        # #50 diagnostic probe: openvenc with AX_SYS_Init restored (links
+        # libax_sys only) -- isolates whether libax_sys's kernel-side OSAL
+        # registration is what protects ax_proton's exception-exit path.
+        kvm-encoder-openvenc-axsysprobe = callPkg ./pkgs/kvm-encoder.nix {
+          inherit axera-libs; openCapture = true; openVenc = true; axsysProbe = true;
+        };
         # Host-side 1080p byte-identity proof for the open backend's parametric
         # geometry (#17). See pkgs/kvm-encoder-geom-test.nix.
         kvm-encoder-geom-test = callPkg ./pkgs/kvm-encoder-geom-test.nix { };
@@ -271,7 +277,8 @@
             boot boot-fsbl boot-atf boot-optee boot-uboot
             initramfs kernel vc8000-vcmd vcenc-ewl dtb dtb-slot-image
             kernel-slot-image
-            kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-geom-test
+            kvm-encoder kvm-encoder-open kvm-encoder-openvenc
+            kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-rootfs firmware-image sd-image

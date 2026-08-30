@@ -1,4 +1,4 @@
-{ pkgs, crossPkgs, axera-libs, openCapture ? false, openVenc ? false, ... }:
+{ pkgs, crossPkgs, axera-libs, openCapture ? false, openVenc ? false, axsysProbe ? false, ... }:
 
 # openCapture (default false): select the capture backend.
 #   false -> vendor-MPI capture (kvm_pipeline.c; links libax_sys/mipi/proton).
@@ -69,7 +69,7 @@ let
   # Encode backend selection (see openVenc above). kvm_venc_open.c shares the
   # register-program/cmdbuf/SPS-PPS sources with pkgs/vcenc-ewl via -I.
   vencSrc     = pkgs.lib.optionalString openVenc "kvm_venc_open.c";
-  vencDef     = pkgs.lib.optionalString openVenc "-DKVM_OPEN_VENC -I${./vcenc-ewl}";
+  vencDef     = pkgs.lib.optionalString openVenc ("-DKVM_OPEN_VENC -I${./vcenc-ewl}" + pkgs.lib.optionalString axsysProbe " -DKVM_OPENVENC_AXSYS_PROBE");
   # Direct link deps. The blob-free capture code CALLS none of the AX libs (raw
   # ioctls), but the closed encoder (libax_venc) hard-pins libax_sys
   # (AX_SYS_Init; else AX_VENC_Init => AX_ERR_NOT_INIT), libax_proton
@@ -77,7 +77,7 @@ let
   # only -lax_mipi; the rest stay for the encoder until it too is replaced.
   # Device-verified: this set produces real H.264 from blob-free capture.
   # With openVenc the encoder is ours too and NO vendor lib is linked at all.
-  captureLibs = if openVenc then ""
+  captureLibs = if openVenc then (pkgs.lib.optionalString axsysProbe "-lax_sys")
                 else if openCapture
                 then "-lax_venc -lax_sys -lax_ivps -lax_proton"
                 else "-lax_venc -lax_sys -lax_proton -lax_mipi -lax_ivps";
