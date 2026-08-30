@@ -210,5 +210,10 @@ the real web path: on-device
 (localhost bypasses auth) then `python3 tools/wsgrab.py out.h264 120 30`
 (scp it over; stdlib-only) — it prints per-NAL type/size lines and writes a
 decodable Annex-B stream; `grep -c libax /proc/$(pgrep NanoKVM-Server)/maps`
-should read 0. Restore = vendor libkvm back into both trees + vendor module
+should read 0. MJPEG (soft-JPEG path, #51): `curl -sk --max-time 10
+https://127.0.0.1/api/stream/mjpeg > /tmp/mj.bin`, count `\xff\xd8\xff` SOI
+markers for fps (expect ~9 at 1080p q80), pull one frame and decode it
+off-device; `[openvenc] MJPEG up:` must appear in
+/var/log/nanokvm/NanoKVM-Server.log (the unit's stderr goes there, NOT to
+journalctl). Restore = vendor libkvm back into both trees + vendor module
 insmod + restart (or reboot, which restores modules via the boot loader).

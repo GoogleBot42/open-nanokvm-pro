@@ -170,9 +170,11 @@ for pending/TODO/unverified markers still present in the tree:
   was armed by our OWN capture issuing AINR ioctl 0xc008708a (proton nr138),
   now gated off — not an ax_venc-registration gap (the two-function-RE plan was
   wrong). Hardware-proven clean teardown; docs/blob-replacement.md "#50 FIXED".
-  Remaining for #25 (to make openvenc the shipped DEFAULT): MJPEG blob-free
-  fallback (**#51**, soft-JPEG, input already 4:2:2), non-1080p encoder geometry
-  (**#17**, register program is 1080p-only), RC (**#46** or ship fixed-QP v1).
+  **#51 DONE + closed (2026-08-31):** blob-free MJPEG via from-source soft-JPEG
+  (libjpeg-turbo raw 4:2:2 over the mapped YUYV frame), hardware-proven ~9 fps
+  1080p, 0 libax mappings (5a24baf). Remaining for #25 (to make openvenc the
+  shipped DEFAULT): non-1080p encoder geometry (**#17**, register program is
+  1080p-only), RC (**#46** or ship fixed-QP v1).
   Blob-RE roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
   the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
   bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42
