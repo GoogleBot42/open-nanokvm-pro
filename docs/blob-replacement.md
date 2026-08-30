@@ -2787,3 +2787,32 @@ capture output directly — no format conversion sits between them.
 Per policy the `.h264`/`.png` artifacts are not committed (the test-card decodes
 are synthetic, but the rule stays uniform); the code + this record re-derive
 everything. Remaining for #45: refinement 3, the from-source CMM allocator.
+
+### 2026-08-30 (Stage D) — from-source CMM allocator; /dev/mem retired; #45 COMPLETE
+
+Refinement 3 is done, device-proven, and with it every item in #45's title
+(EWL + CMM allocator glue). `pkgs/vc8000-vcmd/framebuf_alloc.c` (our code) is
+a from-source frame-buffer allocator over a module-parameter CMM carveout
+(default `0x78000000+0x07800000` — the spare middle of the 200MB CMM region,
+above ax_cmm's bottom-up boot blocks, below the 8MB coherent VCMD-pool region).
+First-fit over a bus-sorted allocation list; pure address-space bookkeeping (the
+kernel never maps the memory); allocations owned by the open fd, freed on
+close. Three `AX630C-PORT` hooks wire it into the core: ioctl nrs 36/37
+(`ALLOC_FRAMEBUF`/`FREE_FRAMEBUF`), a lookup branch in `hantrovcmd_mmap`
+(same writecombine `remap_pfn_range` path as the pools), and per-filp cleanup
+in `hantrovcmd_release`.
+
+`ewl_encode` now allocates the whole relocated buffer layout as ONE block
+(`LAYOUT_SPAN` 43MB, covering sw12..sw27 + slack) through the ioctl, mmaps it
+through the driver, and relocates the 16 address registers by
+`bus - 0x73c45000`. No `/dev/mem` anywhere in the path. Device run: the
+allocator handed back `0x78000000` (delta `0x43bb000` — a different relocation
+than Stage B's hardcoded `0x4400000`, so the delta logic was genuinely
+exercised), WAIT OK, cycles ~2.09M, and the emitted 754-byte yuyv-card stream
+is **bit-identical** to the Stage C `/dev/mem` run and decodes clean in ffmpeg.
+
+The open encode path is now, end to end: `/dev/es_venc` open → VCMD/cmdbuf
+params → framebuf ALLOC + driver mmap → YUYV input fill → RESERVE → from-source
+570-word cmdbuf (register program + relocation) → LINK → WAIT → readback →
+from-source SPS/PPS + slice → decodable 1080p H.264. Zero vendor code, zero
+vendor kernel modules, zero `/dev/mem`.

@@ -1,36 +1,29 @@
 // SPDX-License-Identifier: GPL-2.0 OR MIT
 /*
- * ewl_encode -- Stage B of the open VC8000E EWL (#45): drive one real 1080p
- * fixed-QP H.264 IDR through the open driver, blob-free, and read the encoded
- * NAL back.
+ * ewl_encode -- the open VC8000E EWL (#45, Stages B-D): drive one real 1080p
+ * fixed-QP H.264 IDR through the open driver, blob-free, and emit a complete
+ * decodable .h264 (from-source SPS+PPS + the hardware slice).
  *
- * No vendor library, no ax_venc.ko. Frame buffers are placed in the spare CMM
- * region (outside kernel-managed DRAM, /dev/mem-mappable, exactly as the vendor
- * stack used it) by relocating the device-captured buffer layout by a fixed
- * page-aligned delta -- which preserves every gap/alignment the vendor used and
- * so sidesteps the (undecoded) aux-buffer sizes. The register program is the
- * committed fixed-QP(32) IDR image (img_qp32_payload.h); the cmdbuf structure
- * is rebuilt from source (vcenc_encode.h).
- *
- * Milestone (what this proves): the open submission path drives the encoder
- * core to EXECUTE and emit a bitstream --
+ * No vendor library, no ax_venc.ko, no /dev/mem. Frame buffers come from the
+ * driver's from-source CMM allocator (framebuf_alloc.c) as one block holding
+ * the relocated device-captured layout; the register program is the committed
+ * fixed-QP(32) IDR image (img_qp32_payload.h); the cmdbuf structure is rebuilt
+ * from source (vcenc_encode.h); SPS/PPS are written from the H.264 spec
+ * (vcenc_header.h). Verified per run:
  *   - WAIT returns OK
  *   - swreg82 (HW cycle counter) advanced from 0  => the core really ran
- *   - swreg9 (output byte count) is a plausible NAL size
- *   - the output buffer holds H.264 slice bytes
- * Pixel-correctness (a cleanly decodable image) depends on the input pixel
- * format, which the RE records leave unresolved -- that is refinement, not this
- * milestone. The synthetic input here just gives the core something to encode.
+ *   - swreg9 (output byte count) within the programmed limit
+ *   - the output holds an IDR slice NAL; with [out.h264] the SPS+PPS+IDR
+ *     stream decodes clean in a host ffmpeg (proven, Stage C)
  *
  * Usage: ewl_encode [out.h264] [gradient|yuyv|nv12]
  *
- * The pattern modes settle the input-pixel-format question: a recognizable
- * luma test card (8 vertical bars, white top-left corner square, black
- * bottom-right corner square) is laid out under each format hypothesis;
- * whichever decodes into the clean card is the real input format.
- *   yuyv: packed 4:2:2 [Y U Y V] at sw12, 2 B/px (matches the sw13-sw12 plane
- *         size 0x3f4800 = 2*W*H exactly; packed modes ignore sw13/sw14)
- *   nv12: planar Y at sw12 + interleaved CbCr at sw13
+ * The pattern modes settled the input-pixel-format question (Stage C,
+ * device-proven): the real input format is PACKED YUYV 4:2:2, 2 B/px at sw12
+ * -- the yuyv test card (8 vertical bars, white top-left square, black
+ * bottom-right square) decodes pixel-perfect, the nv12 hypothesis shows
+ * packed-422 aliasing, and sw13-sw12 = 0x3f4800 = 2*W*H exactly (packed modes
+ * ignore the sw13/sw14 chroma bases). sw17=0x30's "NV12" label was wrong.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,40 +40,30 @@
 #include "vcenc_encode.h"
 #include "vcenc_header.h"
 
-/* Buffer relocation: place the captured buffer layout in spare CMM by adding a
- * fixed page-aligned delta. Userspace only touches the INPUT (fill) and OUTPUT
- * (read) regions; recon/aux buffers are DMA'd by the encoder internally, so we
- * never map them -- they just need to be valid unused CMM, which they are. */
-#define VENDOR_BUF_BASE 0x73c00000u          /* below captured min (sw12=0x73c45000) */
-#define MY_BUF_BASE     0x78000000u          /* spare CMM, clear of ax_cmm + our VCMD carveout */
-#define BUF_DELTA       (MY_BUF_BASE - VENDOR_BUF_BASE)  /* 0x4400000, page-aligned */
+/* Buffer relocation: allocate the whole captured buffer layout as ONE block
+ * from the driver's from-source CMM allocator (HANTRO_IOCH_ALLOC_FRAMEBUF) and
+ * relocate every address register by (block_bus - LAYOUT_BASE). One block
+ * preserves every gap/alignment the vendor used, which sidesteps the
+ * (undecoded) per-buffer sizes; the delta stays page-aligned because both the
+ * allocator and the captured bases are page-aligned, so sub-page offsets
+ * embedded in swreg8/10 survive. Userspace touches only the INPUT (fill) and
+ * OUTPUT (read) regions inside the driver's writecombine mmap of the block;
+ * recon/aux are DMA'd by the encoder internally. */
+#define LAYOUT_BASE 0x73c45000u   /* min captured address reg (sw12, input Y) */
+#define LAYOUT_SPAN 0x02b00000u   /* to max reg base (sw27 0x76306300) + 4MB slack */
 
-/* captured plane bases (img_qp32) relocated. */
-#define IN_Y_BASE  (0x73c45000u + BUF_DELTA)               /* swreg12 */
-#define IN_END     (0x74233c00u + BUF_DELTA + 0x1fa400u)   /* swreg14 + W*H */
-#define IN_MAP_LEN 0x00900000u                             /* 9MB, covers Y/Cb/Cr */
-#define OUT_BASE   ((0x749ce028u & ~0xfffu) + BUF_DELTA)   /* relocated swreg8 base */
-#define OUT_MAP_LEN 0x00500000u                            /* 5MB, covers sw9 limit */
-#define OUT_LIMIT  0x004047d8u                             /* swreg9 */
-#define STREAM_OFF (0x749ce028u & 0xfffu)                  /* stream start in the mapped page */
+#define IN_FILL_LEN 0x007e9000u                  /* (sw14 + W*H) - sw12: Y/Cb/Cr extent */
+#define OUT_OFF    ((0x749ce028u & ~0xfffu) - LAYOUT_BASE)  /* sw8 page - sw12 */
+#define OUT_MAP_LEN 0x00500000u                  /* 5MB window, covers sw9 limit */
+#define OUT_LIMIT  0x004047d8u                   /* swreg9 (output byte limit) */
+#define STREAM_OFF (0x749ce028u & 0xfffu)        /* stream start in the sw8 page */
 
-#define ENC_QP     32u                                     /* the img_qp32 program's sw7 QP */
+#define ENC_QP     32u                           /* the img_qp32 program's sw7 QP */
 #define ENC_W      1920u
 #define ENC_H      1080u
 
-/* NOTE: /dev/mem O_SYNC gives Device memory -- libc memset (DC ZVA) FAULTS on
- * it. Use only explicit aligned loads/stores on these mappings. */
-static void *map_dev_mem(uint64_t phys, size_t len)
-{
-	int fd = open("/dev/mem", O_RDWR | O_SYNC);
-	if (fd < 0) { perror("open(/dev/mem)"); return NULL; }
-	void *p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (off_t)phys);
-	close(fd);
-	if (p == MAP_FAILED) { perror("mmap(/dev/mem)"); return NULL; }
-	return p;
-}
-
-/* Device-memory-safe clear: 32-bit aligned stores, no DC ZVA. */
+/* 32-bit aligned stores (kept from the /dev/mem days; also fine on the
+ * driver's writecombine mapping). */
 static void dev_clear(volatile uint32_t *p, size_t bytes)
 {
 	for (size_t i = 0; i < bytes / 4; i++) p[i] = 0;
@@ -123,18 +106,25 @@ int main(int argc, char **argv)
 	uint8_t *status_pool = map_pool(fd, mem.status_phy_addr, mem.status_total_size);
 	if (!cmd_pool || !status_pool) { fprintf(stderr, "pool mmap failed\n"); return 1; }
 
-	/* Map only the input (fill) and output (read) regions in spare CMM. */
-	uint8_t *in_map = map_dev_mem(IN_Y_BASE, IN_MAP_LEN);
-	volatile uint32_t *out_map = map_dev_mem(OUT_BASE, OUT_MAP_LEN);
-	if (!in_map || !out_map) return 1;
-	printf("FRAMEBUF: in 0x%08x+0x%x  out 0x%08x+0x%x  (delta 0x%x)\n",
-	       IN_Y_BASE, IN_MAP_LEN, OUT_BASE, OUT_MAP_LEN, BUF_DELTA);
+	/* Allocate the whole relocated layout from the driver's from-source CMM
+	 * allocator and mmap it (writecombine) through the driver -- no /dev/mem. */
+	struct framebuf_parameter fbp = { .size = LAYOUT_SPAN };
+	if (ioctl(fd, HANTRO_IOCH_ALLOC_FRAMEBUF, &fbp) < 0) {
+		perror("ALLOC_FRAMEBUF"); return 1;
+	}
+	uint32_t buf_delta = (uint32_t)(fbp.bus_addr - LAYOUT_BASE);
+	uint8_t *fb_map = mmap(NULL, LAYOUT_SPAN, PROT_READ | PROT_WRITE,
+			       MAP_SHARED, fd, (off_t)fbp.bus_addr);
+	if (fb_map == MAP_FAILED) { perror("mmap(framebuf)"); return 1; }
+	uint8_t *in_map = fb_map;                    /* layout base == input Y (sw12) */
+	volatile uint32_t *out_map = (volatile uint32_t *)(fb_map + OUT_OFF);
+	printf("FRAMEBUF: alloc 0x%08lx+0x%x (delta 0x%x)  in +0  out +0x%x\n",
+	       fbp.bus_addr, LAYOUT_SPAN, buf_delta, OUT_OFF);
 
 	/* Fill the input under the selected format hypothesis (byte stores are
 	 * Device-mem-safe). Everything beyond the format's own extent gets
 	 * neutral 0x80 so no stale bytes leak into the encode. */
-	uint32_t in_bytes = (IN_END > IN_Y_BASE) ? (IN_END - IN_Y_BASE) : 0;
-	if (in_bytes > IN_MAP_LEN) in_bytes = IN_MAP_LEN;
+	uint32_t in_bytes = IN_FILL_LEN;
 	printf("INPUT: %s test pattern\n", mode);
 	if (strcmp(mode, "yuyv") == 0) {
 		/* Packed 4:2:2 [Y U Y V], 2 B/px at sw12. */
@@ -170,7 +160,7 @@ int main(int argc, char **argv)
 	memset(status_pool + STATUS_SLOT_REG_OFF(id, 0), 0, 512 * 4);
 
 	uint32_t *slot = cmd_pool + (uint32_t)id * (mem.cmd_unit_size / 4);
-	uint16_t size = vcenc_build_encode_cmdbuf(slot, BUF_DELTA, core_dst);
+	uint16_t size = vcenc_build_encode_cmdbuf(slot, buf_delta, core_dst);
 	ex.cmdbuf_size = size;
 	ex.numa_id = 0;
 	printf("RESERVE: id=%u  cmdbuf=%u bytes\n", id, size);

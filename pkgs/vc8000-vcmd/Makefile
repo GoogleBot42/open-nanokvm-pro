@@ -19,6 +19,7 @@ ccflags-y += -std=gnu11 -Wno-declaration-after-statement -Wno-unused-variable -W
 
 obj-m += ax630c_venc_vcmd.o
 ax630c_venc_vcmd-objs := ax630c_vcmd_glue.o \
+                         framebuf_alloc.o \
                          eswin/vc8000_vcmd_driver.o \
                          eswin/vcmdswhwregisters.o \
                          eswin/bidirect_list.o

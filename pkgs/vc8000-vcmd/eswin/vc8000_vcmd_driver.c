@@ -153,6 +153,7 @@
 #endif
 #define LOG_TAG  VENC_DEV_NAME ":vc"
 #include "vc_drv_log.h"
+#include "../framebuf_alloc.h"   /* AX630C-PORT: from-source frame-buffer allocator (#45) */
 
 /*these size need to be modified according to hw config.*/
 #define VCMD_ENCODER_REGISTER_SIZE              (ENCODER_REGISTER_SIZE * 4)
@@ -2253,6 +2254,29 @@ static long hantrovcmd_ioctl(struct file *filp, unsigned int cmd,
 		return 0;
 	}
 #endif
+	/* AX630C-PORT: from-source frame-buffer allocator over the CMM carveout
+	 * (#45) -- replaces the fixed-address /dev/mem placement. */
+	case HANTRO_IOCH_ALLOC_FRAMEBUF: {
+		struct framebuf_parameter fb;
+
+		if (copy_from_user(&fb, (void __user *)arg, sizeof(fb)))
+			return -EFAULT;
+		retval = vcmd_fb_alloc(filp, fb.size, &fb.bus_addr);
+		if (retval)
+			return retval;
+		if (copy_to_user((void __user *)arg, &fb, sizeof(fb))) {
+			vcmd_fb_free(filp, fb.bus_addr);
+			return -EFAULT;
+		}
+		break;
+	}
+	case HANTRO_IOCH_FREE_FRAMEBUF: {
+		struct framebuf_parameter fb;
+
+		if (copy_from_user(&fb, (void __user *)arg, sizeof(fb)))
+			return -EFAULT;
+		return vcmd_fb_free(filp, fb.bus_addr);
+	}
 	default: {
 		LOG_DBG("inivalid IOCTL\n");
 		return -1;
@@ -2290,6 +2314,10 @@ static int hantrovcmd_mmap(struct file *filp, struct vm_area_struct *vma)
 		cpu_vaddr = vcmd_buf_mem_pool.virtualAddress;
 		bus_addr = vcmd_buf_mem_pool.busAddress;
 		size = vcmd_buf_mem_pool.size;
+	} else if (vcmd_fb_lookup((unsigned long)phy_addr, &size) == 0) {
+		/* AX630C-PORT: a frame-buffer allocation (#45). Same writecombine
+		 * remap_pfn_range path as the pools below. */
+		bus_addr = phy_addr;
 	} else {
 		LOG_ERR("hantrovcmd_mmap, Unknown phy_addr(%llx), mmap failed\n", (long long unsigned int)phy_addr);
 		return -ENXIO;
@@ -2968,6 +2996,7 @@ static int hantrovcmd_release(struct inode *inode, struct file *filp)
 
 	common_dmabuf_heap_import_uninit(&fp_priv->root);
 #endif
+	vcmd_fb_release_filp(filp);  /* AX630C-PORT: drop this file's frame buffers (#45) */
 	kfree(fp_priv);
 	return 0;
 
@@ -2979,6 +3008,7 @@ error:
 
 	common_dmabuf_heap_import_uninit(&fp_priv->root);
 #endif
+	vcmd_fb_release_filp(filp);  /* AX630C-PORT: drop this file's frame buffers (#45) */
 	kfree(fp_priv);
 
 	return -ERESTARTSYS;

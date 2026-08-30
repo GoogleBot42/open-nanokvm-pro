@@ -80,6 +80,26 @@ platform layer, and stands up a minimal char-device instance:
    STRICT_DEVMEM / no-struct-page hazards. Proven 2026-08-30 by the userspace
    submitter (`pkgs/vcenc-ewl`): full RESERVE→LINK→WAIT→RELEASE, hardware DMAs
    the encoder register file into the mmap'd status pool.
+5. **From-source frame-buffer allocator hooks (#45)** — three small additions
+   wiring in `framebuf_alloc.c` (our code, see below): two ioctl cases
+   (`HANTRO_IOCH_ALLOC_FRAMEBUF`/`FREE_FRAMEBUF`, nrs 36/37 — unused upstream),
+   a `vcmd_fb_lookup` branch in `hantrovcmd_mmap` (frame buffers map through
+   the same writecombine `remap_pfn_range` path as the pools), and
+   `vcmd_fb_release_filp()` in `hantrovcmd_release` (both exits) so a dying
+   process leaks nothing.
+
+### `framebuf_alloc.c` / `framebuf_alloc.h` (our code, GPL-2.0)
+
+The other half of #45: a from-source CMM frame-buffer allocator replacing the
+Stage-B fixed-address `/dev/mem` placement. First-fit over a bus-sorted list
+covering a module-parameter carveout (default `0x78000000+0x07800000`, the
+spare middle of the 200MB CMM region: above ax_cmm's bottom-up boot blocks at
+`0x738xxxxx`, below the glue's 8MB coherent VCMD-pool region at `0x7F800000`).
+Pure address-space bookkeeping: the kernel never maps the memory — the encoder
+DMAs it and userspace mmaps it (writecombine) through the driver. Allocations
+are owned by the open file and freed on close. Device-proven 2026-08-30: the
+allocator-based `ewl_encode` run produced a stream bit-identical to the
+`/dev/mem` run.
 
 ### Build flags (`Makefile`)
 

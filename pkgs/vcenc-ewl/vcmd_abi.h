@@ -38,6 +38,17 @@
 #define HANTRO_IOCH_RELEASE_CMDBUF        _IOR(HANTRO_IOC_MAGIC, 32, uint16_t *)
 #define HANTRO_IOCH_POLLING_CMDBUF        _IOR(HANTRO_IOC_MAGIC, 33, uint16_t *)
 
+/* AX630C additions (pkgs/vc8000-vcmd/framebuf_alloc.h): the from-source
+ * frame-buffer allocator over the CMM carveout (#45). Allocations are owned
+ * by the fd and freed on close; mmap the returned bus_addr on the same fd. */
+#define HANTRO_IOCH_ALLOC_FRAMEBUF        _IOWR(HANTRO_IOC_MAGIC, 36, struct framebuf_parameter)
+#define HANTRO_IOCH_FREE_FRAMEBUF         _IOWR(HANTRO_IOC_MAGIC, 37, struct framebuf_parameter)
+
+struct framebuf_parameter {
+	unsigned long size;      /* in: bytes */
+	unsigned long bus_addr;  /* out (alloc) / in (free) */
+};
+
 /* module_type (vc8000_driver.h:256) */
 #define VCMD_TYPE_ENCODER 0
 
