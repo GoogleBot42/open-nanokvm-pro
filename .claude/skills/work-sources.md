@@ -148,9 +148,17 @@ for pending/TODO/unverified markers still present in the tree:
   `pkgs/vcenc-ewl` (`ewl_probe`) drives the full open VCMD cmdbuf lifecycle from
   userspace (RESERVE→LINK→WAIT→RELEASE) — hardware DMAs encoder swreg0=0x90101010
   into the mmap'd status pool. NO vendor lib, NO flash. `.#kernel-cma` outputs removed.
-  Remaining for #25: **#45 Stage B** (CMM frame buffers + replay `img_qp32.bin`
-  swreg1..511 with the 16 KEEP address regs repointed + userspace SPS/PPS). Blob-RE
-  roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
+  **2026-08-30 (later) — #44 + #45 BOTH CLOSED (Stages B–D device-proven):** Stage B
+  drove a real 1080p fixed-QP(32) IDR through the open path; Stage C made it a
+  **fully decodable stream** (from-source SPS/PPS in `vcenc_header.h`, params pinned
+  by bit-parsing our own slice; ffmpeg decodes with zero errors) and **resolved the
+  input format: packed YUYV 4:2:2** (test-card proof; sw17=0x30 "NV12" label wrong;
+  encoder input == open capture output); Stage D added the **from-source CMM
+  allocator** (`pkgs/vc8000-vcmd/framebuf_alloc.c`, ioctls 36/37, per-fd ownership)
+  and retired `/dev/mem` — allocator run bit-identical to the fixed-address run.
+  Remaining for #25 (see its 2026-08-30 status comment): P-frames through the open
+  path, multi-frame session/GOP loop, kvm-app integration, RC (#46 or fixed-QP v1).
+  Blob-RE roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
   the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
   bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42
   unused `/opt/lib` libs = 29.4 MB, needs a device `lsof`); **#26** NixOS rootfs
