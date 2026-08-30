@@ -39,13 +39,18 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   UI is down — `docs/architecture.md` ("The two app stacks").
 - The app tree is copied to tmpfs at boot: hot patches must land in BOTH `/kvmapp`
   and `/dev/shm/kvmapp` — see the deploy-iterate skill.
-- A process that brought VIN up and then dies — SIGKILL **or** clean exit —
-  kernel-oopses in vendor `ax_proton.ko` unless `ax_venc.ko` is loaded (removed or
-  never-loaded both crash; the device's `panic_on_oops=1` turns it into a hard
-  reboot, and an oopsed task wedges every later `systemctl stop` of its unit until
-  reboot). This is what "openvenc testing rebooted the device" is. Root cause,
-  experiment matrix, and the safe test procedure: `docs/blob-replacement.md`
-  ("#50 ROOT-CAUSED") and issue #50.
+- #50 (FIXED 2026-08-31, closed): a process that brought VIN up and then dies
+  oopsed vendor `ax_proton.ko` in `vin_model_manager_deinit+0x44` — but the real
+  trigger was **our own** capture replay issuing AINR ioctl `0xc008708a` (proton
+  nr138), which `kmalloc`s a `model_manager` whose garbage slot array the teardown
+  walks. `ax_venc` presence only masked it data-dependently; it was never a venc
+  registration. Fix: `kvm_capture_open.c` gates nr138 behind `getenv("OPENKVM_NR138")`
+  (unset in prod) → `model_manager` stays NULL → deinit no-ops. Set `OPENKVM_NR138=1`
+  to reproduce the old crash. Caveat: the oops faults before the NULL-store, so a
+  crashed nr138 process leaves the global dangling — the fix is clean only from a
+  boot where nobody issued nr138. Full analysis + hardware proof: `docs/blob-replacement.md`
+  ("#50 FIXED"). `panic_on_oops=1` still turns any oops into a hard reboot, and an
+  oopsed task still wedges later `systemctl stop` until reboot.
 - "ATX reset works but power doesn't" = the SW_PWR pinmux trap: sysfs GPIO export
   never programs the mux, gpio7 lives on the VI_D7 pad (mux reg `0x02300060`), and
   capture init re-muxes it — the server re-asserts it per press. A GPIO `value`

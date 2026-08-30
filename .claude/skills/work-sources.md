@@ -166,13 +166,13 @@ for pending/TODO/unverified markers still present in the tree:
   into swreg12) and **the server's real wss h264-direct endpoint streamed live
   HDMI blob-free** (0 libax mappings in the process). Bonus fix: libkvm's
   malloc-per-NAL leaked (Go never frees) → library-owned serve buffer,
-  deployed. **#50 filed + ROOT-CAUSED the same day** (vendor ax_proton oopses
-  on VIN-owner exit whenever ax_venc.ko is absent; coexistence impossible —
-  MMIO+IRQ held; matrix in docs/blob-replacement.md).
-  Remaining for #25: fix #50 (RE the VIN-model registration ax_venc performs
-  through the ax_base/OSAL seam — two-function disassembly job), MJPEG
-  fallback (soft-JPEG, input already 4:2:2), RC (#46 or ship fixed-QP v1),
-  non-1080p encoder geometry (register program is 1080p-only).
+  deployed. **#50 FIXED + closed (2026-08-31):** the ax_proton teardown oops
+  was armed by our OWN capture issuing AINR ioctl 0xc008708a (proton nr138),
+  now gated off — not an ax_venc-registration gap (the two-function-RE plan was
+  wrong). Hardware-proven clean teardown; docs/blob-replacement.md "#50 FIXED".
+  Remaining for #25 (to make openvenc the shipped DEFAULT): MJPEG blob-free
+  fallback (**#51**, soft-JPEG, input already 4:2:2), non-1080p encoder geometry
+  (**#17**, register program is 1080p-only), RC (**#46** or ship fixed-QP v1).
   Blob-RE roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
   the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
   bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42

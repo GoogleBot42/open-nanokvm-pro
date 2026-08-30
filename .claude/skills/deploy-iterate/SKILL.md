@@ -177,18 +177,29 @@ files, so it is its own cycle:
 
 Full bring-up rationale: docs/vcmd-cma-unblock.md ("Bring-up procedure").
 
-**#50 CRASH TRAP (proven 2026-08-30, docs/blob-replacement.md "#50
-ROOT-CAUSED"):** with `ax_venc.ko` absent, ANY process that brought VIN up
-and then exits — the openvenc server under SIGKILL **or** a graceful
-`systemctl stop` — oopses the kernel in vendor `ax_proton.ko`
-(`panic_on_oops=1` default ⇒ hard reboot; the reboot self-recovers but wipes
-/tmp staging, so re-scp everything after). Standalone ewl_* runs are safe
-(they never touch VIN). For any openvenc-APP test cycle:
-- `echo 0 > /proc/sys/kernel/panic_on_oops` first (oops then lands in dmesg
-  and the box survives),
-- an oopsed task wedges in do_exit and hangs every later `systemctl
-  stop/restart` of the unit — plan a `reboot` at the end of the cycle,
-- never chain a second experiment after an oops without rebooting.
+**#50 (FIXED 2026-08-31, docs/blob-replacement.md "#50 FIXED"):** the openvenc
+teardown-oops trap is fixed — `kvm_capture_open.c` no longer issues the AINR
+nr138 ioctl that armed it, so a current `.#kvm-encoder-openvenc` build tears
+down cleanly (graceful stop AND `kill -9`) with venc absent. Two things still
+matter for openvenc test cycles:
+- **Start from a clean boot.** The oops faulted before ax_proton nulled its
+  global, so a prior nr138-issuing process (any pre-fix build, or one with
+  `OPENKVM_NR138=1`) leaves it dangling and a later clean process inherits the
+  crash. Reboot first; then only run no-nr138 builds.
+- Still keep `echo 0 > /proc/sys/kernel/panic_on_oops` as a safety net when a
+  build's provenance is uncertain; an oopsed task wedges `do_exit` and hangs
+  later `systemctl stop` — reboot after any oops, never chain experiments.
+- To reproduce the old crash deliberately, set `OPENKVM_NR138=1` in the server
+  env. Standalone ewl_* runs never touch VIN and are always safe.
+
+**tmpfs-wipe trap (cost a cycle 2026-08-31):** `nanokvm_pre.sh`
+(`ExecStartPre`) unconditionally `rm -rf /dev/shm/kvmapp && cp -av /kvmapp
+/dev/shm/kvmapp` on EVERY `systemctl start`/`restart` — so a `/dev/shm`-only
+deploy is clobbered the moment you restart the unit. For a swap that must
+survive a unit restart, deploy into `/kvmapp` too (persistent) so ExecStartPre
+propagates it. A `/dev/shm`-only hot patch only sticks if you respawn the
+server child WITHOUT a unit restart (e.g. `pkill NanoKVM-Server`, letting the
+nanokvm.sh supervisor loop respawn it — ExecStartPre does not re-run).
 
 **Variant: openvenc libkvm (fully blob-free video).** Build
 `.#kvm-encoder-openvenc`; deploy libkvm.so/.so.0 into BOTH trees (stage+mv);

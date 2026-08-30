@@ -73,8 +73,15 @@ Change ONE variable per cycle and always run the stock control:
 
 ## Known kernel-side traps (don't rediscover)
 
-- **#50**: any process that brought VIN up and then exits — gracefully or
-  not — oopses in vendor `ax_proton.ko` unless `ax_venc.ko` is loaded.
-  Removed and never-loaded both crash. Coexistence with the open VCMD driver
-  is impossible (vendor venc holds the VCMD MMIO region + IRQ SPI 93).
+- **#50 (FIXED 2026-08-31)**: the `vin_model_manager_deinit+0x44` teardown oops
+  was armed by our own capture issuing AINR ioctl `0xc008708a` (proton nr138),
+  now gated off — not an ax_venc requirement (venc presence only masked it
+  data-dependently). Current openvenc builds tear down clean. Note the
+  bisection lesson: the oops is **data-dependent** (fires only when a reused CMM
+  count byte is nonzero), so a live repro is a flaky control — a fresh CMM block
+  can hide it. And the oops faults before ax_proton nulls its global, so one
+  crash poisons the global for later processes; **reboot to a clean baseline
+  before trusting any "does it still crash?" result.** Coexistence of the open
+  VCMD driver with vendor venc is still impossible (venc holds the VCMD MMIO
+  region + IRQ SPI 93) — unrelated to #50.
 - Standalone `ewl_*` tools never touch VIN and are safe to crash/exit freely.
