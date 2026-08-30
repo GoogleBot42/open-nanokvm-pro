@@ -400,7 +400,23 @@ int kvm_cap_start(kvm_cap_ctx *c, int w, int h, int fps)
       if (e == EPERM)
           fprintf(stderr, "[openkvm] (cmm nr6 EPERM tolerated: block already attached)\n");
       else if (e) return -1; }
-    { uint64_t p = S.isp_model_phys; if (io_pl(S.fpr, PR(138), &p, sizeof p, "proton nr138")) return -1; }
+    /* proton nr138 = AX ioctl 0xc008708a = vin_model_manager_init (the AI-ISP /
+     * AINR "model manager"). #50: issuing it makes ax_proton kmalloc (NOT
+     * kzalloc) a model_manager whose slot array is left as heap garbage; on the
+     * VIN owner's fd-teardown (SIGKILL or graceful exit) ax_proton walks it in
+     * vin_model_manager_deinit and wild-writes through a garbage slot pointer ->
+     * kernel oops (panic_on_oops=1 => hard reboot). With vendor ax_venc.ko loaded
+     * the walk happens to stay clean; with venc absent (the openvenc path) it
+     * detonates. We never populate the model manager (no nr140 update) and this
+     * is ISP-bypass HDMI capture, so the AINR model is vestigial for us: skipping
+     * nr138 leaves model_manager NULL, and vin_model_manager_deinit no-ops on the
+     * NULL guard for BOTH teardown paths. Root cause + blob disasm:
+     * docs/blob-replacement.md "#50 ROOT-CAUSED". Set OPENKVM_NR138=1 to restore
+     * the old (crashing, venc-absent) behavior for controlled reproduction. */
+    if (getenv("OPENKVM_NR138")) {
+        uint64_t p = S.isp_model_phys;
+        if (io_pl(S.fpr, PR(138), &p, sizeof p, "proton nr138")) return -1;
+    }
     { unsigned char nr12[sizeof PL_nr12];
       memcpy(nr12, PL_nr12, sizeof nr12);
       memcpy(nr12, &S.isp_model_phys, 8);   /* [0..7] = block phys, LE */

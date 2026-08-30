@@ -2987,3 +2987,66 @@ lever, which the openvenc backend preserves (rebuild ⇒ new session ⇒ IDR);
 MJPEG is user-visible (menu + automatic no-WebRTC fallback) — v1 openvenc
 fails MJPEG create loudly; the follow-up plan is a from-source software JPEG
 (YUYV is already 4:2:2 — `jpeg_write_raw_data` needs no color conversion).
+
+### 2026-08-31 — #50 FIXED (the ax_venc-registration hypothesis above is WRONG; real trigger is our own nr138 ioctl)
+
+The "ax_venc registers a VIN model at insmod" hypothesis of the previous
+section is **false** and its "RE ax_venc's init" fix path is a dead end.
+Static disassembly of the blobs (llvm-objdump over the pinned `ax-ko-blobs`;
+`docs/reference/` not needed — pure two-function read) plus six on-device
+reproductions pin the actual mechanism, which is entirely in code **we own**.
+
+**The bug is a latent kmalloc-not-kzalloc in ax_proton, armed by an ioctl our
+own capture replay issues.** `vin_model_manager_init` (ax_proton 0x90160)
+allocates its `model_manager` struct with `ax_os_mem_kmalloc` — NOT kzalloc —
+and initialises only a few fields; the per-model slot-pointer array at
+`+0x10, +0x18, …` is left as heap garbage. `vin_model_manager_deinit`
+(0x902a8) loops `count = *(u8*)ioremap(isp_model_block)` times and, per slot,
+does `strb wzr, [slot->ptr]` at **+0x44** — a wild write through a garbage
+pointer whenever `count` (read from the reused `isp_model_manger_list` CMM
+block) exceeds the slots actually populated. We never call the populate ioctl
+(nr140/update), so any nonzero `count` detonates. Captured trace, identical to
+the field reports: `vin_model_manager_deinit+0x44 [ax_proton]` ← `ax_vin_glb_exit_by_exception` ← `ax_isp_close` ← `__fput`; fault address literal
+ASCII bytes (`0x0038373261393366`).
+
+**`model_manager` is allocated ONLY by ioctl `0xc008708a` (`/dev/ax_proton`,
+nr 138).** Verified xrefs: `vin_model_manager_init` has one caller
+(`ax_vin_model_manager_init`), called only from `isp_vin_ai_isp_ioctl` (the
+AI-ISP/AINR handler); the exception-exit path calls `vin_model_manager_deinit`
+directly, and that deinit **early-returns on a NULL `model_manager`**
+(`cbz` at 0x902bc). And **we issue that ioctl ourselves** —
+`kvm_capture_open.c` line ~403 replayed `PR(138)` = `0xc008708a`, a vestigial
+AINR "model manager" init carried over from the captured vendor VIN bring-up.
+This is ISP-bypass HDMI capture; the AINR model does nothing for us.
+
+**Why ax_venc presence correlated (the matrix's one real variable):** with
+vendor venc loaded the pipeline happens to leave the reused CMM count byte at
+0, so the deinit loop runs zero times; with venc absent the byte is nonzero
+and the garbage walk fires. It was never a venc *registration* — venc has
+**zero symbolic coupling** to ax_proton (no shared undefined symbol; venc's
+`init_module` only does `platform_driver_register`). The correlation is
+data-dependent, which is why a fresh CMM block can mask the crash — do not
+rely on a live repro as a control.
+
+**The fix (shipped): don't issue nr138.** `kvm_capture_open.c` now gates
+`PR(138)` behind `getenv("OPENKVM_NR138")` (unset in production; set only to
+reproduce the old crash). `model_manager` then stays NULL for the process's
+lifetime, so `vin_model_manager_deinit` no-ops on the NULL guard for **every**
+teardown path (SIGKILL and graceful) — no ax_venc, no kernel-blob RE, no stub
+module. One caveat, proven the hard way: an oops faults at +0x44, *before* the
+`model_manager = NULL` store at the function's end, so a crashed
+nr138-issuing process leaves the global dangling; a subsequent no-nr138
+process then inherits it and oopses anyway. The fix is therefore only clean
+**from a boot where no process ever issued nr138** (`.bss` fresh = NULL).
+
+**Hardware proof (2026-08-31, clean boot, `.#kvm-encoder-openvenc` with the
+gate, vcmd loaded, ax_venc/ax_jenc removed):** live blob-free H.264 stream up
+(`[openvenc] up hwid=0x43421500`, decodable NALs, `AX_VENC_Init` count 0 =
+no vendor path); capture works **without** nr138 (`[openkvm] capture up`);
+then — VIN owner up, venc absent — **graceful `systemctl stop` = CLEAN, and
+`kill -9` mid-stream = CLEAN**, both no oops, service self-recovers and
+resumes streaming. The polluted-state repro before the reboot reproduced the
+real oops (`[#2]`, exact trace) and confirmed the dangling-global caveat.
+The gate lives in shared capture code, so `kvm-encoder-open` (vendor-encoder,
+shipped) also stops issuing nr138 — harmless there (venc present) and it
+removes the latent arming. Closes #50.
