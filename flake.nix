@@ -143,6 +143,14 @@
         # pkgs/rootfs/ax-load-drv.stub.sh. See pkgs/ax-stub.nix.
         ax-stub = callPkg ./pkgs/ax-stub.nix { };
 
+        # Open V4L2 capture stack (epic #55, M1/M2). Clean-room drivers written
+        # from docs/reference/deblob-scope/specs/ that replace the vendor
+        # ax_mipi_rx (CSI-2 subdev) and ax_proton bypass/IFE-WDMA path (capture
+        # video node). First-draft compiling modules; on-hardware bring-up is the
+        # serial slot-B A/B follow-on. See pkgs/open-vin-{csi2,capture}.nix.
+        open-vin-csi2 = callPkg ./pkgs/open-vin-csi2.nix { };
+        open-vin-capture = callPkg ./pkgs/open-vin-capture.nix { };
+
         # Open VC8000E userspace submitter -- userspace half of the blob-free
         # encoder (#45). Stage A (ewl_probe) drives the full VCMD cmdbuf
         # lifecycle from userspace and is device-proven. See pkgs/vcenc-ewl.nix.
@@ -299,6 +307,7 @@
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
+            open-vin-csi2 open-vin-capture
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
