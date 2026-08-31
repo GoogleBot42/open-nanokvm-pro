@@ -501,9 +501,34 @@ pkgs.stdenvNoCC.mkDerivation {
       /usr/bin/ax_clk \
       /usr/bin/ax_lookat \
       /soc/ko/ax_venc.ko \
-      /soc/ko/ax_jenc.ko ; do
+      /soc/ko/ax_jenc.ko \
+      /kvmapp/server/dl_lib/libkvm.so.0.1.0 ; do
       echo "rm $dead" >> "$script"
     done
+    # /kvmapp/server/dl_lib/libkvm.so.0.1.0: Sipeed's ORIGINAL closed libkvm
+    # (2.3 MB, DT_NEEDEDs the full libax closure). We overwrite libkvm.so + .so.0
+    # with ours, but the versioned .so.0.1.0 was left behind -- never mapped (the
+    # server's DT_NEEDED libkvm.so.0 resolves to our file), but it is the largest
+    # closed blob on the image and the one file that could pull libax back into a
+    # process. Removed (#25).
+
+    # ---- 5d1. PURGE the vendor libax_*.so (dead weight since openvenc, #25) ----
+    # The shipped libkvm is openvenc and DT_NEEDEDs ZERO libax; nothing else in
+    # our stack references them (server + libkvm readelf-clean; libsns_dummy is
+    # dlopen'd only on the closed-capture path, which we don't ship). Device-
+    # proven safe: with every /opt/lib/libax_*.so moved aside the openvenc stack
+    # still captures + streams (0 libax maps). Enumerated from the extracted
+    # rootfs so the list can't drift. The base's other closed .so (vendor
+    # libsns_*, NPU model data) are separate dead weight -- a later purge (#54).
+    libax_n=0
+    for lib in $(debugfs -R "ls -p /opt/lib" rootfs.ext4 2>/dev/null \
+                 | awk -F/ '{print $6}' | grep -E '^libax_.*\.so$' | sort -u); do
+      echo "rm /opt/lib/$lib" >> "$script"
+      libax_n=$((libax_n + 1))
+    done
+    echo "  libax purge: queued $libax_n /opt/lib/libax_*.so for removal (0 refs, openvenc)"
+    test "$libax_n" -ge 20 \
+      || { echo "ERROR: only $libax_n libax_*.so found in /opt/lib -- layout changed, refusing to ship a half-purge" >&2; exit 1; }
     # The two vendor ENCODE blobs (#25): our from-source open VC8000E VCMD
     # driver (ax630c_venc_vcmd.ko, loaded in their place by the curated loader)
     # makes them dead weight -- nothing kept symbol-depends on them (only
@@ -611,6 +636,20 @@ pkgs.stdenvNoCC.mkDerivation {
       fi
     done
     echo "  vendor encode blobs: ax_venc.ko + ax_jenc.ko -- confirmed removed from image."
+
+    # The vendor libax_*.so purge (#25) must have taken -- assert none remain.
+    remaining_libax=$(debugfs -R "ls -p /opt/lib" rootfs.ext4 2>/dev/null \
+                      | awk -F/ '{print $6}' | grep -cE '^libax_.*\.so$' || true)
+    if [ "$remaining_libax" -ne 0 ]; then
+      echo "ERROR: $remaining_libax libax_*.so still in /opt/lib after purge (#25)" >&2
+      exit 1
+    fi
+    # And Sipeed's original closed libkvm must be gone.
+    if debugfs -R "stat /kvmapp/server/dl_lib/libkvm.so.0.1.0" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+      echo "ERROR: closed libkvm.so.0.1.0 still present in image (#25)" >&2
+      exit 1
+    fi
+    echo "  libax purge + closed libkvm.so.0.1.0: confirmed removed from image."
 
     # Sanity: the boot-time module loader config landed.
     debugfs -R "dump /etc/modules-load.d/nanokvm.conf $PWD/chk.conf" rootfs.ext4 2>/dev/null

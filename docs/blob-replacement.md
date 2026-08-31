@@ -199,18 +199,27 @@ dependency mapping):
 
 ---
 
-## Module curation: 12 of 22 (issue #39)
+## Module curation (issue #39 → #25)
 
 The vendor `/soc/scripts/auto_load_all_drv.sh` insmods all 22 `/soc/ko` blobs at
 boot. We replace it with a curated loader (`pkgs/rootfs/ax-load-drv.sh`, shipped
-by both `pkgs/rootfs.nix` step `[5b7]` and the OTA payload) that loads **12** —
-the symbol-dependency closure of `{ax_proton, ax_venc, ax_jenc}`, i.e. exactly
-what capture→encode needs. The pristine vendor script ships beside it as
-`auto_load_all_drv.sh.vendor`; rollback on the device is a `cp` and a reboot.
+by both `pkgs/rootfs.nix` step `[5b7]` and the OTA payload).
+
+**Updated for #25 (2026-08-31, openvenc default):** the loader now loads **11**
+modules — the **10-module `{ax_proton}` capture closure** PLUS our from-source
+open `ax630c_venc_vcmd.ko` **in place of** the vendor encode blobs `ax_venc` +
+`ax_jenc` (which are now REMOVED from the flashed image entirely; see the
+"openvenc default" work below). The `ax_venc`/`ax_jenc` rows below are marked
+KEEP for the *historical* #39 curation; under #25 they are **dropped** — the
+encode path is blob-free. The pristine vendor script still ships beside the
+curated loader as `auto_load_all_drv.sh.vendor`; a `cp` + reboot rolls back the
+**capture** stack (it has no `set -e`, so it skips the now-absent encode pair —
+restoring vendor encode needs a reflash).
 
 Device-proven 2026-08-17: a 13-module boot came up green, `ax_tdp` sat at
-refcount 0 *while the encoder was actively streaming*, and the 12-module boot
-(no `ax_tdp`) is the shipped set.
+refcount 0 *while the encoder was actively streaming*. Historical #39 set was
+12 (capture closure + vendor venc/jenc); #25 replaced the two encode blobs with
+one open module → 11.
 
 | Module | Verdict | Why |
 |---|---|---|
@@ -222,8 +231,9 @@ refcount 0 *while the encoder was actively streaming*, and the 12-module boot
 | `ax_ivps` | **KEEP** | in the closure; also the module behind the `AX_IVPS_*` symbols `libax_venc.so` leaves undeclared (see the hygiene note above) |
 | `ax_vpp` | **KEEP** | in the closure (video-processing path under ivps/proton) |
 | `ax_gdc` | **KEEP** | in the closure (geometric-distortion block under the same chain) |
-| `ax_venc` | **KEEP** | H.264/H.265 encode |
-| `ax_jenc` | **KEEP** | MJPEG encode |
+| `ax_venc` | ~~KEEP~~ **DROP (#25)** | vendor H.264/H.265 encode — replaced by our open `ax630c_venc_vcmd.ko`; REMOVED from the image |
+| `ax_jenc` | ~~KEEP~~ **DROP (#25)** | vendor MJPEG encode — the open path does software JPEG; REMOVED from the image |
+| `ax630c_venc_vcmd` (ours) | **KEEP** | from-source open VC8000E encode driver (`/dev/es_venc`), loaded in place of ax_venc/ax_jenc |
 | `ax_mipi_rx` | **KEEP** | CSI-2 receiver — the capture front end |
 | `ax_proton` | **KEEP** | the ISP/VIN driver (4.5 MB); needs `mem_iq_level=1` |
 | `hynitron_touch` | drop | touchscreen; see the udev note below |

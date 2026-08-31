@@ -23,22 +23,38 @@ func install(dir string, version string) error {
 		log.Errorf("update payload missing rootfs: %s", err)
 		return err
 	}
-	// The module-load contract (/soc/scripts/auto_load_all_drv.sh) takes effect
-	// only at BOOT. If this payload changes it, a service restart is NOT enough:
-	// the running kernel modules would no longer match the shipped libkvm (e.g.
-	// the openvenc release swaps vendor ax_venc/ax_jenc for the open VCMD driver,
-	// so a restart-only apply would launch openvenc while /dev/es_venc does not
-	// yet exist -> H.264 dark until a reboot the UI never triggers). Detect a
-	// loader change BEFORE the overlay overwrites it and force the reboot branch.
-	// Compared here (pre-copy) so the live file is still the OLD one.
+	// The kernel-module contract (the /soc/scripts/auto_load_all_drv.sh loader
+	// AND the /soc/ko/*.ko modules it insmods) takes effect only at BOOT. If
+	// this payload changes ANY of it, a service restart is NOT enough: the
+	// running modules would no longer match the shipped libkvm (e.g. the
+	// openvenc release swaps vendor ax_venc/ax_jenc for the open VCMD driver, so
+	// a restart-only apply would launch openvenc while /dev/es_venc does not yet
+	// exist -> H.264 dark until a reboot the UI never triggers; likewise a later
+	// payload shipping a fixed ax630c_venc_vcmd.ko with an unchanged loader).
+	// Detect any such change BEFORE the overlay overwrites it (so the live files
+	// are still the OLD ones) and force the reboot branch.
 	loaderChanged := false
-	{
-		newLoader := filepath.Join(rootfs, "soc/scripts/auto_load_all_drv.sh")
-		if nb, nerr := os.ReadFile(newLoader); nerr == nil {
-			ob, oerr := os.ReadFile("/soc/scripts/auto_load_all_drv.sh")
-			if oerr != nil || string(nb) != string(ob) {
+	differs := func(payloadRel, live string) bool {
+		nb, nerr := os.ReadFile(filepath.Join(rootfs, payloadRel))
+		if nerr != nil {
+			return false // payload doesn't ship it -> no forced reboot on its account
+		}
+		ob, oerr := os.ReadFile(live)
+		return oerr != nil || string(nb) != string(ob)
+	}
+	if differs("soc/scripts/auto_load_all_drv.sh", "/soc/scripts/auto_load_all_drv.sh") {
+		loaderChanged = true
+		log.Infof("module loader changed by this update; will reboot")
+	}
+	// Any /soc/ko/*.ko the payload ships that differs from the live copy also
+	// needs a reboot (a loaded module can't be hot-swapped by a service restart).
+	if kos, err := os.ReadDir(filepath.Join(rootfs, "soc/ko")); err == nil {
+		for _, e := range kos {
+			n := e.Name()
+			isKo := len(n) > 3 && n[len(n)-3:] == ".ko"
+			if !e.IsDir() && isKo && differs("soc/ko/"+n, "/soc/ko/"+n) {
 				loaderChanged = true
-				log.Infof("module loader changed by this update; will reboot")
+				log.Infof("kernel module %s changed by this update; will reboot", n)
 			}
 		}
 	}
