@@ -172,14 +172,18 @@ for pending/TODO/unverified markers still present in the tree:
   wrong). Hardware-proven clean teardown; docs/blob-replacement.md "#50 FIXED".
   **#51 DONE + closed (2026-08-31):** blob-free MJPEG via from-source soft-JPEG
   (libjpeg-turbo raw 4:2:2 over the mapped YUYV frame), hardware-proven ~9 fps
-  1080p, 0 libax mappings (5a24baf). **#17 encoder half DONE (2026-08-31,
-  e115561):** openvenc geometry fully parametric (vcenc_geom laws from a
-  17-geometry vendor differential; hw-proven at 5 geometries + live 1080p;
-  capture stride assumption A2 resolved to stride==width). Remaining for #25
-  (openvenc as shipped DEFAULT): ONE human-gated capture bring-up at a real
-  non-1080p source (gamescope HTPC ignores EDID — set it to 720p or attach
-  another source), then flip the default. RC (**#46**) is an independent
-  quality follow-up (fixed-QP v1 ships).
+  1080p, 0 libax mappings (5a24baf). **#17 DONE (2026-08-31, e115561 +
+  31a55d0):** openvenc geometry fully parametric (vcenc_geom laws from a
+  17-geometry vendor differential) AND open CAPTURE hardware-proven at **4K30**
+  — the MIPI link was never the wall (nDataRate=600 = PHY timing band, not a
+  per-lane ceiling; vendor captures 4K30 over the same 4-lane link). Capture
+  envelope now 64x64..3840x2160; both non-1080p suspects (os_mem 0xf0, nr54)
+  disproven; stride assumption A2 resolved to stride==width. Only 4K blob-free
+  *encode* remains (framebuf carveout, split to **#52**) — NOT a default-flip
+  blocker. Also landed: clean-room EDID set (pkgs/edid, from source,
+  --check-clean, fixes Sipeed's shared-identity defect), shipped via rootfs.
+  **#25 openvenc-as-default now gates on #46 (RC) only** — or ship fixed-QP v1
+  per #25's fallback; the flip+close call is Jeremy's.
   Blob-RE roadmap in `docs/blob-replacement.md` (2026-08-30). Non-encoder blob work
   the same night: **#27** initramfs from nixpkgs DONE (static musl, 5 blobs gone,
   bit-reproducible); axbox syslog + 4 stray closed blobs dropped; **#48** filed (42
