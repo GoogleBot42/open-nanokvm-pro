@@ -110,25 +110,61 @@ not build drop-in replacements for individual blobs under the vendor stack.**
 
 ## Plan
 
+**Progress (2026-08-30): the three spec deliverables (steps 1 seed, 2 seed, 3)
+are DONE and main-session-verified against the disassembly.** Clean-room
+behavioral specs live in `docs/reference/deblob-scope/specs/`:
+`spec-mipi-rx.md` (#57), `spec-cdma.md` (#58a), `spec-proton-bypass.md` (#58b).
+The `ax_stub` symbol-stub module (#56) is built and committed (device test
+pending). Three findings from the specs materially change the plan below:
+
+- **The CDMA descriptor/queue engine is OPTIONAL.** Two independent RE passes
+  (spec-cdma and spec-proton-bypass) agree: proton's `regio` layer selects at
+  runtime between direct MMIO and CDMA batching, and plain ordered `writel()` +
+  explicit poll loops reproduce the config. The only ordering rule is *set
+  enable/shadow-commit bits last*. M2 does not implement a CDMA descriptor
+  engine. (Worst case for any behind-the-bridge register: a ~30-line EXT
+  single-poke helper, spec-cdma §2b.) **The item filed as "the single real
+  gate" is largely dissolved.**
+- **The IFE-WDMA buffer-address gate is SOLVED (spec-proton-bypass §3):**
+  `writel(dma_addr >> 3, wdma_block + 0x18*chn + 0x14)`; enable = bit0 @ `+0x1c`;
+  shadow-commit = bit0 @ `+0x18`; whole-frame MODE3 = single partition, offset 0.
+  vb2 substitutes directly for the vendor pool (put the vb2 `dma_addr` where the
+  vendor puts the pool phys addr). This was "never traced" — now traced.
+- **Frame-done IRQ is real and unmasked** (spec-proton-bypass §5: group-4 int
+  regs `0x02400050/54/58/5C`, enabled by `vin_bypass_pipe_irq_register`). The
+  hrtimer is an unrelated scheduler deadline, not a hardware limitation. **M2
+  uses a real ISR and drops the 5 ms poll.**
+- **`mc20e_isp_reg_reset_value.bin` is NEVER read** (spec-proton-bypass §7,
+  verified: proton imports `AX_OSAL_FS_filp_{open,write,close}` but no read
+  primitive — the path is a snapshot *write* target). M2 implements nothing for
+  it. (Resolves the open question below.)
+- **The four "mandatory" selectors touch no registers/clocks** — they deposit
+  software state consumed at node-start; only nr54 (`ax_vin_pipe_partition_info_set`,
+  the OCM slice/partition handshake) is structurally load-bearing. nr56/74/89 are
+  likely vendor call-order (a device test can confirm they are droppable).
+
 1. **Stub experiment (cheap, high information):** replace ax_npu + ax_gdc +
    ax_vpp + ax_ivps with one tiny open module exporting their 26
    proton-imported symbols as logging stubs. If bypass capture runs clean with
    silent stubs, four blobs (~380 KB text) leave the image now and the
    "never executed" claim is runtime-proven; any stub that *does* log reveals
    a hidden init-time call edge the vtable caveat warned about. Rollback = the
-   vendor loader.
+   vendor loader. **Module built + committed (`pkgs/ax-stub`, loader variant
+   `pkgs/rootfs/ax-load-drv.stub.sh`); device test is the next on-device step.**
 2. **CSI-2 identification + first driver (M1):** read the CSI controller
    version/ID registers on-device; if DWC-confirmed, adapt the mainline
    `dw-mipi-csi2`-family driver instead of writing one. Describing-agent spec
    of ax_mipi_rx (7 selectors, ~28+8 register writes, bit names already in
    symbols) fills the gaps. Deliverable: open V4L2 CSI-2 subdev proving PHY
    lock + packet/error counters on hardware, vendor stack not loaded.
-3. **The gate RE (spec work, parallel to M1):** describing-agent behavioral
-   specs of (a) the ax_base CDMA descriptor/queue format, (b) the proton
-   bypass/IFE-WDMA register programming — write order, buffer-address regs,
-   IRQ/frame-done semantics — seeded from the 550-function bypass closure and
-   verified by on-device register traces. **Do this before committing to a
-   proton-driver timeline.**
+3. **The gate RE (spec work, parallel to M1): DONE 2026-08-30.** Behavioral
+   specs of (a) the ax_base CDMA format (`spec-cdma.md`) and (b) the proton
+   bypass/IFE-WDMA register programming (`spec-proton-bypass.md`) delivered and
+   verified — see the progress note above. Both are seeded from the bypass
+   closure; on-device *register-trace* confirmation of a handful of live values
+   (WDMA absolute base, MODE10 bitmask constant, frame-done bit index/SPI,
+   YUV422 plane→channel map) is the one remaining device step, folded into the
+   serialized device-verification pass alongside M1's CSI-ident read.
 4. **Frames to DDR (M2):** the VIN/IFE capture video node against the spec
    from (3): SIF front-end config, IFE WDMA, vb2 buffers, frame-done IRQ
    (retiring the 5 ms poll). Success = YUYV frames at 1080p and 4K30 with
@@ -145,8 +181,14 @@ EDID (step 3 of the epic) is DONE: all six bins clean-room as of this commit
 
 ## Open questions to resolve early
 
-- CSI controller identity (DWC or not) — decides M1's starting point.
-- Does bypass bring-up read `mc20e_isp_reg_reset_value.bin`? (Check on device;
-  if yes, the reset values need a clean-room re-derivation, not a copy.)
-- Frame-done IRQ: is one of GIC 27/28 usable for capture completion in bypass
-  mode, or is the vendor's hrtimer poll a hardware limitation?
+- CSI controller identity (DWC or not) — decides M1's starting point. Static RE
+  says DWC-lineage LIKELY but the register interface is Axera-custom (mainline
+  `dw-mipi-csi2` is a reference, not a drop-in); no version reg is read
+  statically. **Settle on device:** read `0x02600000`/`0x02602000` +0x00 live.
+- ~~Does bypass bring-up read `mc20e_isp_reg_reset_value.bin`?~~ **RESOLVED: no.**
+  proton has no file-read primitive; the path is a snapshot *write* target
+  (spec-proton-bypass §7). Implement nothing for it.
+- ~~Frame-done IRQ vs hrtimer poll~~ **RESOLVED: a real unmasked frame-done IRQ
+  exists** (group-4 regs `0x02400050/54/58/5C`); the hrtimer is unrelated. M2
+  uses the ISR. Remaining device check: confirm the bit index (bit9 inferred)
+  and whether the SPI is GIC 27 or 28.
