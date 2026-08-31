@@ -126,11 +126,14 @@ register correlation, not kprobes):
   partition (`0x73800000–0x7F7FFFFF`). The `writel(dma_addr>>3, wdma_block +
   0x18*chn + 0x14)` gate is real. SIF `WIN0_SIZE` at `0x02406518` =
   `W|(H<<16)` = `0x08700f00` (3840×2160), IFE-go `0x024146dc` = bit0 set.
-- **Frame-done IRQ CONFIRMED — and the SPI number corrected.** Group-4 enable
-  `0x02400050` = `0x200` (bit9), group-1 FSOF `0x02400020` = bit0, both as spec.
-  The live line is **GIC SPI 59 (Linux irq 35), `ax_proton_intt`** (bank 1 =
-  SPI 60/irq 36), firing 3× per frame (FSOF + frame-done + 1, demuxed in-handler)
-  — **not the spec's guessed SPI 27/28.** M2 uses this ISR, drops the poll.
+- **Frame-done IRQ CONFIRMED.** Group-4 enable `0x02400050` = `0x200` (bit9),
+  group-1 FSOF `0x02400020` = bit0, both as spec. Live line = `ax_proton_intt`,
+  **GIC hwirq 59/60 = DT `GIC_SPI 27/28`** (SPIs are offset +32: 59−32=27), Linux
+  irq 35/36, firing ~3× per frame (FSOF + frame-done + 1, demuxed in-handler).
+  So the spec/scope "IRQs 27/28" (DT SPI indices) and the observed hwirq 59/60
+  are the SAME lines — the existing `axera,proton` DT `interrupts` property is
+  correct and M2 reuses it. (The `arch_timer` at "GIC-0 27" is PPI 27, a
+  different number space — not this interrupt.) M2 uses this ISR, drops the poll.
 - **CSI-2 core is CUSTOM confirmed** (not DWC-drop-in): `0x02600000+0x00` =
   `0x0001321c` (not an ASCII-BCD version word; ctrl0 ≠ ctrl1 `0x0001021c`).
   Register map validated exactly to spec: `+0x08`=`0x43210410` (comboMode4),
@@ -231,6 +234,7 @@ EDID (step 3 of the epic) is DONE: all six bins clean-room as of this commit
   (spec-proton-bypass §7). Implement nothing for it.
 - ~~Frame-done IRQ vs hrtimer poll~~ **RESOLVED + device-confirmed:** a real
   unmasked frame-done IRQ exists — group-4 enable `0x02400050`=`0x200` (bit9,
-  confirmed live), on **GIC SPI 59 (irq 35) `ax_proton_intt`** (bank 1 = SPI 60),
-  ~3× fps (FSOF+frame-done+1, in-handler demux). The hrtimer is unrelated. M2
-  uses the ISR. (The old "GIC 27/28" guess was wrong — SPI 27 is `arch_timer`.)
+  confirmed live), `ax_proton_intt` on **GIC hwirq 59/60 = DT `GIC_SPI 27/28`**
+  (irq 35/36), ~3× fps (FSOF+frame-done+1, in-handler demux). The hrtimer is
+  unrelated. M2 uses the ISR and reuses the existing DT interrupts property.
+  (`arch_timer` at "GIC-0 27" is PPI 27 — a different space, not this line.)
