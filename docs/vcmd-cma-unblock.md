@@ -60,8 +60,19 @@ kernel. So the glue (`pkgs/vc8000-vcmd/ax630c_vcmd_glue.c`) now:
    ax_cmm allocates bottom-up first-fit (verified: all 9 boot blocks sit at
    `0x738xxxxx`), so the tail is untouched until CMM usage exceeds 192MB;
    during encoder bring-up the vendor app stack — the only large CMM
-   consumer — is stopped anyway. A permanent home for these 8MB (shrinking
-   CMM via its boot config, or a proper carveout) is #45 integration work.
+   consumer — is stopped anyway.
+
+   **Since the openvenc-default flip (2026-08-31, #25):** the coherent 8MB is
+   now formally reserved — the curated boot loader subtracts 8MB from the
+   `cmmpool=` size (`get_cmm_param` in `pkgs/rootfs/ax-load-drv.sh`) so ax_cmm's
+   ceiling drops to `0x7F800000` and never hands out the VCMD cmdbuf region,
+   even with capture + encode running concurrently (which is now always). The
+   larger 120MB **framebuf** carveout at `0x78000000` is still inside the
+   ax_cmm pool — safe at the operating point (capture tops out ~55MB below it
+   at 1080p, ~7MB at 4K) but not formally reserved, because a clean static
+   split is impossible alongside 4K capture without first downsizing the 120MB
+   framebuf. That, plus making both bases board-id-aware, is **#53** (the
+   concrete sub-task of the #45 permanent-carveout work).
 2. **Enables the block clock** via the *open, in-tree* clk driver: the DT node
    `venc@4010000` (compatible `"axera, venc-encoder"` — note the space) has
    `clocks = <&vpu_clk AX620X_CLK_VENC_EB>` = `clk_venc_eb`

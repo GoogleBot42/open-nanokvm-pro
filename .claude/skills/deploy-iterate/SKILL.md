@@ -162,15 +162,26 @@ The iteration loop for open VC8000E encoder work (#25 family) — used
 repeatedly and validated 2026-08-30. This swaps kernel modules, not app
 files, so it is its own cycle:
 
+**Since 2026-08-31 the SHIPPED default already loads the open VCMD driver**
+(the curated loader insmods `ax630c_venc_vcmd.ko` instead of `ax_venc`/
+`ax_jenc` — #25). So on a current-image device the swap below is usually a
+no-op (vcmd already loaded, vendor venc/jenc already absent) — check
+`lsmod | grep -E 'ax630c_venc_vcmd|ax_venc'` first. The rmmod/insmod dance
+is only needed when testing a *rebuilt* `.ko` against a device still on an
+old (vendor-encode) image, or after a `.vendor`-loader rollback.
+
 1. `nix build .#vcenc-ewl .#vc8000-vcmd`
 2. `tools/kvmscp <ewl bin(s)> <.ko> /tmp/`
 3. On the device (one `tools/kvmssh` invocation, so a failure mid-script
-   still leaves you a shell to recover from):
+   still leaves you a shell to recover from). If the device is on an OLD
+   vendor-encode image:
    `systemctl stop nanokvm && rmmod ax_jenc ax_venc && insmod /tmp/ax630c_venc_vcmd.ko`
-   → run the test binary →
-   `rmmod ax630c_venc_vcmd && insmod /soc/ko/ax_venc.ko && insmod /soc/ko/ax_jenc.ko && systemctl start nanokvm`
-   (separate insmods; ax_jenc depends on ax_venc, so rmmod jenc-first /
-   insmod venc-first).
+   → run the test binary → restore vendor:
+   `rmmod ax630c_venc_vcmd && insmod /soc/ko/ax_venc.ko && insmod /soc/ko/ax_jenc.ko && systemctl start nanokvm`.
+   On a CURRENT-image device: `systemctl stop nanokvm && rmmod
+   ax630c_venc_vcmd && insmod /tmp/ax630c_venc_vcmd.ko` → test →
+   `rmmod ax630c_venc_vcmd && insmod /soc/ko/ax630c_venc_vcmd.ko &&
+   systemctl start nanokvm` (swap the rebuilt .ko for the shipped one).
 4. Pull outputs with `tools/kvmssh 'cat /tmp/out.h264' > local` and verify
    on the host (`ffmpeg -i out.h264 -frames:v 1 out.png`); never leave the
    device with nanokvm stopped.

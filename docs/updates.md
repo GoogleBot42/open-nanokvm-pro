@@ -171,7 +171,7 @@ web UI           ─► reconnects after the restart / reboot
 |---|---|
 | app server, web UI, `libkvm.so{,.0}` | SPL (p1), ddrinit (p2) |
 | `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d; `ax_*.ko` stay in `/soc/ko`) | env (p7), logo (p10/11) |
-| `/soc/scripts/auto_load_all_drv.sh` — our curated 12-module `/soc/ko` loader (+ the `.vendor` rollback copy); takes effect on the **next reboot**, since the vendor set is already loaded when the OTA lands | the `/soc/ko` blobs themselves |
+| `/soc/scripts/auto_load_all_drv.sh` — our curated `/soc/ko` loader (10 vendor blobs + `ax630c_venc_vcmd.ko` in place of `ax_venc`/`ax_jenc`, #25) + the `.vendor` rollback copy, **and** `/soc/ko/ax630c_venc_vcmd.ko` itself; takes effect on the **next reboot** — the installer forces one when the loader changed | the *vendor* `/soc/ko` blobs (`ax_*.ko`) |
 | kernel (p14/p15), dtb (p12/p13) | base Ubuntu rootfs (p17) |
 | U-Boot (p5/p6), ATF (p3/p4), OP-TEE (p8/p9) | repartitioning / GPT layout |
 
@@ -248,8 +248,9 @@ NanoKVM-Server to accept it:
 
 Both are produced deterministically by `pkgs/update-package.nix`, which also
 asserts at build time: every `partitions/` image has the boot-header magic, the
-shipped modules' `vermagic` matches the `4.19.125` modules directory, and
-`modules.dep` resolves `ax_venc`/`lt6911_manage`.
+shipped modules' `vermagic` (both `lt6911_manage.ko` and the open
+`ax630c_venc_vcmd.ko`) matches the `4.19.125` modules directory, and
+`modules.dep` resolves `lt6911_manage`.
 
 > **Preview channel — wired (issues #19/#4).** The web UI's *preview updates*
 > toggle (flag file `/etc/kvm/preview_updates`) switches the update check to

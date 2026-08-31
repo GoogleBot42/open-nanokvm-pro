@@ -230,7 +230,12 @@
         # Releases: rootfs overlay (app/web/libkvm/modules) + A/B partition
         # images (kernel/dtb/boot chain). See docs/updates.md.
         update-package = callPkg ./pkgs/update-package.nix {
-          inherit nanokvm-server nanokvm-web kvm-encoder nanokvm-display
+          # The SHIPPED encode backend is now the blob-free openvenc build (#25
+          # default, fixed-QP v1); it loads the open VCMD driver (vc8000-vcmd)
+          # in place of vendor ax_venc/ax_jenc. The server links the ABI header
+          # only, so it keeps the plain kvm-encoder.
+          kvm-encoder = kvm-encoder-openvenc;
+          inherit nanokvm-server nanokvm-web nanokvm-display vc8000-vcmd edid
             libsns-dummy version kernel boot dtb-slot-image kernel-slot-image;
         };
 
@@ -248,7 +253,11 @@
         edid = callPkg ./pkgs/edid.nix { };
 
         rootfs = callPkg ./pkgs/rootfs.nix {
-          inherit base-axp kvm-encoder kernel
+          # Shipped encode backend = blob-free openvenc (#25 default); the open
+          # VCMD driver (vc8000-vcmd) replaces vendor ax_venc/ax_jenc in the
+          # curated loader. See pkgs/rootfs.nix step [5b7]/[5b7a].
+          kvm-encoder = kvm-encoder-openvenc;
+          inherit base-axp kernel vc8000-vcmd
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy edid version;
         };
 

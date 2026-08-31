@@ -1,5 +1,5 @@
 { pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel, nanokvm-display
-, libsns-dummy, boot, dtb-slot-image, kernel-slot-image
+, libsns-dummy, vc8000-vcmd, edid, boot, dtb-slot-image, kernel-slot-image
 , version ? "0.0.0-dev", ... }:
 
 # ---------------------------------------------------------------------------
@@ -49,10 +49,14 @@
 #                                                loop (#43); needs a daemon-reload
 #                                                or a reboot to take effect.
 #     soc/scripts/auto_load_all_drv.sh           our CURATED /soc/ko module loader
-#                                                -- 12 of the vendor's 22 blobs
-#                                                (#39). Takes effect on the NEXT
-#                                                REBOOT: the modules the OTA lands
-#                                                on are already loaded.
+#                                                -- 10 vendor blobs + our open
+#                                                VCMD encode driver in place of
+#                                                ax_venc/ax_jenc (#39, #25).
+#                                                Takes effect on the NEXT REBOOT;
+#                                                the installer forces one when it
+#                                                sees the loader change.
+#     soc/ko/ax630c_venc_vcmd.ko                 our from-source open VC8000E VCMD
+#                                                encode driver (blob-free encode).
 #     soc/scripts/auto_load_all_drv.sh.vendor    pristine vendor loader kept for
 #                                                on-device rollback (restore + reboot).
 #     etc/rc.local                               vendor rc.local minus the axbox
@@ -163,6 +167,15 @@ pkgs.stdenvNoCC.mkDerivation {
       "${release} "*) ;;   # e.g. "4.19.125 SMP preempt mod_unload aarch64"
       *) echo "ERROR: vermagic '$vm' does not match modules dir ${release}" >&2; exit 1 ;;
     esac
+    # The open VCMD encode driver is loaded by the curated loader at boot; it
+    # must be vermagic-compatible with the same kernel or insmod fails and H.264
+    # goes dark (#25). Assert it here too (it ships from /soc/ko, not modroot).
+    vcmdvm=$(modinfo -F vermagic "${vc8000-vcmd}/ax630c_venc_vcmd.ko")
+    echo "  vermagic(ax630c_venc_vcmd.ko) = $vcmdvm"
+    case "$vcmdvm" in
+      "${release} "*) ;;
+      *) echo "ERROR: ax630c_venc_vcmd.ko vermagic '$vcmdvm' != ${release}" >&2; exit 1 ;;
+    esac
     # (c) modules.dep exists and resolves our marker module.
     test -f "$modroot/modules.dep" || { echo "ERROR: modules.dep not generated" >&2; exit 1; }
     grep -q 'lt6911_manage' "$modroot/modules.dep" \
@@ -213,29 +226,40 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q '^Restart=no$' "$rfs/etc/systemd/system/wifi.service.d/override.conf" \
       || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
 
-    # --- curated /soc/ko module loader (#39, mirrors pkgs/rootfs.nix [5b7]).
-    # Replaces the vendor auto_load_all_drv.sh (all 22 blobs) with the 12-module
-    # dependency closure of {ax_proton, ax_venc, ax_jenc}; the pristine vendor
-    # script ships beside it as .vendor for on-device rollback. This takes effect
-    # on the NEXT REBOOT -- when the OTA lands the vendor set is already loaded,
-    # so nothing is unloaded and the running pipeline is untouched.
-    # NOTE: unlike the rootfs build there is no vendor-loader byte-compare here
+    # --- curated /soc/ko module loader (#39 + #25, mirrors pkgs/rootfs.nix [5b7]).
+    # Replaces the vendor auto_load_all_drv.sh (all 22 blobs) with 10 vendor blobs
+    # (the ax_proton capture closure) PLUS our from-source open VC8000E VCMD
+    # encode driver (ax630c_venc_vcmd.ko) in place of vendor ax_venc/ax_jenc; the
+    # pristine vendor script ships beside it as .vendor for on-device rollback.
+    # Takes effect on the NEXT REBOOT -- when the OTA lands the vendor set is
+    # already loaded, so nothing is unloaded and the running pipeline is untouched;
+    # on reboot the open VCMD driver loads instead and the openvenc libkvm drives
+    # it. NOTE: unlike the rootfs build there is no vendor-loader byte-compare here
     # (the OTA has no copy of the base rootfs to diff against); pkgs/rootfs.nix
     # step [5b7] is the guard that catches a base .axp changing the loader.
-    mkdir -p "$rfs/soc/scripts"
+    mkdir -p "$rfs/soc/scripts" "$rfs/soc/ko"
     cp ${./rootfs/ax-load-drv.sh}        "$rfs/soc/scripts/auto_load_all_drv.sh"
     cp ${./rootfs/ax-load-drv.vendor.sh} "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
     chmod 755 "$rfs/soc/scripts/auto_load_all_drv.sh" \
               "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
+    # The open VCMD encode driver, loaded by the curated loader in place of
+    # vendor ax_venc/ax_jenc (built against our kernel; provides /dev/es_venc).
+    cp ${vc8000-vcmd}/ax630c_venc_vcmd.ko "$rfs/soc/ko/ax630c_venc_vcmd.ko"
+    chmod 644 "$rfs/soc/ko/ax630c_venc_vcmd.ko"
     # ax_cmm without its cmmpool= param is the strlen(NULL) boot-loop panic, and
     # the module count is the whole point of the change -- assert both in-build.
     grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$rfs/soc/scripts/auto_load_all_drv.sh" \
       || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$rfs/soc/scripts/auto_load_all_drv.sh" \
       || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko' "$rfs/soc/scripts/auto_load_all_drv.sh" \
+      || { echo "ERROR: curated loader lost the open ax630c_venc_vcmd.ko (no encode)" >&2; exit 1; }
+    if grep -Eq 'insmod /soc/ko/ax_(venc|jenc)\.ko' "$rfs/soc/scripts/auto_load_all_drv.sh"; then
+      echo "ERROR: curated loader still insmods vendor ax_venc/ax_jenc -- clashes with the open VCMD driver" >&2; exit 1
+    fi
     nins=$(grep -c '^[[:space:]]*insmod ' "$rfs/soc/scripts/auto_load_all_drv.sh" || true)
-    if [ "$nins" -ne 12 ]; then
-      echo "ERROR: curated loader has $nins insmod lines, expected 12 (#39)" >&2; exit 1
+    if [ "$nins" -ne 11 ]; then
+      echo "ERROR: curated loader has $nins insmod lines, expected 11 (10 vendor + open venc, #25)" >&2; exit 1
     fi
     # No modprobe/depmod: the loader must insmod by PATH with explicit params, or
     # modules.dep resolution could load ax_cmm parameter-less (the autoload brick).
@@ -283,6 +307,18 @@ pkgs.stdenvNoCC.mkDerivation {
     mkdir -p "$rfs/opt/lib"
     cp ${libsns-dummy}/lib/libsns_dummy.so "$rfs/opt/lib/libsns_dummy.so"
     chmod 755 "$rfs/opt/lib/libsns_dummy.so"
+
+    # --- clean-room EDID set over Sipeed's shipped bins (mirrors pkgs/rootfs.nix
+    # [5a1b]): same-role E54/E18 replaced in place (distinct identity, byte-12
+    # UI selector kept), NanoKVM-720P60 added. Keeps an OTA-upgraded device's
+    # /kvmcomm/edid consistent with a freshly-flashed image.
+    mkdir -p "$rfs/kvmcomm/edid"
+    cp ${edid}/NanoKVM-1080P60.bin "$rfs/kvmcomm/edid/E54-1080P60FPS.bin"
+    cp ${edid}/NanoKVM-4K30.bin    "$rfs/kvmcomm/edid/E18-4K30FPS.bin"
+    cp ${edid}/NanoKVM-720P60.bin  "$rfs/kvmcomm/edid/NanoKVM-720P60.bin"
+    chmod 644 "$rfs/kvmcomm/edid/E54-1080P60FPS.bin" \
+              "$rfs/kvmcomm/edid/E18-4K30FPS.bin" \
+              "$rfs/kvmcomm/edid/NanoKVM-720P60.bin"
     mkdir -p "$rfs/etc/systemd/system/multi-user.target.wants"
     cp ${nanokvm-display}/etc/systemd/system/nanokvm-display.service \
        "$rfs/etc/systemd/system/nanokvm-display.service"

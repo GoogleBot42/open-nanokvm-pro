@@ -23,6 +23,26 @@ func install(dir string, version string) error {
 		log.Errorf("update payload missing rootfs: %s", err)
 		return err
 	}
+	// The module-load contract (/soc/scripts/auto_load_all_drv.sh) takes effect
+	// only at BOOT. If this payload changes it, a service restart is NOT enough:
+	// the running kernel modules would no longer match the shipped libkvm (e.g.
+	// the openvenc release swaps vendor ax_venc/ax_jenc for the open VCMD driver,
+	// so a restart-only apply would launch openvenc while /dev/es_venc does not
+	// yet exist -> H.264 dark until a reboot the UI never triggers). Detect a
+	// loader change BEFORE the overlay overwrites it and force the reboot branch.
+	// Compared here (pre-copy) so the live file is still the OLD one.
+	loaderChanged := false
+	{
+		newLoader := filepath.Join(rootfs, "soc/scripts/auto_load_all_drv.sh")
+		if nb, nerr := os.ReadFile(newLoader); nerr == nil {
+			ob, oerr := os.ReadFile("/soc/scripts/auto_load_all_drv.sh")
+			if oerr != nil || string(nb) != string(ob) {
+				loaderChanged = true
+				log.Infof("module loader changed by this update; will reboot")
+			}
+		}
+	}
+
 	overlayCmd := fmt.Sprintf("cp -a %s/. /", rootfs)
 	if out, err := exec.Command("sh", "-c", overlayCmd).CombinedOutput(); err != nil {
 		log.Errorf("failed to apply rootfs overlay: %s", string(out))
@@ -58,8 +78,12 @@ func install(dir string, version string) error {
 	// (ExecStartPre re-copies /kvmapp -> /dev/shm/kvmapp and relaunches the server).
 	// --no-block returns immediately so systemd can tear down this cgroup without
 	// racing the HTTP reply.
-	if wroteParts {
-		log.Infof("boot/kernel/dtb partitions updated; rebooting")
+	if wroteParts || loaderChanged {
+		if wroteParts {
+			log.Infof("boot/kernel/dtb partitions updated; rebooting")
+		} else {
+			log.Infof("module loader changed; rebooting so it takes effect")
+		}
 		_ = exec.Command("systemctl", "--no-block", "reboot").Run()
 	} else {
 		_ = exec.Command("systemctl", "--no-block", "restart", "nanokvm").Run()

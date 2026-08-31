@@ -27,6 +27,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
+#include <linux/reset.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
 
@@ -72,11 +73,20 @@ MODULE_PARM_DESC(coherent_size, "size of the coherent DMA carveout (0 = don't de
  * in-tree clk driver (drivers/clk/axera/clk-ax620e.c). The vendor stack gates
  * this clock on/off around each encode from userspace; unclocked, the whole
  * 0x4010000 block reads the 0xDEADBEEF bus poison (hwid probe fails). We hold
- * it enabled for the driver's lifetime. Reset is left as-is: the block already
- * runs when clocked (proven live during vendor encodes), so vpu_reset_async is
- * already deasserted.
+ * it enabled for the driver's lifetime.
+ *
+ * RESET: the block also comes out of a cold boot in RESET, and clock alone is
+ * not enough -- with the clock on but reset asserted the block STILL reads
+ * 0xDEADBEEF (device-proven 2026-08-31: the first boot where vendor ax_venc
+ * never loaded, vcmd_mem_init found hwid=0xdeadbeef and init failed). The
+ * vendor ax_venc.ko deasserts venc_rst at its load; every prior open-driver
+ * run rode on that. As the SHIPPED default (#25) no vendor venc loads first,
+ * so we MUST deassert it ourselves via the open Axera reset driver
+ * (CONFIG_AXERA_RESET_AX620E; DT `resets = <&vpu_reset_async ...>`,
+ * reset-name "venc_rst").
  */
 static struct clk *venc_clk;
+static struct reset_control *venc_rst;
 
 /* --- symbols the VCMD core (eswin/vc8000_vcmd_driver.c) imports --- */
 struct platform_device *venc_pdev = NULL;
@@ -128,25 +138,51 @@ static int ax630c_venc_clk_on(void)
 		venc_irq = -1;
 	}
 	venc_clk = of_clk_get(np, 0);
-	of_node_put(np);
 	if (IS_ERR(venc_clk)) {
 		pr_err("ax630c-venc-vcmd: of_clk_get failed: %ld\n",
 		       PTR_ERR(venc_clk));
 		venc_clk = NULL;
+		of_node_put(np);
 		return -ENODEV;
 	}
 	if (clk_prepare_enable(venc_clk)) {
 		pr_err("ax630c-venc-vcmd: clk_prepare_enable failed\n");
 		clk_put(venc_clk);
 		venc_clk = NULL;
+		of_node_put(np);
 		return -EIO;
 	}
 	pr_info("ax630c-venc-vcmd: clk_venc_eb enabled\n");
+
+	/* Deassert the VENC block reset (see the file header). Without this the
+	 * clocked block reads 0xDEADBEEF on a boot where vendor ax_venc never ran.
+	 * Non-fatal-but-loud if the reset can't be obtained: on a warm cycle after
+	 * a vendor encode the block may already be deasserted, so still try init. */
+	venc_rst = of_reset_control_get_exclusive(np, "venc_rst");
+	of_node_put(np);
+	if (IS_ERR(venc_rst)) {
+		pr_warn("ax630c-venc-vcmd: reset_control_get(venc_rst) failed: %ld -- "
+			"proceeding (block may already be out of reset)\n",
+			PTR_ERR(venc_rst));
+		venc_rst = NULL;
+	} else if (reset_control_deassert(venc_rst)) {
+		pr_warn("ax630c-venc-vcmd: reset_control_deassert(venc_rst) failed -- "
+			"proceeding\n");
+	} else {
+		pr_info("ax630c-venc-vcmd: venc_rst deasserted\n");
+	}
 	return 0;
 }
 
 static void ax630c_venc_clk_off(void)
 {
+	if (venc_rst) {
+		/* Leave the block DEASSERTED (same end-state as after a vendor
+		 * encode) so a later vendor-venc or vcmd reload still finds live
+		 * HW; just drop our reference. */
+		reset_control_put(venc_rst);
+		venc_rst = NULL;
+	}
 	if (venc_clk) {
 		clk_disable_unprepare(venc_clk);
 		clk_put(venc_clk);

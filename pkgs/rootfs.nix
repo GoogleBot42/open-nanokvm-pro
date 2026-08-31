@@ -1,4 +1,4 @@
-{ pkgs, base-axp, kvm-encoder, kernel
+{ pkgs, base-axp, kvm-encoder, kernel, vc8000-vcmd
 , nanokvm-server, nanokvm-web, nanokvm-display, libsns-dummy, edid
 , version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
 , ...
@@ -25,12 +25,17 @@
 #       (copytruncate; the server holds its stdout fd open -- see #41).
 #   - /etc/systemd/system/wifi.service.d/override.conf -> Restart=no, ends the
 #       vendor wifi.service crash-restart loop (see #43).
-#   - /soc/scripts/auto_load_all_drv.sh -> our CURATED module loader: 12 of the
-#       vendor's 22 /soc/ko blobs, the dependency closure of {ax_proton, ax_venc,
-#       ax_jenc} (see #39). The pristine vendor script is kept beside it as
-#       auto_load_all_drv.sh.vendor for on-device rollback, and step [5b7]
-#       byte-compares the base .axp's copy against our pin so a base bump that
-#       changes the loader fails the build.
+#   - /soc/scripts/auto_load_all_drv.sh -> our CURATED module loader: 10 of the
+#       vendor's 22 /soc/ko blobs (the ax_proton capture closure) PLUS our
+#       from-source open VC8000E VCMD encode driver (ax630c_venc_vcmd.ko, emitted
+#       to /soc/ko in step [5b7a]) in place of vendor ax_venc/ax_jenc -- so the
+#       encode path is now blob-free too (#25 default). The pristine vendor
+#       script is kept beside it as auto_load_all_drv.sh.vendor for on-device
+#       rollback, and step [5b7] byte-compares the base .axp's copy against our
+#       pin so a base bump that changes the loader fails the build.
+#   - libkvm.so is the openvenc build (open capture + open encode; 0 vendor
+#       libs). Its soft-MJPEG path DT_NEEDEDs libjpeg.so.8, which the vendor
+#       Ubuntu base already ships at /lib/aarch64-linux-gnu/libjpeg.so.8.
 #   - /etc/rc.local -> our copy with the axbox syslog daemon DROPPED. The vendor
 #       rc.local starts /etc/init.d/{axsyslogd,axklogd} -> /bin/axbox, a CLOSED
 #       Axera BusyBox multicall; stock rsyslogd already runs alongside it, so
@@ -110,7 +115,7 @@ pkgs.stdenvNoCC.mkDerivation {
     #
     # The prebuilt vendor ax_*.ko (pkgs/ax-ko-blobs.nix) are DELIBERATELY NOT
     # merged in. They already ship on the device via the retained vendor rootfs at
-    # /soc/ko, where /soc/scripts/auto_load_all_drv.sh -- OUR curated 12-module
+    # /soc/ko, where /soc/scripts/auto_load_all_drv.sh -- OUR curated
     # loader since #39 (step [5b7]) -- insmods them by path WITH their required
     # parameters (notably `ax_cmm cmmpool=...`). Putting them in
     # /usr/lib/modules makes depmod emit `of:` aliases; systemd-udevd coldplug then
@@ -303,9 +308,10 @@ pkgs.stdenvNoCC.mkDerivation {
               "/etc/systemd/system/wifi.service.d/override.conf" 0100644
 
     # 5b7. CURATED /soc/ko module loader (#39). The vendor
-    # /soc/scripts/auto_load_all_drv.sh insmods all 22 blobs at boot; only 12 --
-    # the symbol-dependency closure of {ax_proton, ax_venc, ax_jenc} -- are
-    # needed for capture->encode. We ship a curated loader in its place and keep
+    # /soc/scripts/auto_load_all_drv.sh insmods all 22 blobs at boot; we load 10
+    # vendor blobs (the ax_proton capture closure) + our from-source open VCMD
+    # encode driver (ax630c_venc_vcmd.ko) IN PLACE of vendor ax_venc/ax_jenc
+    # (#25 default). We ship a curated loader in its place and keep
     # the pristine vendor script alongside as auto_load_all_drv.sh.vendor, so a
     # rollback on the device is `cp <name>.vendor <name>` + reboot. Rationale and
     # the full keep/drop table: docs/blob-replacement.md.
@@ -323,7 +329,7 @@ pkgs.stdenvNoCC.mkDerivation {
     cmp -s "$PWD/chk.vloader" "${./rootfs/ax-load-drv.vendor.sh}" || {
       echo "ERROR: the base .axp's $vloader differs from" >&2
       echo "       pkgs/rootfs/ax-load-drv.vendor.sh. The vendor module loader" >&2
-      echo "       changed -- re-derive the curated 12-module set (#39," >&2
+      echo "       changed -- re-derive the curated module set (#39/#25," >&2
       echo "       docs/blob-replacement.md) and re-pin both files." >&2
       exit 1
     }
@@ -336,9 +342,16 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$curated" \
       || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
+    # Blob-free encode (#25 default): the open VCMD driver must be loaded, and
+    # the vendor venc/jenc blobs must NOT be (they'd grab the VCMD MMIO+IRQ).
+    grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko' "$curated" \
+      || { echo "ERROR: curated loader lost the open ax630c_venc_vcmd.ko (no encode)" >&2; exit 1; }
+    if grep -Eq 'insmod /soc/ko/ax_(venc|jenc)\.ko' "$curated"; then
+      echo "ERROR: curated loader still insmods vendor ax_venc/ax_jenc -- clashes with the open VCMD driver" >&2; exit 1
+    fi
     nins=$(grep -c '^[[:space:]]*insmod ' "$curated" || true)
-    if [ "$nins" -ne 12 ]; then
-      echo "ERROR: curated loader has $nins insmod lines, expected 12 (#39)" >&2; exit 1
+    if [ "$nins" -ne 11 ]; then
+      echo "ERROR: curated loader has $nins insmod lines, expected 11 (10 vendor + open venc, #25)" >&2; exit 1
     fi
     # No modprobe/depmod: the loader must insmod by PATH with explicit params.
     # A modprobe here would resolve through modules.dep and could load ax_cmm
@@ -349,6 +362,19 @@ pkgs.stdenvNoCC.mkDerivation {
     echo "  module loader: vendor script pinned + curated set asserted ($nins insmod lines)."
     emit_file "${./rootfs/ax-load-drv.vendor.sh}" "$vloader.vendor" 0100755
     emit_file "${./rootfs/ax-load-drv.sh}"        "$vloader"        0100755
+
+    # 5b7a. The from-source open VC8000E VCMD driver (#44/#25), loaded by the
+    # curated loader above in place of vendor ax_venc/ax_jenc. Built against OUR
+    # kernel (vermagic-compatible). Provides /dev/es_venc for the openvenc libkvm
+    # backend. Emitted into /soc/ko (flat, insmod-by-path -- no depmod needed).
+    # debugfs `stat` exits 0 even for a MISSING path -- test the output for
+    # "Inode:" (the idiom used for the libkvm/loader guards; a bare exit-status
+    # check here would be a silent no-op).
+    if ! debugfs -R "stat /soc/ko" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+      echo "ERROR: /soc/ko missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    emit_file "${vc8000-vcmd}/ax630c_venc_vcmd.ko" "/soc/ko/ax630c_venc_vcmd.ko" 0100644
 
     # 5b8. DROP the axbox syslog daemon (docs/provenance.md). The vendor
     # /etc/rc.local starts /etc/init.d/{axsyslogd,axklogd}, which start-stop-daemon
@@ -473,9 +499,23 @@ pkgs.stdenvNoCC.mkDerivation {
       /opt/lib/libax_syslog.so \
       /usr/bin/kvm_ui_setup \
       /usr/bin/ax_clk \
-      /usr/bin/ax_lookat ; do
+      /usr/bin/ax_lookat \
+      /soc/ko/ax_venc.ko \
+      /soc/ko/ax_jenc.ko ; do
       echo "rm $dead" >> "$script"
     done
+    # The two vendor ENCODE blobs (#25): our from-source open VC8000E VCMD
+    # driver (ax630c_venc_vcmd.ko, loaded in their place by the curated loader)
+    # makes them dead weight -- nothing kept symbol-depends on them (only
+    # ax_jenc depended on ax_venc, both dropped), and the shipped libkvm links
+    # ZERO vendor libs. Removing them shrinks the shipped blob set toward the
+    # zero-vendor-blob goal (standing direction, 2026-08-30). /soc is a real
+    # dir (not a usr symlink), so debugfs `rm` reaches it. The pristine .vendor
+    # rollback loader still references them, but it has no `set -e`, so a
+    # rollback insmods the CAPTURE blobs fine and simply skips the (now absent)
+    # encode pair -- encode rollback needs a reflash, which is the intent.
+    # (OTA can't delete, so an OTA-upgraded device keeps them unused until
+    # reflash -- same pattern as the axbox removal.)
     # The axbox set above (step 5b8): axbox is the closed multicall,
     # ax{syslog,klog,dmesg}d are its symlinks (axdmesg is caller-less but would
     # dangle once axbox is gone), /etc/init.d/{axsyslogd,axklogd} the (now
@@ -545,6 +585,32 @@ pkgs.stdenvNoCC.mkDerivation {
     cmp -s $PWD/chk.ko "$stage/$ltrel" \
       || { echo "ERROR: lt6911_manage.ko missing/differs in image (/usr/$ltrel)" >&2; exit 1; }
     echo "  modules: /usr/lib/modules/${release} modules.dep + lt6911_manage.ko -- verified in image."
+
+    # The open VCMD encode driver must land byte-identical (the curated loader
+    # insmods it by path at boot; a silent debugfs write-miss would boot with no
+    # H.264 and no build error -- #25 default).
+    debugfs -R "dump /soc/ko/ax630c_venc_vcmd.ko $PWD/chk.vcmd" rootfs.ext4 2>/dev/null
+    cmp -s $PWD/chk.vcmd "${vc8000-vcmd}/ax630c_venc_vcmd.ko" \
+      || { echo "ERROR: ax630c_venc_vcmd.ko missing/differs in image (/soc/ko)" >&2; exit 1; }
+    # vermagic must match the shipped kernel or insmod fails at boot (no H.264).
+    vcmdvm=$(modinfo -F vermagic "${vc8000-vcmd}/ax630c_venc_vcmd.ko")
+    case "$vcmdvm" in
+      "${release} "*) ;;
+      *) echo "ERROR: ax630c_venc_vcmd.ko vermagic '$vcmdvm' != ${release}" >&2; exit 1 ;;
+    esac
+    echo "  open venc driver: /soc/ko/ax630c_venc_vcmd.ko -- verified in image (vermagic $vcmdvm)."
+
+    # The vendor ENCODE blobs must be GONE (#25 -- open VCMD driver replaces
+    # them). debugfs `stat` prints "File not found" (no "Inode:") for a removed
+    # path; assert that for both, so a debugfs rm that silently no-oped fails
+    # the build instead of shipping the blobs we meant to drop.
+    for gone in /soc/ko/ax_venc.ko /soc/ko/ax_jenc.ko; do
+      if debugfs -R "stat $gone" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+        echo "ERROR: $gone still present in image -- vendor encode blob not removed (#25)" >&2
+        exit 1
+      fi
+    done
+    echo "  vendor encode blobs: ax_venc.ko + ax_jenc.ko -- confirmed removed from image."
 
     # Sanity: the boot-time module loader config landed.
     debugfs -R "dump /etc/modules-load.d/nanokvm.conf $PWD/chk.conf" rootfs.ext4 2>/dev/null
@@ -688,9 +754,17 @@ pkgs.stdenvNoCC.mkDerivation {
         override.conf                           wifi.service 3s crash-restart loop
                                                 (~100 MB/week of syslog churn)
       /soc/scripts/auto_load_all_drv.sh      <- our CURATED /soc/ko module loader:
-                                                12 of 22 blobs (the dependency
-                                                closure of ax_proton/ax_venc/
-                                                ax_jenc), see issue #39
+                                                10 vendor blobs (the ax_proton
+                                                capture closure) + our open VCMD
+                                                encode driver in place of vendor
+                                                ax_venc/ax_jenc (#39, #25)
+      /soc/ko/ax630c_venc_vcmd.ko            <- our from-source open VC8000E VCMD
+                                                encode driver (blob-free encode)
+    removed (encode blobs, #25)  : /soc/ko/ax_venc.ko + /soc/ko/ax_jenc.ko --
+                                   the open VCMD driver replaces them; nothing
+                                   kept depends on them and libkvm links no
+                                   vendor libs. (OTA can't delete; an upgraded
+                                   device keeps them unused until reflash.)
       /soc/scripts/auto_load_all_drv.sh.vendor <- pristine vendor loader, kept for
                                                 on-device rollback (restore + reboot)
       /etc/rc.local                          <- vendor script minus the axbox

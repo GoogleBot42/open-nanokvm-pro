@@ -1,8 +1,10 @@
 #!/bin/sh
 # open-nanokvm-pro CURATED module loader (issue #39) -- replaces the vendor
-# auto_load_all_drv.sh, which loaded all 22 /soc/ko modules. Only the
-# symbol-dependency closure of {ax_proton, ax_venc, ax_jenc} is needed for
-# capture->encode (docs/blob-replacement.md: 12 of 22, ~6.4 MB). Dropped:
+# auto_load_all_drv.sh, which loaded all 22 /soc/ko modules. Capture needs the
+# symbol-dependency closure of {ax_proton} + the ax base stack; ENCODE is now
+# our from-source open VC8000E VCMD driver (ax630c_venc_vcmd.ko, #25 default
+# 2026-08-31) in place of vendor ax_venc + ax_jenc. So: 10 vendor blobs + 1
+# open module (was 12 vendor blobs). Dropped vendor modules:
 # hynitron_touch (touchscreen, unused), ax_tdp (2D engine, no runtime users),
 # ax_vo/ax_fb (video out / vfb, we never output video; the mini panel is
 # fb_jd9853 via modules-load.d), ax_vdec (decoder), ax_mipi_switch (multi-cam
@@ -82,6 +84,18 @@ function get_cmm_param()
         cmm_size=$((emmc_size / 2))
     fi
     offset=$((os_mem_size * 1024 * 1024 + 0x40000000))
+    # BLOB-FREE ENCODE (#25 default): reserve the TOP 8MB of the CMM pool for the
+    # open VCMD driver's COHERENT cmdbuf pool (ax630c_vcmd_glue.c coherent_base=
+    # 0x7F800000, +8MB -- the per-frame-DMA hot region). ax_cmm allocates
+    # bottom-up, so dropping its ceiling by 8MB (WITHOUT touching `offset`, which
+    # fixes the pool BASE -- reducing cmm_size before this line would instead
+    # shove the base up and leave the top mapped) hands ax_cmm [base,0x7F800000)
+    # and leaves [0x7F800000,0x80000000) exclusively to the encoder. Costs
+    # capture nothing (it never reaches within ~70MB of the top even at 4K).
+    # NOTE: pairs with the glue's 1G-board 0x7F800000 default; the larger 120MB
+    # framebuf carveout at 0x78000000 stays shared (a clean static split is
+    # impossible alongside 4K capture without downsizing it -- tracked, #45/#53).
+    cmm_size=$((cmm_size - 8))
     printf "cmmpool=anonymous,0,%#x,%dM" "$offset" "$cmm_size"
 }
 
@@ -99,20 +113,24 @@ function load_drv()
     insmod /soc/ko/ax_ivps.ko
     insmod /soc/ko/ax_vpp.ko
     insmod /soc/ko/ax_gdc.ko
-    insmod /soc/ko/ax_venc.ko
-    insmod /soc/ko/ax_jenc.ko
+    # BLOB-FREE ENCODE (#25 default, 2026-08-31): our from-source open VC8000E
+    # VCMD driver replaces the vendor ax_venc.ko + ax_jenc.ko (they hold the
+    # VCMD MMIO + IRQ, so coexistence is impossible). It provides /dev/es_venc;
+    # libkvm's KVM_OPEN_VENC backend drives it (H.264 from-source register
+    # program; MJPEG is from-source software JPEG). The vendor ax_venc/ax_jenc
+    # stay in /soc/ko unused (rollback: swap these two lines back).
+    insmod /soc/ko/ax630c_venc_vcmd.ko
     insmod /soc/ko/ax_mipi_rx.ko
     insmod /soc/ko/ax_proton.ko mem_iq_level=1
 
-    echo "run auto_load_all_drv.sh (curated, #39) end "
+    echo "run auto_load_all_drv.sh (curated, #39; open venc) end "
 }
 
 function remove_drv()
 {
     rmmod ax_proton
     rmmod ax_mipi_rx
-    rmmod ax_jenc
-    rmmod ax_venc
+    rmmod ax630c_venc_vcmd
     rmmod ax_gdc
     rmmod ax_vpp
     rmmod ax_ivps

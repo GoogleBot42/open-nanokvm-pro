@@ -106,10 +106,18 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    (this bricked a unit on the first OTA). They stay in the vendor rootfs at
    `/soc/ko`, where `/soc/scripts/auto_load_all_drv.sh` insmods them by path
    with the required parameters. That loader is **ours** since issue #39
-   (`pkgs/rootfs/ax-load-drv.sh`): it loads 12 of the vendor's 22 blobs — the
-   dependency closure of `{ax_proton, ax_venc, ax_jenc}` — and the pristine
-   vendor script ships alongside it as `auto_load_all_drv.sh.vendor`, so
-   rollback is a `cp` and a reboot. Keep/drop rationale:
+   (`pkgs/rootfs/ax-load-drv.sh`): it loads **10** of the vendor's 22 blobs —
+   the dependency closure of `{ax_proton}` — plus our from-source open VC8000E
+   VCMD encode driver (`/soc/ko/ax630c_venc_vcmd.ko`) **in place of** vendor
+   `ax_venc`/`ax_jenc`, so the encode path is blob-free too (#25 default,
+   2026-08-31). It also reserves the top 8MB of the CMM pool for the VCMD
+   coherent cmdbuf region (`cmm_size - 8`). The two vendor encode blobs
+   (`ax_venc.ko`, `ax_jenc.ko`) are **removed from the flashed image** — the
+   open VCMD driver replaces them and nothing kept depends on them. The
+   pristine vendor script still ships as `auto_load_all_drv.sh.vendor`; a
+   `cp` + reboot rolls back to the vendor **capture** stack (it has no
+   `set -e`, so it skips the now-absent encode pair — restoring vendor encode
+   needs a reflash). Keep/drop rationale:
    [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39).
 3. **Service selection** (see below): disable `kvmcomm.service`, enable
    `nanokvm.service` in `multi-user.target.wants`.
