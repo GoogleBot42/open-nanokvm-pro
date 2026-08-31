@@ -309,15 +309,23 @@ pkgs.stdenvNoCC.mkDerivation {
     chmod 755 "$rfs/opt/lib/libsns_dummy.so"
 
     # --- clean-room EDID set over Sipeed's shipped bins (mirrors pkgs/rootfs.nix
-    # [5a1b]): same-role E54/E18 replaced in place (distinct identity, byte-12
-    # UI selector kept), NanoKVM-720P60 added. Keeps an OTA-upgraded device's
-    # /kvmcomm/edid consistent with a freshly-flashed image.
+    # [5a1b]): all six same-role vendor bins replaced in place (distinct identity
+    # per mode, byte-12 UI selector kept), NanoKVM-720P60 added. Keeps an
+    # OTA-upgraded device's /kvmcomm/edid consistent with a freshly-flashed image.
     mkdir -p "$rfs/kvmcomm/edid"
-    cp ${edid}/NanoKVM-1080P60.bin "$rfs/kvmcomm/edid/E54-1080P60FPS.bin"
-    cp ${edid}/NanoKVM-4K30.bin    "$rfs/kvmcomm/edid/E18-4K30FPS.bin"
-    cp ${edid}/NanoKVM-720P60.bin  "$rfs/kvmcomm/edid/NanoKVM-720P60.bin"
+    cp ${edid}/NanoKVM-1080P60.bin  "$rfs/kvmcomm/edid/E54-1080P60FPS.bin"
+    cp ${edid}/NanoKVM-4K30.bin     "$rfs/kvmcomm/edid/E18-4K30FPS.bin"
+    cp ${edid}/NanoKVM-4K39.bin     "$rfs/kvmcomm/edid/E48-4K39FPS.bin"
+    cp ${edid}/NanoKVM-2K60.bin     "$rfs/kvmcomm/edid/E56-2K60FPS.bin"
+    cp ${edid}/NanoKVM-4K1610.bin   "$rfs/kvmcomm/edid/E58-4K16-10.bin"
+    cp ${edid}/NanoKVM-Ultrawide.bin "$rfs/kvmcomm/edid/E63-Ultrawide.bin"
+    cp ${edid}/NanoKVM-720P60.bin   "$rfs/kvmcomm/edid/NanoKVM-720P60.bin"
     chmod 644 "$rfs/kvmcomm/edid/E54-1080P60FPS.bin" \
               "$rfs/kvmcomm/edid/E18-4K30FPS.bin" \
+              "$rfs/kvmcomm/edid/E48-4K39FPS.bin" \
+              "$rfs/kvmcomm/edid/E56-2K60FPS.bin" \
+              "$rfs/kvmcomm/edid/E58-4K16-10.bin" \
+              "$rfs/kvmcomm/edid/E63-Ultrawide.bin" \
               "$rfs/kvmcomm/edid/NanoKVM-720P60.bin"
     mkdir -p "$rfs/etc/systemd/system/multi-user.target.wants"
     cp ${nanokvm-display}/etc/systemd/system/nanokvm-display.service \

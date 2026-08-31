@@ -1,13 +1,14 @@
 { pkgs, ... }:
 
 # Clean-room EDID set for the LT6911UXC HDMI front-end. Generated from source
-# (pkgs/edid/mkedid.py, E-EDID 1.3 + CTA-861, no vendor bytes) to replace the
-# same-role entries in Sipeed's shipped /kvmcomm/edid set, fixing two real
+# (pkgs/edid/mkedid.py, E-EDID 1.3 + CTA-861, no vendor bytes) and replaces
+# ALL SIX entries of Sipeed's shipped /kvmcomm/edid set, fixing the real
 # defects: shared monitor identity across modes (hosts that cache per-display
-# settings don't re-probe on switch) and edid-decode --check failures. Each
-# variant has a DISTINCT product id + serial; byte 12 keeps the server's
-# EDIDMap selector so the web UI still names it. Every bin passes
-# `edid-decode --check` (verified in the build).
+# settings don't re-probe on switch; E63 even borrowed a Philips PnP id),
+# edid-decode --check failures, and an HDMI Max_TMDS_Clock lower than the mode
+# the EDID exists to advertise. Each variant has a DISTINCT product id +
+# serial; byte 12 keeps the server's EDIDMap selector so the web UI still
+# names it. Every bin passes `edid-decode --check` (verified in the build).
 #
 #   nix build .#edid   -> result/*.bin
 

@@ -17,6 +17,8 @@
 #   - /etc/modules-load.d/nanokvm.conf -> makes systemd-modules-load.service
 #       modprobe lt6911_manage at boot (nothing on the vendor rootfs loads it
 #       for the kvmapp/nanokvm stack, yet libkvm polls /proc/lt6911_info/*).
+#   - /kvmcomm/edid/*.bin -> our clean-room EDID set (pkgs/edid). All six vendor
+#       bins replaced in place, filename + byte 12 preserved -- step [5a1b].
 #   Everything else stays vendor (app server + web already live in /kvmapp).
 # Also hardened in the overlay:
 #   - motd-news DISABLED: /etc/default/motd-news ENABLED=0 kills the Ubuntu
@@ -173,17 +175,24 @@ pkgs.stdenvNoCC.mkDerivation {
     # modes (only the serial LSB differs) so a host that caches per-display
     # settings won't re-probe on a mode switch; ours give each variant a distinct
     # product-id + serial while keeping byte 12 = the server's EDIDMap selector,
-    # so the web UI still names E54/E18. Every bin passes edid-decode --check
-    # (enforced in pkgs/edid.nix). The two same-role stock files are replaced
-    # in place (filename + byte 12 preserved); 720p is added. The other vendor
-    # bins (2K/4K-10bit/ultrawide) stay Sipeed's until hardware-validated.
+    # so the web UI still names them. Every bin passes edid-decode --check
+    # (enforced in pkgs/edid.nix). ALL SIX stock files are replaced in place
+    # (filename + byte 12 preserved, so NanoKVM-Server's EDIDMap and the web
+    # UI's mode list are untouched); 720p is added. No vendor EDID bytes remain
+    # in the image. The four exotic modes (4K39/2K60/4K-16:10/ultrawide) are
+    # spec-derived and edid-decode-clean but NOT yet hardware-validated on a
+    # real source -- 1080p60 and 4K30 are.
     if ! debugfs -R "stat /kvmcomm/edid" rootfs.ext4 >/dev/null 2>&1; then
       echo "ERROR: /kvmcomm/edid missing in vendor rootfs -- layout changed" >&2
       exit 1
     fi
-    emit_file "${edid}/NanoKVM-1080P60.bin" "/kvmcomm/edid/E54-1080P60FPS.bin" 0100644
-    emit_file "${edid}/NanoKVM-4K30.bin"    "/kvmcomm/edid/E18-4K30FPS.bin"    0100644
-    emit_file "${edid}/NanoKVM-720P60.bin"  "/kvmcomm/edid/NanoKVM-720P60.bin"  0100644
+    emit_file "${edid}/NanoKVM-1080P60.bin"  "/kvmcomm/edid/E54-1080P60FPS.bin" 0100644
+    emit_file "${edid}/NanoKVM-4K30.bin"     "/kvmcomm/edid/E18-4K30FPS.bin"    0100644
+    emit_file "${edid}/NanoKVM-4K39.bin"     "/kvmcomm/edid/E48-4K39FPS.bin"    0100644
+    emit_file "${edid}/NanoKVM-2K60.bin"     "/kvmcomm/edid/E56-2K60FPS.bin"    0100644
+    emit_file "${edid}/NanoKVM-4K1610.bin"   "/kvmcomm/edid/E58-4K16-10.bin"    0100644
+    emit_file "${edid}/NanoKVM-Ultrawide.bin" "/kvmcomm/edid/E63-Ultrawide.bin" 0100644
+    emit_file "${edid}/NanoKVM-720P60.bin"   "/kvmcomm/edid/NanoKVM-720P60.bin" 0100644
 
     # 5a2. OUR from-source app: patched NanoKVM-Server + web UI + version stamp.
     # This makes the flashed image RUN our server (whose update check targets our
@@ -779,6 +788,13 @@ pkgs.stdenvNoCC.mkDerivation {
                                                 mini-display stack (fb_jd9853/
                                                 fbtft/gpio_keys/rotary_encoder,
                                                 all from-source) at boot
+      /kvmcomm/edid/*.bin                    <- clean-room EDID set (pkgs/edid,
+                                                E-EDID 1.3 + CTA-861 from source).
+                                                ALL SIX vendor bins replaced in
+                                                place (filename + byte 12 kept, so
+                                                the server EDIDMap / web UI mode
+                                                list are unchanged) + NanoKVM-720P60
+                                                added. No vendor EDID bytes remain.
       /opt/nanokvm-display/                  <- mini-display status daemon
                                                 (pure Python + generated fonts)
       /etc/systemd/system/nanokvm-display.service (enabled)

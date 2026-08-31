@@ -600,10 +600,13 @@ Ordered by how much they block a boot-test.
    no `ether-wake`, so the appliance ships a one-line `ether-wake` shim
    (`etherWakeShim`) that maps it onto `wakeonlan` (same magic packet, broadcast
    by default). On `serverPath` and `systemPackages`. Untested on hardware.
-8. **`/opt/etc`** (173 MB of Axera sensor tuning `.ini` files) and
-   **`/kvmcomm/edid/*`** are unaudited. The ISP is bypassed on the KVM path, so
-   the sensor tuning data is probably dead weight — but "probably" is not
-   "verified", and `ax_proton mem_iq_level=1` is in the loader.
+8. **`/opt/etc`** (173 MB of Axera sensor tuning `.ini` files) is unaudited.
+   The ISP is bypassed on the KVM path, so the sensor tuning data is probably
+   dead weight — but "probably" is not "verified", and `ax_proton
+   mem_iq_level=1` is in the loader. (**`/kvmcomm/edid/*`** is no longer a
+   question: the whole set is generated from source by `pkgs/edid` — just
+   install the `edid` derivation's bins under `/kvmcomm/edid` with the vendor
+   filenames.)
 9. **Hot patching changes shape.** `/kvmapp` becomes an immutable store
    symlink, so on-device patches only apply to `/dev/shm/kvmapp` and vanish on
    reboot. The `deploy-iterate` skill assumes a writable `/kvmapp`.
