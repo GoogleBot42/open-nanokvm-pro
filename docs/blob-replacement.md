@@ -1903,13 +1903,13 @@ one field offset makes it fail with the exact differing bytes). It also pins
 refactor cannot silently drop a field back to its 1080p constant.
 
 **Supported envelope.** Even width and height (a YUYV macropixel is 2 px),
-64×64 minimum, 1920×1200 maximum. The ceiling is the link budget, not the
-payloads: 4 lanes × 600 Mbps ≈ 2.4 Gbps and YUV422-8 is 16 bpp, so ~2.5 Mpx at
-60 Hz saturates the DPHY — 1920×1200 is the largest standard mode inside it,
-and we have no decoded way to program another rate. Out-of-envelope geometries
-are **refused** (bring-up returns an error and logs the reason) rather than
-clamped: clamping is what produced #17's garbage frames, because it drives the
-pipe at a resolution the source is not sending.
+64×64 minimum, **3840×2160 maximum** (raised from 1920×1200 on 2026-08-31 —
+see the 4K30 stage entry below; the old "4 lanes × 600 Mbps DPHY link budget"
+reasoning was WRONG: nDataRate=600 is a PHY timing band, the D-PHY is
+source-synchronous, and the vendor path captures 4K30 over the same link).
+Out-of-envelope geometries are **refused** (bring-up returns an error and logs
+the reason) rather than clamped: clamping is what produced #17's garbage
+frames, because it drives the pipe at a resolution the source is not sending.
 
 **Assumptions made where the RE record is silent.** The only full-struct vendor
 capture that exists is 1080p, so no vendor bytes for another resolution have
@@ -3153,3 +3153,54 @@ Stage-3 `0x70` at 720p H.264 = suspect #1, `nr54` partition_info = #2); the
 stride suspect is retired (resolved above, in capture's favor). Needs a
 human: set the HTPC to 720p output (gamescope ignores EDID) or attach any
 non-1080p source; then watch `[openkvm] capture up WxH` + a clean stream.
+
+### 2026-08-31 — Open capture at 4K30: the MIPI link was never the wall (#17)
+
+The open blob-free capture backend delivers correct **3840×2160 YUYV** frames
+on this hardware — device-proven, with NO change but the geometry-envelope
+ceiling (`kvm_capture_geom.h` MAX now 3840×2160). The "1920×1200 / DPHY link
+budget" ceiling in the 2026-08-17 entry was **over-conservative and is
+superseded**.
+
+**What killed the link-budget reasoning.** Drove the VENDOR capture path
+(`kvm_pipeline.c`, `.#kvm-encoder`) headless at the live 4K30 source under an
+LD_PRELOAD ioctl tracer (`docs/reference/vcenc-open/geom-probe/` tooling
+family). It captured clean 4K30 while programming the **identical** MIPI
+config we already replay — `AX_MIPI_RX_SetAttr` with `{4 lanes, nDataRate=600,
+LaneCombo MODE_0}` — and the **identical** sys nr45 scalar `0x016e3600`
+(byte-for-byte the value `kvm_capture_open.c` hardcodes). So `nDataRate=600`
+is a **PHY timing band selector, not a per-lane Mbps ceiling**: D-PHY is
+source-synchronous off the LT6911's clock lane, the RX locks to whatever the
+transmitter clocks, and 4:2:2-8 at 4K30 (~4 Gbps) rides the same 4-lane link
+our 1080p path uses. The link was never the constraint; the software envelope
+was.
+
+**Open-path bring-up (Fable subagent, verified from artifacts).** Built
+`.#kvm-encoder-open` (open capture + vendor encode, to isolate capture) with
+only the envelope raised; log: `[openkvm] SYS+pool up: 3840x2160 stride=3840
+blk=16588800 B x 4 (63.3 MB)` → `capture up 3840x2160 (blob-free)` →
+`frame phys: api=…==derived=…` (the parametric geometry math agrees with the
+pool API at 4K). The MJPEG stream (vendor jenc) ran ~22 fps 4K; a pulled frame
+decodes pixel-perfect to the live host desktop (a KDE display panel reading
+"3840×2160, 30 Hz"), no shear/stride-wrap/green regions, two static frames
+byte-identical.
+
+**Both non-1080p suspects DISPROVEN at 4K.** The `OSMEM_ALLOC_FLAG 0xf0`
+(assumption 5) and `nr54 partition_info` (assumption 6) that the 2026-08-17
+entry flagged as the prime non-1080p failure suspects were **replayed
+verbatim and capture was clean** — neither is resolution-dependent, at least
+up to 4K. The remaining assumptions (stride==width, geometry-word offsets)
+already held from the encoder differential.
+
+**Scope.** This is the open CAPTURE envelope (now 64×64..3840×2160). The open
+ENCODER (`vcenc_geom.h`) stays 1920×1200 for now: its from-source register
+program is geometry-proven to 4K (the vendor VC8000E encodes 4K under our
+laws — a 4K IDR/IPPP stream was driven and decoded), but the open driver's
+`framebuf_alloc.c` carveout is 120 MB and a 4K recon/aux/output floorplan
+exceeds it, so 4K blob-free ENCODE needs a carveout resize (follow-up). Until
+then 4K uses the vendor encoder (open capture + closed encode), or downscale.
+
+**This also answers #17's capture bring-up:** a non-1080p source captured
+cleanly end-to-end through the fully parametric open path — the hardware test
+the issue was blocked on. Tooling: `docs/reference/vcenc-open/geom-probe/`
+(the ioctl tracer + cap driver reused here).

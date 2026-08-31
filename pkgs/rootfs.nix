@@ -1,5 +1,5 @@
 { pkgs, base-axp, kvm-encoder, kernel
-, nanokvm-server, nanokvm-web, nanokvm-display, libsns-dummy
+, nanokvm-server, nanokvm-web, nanokvm-display, libsns-dummy, edid
 , version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
 , ...
 }:
@@ -162,6 +162,23 @@ pkgs.stdenvNoCC.mkDerivation {
       exit 1
     fi
     emit_file "${libsns-dummy}/lib/libsns_dummy.so" "/opt/lib/libsns_dummy.so" 0100755
+
+    # 5a1b. Clean-room EDID set (from source, pkgs/edid/mkedid.py) over Sipeed's
+    # shipped /kvmcomm/edid bins. Sipeed's set shares one monitor identity across
+    # modes (only the serial LSB differs) so a host that caches per-display
+    # settings won't re-probe on a mode switch; ours give each variant a distinct
+    # product-id + serial while keeping byte 12 = the server's EDIDMap selector,
+    # so the web UI still names E54/E18. Every bin passes edid-decode --check
+    # (enforced in pkgs/edid.nix). The two same-role stock files are replaced
+    # in place (filename + byte 12 preserved); 720p is added. The other vendor
+    # bins (2K/4K-10bit/ultrawide) stay Sipeed's until hardware-validated.
+    if ! debugfs -R "stat /kvmcomm/edid" rootfs.ext4 >/dev/null 2>&1; then
+      echo "ERROR: /kvmcomm/edid missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    emit_file "${edid}/NanoKVM-1080P60.bin" "/kvmcomm/edid/E54-1080P60FPS.bin" 0100644
+    emit_file "${edid}/NanoKVM-4K30.bin"    "/kvmcomm/edid/E18-4K30FPS.bin"    0100644
+    emit_file "${edid}/NanoKVM-720P60.bin"  "/kvmcomm/edid/NanoKVM-720P60.bin"  0100644
 
     # 5a2. OUR from-source app: patched NanoKVM-Server + web UI + version stamp.
     # This makes the flashed image RUN our server (whose update check targets our

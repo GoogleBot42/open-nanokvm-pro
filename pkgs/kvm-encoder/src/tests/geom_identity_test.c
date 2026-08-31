@@ -267,13 +267,15 @@ static void test_envelope(void)
     expect(1366,  768, 1);
     expect(1024,  768, 1);
     expect( 640,  480, 1);
+    expect(2560, 1440, 1);   /* raised envelope (4K) */
+    expect(3840, 2160, 1);   /* 4K30 -- device-proven open capture 2026-08-31 */
     expect(   0,    0, 0);   /* HDMI unlocked */
     expect(  -1,  480, 0);
     expect(1921, 1080, 0);   /* odd width  */
     expect(1920, 1081, 0);   /* odd height */
     expect(  32,   32, 0);   /* below the floor */
-    expect(2560, 1440, 0);   /* beyond the DPHY budget */
-    expect(3840, 2160, 0);
+    expect(3840, 2162, 0);   /* beyond the ceiling */
+    expect(3842, 2160, 0);
 }
 
 /* A rejected geometry must leave nothing behind for a caller to drive. */
@@ -282,7 +284,7 @@ static void test_reject_zeroes(void)
     kvm_geom g;
     printf("\n[rejected geometry produces no payloads]\n");
     memset(&g, 0xa5, sizeof g);
-    if (kvm_geom_build(&g, 2560, 1440) == 0) { printf("  FAIL  build accepted 2560x1440\n"); failures++; return; }
+    if (kvm_geom_build(&g, 3840, 2400) == 0) { printf("  FAIL  build accepted 3840x2400\n"); failures++; return; }
     unsigned char zero[sizeof g];
     memset(zero, 0, sizeof zero);
     chk_mem("kvm_geom zeroed on reject", &g, zero, sizeof g);

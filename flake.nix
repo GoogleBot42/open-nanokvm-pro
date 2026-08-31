@@ -243,9 +243,13 @@
 
         # Rootfs: vendor Ubuntu base (from base-axp) overlaid with our server,
         # web UI, libkvm.so, and merged/depmod'd kernel modules.
+        # Clean-room EDID set for the LT6911UXC front-end (from source; distinct
+        # per-mode identity + edid-decode --check clean). See pkgs/edid.nix.
+        edid = callPkg ./pkgs/edid.nix { };
+
         rootfs = callPkg ./pkgs/rootfs.nix {
           inherit base-axp kvm-encoder kernel
-            nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
+            nanokvm-server nanokvm-web nanokvm-display libsns-dummy edid version;
         };
 
         # Pure-Nix rootfs (issue #26) -- a NixOS system closure packed into a
@@ -286,7 +290,7 @@
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-rootfs firmware-image sd-image
-            axdl;
+            edid axdl;
 
           default = firmware-image;
         };

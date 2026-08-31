@@ -31,3 +31,17 @@ at 1920x1080): `sw2` low16 is a CONSTANT 240 (not `2*mbw`); `sw237` low16 is
 a constant 0x44 (not `mbh`). The golden-vector test
 (`pkgs/vcenc-ewl/tests/vcenc_geom_test.c`, auto-generated vectors) pins every
 law against all 17 observations: `nix build .#checks.x86_64-linux.open-venc-geometry`.
+
+## 4K capture trace (2026-08-31 addition)
+
+- `ioctltrace.c` — generic LD_PRELOAD ioctl tracer (`_IOC_SIZE`-safe hexdump of
+  the arg for both directions, fd→path resolution). Cross-compile for aarch64;
+  `LD_PRELOAD=… TRACE_OUT=/tmp/x.trace`.
+- `cap4k_trace.py` — drives the VENDOR capture path (`kvm_sys_init` /
+  `kvm_cap_start` / `kvm_cap_get`, exported by the deployed libkvm) at the live
+  source geometry under the tracer, dumps the delivered frame's
+  geometry/stride/format + a raw YUYV dump. Used to prove the vendor captures
+  4K30 with the SAME MIPI config ({4 lanes, nDataRate=600, MODE_0}) and sys
+  nr45 scalar (0x016e3600) the open path already replays — i.e. the MIPI link
+  is not resolution-limited. See docs/blob-replacement.md "2026-08-31 — Open
+  capture at 4K30".

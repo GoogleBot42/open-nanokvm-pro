@@ -127,9 +127,23 @@ overlay (and won't return — the build fails if any survive):
 | `/opt/swupdate/bin/swupdate` | ~500K | vendor OTA binary; its `S99checkota` call is commented out (we replaced OTA) |
 
 **Kept** (live dependencies, not blobs to chase): `/kvmcomm/scripts/*` (wifi,
-mount_emmc), `/kvmcomm/edid/*`, `/kvmcomm/ko/lt6911_manage.ko` (until the
-from-source module fully supersedes it), and `fw_printenv`/`fw_setenv`
-(`S99checkboot` uses them). The `kvm_ui` `srcs/*` bitmaps and the inert
+mount_emmc), `/kvmcomm/ko/lt6911_manage.ko` (until the from-source module fully
+supersedes it), and `fw_printenv`/`fw_setenv` (`S99checkboot` uses them).
+
+**`/kvmcomm/edid/*` — partially replaced from source (2026-08-31).** Sipeed's
+EDID bins are data, not code, but they carry two real defects: all six share
+one monitor identity (only the serial LSB, byte 12, differs — the value the
+web UI uses as the mode selector), so a host that caches per-display settings
+may not re-probe on a mode switch; and they fail `edid-decode --check`. The two
+same-role entries we can validate — `E54-1080P60FPS.bin` and `E18-4K30FPS.bin`
+— are now generated from source (`pkgs/edid/mkedid.py`, E-EDID 1.3 + CTA-861,
+no vendor bytes; `pkgs/edid.nix` enforces `--check` PASS in the build) with
+distinct product-id + serial but the same byte 12 so the UI naming is
+unchanged; a from-source `NanoKVM-720P60.bin` is added. Both replacements are
+hardware-validated: written to the LT6911 SPI flash via `/proc/lt6911_info/edid`,
+served back byte-identical, accepted by the driver `check_edid`, and the 4K30
+bin drives a real 4K30 host to lock + clean blob-free capture. The exotic
+vendor bins (2K, 4K-10bit, ultrawide) stay Sipeed's until hardware-validated. The `kvm_ui` `srcs/*` bitmaps and the inert
 `/kvmapp/cua` Python are harmless non-binaries, left in place.
 
 > **Provenance nuance:** on a running device the `ax_*.ko` and `/opt/lib/libax_*.so`

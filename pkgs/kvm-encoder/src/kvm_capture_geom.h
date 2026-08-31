@@ -37,11 +37,17 @@
  * YUV422 interleaved YUYV, 2 B/px (device-verified end-to-end, Stage 6). */
 #define KVM_GEOM_BPP 2
 
-/* Supported geometry envelope -- see kvm_geom_check() for the reasoning. */
+/* Supported geometry envelope -- see kvm_geom_check() for the reasoning.
+ * Ceiling raised to 4K (2026-08-31): the vendor MPI backend captures 3840x2160
+ * at the SAME MIPI config we replay (4 lanes, nDataRate=600, LaneCombo MODE_0)
+ * and the SAME sys nr45 scalar (0x016e3600) -- both hardware-confirmed via the
+ * traced vendor 4K30 capture. So nDataRate=600 is a PHY timing band, not a
+ * per-lane bit-rate ceiling: D-PHY is source-synchronous off the LT6911 clock
+ * lane, and the link is not the wall. 4K is 4:2:2 8-bit like every other mode. */
 #define KVM_GEOM_MIN_W    64
 #define KVM_GEOM_MIN_H    64
-#define KVM_GEOM_MAX_W    1920
-#define KVM_GEOM_MAX_H    1200
+#define KVM_GEOM_MAX_W    3840
+#define KVM_GEOM_MAX_H    2160
 #define KVM_GEOM_W_ALIGN  2   /* hard: one YUYV macropixel is 2 px            */
 #define KVM_GEOM_H_ALIGN  2   /* hard: progressive frame, 2-line chroma pair  */
 
