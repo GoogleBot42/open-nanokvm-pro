@@ -185,16 +185,13 @@ int kvm_geom_check(int w, int h, const char **why)
                  "cannot emit an odd line";
     else if (w < KVM_GEOM_MIN_W || h < KVM_GEOM_MIN_H)
         reason = "below the minimum supported frame (64x64)";
-    /* Upper bound: the DPHY link is fixed at 4 lanes x 600 Mbps = 2.4 Gbps
-     * (kvm_pipeline.h KVM_MIPI_RATE; the vendor uses the same rate at every
-     * resolution and we have no decoded way to program another). YUV422-8 is
-     * 16 bpp, so ~2.5 Mpx/frame at 60 Hz saturates the link; 1920x1200 is the
-     * largest standard HDMI mode inside that budget, and 1920 is also the
-     * widest geometry the captured pipe has ever been proven at. Anything
-     * bigger would not lock even if the payloads accepted it. */
+    /* Upper bound: 3840x2160 is the largest geometry the open pipe is
+     * device-proven at (4K30 capture, 2026-08-31). nDataRate=600 is a PHY
+     * timing band, not a per-lane Mbps ceiling: the D-PHY RX locks to the
+     * LT6911's clock lane, so the link itself was never the constraint. */
     else if (w > KVM_GEOM_MAX_W || h > KVM_GEOM_MAX_H)
-        reason = "beyond the open-capture envelope (max 1920x1200: the fixed "
-                 "4x600 Mbps DPHY link cannot carry more)";
+        reason = "beyond the open-capture envelope (max 3840x2160, the "
+                 "largest device-proven geometry)";
 
     if (why) *why = reason;
     return reason ? -1 : 0;
