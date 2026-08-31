@@ -97,6 +97,10 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
   ask before irreversible/destructive operations.
 - Prefer re-implementing against documented/open APIs over reverse-engineering a
   vendor-internal seam.
+- **Clean-room RE (hard requirement, 2026-08-30):** all RE of vendor binaries
+  goes through *describing* subagents that emit behavioral specs; drivers are
+  written from the spec only, never from vendor code/disassembly directly.
+  On-device observation (register snapshots, traces) is unrestricted.
 - Record findings and rationale even for rejected paths, so decisions can be revisited.
 - Questions get direct answers before (or instead of) action.
 - Delegate aggressively to `model: opus` subagents to save usage — searching, mining,

@@ -190,6 +190,19 @@ for pending/TODO/unverified markers still present in the tree:
   unused `/opt/lib` libs = 29.4 MB, needs a device `lsof`); **#26** NixOS rootfs
   verdict + green scaffold (nixos-24.11, systemd-256 kernel floor) with 4 review
   defects fixed. All hardware flash/boot tests remain human-gated.
+  **2026-08-31 — epic #55 (full deblob) SCOPED + decided:** working doc
+  `docs/deblob-capture.md`, clean-room evidence `docs/reference/deblob-scope/`.
+  KVM path is pure ISP-bypass (CSI-2→IFE-WDMA→DDR writer, not an ISP); blobs
+  unstripped; clk/reset/IRQ open in-tree; OSAL is GPL source in the SDK.
+  Decision: clean V4L2/media-controller, whole-closure swap (no vendor-ioctl
+  drop-in, no inter-blob ABI reimpl). Children: **#56** stub experiment (4
+  blobs out if green), **#57** M1 CSI-2 ident (likely Synopsys DWC) + open
+  subdev, **#58** gate RE (ax_base CDMA descriptor + proton bypass/IFE-WDMA
+  spec — do before any proton timeline), **#59** M2 frames-to-DDR, **#60** M3
+  parity + closure retirement. EDID set COMPLETE from source (all six bins;
+  **#61** hw validation is Jeremy-gated; **#62** 720p UI omission, pre-existing).
+  Standing rule: vendor-binary RE only via describing subagents (behavioral
+  specs), implementation from specs only.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
