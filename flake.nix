@@ -136,6 +136,13 @@
         # encode-submission path (issue #44). See pkgs/vc8000-vcmd.nix.
         vc8000-vcmd = callPkg ./pkgs/vc8000-vcmd.nix { };
 
+        # Deblob probe (#56, epic #55): one open module exporting the 26 symbols
+        # ax_proton imports from ax_npu/ax_gdc/ax_ivps/ax_vpp as logging stubs,
+        # so a capture run can PROVE those four blobs are dead weight. Not part
+        # of any image -- built and loaded by hand alongside
+        # pkgs/rootfs/ax-load-drv.stub.sh. See pkgs/ax-stub.nix.
+        ax-stub = callPkg ./pkgs/ax-stub.nix { };
+
         # Open VC8000E userspace submitter -- userspace half of the blob-free
         # encoder (#45). Stage A (ewl_probe) drives the full VCMD cmdbuf
         # lifecycle from userspace and is device-proven. See pkgs/vcenc-ewl.nix.
@@ -291,7 +298,7 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
-            initramfs kernel vc8000-vcmd vcenc-ewl dtb dtb-slot-image
+            initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
