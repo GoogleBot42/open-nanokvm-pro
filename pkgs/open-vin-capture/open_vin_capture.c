@@ -140,7 +140,10 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
  * yuv-select [16]=1,[17]=1,[19]=0; preserve mask 0xFFF48E88.
  * ==> new = (old & KEEP) | 0x00030003 for CSI-2 DT 0x1E. */
 #define OVC_SIF_IN_FMT_KEEP	0xFFF48E88
-#define OVC_SIF_IN_FMT_YUV422_8	0x00030003
+/* HW-corrected 2026-08-31 from the live vendor 4K capture register image
+ * (docs/reference/deblob-scope/regdumps/): SIF IN_FMT settles to 0x40 for this
+ * HDMI YUV422 path, not the spec-predicted 0x00030003. */
+#define OVC_SIF_IN_FMT_YUV422_8	0x40
 #define OVC_CSI2_DT_YUV422_8	0x1E
 #define OVC_CSI2_DT_PARK	0x3A	/* never-matching DT for idle matcher */
 #define OVC_SIF_WIN1_PARK	0x00200020
@@ -186,13 +189,27 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_RST1_ASSERT		0xE8
 #define OVC_RST1_DEASSERT	0xEC
 
+/* IFE/WDMA reset mask (ax_isp_reset_ife_legacy): bits 13,14,15,16,18. */
+#define OVC_IFE_RST_MASK	0x0005E000
+
+/* AXI-master quiesce ctrl/status regs, in the 0x02400000 ISP file
+ * (spec-vin-reset step 4/9): write 0xFFFFFFFF to ctrl, poll status clear,
+ * zero ctrl afterwards. IFE / ITP / YUV masters. */
+#define OVC_AXI_IFE_CTRL	0x00184
+#define OVC_AXI_IFE_STAT	0x00188
+#define OVC_AXI_ITP_CTRL	0x80144
+#define OVC_AXI_ITP_STAT	0x80148
+#define OVC_AXI_YUV_CTRL	0xC0148
+#define OVC_AXI_YUV_STAT	0xC014C
+
 /* Format limits */
 #define OVC_MIN_WIDTH		64
 #define OVC_MAX_WIDTH		3840
 #define OVC_MIN_HEIGHT		64
 #define OVC_MAX_HEIGHT		2160
-#define OVC_DEF_WIDTH		1920
-#define OVC_DEF_HEIGHT		1080
+/* Default to the confirmed source geometry (live vendor capture = 3840x2160). */
+#define OVC_DEF_WIDTH		3840
+#define OVC_DEF_HEIGHT		2160
 
 /* ------------------------------------------------------------------------ */
 /* Driver structures                                                        */
@@ -238,6 +255,12 @@ static inline u32 ovc_rd(struct ovc_dev *ovc, u32 off)
 static inline void ovc_wr(struct ovc_dev *ovc, u32 off, u32 val)
 {
 	writel(val, ovc->regs + off);
+}
+
+/* clock/reset window (0x02500000) accessor */
+static inline void ovc_clkrst_wr(struct ovc_dev *ovc, u32 off, u32 val)
+{
+	writel(val, ovc->clkrst + off);
 }
 
 /* new = (old & keep) | set  -- the vendor RMW idiom (spec §0.1, §4.3) */
@@ -400,34 +423,42 @@ static dma_addr_t ovc_buf_dma_addr(struct vb2_buffer *vb)
  */
 static void ovc_clkrst_init(struct ovc_dev *ovc)
 {
-	/* §8.3 step 1: pulse reset-group-1 bit20 */
-	writel(BIT(20), ovc->clkrst + OVC_RST1_ASSERT);
-	writel(BIT(20), ovc->clkrst + OVC_RST1_DEASSERT);
+	int t;
+
+	/* Pulse reset-group-1 bit20 (spec §8.3 step 1 / clock-source mux). */
+	ovc_clkrst_wr(ovc, OVC_RST1_ASSERT, BIT(20));
+	ovc_clkrst_wr(ovc, OVC_RST1_DEASSERT, BIT(20));
 
 	/*
-	 * TODO(bringup): §8.3 step 1 also programs the clock-source mux
-	 * (0xC8 set / 0xCC clear, 3-bit fields [10:8],[7:5],[4:2] for
-	 * domains 0/1/2 -> 416 / 533.333 / 297 MHz). The spec pins the
-	 * mechanism but not the mux level values; capture the live mux
-	 * read-back at +0x00 after a vendor boot (checklist #9) and
-	 * program the same fields here.
+	 * Ungate clocks. HW-validated 2026-08-31: the SIF (0x2406xxx) and
+	 * IFE/WDMA (0x2414xxx) datapath clocks are NOT in the 0x3F/0x3FE
+	 * subset the first draft enabled -- those blocks stayed at 0xDEADBEEF.
+	 * Enabling the full gate mask un-DEADBEEFs them (devmem-proven). The
+	 * gate regs are W1S, so setting reserved bits is a no-op.
+	 * (spec §8.3 step 2; docs/reference/deblob-scope/specs/spec-vin-reset.md)
 	 */
-
-	/* §8.3 step 2: ungate clocks (W1S; superset incl. D-PHY ref, §8.2) */
-	writel(0x3F, ovc->clkrst + OVC_CLK_GATE_A_SET);
-	writel(0x3FE, ovc->clkrst + OVC_CLK_GATE_B_SET);
-
-	/* §8.3 step 3: deassert all resets (group 1: bits 0..22 except 20) */
-	writel(0xFFFFFFFF, ovc->clkrst + OVC_RST0_DEASSERT);
-	writel(0x006FFFFF, ovc->clkrst + OVC_RST1_DEASSERT);
+	ovc_clkrst_wr(ovc, OVC_CLK_GATE_A_SET, 0xFFFFFFFF);
+	ovc_clkrst_wr(ovc, OVC_CLK_GATE_B_SET, 0xFFFFFFFF);
 
 	/*
-	 * TODO(bringup): §8.3 steps 4-5 (AXI quiesce check, per-index reset
-	 * pulse with the 0x0440306C hold register, zeroing the three
-	 * top-level AXI ctrl regs) are omitted in the first draft -- the
-	 * spec gives the sequence shape but not the AXI-ctrl offsets.
-	 * Needed only if the plain deassert above proves insufficient.
+	 * IFE/WDMA reset ONLY (mask 0x5E000, from ax_isp_reset_ife_legacy).
+	 * HW-validated 2026-08-31: the full 32-bit rst0 sweep (spec-vin-reset
+	 * step 5) HANGS the SoC on this config (it pulses a bit that resets the
+	 * AXI fabric / a bus the CPU depends on); the narrow IFE mask alone is
+	 * devmem-proven not to hang. So we release only the IFE/WDMA datapath,
+	 * which is what writes frames to DDR. (SIF's own reset line is unknown
+	 * and only the full sweep releases it per the RE -- tracked as the
+	 * remaining bring-up gap; SIF may run on post-clock defaults.)
 	 */
+	ovc_wr(ovc, OVC_AXI_IFE_CTRL, 0xFFFFFFFF);	/* IFE AXI quiesce */
+	for (t = 0; t < 51; t++) {
+		if (!ovc_rd(ovc, OVC_AXI_IFE_STAT))
+			break;
+		udelay(200);
+	}
+	ovc_clkrst_wr(ovc, OVC_RST0_ASSERT, OVC_IFE_RST_MASK);
+	ovc_clkrst_wr(ovc, OVC_RST0_DEASSERT, OVC_IFE_RST_MASK);
+	ovc_wr(ovc, OVC_AXI_IFE_CTRL, 0);
 }
 
 /* SIF front-end static config (spec §1) -- all SIF regs are RMW */

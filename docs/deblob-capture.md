@@ -234,6 +234,23 @@ Three findings from the specs materially change the plan below:
    IFE-top block base, the carveout base/size split (coordinate #53), the async
    subdev link to M1, dma-buf export, and the on-hardware milestone — YUYV
    frames at 1080p + 4K30, zero vendor modules, A/B-verified. Serial bring-up.
+   **Bring-up progress (2026-08-31, on hardware, base-only boot):** probe +
+   /dev/video0 + IRQ35 register clean, S_FMT/REQBUFS/QBUF/STREAMON run with no
+   hang. Frames do NOT yet flow — the SIF/IFE datapath sub-blocks read
+   0xDEADBEEF. Recovered + folded in: the `VIN_glb_create` reset RE
+   (`spec-vin-reset.md`); clk-enable (`0x025000D0/D8`, full mask) devmem-proven
+   to un-DEADBEEF the blocks; reset polarity confirmed (`0xE0` assert / `0xE4`
+   deassert); golden corrections (SIF IN_FMT=0x40, default geometry 4K). **The
+   one remaining gap:** even clocked + IFE-reset-deasserted, the SIF/IFE config
+   registers read 0 but DROP writes. The vendor's full 32-bit rst0 sweep (which
+   the RE says releases SIF) HANGS the SoC (it pulses a fabric/bus reset), and
+   the IFE AXI-quiesce latches the master into a held state clk-enable can't
+   clear. So the "make config regs writable" enable is a subtle bit-level step
+   still to pin — needs more RE of the vendor's per-block write-enable/AXI path
+   (not safely brute-forceable on-device). Everything upstream (probe, IRQ,
+   WDMA address gate, geometry, reset polarity, clock wake) is proven; this is
+   the last blocker for frames. `pkgs/open-vin-capture` carries the narrow,
+   non-hanging reset (clk-enable + IFE 0x5E000) + the golden corrections.
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure
