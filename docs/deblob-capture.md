@@ -114,8 +114,42 @@ not build drop-in replacements for individual blobs under the vendor stack.**
 are DONE and main-session-verified against the disassembly.** Clean-room
 behavioral specs live in `docs/reference/deblob-scope/specs/`:
 `spec-mipi-rx.md` (#57), `spec-cdma.md` (#58a), `spec-proton-bypass.md` (#58b).
-The `ax_stub` symbol-stub module (#56) is built and committed (device test
-pending). Three findings from the specs materially change the plan below:
+The `ax_stub` symbol-stub module (#56) is built and committed.
+
+**On-device verification pass (2026-08-30) — the specs' inferred values checked
+against live hardware during 4K30 vendor capture** (raw dumps preserved in the
+session record; kernel has `CONFIG_KPROBE_EVENTS` off, so this used `/dev/mem`
+register correlation, not kprobes):
+- **The IFE-WDMA address gate is CONFIRMED LIVE.** WDMA block base = `0x02414000`,
+  active channel 8; buffer-addr register `0x024140d4` (= base + 0x18*8 + 0x14)
+  held `0x0e8fc000` = `phys>>3`; `<<3 = 0x747E0000`, inside the CMM DRAM
+  partition (`0x73800000–0x7F7FFFFF`). The `writel(dma_addr>>3, wdma_block +
+  0x18*chn + 0x14)` gate is real. SIF `WIN0_SIZE` at `0x02406518` =
+  `W|(H<<16)` = `0x08700f00` (3840×2160), IFE-go `0x024146dc` = bit0 set.
+- **Frame-done IRQ CONFIRMED — and the SPI number corrected.** Group-4 enable
+  `0x02400050` = `0x200` (bit9), group-1 FSOF `0x02400020` = bit0, both as spec.
+  The live line is **GIC SPI 59 (Linux irq 35), `ax_proton_intt`** (bank 1 =
+  SPI 60/irq 36), firing 3× per frame (FSOF + frame-done + 1, demuxed in-handler)
+  — **not the spec's guessed SPI 27/28.** M2 uses this ISR, drops the poll.
+- **CSI-2 core is CUSTOM confirmed** (not DWC-drop-in): `0x02600000+0x00` =
+  `0x0001321c` (not an ASCII-BCD version word; ctrl0 ≠ ctrl1 `0x0001021c`).
+  Register map validated exactly to spec: `+0x08`=`0x43210410` (comboMode4),
+  `+0x40`=`0x1f` (4 lanes), `+0x100`=1 (stream start); link-up health
+  `0x02500000+0x00` bits[1:0]=3 (both lanes locked). M1 offsets are authoritative.
+- **STILL OPEN (one item):** the MODE10 bypass bitmask constant (`@0x154/0x158`)
+  reads 0 live — it is write-only/shadow-strobe and uncapturable by `/dev/mem`
+  without a `register_kprobe` tracer module (this kernel lacks `kprobe_events`).
+  Resolve during M2 bring-up: the M2 driver programs MODE10 itself and can
+  read-back-verify, or a small `register_kprobe` module traces
+  `ax_ife_top_module_bypass_set_cfg_set`.
+- **`ax_proton` is runtime-UNREMOVABLE** (`rmmod` fails busy at refcount 0 from a
+  fresh boot; `ax630c_venc_vcmd` unloads fine). So the capture stack is
+  **boot-only-swappable** — which confirms this doc's A/B-by-reboot testing model
+  and means **the #56 stub test cannot be a runtime module swap** (it needs
+  ax_proton loaded *after* ax_stub). #56 validation folds into the boot-time /
+  slot-B A/B path that M2 uses anyway — see step 1.
+
+Three findings from the specs materially change the plan below:
 
 - **The CDMA descriptor/queue engine is OPTIONAL.** Two independent RE passes
   (spec-cdma and spec-proton-bypass) agree: proton's `regio` layer selects at
@@ -150,7 +184,14 @@ pending). Three findings from the specs materially change the plan below:
    "never executed" claim is runtime-proven; any stub that *does* log reveals
    a hidden init-time call edge the vtable caveat warned about. Rollback = the
    vendor loader. **Module built + committed (`pkgs/ax-stub`, loader variant
-   `pkgs/rootfs/ax-load-drv.stub.sh`); device test is the next on-device step.**
+   `pkgs/rootfs/ax-load-drv.stub.sh`).** Device test method REVISED (device pass
+   2026-08-30): `ax_proton` is runtime-unremovable, so the stub cannot be swapped
+   in at runtime — it must be loaded at BOOT (ax_stub before ax_proton). Validate
+   by booting the stub loader via the slot-B A/B image harness (same mechanism as
+   M2), *not* a runtime rmmod/insmod. Dropping the persistent `/soc` loader +
+   reboot also works but risks a boot cycle on the production eMMC; the slot-B
+   image is the clean path. The read is still binary: dmesg silent ⇒ 4 blobs
+   provably dead; any `NODE-MODE EDGE HIT: <sym>` ⇒ a live edge, named.
 2. **CSI-2 identification + first driver (M1):** read the CSI controller
    version/ID registers on-device; if DWC-confirmed, adapt the mainline
    `dw-mipi-csi2`-family driver instead of writing one. Describing-agent spec
@@ -188,7 +229,8 @@ EDID (step 3 of the epic) is DONE: all six bins clean-room as of this commit
 - ~~Does bypass bring-up read `mc20e_isp_reg_reset_value.bin`?~~ **RESOLVED: no.**
   proton has no file-read primitive; the path is a snapshot *write* target
   (spec-proton-bypass §7). Implement nothing for it.
-- ~~Frame-done IRQ vs hrtimer poll~~ **RESOLVED: a real unmasked frame-done IRQ
-  exists** (group-4 regs `0x02400050/54/58/5C`); the hrtimer is unrelated. M2
-  uses the ISR. Remaining device check: confirm the bit index (bit9 inferred)
-  and whether the SPI is GIC 27 or 28.
+- ~~Frame-done IRQ vs hrtimer poll~~ **RESOLVED + device-confirmed:** a real
+  unmasked frame-done IRQ exists — group-4 enable `0x02400050`=`0x200` (bit9,
+  confirmed live), on **GIC SPI 59 (irq 35) `ax_proton_intt`** (bank 1 = SPI 60),
+  ~3× fps (FSOF+frame-done+1, in-handler demux). The hrtimer is unrelated. M2
+  uses the ISR. (The old "GIC 27/28" guess was wrong — SPI 27 is `arch_timer`.)
