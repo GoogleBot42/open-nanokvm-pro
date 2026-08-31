@@ -83,6 +83,7 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 | Blob or network-endpoint questions | `docs/provenance.md` |
 | Mini-display | `docs/mini-display.md` |
 | Capture-pipeline internals / RE history | `docs/blob-replacement.md` |
+| Full deblob epic (#55): capture-stack replacement plan + scoping | `docs/deblob-capture.md` |
 | Open-encoder driver bring-up / #49 resolution (CMA = blob ABI break; no-flash coherent carveout) | `docs/vcmd-cma-unblock.md` |
 | Slot-B kernel boot-testing (proven A/B harness) | `docs/flashing-and-recovery.md` |
 | Pure-Nix / NixOS rootfs (feasibility + scaffold, #26) | `docs/nixos-rootfs.md` |

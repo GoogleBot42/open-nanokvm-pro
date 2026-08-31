@@ -2715,6 +2715,13 @@ code that satisfies a blob's inter-module contract (registration shims, OSAL
 stubs) is scaffolding — each absorbed contract is also a piece of the ABI map
 needed to retire the blob it talks to.
 
+> **Superseded by #55 scoping (2026-08-31).** The "keep as blobs / no open
+> lineage / full ISP written blind" framing above is obsolete: the KVM path is
+> a pure ISP-bypass DMA writer, the capture-relevant slice of ax_proton is
+> ~17–35 % of its code, the blobs are unstripped, and clk/reset/IRQ resources
+> are open in-tree. Current plan + decision record: `docs/deblob-capture.md`;
+> evidence: `docs/reference/deblob-scope/`.
+
 ### 2026-08-30 (later still) — #45 Stage B: a real 1080p IDR driven blob-free through the open path
 
 `pkgs/vcenc-ewl/ewl_encode` drives one fixed-QP(32) 1080p H.264 IDR end-to-end
