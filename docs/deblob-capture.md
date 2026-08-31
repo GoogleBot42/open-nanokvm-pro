@@ -45,11 +45,19 @@ driver written blind." Scoping shrank every dimension of that:
 4. **Clock/reset/IRQ resources are already open.** Our from-source kernel has
    in-tree `drivers/clk/axera/clk-ax620e.c` (505 clock IDs, including the
    `isp`/`csi`/`dphy2csi` gates) and `drivers/reset/axera_reset/` with an
-   `isp_sys_reset@2500000` DT node; `axera,proton` (0x2400000, IRQs 27/28) and
-   `axera,mipi` (0x2600000, IRQs 31/33) DT nodes carry reg/interrupts/clocks.
-   Same open-resource situation the venc replacement exploited. What was filed
-   as "in-kernel clock/PLL sequencing, needs RE" is mostly "call the open clk
-   API in the right order and verify against the observed un-gating."
+   `isp_sys_reset@2500000` DT node. **Correction (device DT read, 2026-08-31):**
+   only `axera,proton` (`isp@2400000`) carries `clocks`/`clock-names` — its
+   `interrupts` are `<GIC_SPI 27>, <GIC_SPI 28>` (= GIC hwirq 59/60, the
+   `ax_proton_intt` frame-done lines). `axera,mipi` (`mipi_rx@2600000`) carries
+   only `reg` + `interrupts` (csictrl0/1) — **no `clocks`/`resets` properties**;
+   the isp_clk@2500000 / isp_sys_reset@2500000 providers own those glb ranges via
+   their own syscon nodes, so the open CSI-2 driver programs the csirx clock-gate
+   / soft-reset / deskew bits directly in the isp_sys_glb range (0x02500000) via
+   the shadow SET/CLR registers (safe — no whole-word RMW). Same open-resource
+   situation the venc replacement exploited. What was filed as "in-kernel
+   clock/PLL sequencing, needs RE" is mostly "call the open clk API (proton) or
+   poke the documented glb gates (mipi) in the right order and verify against the
+   observed un-gating."
 5. **The OSAL layer needs no RE.** 188 of the 229 external symbols the ten
    modules import are `AX_OSAL_*` — and that layer is **GPL source in the
    kernel SDK** (`osal/`, built in via `CONFIG_AXERA_OSAL=y`). Only 41 plain
