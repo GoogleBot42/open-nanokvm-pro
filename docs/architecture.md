@@ -152,8 +152,20 @@ LT6911UXC HDMI→CSI-2
 
 The host HDMI is captured as already-formed YUV (the LT6911 bridge does the
 conversion), so the ISP is **bypassed** — no ISP/3A algorithm blobs are needed on
-the KVM path. `libkvm` links the Axera libs directly (`-lax_venc -lax_sys
--lax_proton -lax_mipi -lax_ivps`) plus `libopus`/`libasound` for audio.
+the KVM path.
+
+The diagram above is the *conceptual* pipeline; the vendor `AX_VENC` box is
+historical. **The shipped `libkvm` is the openvenc build** (`.#kvm-encoder-openvenc`,
+`openCapture` + `openVenc`): capture drives the VIN/MIPI char devices over **raw
+ioctls** (`kvm_capture_open.c` — no `libax_sys`/`proton`/`mipi`/`ivps`), and
+encode is our **from-source open VC8000E** path (`kvm_venc_open.c` over
+`ax630c_venc_vcmd.ko`; H.264 register program + software MJPEG). It links
+**zero** `libax_*` — only `-ljpeg -lopus -lasound`. The older vendor-MPI build
+(`.#kvm-encoder`, which *did* link `-lax_venc -lax_sys -lax_proton -lax_mipi
+-lax_ivps` and drove `AX_VENC`) still exists as a reference/fallback but is no
+longer shipped (#25, 2026-08-31). Capture still relies on the vendor **kernel**
+modules (`ax_proton`/`ax_mipi_rx`/`ax_vin`/`ax_ivps`/…) being loaded — those
+remain pinned; the encode modules `ax_venc`/`ax_jenc` are removed.
 
 ### Capture lifecycle & idle power-down
 
@@ -305,21 +317,29 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
 
 ## From-source vs pinned blobs
 
-The project's stance (from the blob audit) is: build everything we reasonably can,
-and **link** Axera's redistributable media blobs rather than chase a blob-free
-build that the AX630C doesn't support.
+The project's stance has shifted with progress: the original v1 goal was to
+**link** Axera's redistributable blobs rather than chase a blob-free build. As
+of #25 (2026-08-31) the **entire video path is blob-free** and the standing
+direction is now a **zero-vendor-blob device, ISP included** (Jeremy,
+2026-08-30). What's pinned has shrunk accordingly:
 
-- **From source:** boot chain, kernel + DTS, `lt6911_manage.ko`, our `libkvm`, the
-  Go server, the React web UI.
-- **Pinned blobs, unavoidable on this SoC:**
-  - `libax_*.so` — Axera userspace media libs, **BSD-3, redistributable**,
-    shipped at `/opt/lib` by the retained vendor rootfs (`pkgs/axera-libs.nix`
-    is a build-time headers/link input, it stages nothing). `libkvm` needs five
-    of them plus two transitive; `libsns_dummy.so` is ours from source.
-  - `ax_*.ko` — Axera media kernel modules (venc/mipi/proton/ivps/…). GPL-tagged
-    but source not published. They must `insmod` into our from-source kernel, so
-    the kernel's `vermagic` (defconfig + GCC) must match — see
-    [building.md](building.md#ax_ko-vermagic).
+- **From source:** boot chain, kernel + DTS, `lt6911_manage.ko`, the **open
+  VC8000E encode driver** (`ax630c_venc_vcmd.ko`), our `libkvm` (open capture +
+  open encode, **zero `libax_*` linked**), `libsns_dummy.so`, the Go server, the
+  React web UI.
+- **No longer needed / removed:**
+  - `ax_venc.ko` + `ax_jenc.ko` — the vendor **encode** kernel modules,
+    **removed from the flashed image**; the open VCMD driver replaces them.
+  - `libax_*.so` — the Axera userspace media libs are **still shipped at
+    `/opt/lib` by the base rootfs but no longer linked or `dlopen`ed by anything
+    we ship** (the openvenc `libkvm` needs none). Dead weight; a follow-up purge.
+- **Still pinned (capture-side, on this SoC for now):**
+  - the **capture** `ax_*.ko` kernel modules (`ax_proton`/`ax_mipi_rx`/`ax_vin`/
+    `ax_ivps`/`ax_sys`/`ax_cmm`/…) — GPL-tagged, source not published; our open
+    capture drives them over raw ioctls. They `insmod` into our from-source
+    kernel, so `vermagic` (defconfig + GCC) must match — see
+    [building.md](building.md#ax_ko-vermagic). Replacing the ISP/VIN stack from
+    source is the remaining blob-free frontier.
 - **Pinned base:** the vendor Ubuntu 22.04 arm64 rootfs (v1 decision — matches the
   on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
   long-term north star; the feasibility study, the systemd-vs-4.19 version wall

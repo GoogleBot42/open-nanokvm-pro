@@ -2,13 +2,21 @@
 
 An **open, self-built firmware for the Sipeed NanoKVM-Pro** (Axera **AX630C**,
 dual Cortex-A53, aarch64/glibc), packaged as a Nix flake. The boot chain, Linux
-kernel, video/encode backend, and the KVM application are built **from source**;
-Axera's redistributable media libraries (`libax_*.so`, BSD-3) and the prebuilt
-`ax_*.ko` media kernel modules are **pinned as binary inputs**.
+kernel, video/encode backend, and the KVM application are built **from source**.
+
+**The whole video path is now blob-free** (#25, 2026-08-31): our `libkvm.so`
+does HDMI capture and H.264 + MJPEG encode linking **zero** Axera userspace
+libraries, and the encoder runs on our **from-source open VC8000E VCMD driver**
+(`ax630c_venc_vcmd.ko`) — the vendor encode blobs `ax_venc.ko` + `ax_jenc.ko`
+are **removed from the image entirely**, and the `libax_*.so` set is no longer
+linked by anything we ship. What remains pinned is the **capture-side** vendor
+kernel modules (`ax_proton`/`ax_mipi_rx`/`ax_vin`/`ax_ivps`/… — the ISP/VIN
+stack our open capture drives over raw ioctls) plus the Wi-Fi/BT firmware; the
+end goal is a zero-vendor-blob kernel, ISP included.
 
 The result is a reproducible `.axp` firmware image that **boots and runs the full
-web KVM on real hardware**, driven by our own open `libkvm.so` capture/encode
-backend instead of Sipeed's withheld closed glue.
+web KVM on real hardware**, driven by our own open `libkvm.so` backend instead
+of Sipeed's withheld closed glue.
 
 > **Status: working.** `nix build .#firmware-image` produces a flashable `.axp`;
 > flashed via AXDL it boots our from-source kernel + boot chain and auto-starts
@@ -59,16 +67,21 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | Linux 4.19.125 kernel + NanoKVM-Pro DTS | **from source** (`maix_ax620e_sdk_kernel`) | GPL-2.0 |
 | `lt6911_manage.ko` (HDMI-in bridge driver) | **from source** | GPL-2.0 |
 | Mini-display stack: `fbtft`/`fb_jd9853`/`gpio_keys`/`rotary_encoder` drivers + `nanokvm-display` status daemon | **from source** (drivers from the SDK kernel tree; daemon is ours, fonts generated from source-built `terminus_font`) | GPL-2.0 / GPL-3.0 |
-| `libkvm.so` (our capture + H.264/MJPEG + Opus backend) | **from source** — our open reimplementation over the Axera MPI | ours (GPL-3 app) |
+| `libkvm.so` (our capture + H.264/MJPEG + Opus backend) | **from source** — open capture (raw ioctls) + open VC8000E encode; **links zero `libax_*`** | ours (GPL-3 app) |
+| `ax630c_venc_vcmd.ko` (open VC8000E encode driver) | **from source** — replaces vendor `ax_venc`/`ax_jenc` | GPL-2.0 / MIT |
+| `lt6911_manage.ko` (HDMI-in bridge) | **from source** | GPL-2.0 |
 | NanoKVM-Server (Go) + web UI (React) | **from source** (`NanoKVM-Pro`) | GPL-3.0 |
-| `ax_*.ko` media modules (venc/mipi/proton/ivps/…) | **pinned blob** (in the kernel repo) | GPL-tagged, source not published |
-| `libax_*.so`, `libsns_dummy.so` | **pinned blob** (`maix_ax620e_sdk_msp`) | BSD-3, redistributable |
+| **capture** `ax_*.ko` modules (`proton`/`mipi_rx`/`vin`/`ivps`/`sys`/`cmm`/…) | **pinned blob** (in the kernel repo), loaded at boot | GPL-tagged, source not published |
+| ~~`ax_venc.ko` / `ax_jenc.ko`~~ (encode) | **REMOVED** — replaced by our open VCMD driver | — |
+| `libax_*.so` | **pinned but no longer linked** by our stack (dead weight; a follow-up purge) | BSD-3, redistributable |
+| `libsns_dummy.so` | **from source** (`pkgs/libsns-dummy.nix`, #30) | ours |
 | Rootfs base | **pinned** vendor Ubuntu 22.04 arm64 (from the v1.0.15 base `.axp`) | mixed |
 
-The design goal is an **open, reproducible firmware that _links_ the accepted
-Axera blobs** — not a blob-free build. See
-[docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs) for the
-rationale and the full blob audit.
+The design goal is a **zero-vendor-blob device** (ISP included). The video path
+is there already — capture userspace and the whole encode path are blob-free;
+what's left is the capture-side vendor **kernel** modules and the Wi-Fi/BT
+firmware. See [docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs)
+and [docs/provenance.md](docs/provenance.md) for the full, current blob audit.
 
 > **Deliberately excluded:** the vendor's closed **mini-display app `kvm_ui`**
 > (no source published). The built-in screen is instead driven by our own open
@@ -95,7 +108,8 @@ firmware-image (.axp)  ◄── image.nix: streaming zip-rewrite of the vendor 
      └── rootfs          (vendor Ubuntu base + our libkvm.so + merged/depmod'd modules,
                           edited in-place with debugfs — no root/mount needed)
               ▲
-              ├── kvm-encoder   → libkvm.so   (MIPI_RX → VIN → ISP-bypass → AX_VENC)
+              ├── kvm-encoder   → libkvm.so   (MIPI_RX → VIN → ISP-bypass → open VC8000E)
+              ├── vc8000-vcmd   → ax630c_venc_vcmd.ko  (open encode driver, replaces ax_venc/jenc)
               ├── kernel        → /lib/modules + lt6911_manage.ko
               └── ax-ko-blobs   → prebuilt ax_*.ko (merged, depmod'd against our kernel)
 ```
@@ -143,7 +157,7 @@ enter it, then re-flash any `.axp` (ours or the stock vendor image) with
 
 [GPL-3.0](LICENSE) — Copyright (C) 2026 GoogleBot42.
 
-Some bundled and pinned components keep their own licenses: the Axera
-`libax_*.so` / `libsns_dummy.so` are BSD-3, the `ax_*.ko` modules are GPL-tagged,
-and the Ubuntu rootfs base is its own mix. See the
+Some bundled and pinned components keep their own licenses: the (now unlinked)
+Axera `libax_*.so` are BSD-3, the pinned capture-side `ax_*.ko` modules are
+GPL-tagged, and the Ubuntu rootfs base is its own mix. See the
 [table above](#whats-from-source-vs-pinned).
