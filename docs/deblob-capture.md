@@ -203,12 +203,14 @@ Three findings from the specs materially change the plan below:
    reboot also works but risks a boot cycle on the production eMMC; the slot-B
    image is the clean path. The read is still binary: dmesg silent ⇒ 4 blobs
    provably dead; any `NODE-MODE EDGE HIT: <sym>` ⇒ a live edge, named.
-2. **CSI-2 identification + first driver (M1):** read the CSI controller
-   version/ID registers on-device; if DWC-confirmed, adapt the mainline
-   `dw-mipi-csi2`-family driver instead of writing one. Describing-agent spec
-   of ax_mipi_rx (7 selectors, ~28+8 register writes, bit names already in
-   symbols) fills the gaps. Deliverable: open V4L2 CSI-2 subdev proving PHY
-   lock + packet/error counters on hardware, vendor stack not loaded.
+2. **CSI-2 identification + first driver (M1):** CSI core is CUSTOM (device
+   pass — not DWC drop-in), so the driver is written from `spec-mipi-rx.md`.
+   **First-draft driver DONE (`pkgs/open-vin-csi2`, builds green):** platform
+   driver on `axera,mipi`, v4l2_subdev with the spec's ordered bring-up/reset,
+   error-IRQ + link-lock telemetry via `.log_status`/controls. Remaining: the
+   D-PHY analog timing offsets (13 marked `TODO(bringup)`, chiefly §6b — the
+   likely first-lock blocker) and the on-hardware milestone (PHY lock + error
+   counters, vendor stack not loaded) — the serial bring-up phase.
 3. **The gate RE (spec work, parallel to M1): DONE 2026-08-30.** Behavioral
    specs of (a) the ax_base CDMA format (`spec-cdma.md`) and (b) the proton
    bypass/IFE-WDMA register programming (`spec-proton-bypass.md`) delivered and
@@ -218,9 +220,15 @@ Three findings from the specs materially change the plan below:
    YUV422 plane→channel map) is the one remaining device step, folded into the
    serialized device-verification pass alongside M1's CSI-ident read.
 4. **Frames to DDR (M2):** the VIN/IFE capture video node against the spec
-   from (3): SIF front-end config, IFE WDMA, vb2 buffers, frame-done IRQ
-   (retiring the 5 ms poll). Success = YUYV frames at 1080p and 4K30 with
-   zero vendor modules loaded, A/B-verified against the vendor image.
+   from (3). **First-draft driver DONE (`pkgs/open-vin-capture`, builds green):**
+   platform driver on `axera,proton`, vb2 capture queue over a
+   `dma_declare_coherent_memory` carveout (CMA is off — #49), the
+   device-confirmed WDMA address gate, SIF/IFE-bypass/IFE-go programming, and a
+   real frame-done ISR on group-4 bit9 (poll retired). CDMA-optional honored
+   (plain `writel`). Remaining (8 marked `TODO(bringup)`): MODE10 mask +
+   IFE-top block base, the carveout base/size split (coordinate #53), the async
+   subdev link to M1, dma-buf export, and the on-hardware milestone — YUYV
+   frames at 1080p + 4K30, zero vendor modules, A/B-verified. Serial bring-up.
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure
