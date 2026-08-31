@@ -15,6 +15,17 @@ queue engine is optional and plain ordered writel() + explicit polls reproduce
 the config. UNVERIFIED (device checklist §9): WDMA block absolute base, MODE10
 bypass bitmask @0x154/0x158, frame-done bit index (bit9 inferred) + SPI 27-vs-28,
 YUV422 plane->channel map, whether nr56/74/89 selectors are droppable.
+
+DEVICE-CONFIRMED (on-hardware pass 2026-08-30, live 4K30 vendor capture,
+/dev/mem — kernel lacks kprobe_events):
+ - WDMA gate REAL: block base 0x02414000, chn8 addr reg 0x024140d4 = phys>>3 =
+   0x747E0000 (in CMM). SIF WIN0 0x02406518 = W|(H<<16). IFE-go 0x024146dc bit0.
+ - Frame-done IRQ: group-4 enable 0x02400050=0x200 (bit9), group-1 FSOF
+   0x02400020 bit0 -> GIC SPI 59 (irq35) ax_proton_intt, ~3x fps. §5.5's
+   "SPI 27/28" guess is WRONG (SPI27=arch_timer); actual SPI 59/60 (irq 35/36).
+ - MODE10 bypass mask @0x154/0x158 UNCONFIRMED (reads 0 live = write-only;
+   needs a register_kprobe module or M2 read-back).
+ - ax_proton is runtime-unremovable -> capture stack is boot-only-swappable.
 -->
 
 # Behavioral spec — ax_proton.ko BYPASS + IFE-WDMA capture subset (#58b)

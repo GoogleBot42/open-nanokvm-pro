@@ -10,6 +10,13 @@ UNVERIFIED (needs on-device probes per the spec's own checklist, deferred to the
 M1 device pass): DWC-vs-custom identity (no version reg is read statically —
 read 0x02600000 live), the phys->virt field correlation for isp_sys_glb vs
 common_glb (agent inferred it; internally consistent), and D-PHY timing offsets.
+
+DEVICE-CONFIRMED (on-hardware pass 2026-08-30, /dev/mem): CSI-2 core is CUSTOM
+(0x02600000+0x00 = 0x0001321c, NOT a DWC version word; ctrl0 != ctrl1
+0x0001021c). Register map validated exactly: +0x08=0x43210410 (comboMode4),
++0x40=0x1f (4 lanes), +0x100=1 (stream start). Link-up health 0x02500000+0x00
+bits[1:0]=3 (locked). mainline dw-mipi-csi2 is a reference only; these offsets
+are authoritative.
 -->
 
 # Behavioral Specification — `ax_mipi_rx.ko` (CSI-2 / D-PHY receiver)
