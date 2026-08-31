@@ -207,10 +207,15 @@ Three findings from the specs materially change the plan below:
    pass — not DWC drop-in), so the driver is written from `spec-mipi-rx.md`.
    **First-draft driver DONE (`pkgs/open-vin-csi2`, builds green):** platform
    driver on `axera,mipi`, v4l2_subdev with the spec's ordered bring-up/reset,
-   error-IRQ + link-lock telemetry via `.log_status`/controls. Remaining: the
-   D-PHY analog timing offsets (13 marked `TODO(bringup)`, chiefly §6b — the
-   likely first-lock blocker) and the on-hardware milestone (PHY lock + error
-   counters, vendor stack not loaded) — the serial bring-up phase.
+   error-IRQ + link-lock telemetry via `.log_status`/controls.
+   **HARDWARE-PROVEN 2026-08-31: PHY LOCK ACHIEVED, vendor stack unloaded.**
+   On a base-only boot (ax_mipi_rx absent), `insmod open_vin_csi2
+   start_on_probe=1` bound `2600000.mipi_rx`, ran the full D-PHY/CSI-2 bring-up,
+   and reported `link locked (deskew status 0x0000000f)` — bits[1:0]==3, all
+   lanes deskewed — with no crash. The D-PHY analog-timing `TODO(bringup)` (§6b,
+   flagged as the likely first-lock blocker) locked on reset-default timing; a
+   live MIPI source was present. M1's milestone is met. Remaining M1 polish
+   (error-counter readout, the other TODOs) is non-blocking.
 3. **The gate RE (spec work, parallel to M1): DONE 2026-08-30.** Behavioral
    specs of (a) the ax_base CDMA format (`spec-cdma.md`) and (b) the proton
    bypass/IFE-WDMA register programming (`spec-proton-bypass.md`) delivered and
