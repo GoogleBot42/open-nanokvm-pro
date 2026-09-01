@@ -264,20 +264,30 @@ Three findings from the specs materially change the plan below:
      `0xDEADBEEF`. A source sweep of ACLK_ISP_TOP across npll/cpll_416m/cpll_208m/**cpll_24m
      (always-on ref)** woke nothing — a block that ignores even the always-on reference is
      UNPOWERED or held in a top-level reset.
-   - **The real blocker is a POWER DOMAIN / top-level reset/isolation** →
-     **`spec-isp-power-domain.md`** (clean-room RE in flight). Leads: the `0x04403060`
-     top-ctrl page, the full `reset_all_legacy` sweep that "hangs" (which bit + why), a
-     PMU/power controller, or a boot-chain (u-boot/ATF) step a clean base-only boot skips.
-   `pkgs/open-vin-capture` (`ovc_clk_mux_apply`) carries the corrected mux step (constant
-   codes `5/5/3`, NOT read from `MUX_RD`). The confirmed-missing common-bank clock writes
-   (esp. `CLK_VI_EB`) will be folded into the driver together with the power step once
-   known, so the bring-up is tested end-to-end. Everything else upstream (probe, IRQ, WDMA
-   address gate, geometry, reset polarity, CSI link, live source) is proven.
-   **Remaining device-loop step (base-only boot):** once the power/top-reset step lands,
-   insmod, confirm `C0/C4` go nonzero + a non-shadowed write/read round-trip sticks (SIF
-   `0x02406408`, not the double-buffered WDMA `0x024140d4`), then YUYV frames to DDR.
-   Wedged-state clock-bank dumps preserved (`regdumps/glb-wedged.bin`, `cglb-wedged.bin`)
-   as proof the clock banks are matched; `regdumps/dumpreg.c` is the mmap dumper used.
+   - **REFRAME (device-proven 2026-08-31, the key finding):** the ISP is powered/clocked
+     **ON-DEMAND by the vendor's runtime STREAM-START**, not at boot. `0x02400000` reads
+     `0xDEADBEEF` even in FULL PRODUCTION at idle (vendor stack loaded, ax_proton running);
+     triggering an actual capture (curl the MJPEG stream) makes it read real values and
+     frames flow. So DEADBEEF-at-idle is the NORMAL resting state — the golden
+     `regfile-vendor-live.bin` had real values only because it was captured *during*
+     streaming. (This supersedes `spec-isp-power-domain.md`'s static "boot-firmware"
+     conclusion: the static RE looked at probe/create, but ax_proton does the power/clock
+     bring-up at **streamon**.) An idle→streaming register diff on the same production boot
+     is captured in **`regdumps/stream-delta/DELTA.txt`**: `0x02500000` gate-status
+     `+0x04/+0x08` go `0→0x3f/0x3fe`, MUX `0x5ac→0x5af`, `C0/C4` light up; plus changes in
+     undocumented banks `0x02240000`/`0x02250000` (per-lane/instance stride = likely
+     DPHY/PLL) and CPU bank `0x01900000` (probably encode-load noise).
+   - **Remaining M2 work:** reproduce the vendor ISP **streamon** clock/power sequence from
+     that delta — separating the ISP/proton writes from the CSI/mipi ones M1 already does,
+     and identifying what `0x02240000`/`0x02250000` are. This is a well-scoped next phase
+     with ground-truth data, not a mystery. `pkgs/open-vin-capture` (`ovc_clk_mux_apply`)
+     carries the corrected mux step; the confirmed-missing common-bank writes (`CLK_VI_EB`)
+     + the delta sequence get folded in and tested end-to-end. Everything else upstream
+     (probe, IRQ, WDMA address gate, geometry, reset polarity, CSI link, live source) is proven.
+   **Remaining device-loop step (base-only boot):** apply the streamon delta, confirm
+   `0x02400000` un-DEADBEEFs + a non-shadowed write/read round-trip sticks (SIF `0x02406408`),
+   then YUYV frames to DDR. Evidence preserved: `regdumps/stream-delta/` (idle vs streaming
+   dumps + DELTA.txt), `regdumps/glb-wedged.bin`/`cglb-wedged.bin`, `regdumps/dumpreg.c`.
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure
