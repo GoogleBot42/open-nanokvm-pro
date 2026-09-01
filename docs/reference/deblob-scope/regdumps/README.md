@@ -22,7 +22,28 @@ Captured during the #59 M2 bring-up to seed a register-diff bring-up of the open
 - SIF DT-match: 0x02406540/44 = 0x00001e00 (DT 0x1E in byte<<8), park 0x02406548 = 0x3a3a3a00, VC/DT ctrl 0x0653c=1; WIN1 park 0x0651c=0x00200020.
 - **MODE10 bypass masks are NOT at 0x14154/0x14158** — 0x14154 reads 0x00101720 (a WDMA per-channel stride), so the IFE-top bypass block base is ELSEWHERE and still unlocated.
 
-## The M2 wall — mux confirmed necessary, NOT sufficient (2026-08-31)
+## Wedged-state dumps + dumper (2026-08-31 device session)
+`glb-wedged.bin` (0x02500000, 0x2000) and `cglb-wedged.bin` (0x02340000, 0x100) are
+live dumps of the OPEN-stack bring-up state (base-only boot, M1 locked, our clock
+writes applied) — captured to diff against the vendor-live dumps. The diff proved
+the clock banks are MATCHED to vendor yet the datapath stays 0xDEADBEEF (see below).
+`dumpreg.c` is the mmap register dumper used (devmem read() EFAULTs; compile on device
+with gcc: `dumpreg <phys_base> <len> > out.bin`). Provenance: our own /dev/mem reads.
+
+## The M2 wall — CLOCKS RULED OUT; blocker is a power domain / top-reset (2026-08-31)
+Device-proven this session: with BOTH clock banks matched bit-for-bit to vendor-live
+(common 0x02340000 +0x24=0x2ce00 incl CLK_VI_EB b17, +0x78=0x7400; isp_clk 0x02500000
+MUX_RD=0x5af, gates 0xD0=0x3F/0xD8=0x3FE, IFE reset 0x5E000, sys_glb 0x90=0x230001),
+the clock-activity status 0x025000C0/C4 STAY 0 and 0x02400000 STAYS 0xDEADBEEF. A
+source sweep of ACLK_ISP_TOP across npll_533m/cpll_416m/cpll_208m/AND cpll_24m (the
+always-on 24MHz reference) woke nothing. => the ISP block is UNPOWERED or held in a
+top-level reset, NOT unclocked. Real blocker => ../specs/spec-isp-power-domain.md.
+Clock diffs found along the way (now known necessary-but-insufficient): common 0x24
+b17 (CLK_VI_EB) was off vs vendor; the 0x02500000 low region matches vendor except
+deskew/sys_glb (0x90/98/9c). Key signature to reproduce: 0xC0/0xC4 nonzero == ISP
+clock actually ticking (needs the block powered first).
+
+## (superseded) mux notes — necessary, NOT sufficient (2026-08-31)
 On a base-only boot the SIF (0x02406xxx) and IFE/WDMA (0x02414xxx) sub-blocks read
 0xDEADBEEF and drop writes; the interrupt-controller sub-block (0x02400000-0xff) IS
 writable (probe/IRQ work). Clean-room RE (`../specs/spec-vin-write-enable.md`) pointed

@@ -252,17 +252,32 @@ Three findings from the specs materially change the plan below:
    (`0x3F/0x3FE` and `0xFFFFFFFF`) + IFE reset pulse `0x5E000`, the SIF (`0x2406xxx`) /
    IFE (`0x2414xxx`) windows STAY `0xDEADBEEF` and the clock-level readbacks
    `0x025000C0/C4` STAY `0`. So the ISP clock SOURCE is selected but the clock is not
-   RUNNING — an upstream source-PLL enable / power-domain (the `C0/C4` producers) is
-   still missing. **That is the real remaining blocker → `spec-isp-clock-enable.md`**
-   (clean-room RE in flight). `pkgs/open-vin-capture` (`ovc_clk_mux_apply`) carries the
-   corrected mux step (constant codes `5/5/3`, NOT read from `MUX_RD` — M1 overwrites
-   its low bits with the CSI deskew status) + the narrow non-hanging reset + golden
-   corrections. Everything else upstream (probe, IRQ, WDMA address gate, geometry,
-   reset polarity, clock wake, CSI link, live source) is proven.
-   **Remaining device-loop step (base-only boot):** once the source-PLL/power step
-   lands, insmod, confirm `C0/C4` go nonzero + a non-shadowed write/read round-trip
-   sticks (SIF `0x02406408`, not the double-buffered WDMA `0x024140d4`), then YUYV
-   frames to DDR.
+   RUNNING. Two more rounds of clean-room RE + device testing then RULED OUT the entire
+   clock hypothesis:
+   - **`spec-isp-clock-enable.md`** found the ISP datapath's parent clocks live in the
+     **common_clk bank `0x02340000`** (a bank the driver never touched), from GPL
+     `clk-ax620e.c`: ACLK_ISP_TOP_SEL `+0x00[29:27]`, CLK_ISP_MM `+0x0C[19:17]`/`+0x24 b11`,
+     CLK_VI_EB `+0x24 b17`. On device `CLK_VI_EB` was genuinely off vs vendor.
+   - **But clocks are NOT the wall (device-proven):** with BOTH banks matched bit-for-bit
+     to the live-vendor golden (common `0x24=0x2ce00`, `0x78=0x7400`; isp_clk MUX_RD=`0x5af`,
+     gates, IFE reset, sys_glb `0x90`), `0x025000C0/C4` STAY `0` and `0x02400000` STAYS
+     `0xDEADBEEF`. A source sweep of ACLK_ISP_TOP across npll/cpll_416m/cpll_208m/**cpll_24m
+     (always-on ref)** woke nothing — a block that ignores even the always-on reference is
+     UNPOWERED or held in a top-level reset.
+   - **The real blocker is a POWER DOMAIN / top-level reset/isolation** →
+     **`spec-isp-power-domain.md`** (clean-room RE in flight). Leads: the `0x04403060`
+     top-ctrl page, the full `reset_all_legacy` sweep that "hangs" (which bit + why), a
+     PMU/power controller, or a boot-chain (u-boot/ATF) step a clean base-only boot skips.
+   `pkgs/open-vin-capture` (`ovc_clk_mux_apply`) carries the corrected mux step (constant
+   codes `5/5/3`, NOT read from `MUX_RD`). The confirmed-missing common-bank clock writes
+   (esp. `CLK_VI_EB`) will be folded into the driver together with the power step once
+   known, so the bring-up is tested end-to-end. Everything else upstream (probe, IRQ, WDMA
+   address gate, geometry, reset polarity, CSI link, live source) is proven.
+   **Remaining device-loop step (base-only boot):** once the power/top-reset step lands,
+   insmod, confirm `C0/C4` go nonzero + a non-shadowed write/read round-trip sticks (SIF
+   `0x02406408`, not the double-buffered WDMA `0x024140d4`), then YUYV frames to DDR.
+   Wedged-state clock-bank dumps preserved (`regdumps/glb-wedged.bin`, `cglb-wedged.bin`)
+   as proof the clock banks are matched; `regdumps/dumpreg.c` is the mmap dumper used.
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure
