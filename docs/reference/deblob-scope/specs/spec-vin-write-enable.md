@@ -8,16 +8,28 @@ VERIFIED 2026-08-31: the two decisive device claims re-derived from the raw dump
   sys_glb 0x02500000+0x90: 0x230001 vendor-live vs 0x0 base-only
 Disassembly function+offset citations are taken on the describing-subagent's
 authority per the clean-room rule (drivers written from this spec, never from
-vendor disasm). Folded into pkgs/open-vin-capture (ovc_clk_mux_apply); on-device
-readback verification (MUX_RD -> 0x5af, then a 0x024140d4 write/read round-trip)
-is the remaining device-loop step.
+vendor disasm). Folded into pkgs/open-vin-capture (ovc_clk_mux_apply).
+
+>> DEVICE-TEST RESULT (2026-08-31, base-only boot, M1 locked, live 4K source):
+>> the mux is NECESSARY BUT NOT SUFFICIENT. Writing codes 5/5/3 to 0xCC/0xC8
+>> drives MUX_RD (0x02500000+0x00) to 0x5af (this spec's headline, CONFIRMED).
+>> BUT even with MUX_RD=0x5af + rst1-bit20 kick + gates (0x3F/0x3FE and
+>> 0xFFFFFFFF) + IFE reset pulse 0x5E000, the SIF (0x2406xxx)/IFE (0x2414xxx)
+>> windows STAY 0xDEADBEEF and the clock-level readbacks 0x025000C0/C4 STAY 0.
+>> So the ISP clock SOURCE is selected but the clock is NOT RUNNING -- an
+>> upstream source-PLL enable / power-domain that produces C0/C4 is still
+>> missing. That is the real remaining blocker -> spec-isp-clock-enable.md.
+>> (Also corrected: read the mux CODES as constants 5/5/3 -- NOT from MUX_RD,
+>> which M1 overwrites with the CSI deskew status 0xf.)
 -->
 
 # Behavioral spec — the "write-enable" wall: why SIF/IFE/WDMA config writes don't stick after clocks+reset
 
-Resolves spec-vin-reset's REMAINING GAP ("clocked + reset-deasserted, config regs
-still read 0 after a write"). Recovered from `ax_proton.ko` (ET_REL aarch64,
-unstripped); no vendor code reproduced; claims cite `function+offset`.
+Recovered from `ax_proton.ko` (ET_REL aarch64, unstripped); no vendor code
+reproduced; claims cite `function+offset`. **Status after device test: the mux
+below is a confirmed-necessary prerequisite but does NOT by itself un-DEADBEEF the
+datapath — the ISP clock never starts (C0/C4 stay 0). The missing upstream step is
+tracked in `spec-isp-clock-enable.md`.**
 
 ## 0. TL;DR — there is NO write-protect register; "write-enable" = three missing conditions
 
@@ -31,7 +43,7 @@ still held in functional reset.** Ranked, device-grounded causes:
 
 | # | Missing operation | Evidence | Confidence |
 |---|---|---|---|
-| 1 | **Clock-SOURCE MUX (`0x025000C8`/`CC`) never applied** — done ONLY at module probe (`ax_isp_clk_prepare`), not per-open. M1 sets only the *gates* (`0xD0`/`0xD8`). Unclocked flops ⇒ writes don't latch, reads return 0. | Static diff: `MUX_RD 0x02500000+0x00` = **0x5af vendor-live vs 0x5ac base-only** (bits [1:0] raised only by the vendor apply). | **High** |
+| 1 | **Clock-SOURCE MUX (`0x025000C8`/`CC`) never applied** — done ONLY at module probe (`ax_isp_clk_prepare`), not per-open. M1 sets only the *gates* (`0xD0`/`0xD8`). Confirmed necessary (drives MUX_RD→0x5af) but **device-tested insufficient**: selecting the source does not start the clock (C0/C4 stay 0) → see the DEVICE-TEST banner + spec-isp-clock-enable.md. | Static diff: `MUX_RD 0x02500000+0x00` = **0x5af vendor-live vs 0x5ac base-only**. | **High (necessary); insufficient alone (device-proven)** |
 | 2 | **Reset was a bare deassert, not an assert→deassert PULSE.** The vendor IFE reset is a mode-2 masked pulse; a lone `0xE4` write on a wedged base boot is a no-op strobe. | `ax_isp_reset_ife_legacy` @`0x84078` = `ax_isp_clk_rst0_set_all(mode=2, mask=0x5E000)`; `_set_all` @`0x96f8` mode-2 writes `mask→0xE0` then `mask→0xE4`. | **High** |
 | 3 | **AXI-ctrl regs left non-zero** (`0x02400184`/`0x02480144`/`0x024C0148`). A manual quiesce that set them to `0xFFFFFFFF` and never released them freezes the datapath. | Live dump: `0x02400184 = 0` while streaming 4K. Reset tail zeroes all three (`ax_isp_reset_all_legacy` @`0x84000–0x84024`). | Medium (only if the experiment asserted them) |
 

@@ -241,27 +241,28 @@ Three findings from the specs materially change the plan below:
    (`spec-vin-reset.md`); clk-enable (`0x025000D0/D8`, full mask) devmem-proven
    to un-DEADBEEF the blocks; reset polarity confirmed (`0xE0` assert / `0xE4`
    deassert); golden corrections (SIF IN_FMT=0x40, default geometry 4K).
-   **The write-enable gap RESOLVED (2026-08-31, clean-room RE
-   `spec-vin-write-enable.md`, main-session-verified against the golden dumps):**
-   there is no write-protect register — the datapath flops had bus power but no
-   functional clock because the **ISP clock-source MUX (`0x025000C8/CC`) was never
-   applied**. The vendor programs it once, at `ax_proton` probe (`ax_isp_clk_prepare`),
-   and no per-open path repeats it, so M1's gate-only bring-up (`0xD0/0xD8`) omitted
-   it. Device-proven signature: `MUX_RD` (`0x02500000+0x00`) reads `0x5ac` base-only
-   vs `0x5af` live-vendor (delta = bits[1:0], the domains' clock-active status the
-   apply-strobe raises; the source-select fields `[10:8]/[7:5]/[4:2]` already read
-   `3/5/5` on a base boot, so the missing action is the strobe, not new codes).
-   Folded into `pkgs/open-vin-capture` (`ovc_clk_mux_apply`): re-strobe each domain's
-   live source code through CLR(`0xCC`) then SET(`0xC8`) before the gates/IFE-reset,
-   and verify `MUX_RD → 0x5af`. Everything upstream (probe, IRQ, WDMA address gate,
-   geometry, reset polarity, clock wake) is proven. `pkgs/open-vin-capture` carries
-   the mux apply + the narrow, non-hanging reset (clk-enable + IFE `0x5E000`) +
-   golden corrections.
-   **Remaining device-loop step (base-only boot):** insmod, confirm the
-   `MUX_RD → 0x5af` log, then a **non-shadowed** write/read round-trip sticks (test SIF
-   `0x02406408`, not the double-buffered WDMA `0x024140d4`) and YUYV frames land in DDR;
-   if the mux alone is insufficient, add the reset assert→deassert *pulse* (spec §2) and
-   the AXI-quiesce release (spec §3), both already understood.
+   **Write-enable RE + device test (2026-08-31, clean-room `spec-vin-write-enable.md`,
+   then base-only-boot hardware test with M1 locked + live 4K source):** there is no
+   write-protect register. The RE identified the **ISP clock-source MUX
+   (`0x025000C8/CC`)** — programmed by the vendor once at `ax_proton` probe
+   (`ax_isp_clk_prepare`) and omitted by M1's gate-only bring-up — as the primary
+   suspect, and the hardware test CONFIRMED it is necessary: writing codes `5/5/3`
+   drives `MUX_RD` (`0x02500000+0x00`) to the live-vendor golden `0x5af`. **But it is
+   NOT sufficient:** even with `MUX_RD=0x5af` + rst1-bit20 kick + gates
+   (`0x3F/0x3FE` and `0xFFFFFFFF`) + IFE reset pulse `0x5E000`, the SIF (`0x2406xxx`) /
+   IFE (`0x2414xxx`) windows STAY `0xDEADBEEF` and the clock-level readbacks
+   `0x025000C0/C4` STAY `0`. So the ISP clock SOURCE is selected but the clock is not
+   RUNNING — an upstream source-PLL enable / power-domain (the `C0/C4` producers) is
+   still missing. **That is the real remaining blocker → `spec-isp-clock-enable.md`**
+   (clean-room RE in flight). `pkgs/open-vin-capture` (`ovc_clk_mux_apply`) carries the
+   corrected mux step (constant codes `5/5/3`, NOT read from `MUX_RD` — M1 overwrites
+   its low bits with the CSI deskew status) + the narrow non-hanging reset + golden
+   corrections. Everything else upstream (probe, IRQ, WDMA address gate, geometry,
+   reset polarity, clock wake, CSI link, live source) is proven.
+   **Remaining device-loop step (base-only boot):** once the source-PLL/power step
+   lands, insmod, confirm `C0/C4` go nonzero + a non-shadowed write/read round-trip
+   sticks (SIF `0x02406408`, not the double-buffered WDMA `0x024140d4`), then YUYV
+   frames to DDR.
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure

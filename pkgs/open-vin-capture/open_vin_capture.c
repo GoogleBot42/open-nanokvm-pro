@@ -183,18 +183,15 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_CLK_MUX_SET		0xC8
 #define OVC_CLK_MUX_CLR		0xCC
 /*
- * ISP clock-source MUX (spec-vin-write-enable §1 -- THE write-enable). Three
- * 3-bit source-select fields sit at MUX_RD [10:8]/[7:5]/[4:2] (ISP domains
- * 0/1/2); they are (re)applied by strobing the write-only CLR (0xCC) then SET
- * (0xC8) registers. The vendor performs this once, at ax_proton probe
- * (ax_isp_clk_prepare), and no per-open path repeats it -- so M1's gate-only
- * bring-up (0xD0/0xD8) omits it and the SIF/IFE datapath flops get bus power
- * but no functional clock, which is why their config registers read 0 yet
- * silently DROP writes. Device signature: MUX_RD (0x02500000+0x00) reads
- * 0x5ac on a base-only boot and 0x5af during live vendor 4K capture -- the
- * delta is bits [1:0], the domains' clock-active status the apply-strobe
- * raises. The source-select fields themselves already read 3/5/5 on a base
- * boot, so the missing action is the apply-strobe, not new codes.
+ * ISP clock-source MUX (spec-vin-write-enable §1). Three 3-bit source-select
+ * fields at MUX_RD [10:8]/[7:5]/[4:2] (ISP domains 0/1/2), applied by strobing
+ * the write-only CLR (0xCC) then SET (0xC8) registers. The vendor performs this
+ * at ax_proton probe (ax_isp_clk_prepare); M1's gate-only bring-up (0xD0/0xD8)
+ * omits it. Device-proven 2026-08-31: writing codes 5/5/3 drives MUX_RD
+ * (0x02500000+0x00) to 0x5af, the live-vendor golden. This selects the ISP
+ * clock SOURCE but is NOT sufficient on its own to make the SIF/IFE datapath
+ * writable -- see ovc_clk_mux_apply() and spec-isp-clock-enable.md (the source
+ * PLL / power domain that actually starts the clock, C0/C4, is still needed).
  */
 #define OVC_CLK_MUX_NFIELDS	3
 #define OVC_CLK_MUX_FIELD	0x7
@@ -439,39 +436,49 @@ static dma_addr_t ovc_buf_dma_addr(struct vb2_buffer *vb)
 /* Hardware programming (spec order; enable/shadow bits LAST)               */
 /* ------------------------------------------------------------------------ */
 
-/* ISP clock-domain MUX field shifts (spec-vin-write-enable §1): domains 0/1/2
- * at MUX_RD [10:8]/[7:5]/[4:2]. */
+/*
+ * ISP clock-domain MUX: field shifts and the vendor source-select CODES
+ * (spec-vin-write-enable §1). Domains 0/1/2 at MUX_RD [10:8]/[7:5]/[4:2];
+ * codes 5/5/3 reproduce the vendor's ISP source selection (~416/533/297 MHz).
+ * These MUST be constants -- device-proven 2026-08-31 that writing 5/5/3 drives
+ * MUX_RD to the golden 0x5af. Do NOT read the codes back from MUX_RD: once the
+ * M1 CSI subdev is up it overwrites MUX_RD[3:0] with the CSI deskew-lock status
+ * (0xf), so a read-and-restrobe reprograms the mux with garbage codes and can
+ * wedge the ISP clock domain (observed: SIF/IFE fall back to 0xDEADBEEF).
+ */
 static const u8 ovc_clk_mux_shift[OVC_CLK_MUX_NFIELDS] = { 8, 5, 2 };
+static const u8 ovc_clk_mux_code[OVC_CLK_MUX_NFIELDS]  = { 5, 5, 3 };
 
 /*
- * Apply the ISP clock-source mux -- the write-enable the SIF/IFE datapath
- * config registers need (spec-vin-write-enable §1/§5 step 1). The vendor does
- * this only at ax_proton probe; the source-select codes already sit in MUX_RD
- * on a base boot (fields 3/5/5), so we read each live and re-strobe it through
- * CLR then SET. That re-apply is what actually starts the domain clocks (no
- * rate-table decode needed). Success = MUX_RD reaches the device golden 0x5af;
- * a mismatch is logged so a stuck datapath is diagnosable at bring-up.
+ * Apply the ISP clock-source mux (spec-vin-write-enable §1/§5 step 1): CLR then
+ * SET each domain's 3-bit source-select field to the vendor code. Device-proven
+ * to drive MUX_RD to 0x5af (verified below). NECESSARY BUT NOT SUFFICIENT for
+ * datapath writability: on-hardware 2026-08-31, even with MUX_RD=0x5af + gates +
+ * IFE reset, the SIF (0x2406xxx)/IFE (0x2414xxx) windows stay 0xDEADBEEF and the
+ * clock-level readbacks 0x025000C0/C4 stay 0 -- an upstream ISP source-PLL /
+ * power-domain enable (the C0/C4 producers) is still missing. Tracked in
+ * spec-isp-clock-enable.md; this step stays because it is a correct prerequisite
+ * the PLL bring-up builds on.
  */
 static void ovc_clk_mux_apply(struct ovc_dev *ovc)
 {
-	u32 before = ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD);
 	u32 after;
 	int i;
 
 	for (i = 0; i < OVC_CLK_MUX_NFIELDS; i++) {
 		unsigned int sh = ovc_clk_mux_shift[i];
-		u32 code = (before >> sh) & OVC_CLK_MUX_FIELD;
 
 		ovc_clkrst_wr(ovc, OVC_CLK_MUX_CLR, OVC_CLK_MUX_FIELD << sh);
-		ovc_clkrst_wr(ovc, OVC_CLK_MUX_SET, code << sh);
+		ovc_clkrst_wr(ovc, OVC_CLK_MUX_SET,
+			      (u32)ovc_clk_mux_code[i] << sh);
 	}
 
 	after = ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD);
-	dev_info(ovc->dev, "clk-src mux applied: MUX_RD %#06x -> %#06x (want %#06x)\n",
-		 before, after, OVC_CLK_MUX_READY);
+	dev_info(ovc->dev, "clk-src mux applied: MUX_RD=%#06x (want %#06x)\n",
+		 after, OVC_CLK_MUX_READY);
 	if (after != OVC_CLK_MUX_READY)
 		dev_warn(ovc->dev,
-			 "clk-src mux: MUX_RD %#06x != golden %#06x -- SIF/IFE config writes may still drop (spec-vin-write-enable §6)\n",
+			 "clk-src mux: MUX_RD %#06x != golden %#06x -- clock-source not selected (spec-vin-write-enable §6)\n",
 			 after, OVC_CLK_MUX_READY);
 }
 
@@ -492,11 +499,11 @@ static void ovc_clkrst_init(struct ovc_dev *ovc)
 	ovc_clkrst_wr(ovc, OVC_RST1_DEASSERT, BIT(20));
 
 	/*
-	 * Apply the ISP clock-source mux (spec-vin-write-enable §1). THIS is
-	 * the newly-identified write-enable: without it the SIF (0x2406xxx)
-	 * and IFE/WDMA (0x2414xxx) config flops have bus power but no
-	 * functional clock, so writes to them silently drop even after the
-	 * gates + IFE reset below. Must run before the gates/reset.
+	 * Apply the ISP clock-source mux (spec-vin-write-enable §1): selects
+	 * the ISP clock source (MUX_RD -> 0x5af). A necessary prerequisite for
+	 * datapath writability but not sufficient on its own -- the source PLL /
+	 * power-domain that starts the clock (0x025000C0/C4) is still missing
+	 * (spec-isp-clock-enable.md). Runs before the gates/reset.
 	 */
 	ovc_clk_mux_apply(ovc);
 
