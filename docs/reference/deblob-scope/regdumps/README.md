@@ -22,13 +22,19 @@ Captured during the #59 M2 bring-up to seed a register-diff bring-up of the open
 - SIF DT-match: 0x02406540/44 = 0x00001e00 (DT 0x1E in byte<<8), park 0x02406548 = 0x3a3a3a00, VC/DT ctrl 0x0653c=1; WIN1 park 0x0651c=0x00200020.
 - **MODE10 bypass masks are NOT at 0x14154/0x14158** — 0x14154 reads 0x00101720 (a WDMA per-channel stride), so the IFE-top bypass block base is ELSEWHERE and still unlocated.
 
-## The M2 wall (why frames don't flow yet)
-On a base-only boot the SIF (0x02406xxx) and IFE/WDMA (0x02414xxx) sub-blocks read
-0xDEADBEEF and drop writes — held in reset/unclocked. The interrupt-controller
-sub-block (0x02400000-0xff) IS writable (probe/IRQ setup work). The `cglb`
-diff shows only 0x2340024 bit9 differs, but M1 already sets it and the blocks stay
-dead -> the missing piece is the vendor `VIN_glb_create` SIF/IFE reset-deassert
-(W1S/W1C pulses at the AXI-ctrl regs + the 0x0440306C hold), which self-clear and
-are NOT observable in a static dump. Needs clean-room RE of ax_proton
-VIN_glb_create / ax_isp_reset_all_legacy. This is the single blocker; the WDMA
-address gate and the frame-done IRQ are already device-confirmed above.
+## The M2 wall — RESOLVED (2026-08-31)
+On a base-only boot the SIF (0x02406xxx) and IFE/WDMA (0x02414xxx) sub-blocks read 0
+but DROP writes; the interrupt-controller sub-block (0x02400000-0xff) IS writable
+(probe/IRQ work). Clean-room RE (`../specs/spec-vin-write-enable.md`) found the cause:
+**the ISP clock-source MUX (0x025000C8/CC) was never applied** — the vendor does it
+once at ax_proton probe (ax_isp_clk_prepare), and M1's gate-only bring-up (0xD0/0xD8)
+omits it, so the datapath flops get bus power but no functional clock and silently
+drop writes. **The decisive evidence is in these dumps:** MUX_RD (0x02500000+0x00)
+reads **0x5ac base-only (glb-now.bin) vs 0x5af live-vendor (glb-vendor-live.bin)** —
+the delta is bits[1:0] (the domains' clock-active status the apply-strobe raises);
+the 3-bit source-select fields [10:8]/[7:5]/[4:2] already read 3/5/5 on base, so the
+missing action is the strobe, not new codes. Also sys_glb 0x90 = 0x230001 (vendor)
+vs 0 (base). Folded into `pkgs/open-vin-capture` (`ovc_clk_mux_apply`); the WDMA
+address gate + frame-done IRQ were already device-confirmed above. Remaining: the
+on-device readback check (MUX_RD -> 0x5af, then a write/read round-trip on a
+NON-shadowed reg — SIF 0x02406408, not the double-buffered WDMA 0x024140d4).

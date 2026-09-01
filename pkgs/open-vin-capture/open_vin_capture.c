@@ -182,6 +182,23 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_CLK_MUX_RD		0x00
 #define OVC_CLK_MUX_SET		0xC8
 #define OVC_CLK_MUX_CLR		0xCC
+/*
+ * ISP clock-source MUX (spec-vin-write-enable §1 -- THE write-enable). Three
+ * 3-bit source-select fields sit at MUX_RD [10:8]/[7:5]/[4:2] (ISP domains
+ * 0/1/2); they are (re)applied by strobing the write-only CLR (0xCC) then SET
+ * (0xC8) registers. The vendor performs this once, at ax_proton probe
+ * (ax_isp_clk_prepare), and no per-open path repeats it -- so M1's gate-only
+ * bring-up (0xD0/0xD8) omits it and the SIF/IFE datapath flops get bus power
+ * but no functional clock, which is why their config registers read 0 yet
+ * silently DROP writes. Device signature: MUX_RD (0x02500000+0x00) reads
+ * 0x5ac on a base-only boot and 0x5af during live vendor 4K capture -- the
+ * delta is bits [1:0], the domains' clock-active status the apply-strobe
+ * raises. The source-select fields themselves already read 3/5/5 on a base
+ * boot, so the missing action is the apply-strobe, not new codes.
+ */
+#define OVC_CLK_MUX_NFIELDS	3
+#define OVC_CLK_MUX_FIELD	0x7
+#define OVC_CLK_MUX_READY	0x5af	/* golden MUX_RD after apply (device-proven) */
 #define OVC_CLK_GATE_A_SET	0xD0	/* bits [5:0] */
 #define OVC_CLK_GATE_B_SET	0xD8	/* bits [9:1] */
 #define OVC_RST0_ASSERT		0xE0
@@ -257,10 +274,15 @@ static inline void ovc_wr(struct ovc_dev *ovc, u32 off, u32 val)
 	writel(val, ovc->regs + off);
 }
 
-/* clock/reset window (0x02500000) accessor */
+/* clock/reset window (0x02500000) accessors */
 static inline void ovc_clkrst_wr(struct ovc_dev *ovc, u32 off, u32 val)
 {
 	writel(val, ovc->clkrst + off);
+}
+
+static inline u32 ovc_clkrst_rd(struct ovc_dev *ovc, u32 off)
+{
+	return readl(ovc->clkrst + off);
 }
 
 /* new = (old & keep) | set  -- the vendor RMW idiom (spec §0.1, §4.3) */
@@ -417,17 +439,66 @@ static dma_addr_t ovc_buf_dma_addr(struct vb2_buffer *vb)
 /* Hardware programming (spec order; enable/shadow bits LAST)               */
 /* ------------------------------------------------------------------------ */
 
+/* ISP clock-domain MUX field shifts (spec-vin-write-enable §1): domains 0/1/2
+ * at MUX_RD [10:8]/[7:5]/[4:2]. */
+static const u8 ovc_clk_mux_shift[OVC_CLK_MUX_NFIELDS] = { 8, 5, 2 };
+
 /*
- * Clock / reset bring-up, from spec §8.3 (vendor global-create path):
- * clocks are ungated BEFORE resets are released -- order preserved.
+ * Apply the ISP clock-source mux -- the write-enable the SIF/IFE datapath
+ * config registers need (spec-vin-write-enable §1/§5 step 1). The vendor does
+ * this only at ax_proton probe; the source-select codes already sit in MUX_RD
+ * on a base boot (fields 3/5/5), so we read each live and re-strobe it through
+ * CLR then SET. That re-apply is what actually starts the domain clocks (no
+ * rate-table decode needed). Success = MUX_RD reaches the device golden 0x5af;
+ * a mismatch is logged so a stuck datapath is diagnosable at bring-up.
+ */
+static void ovc_clk_mux_apply(struct ovc_dev *ovc)
+{
+	u32 before = ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD);
+	u32 after;
+	int i;
+
+	for (i = 0; i < OVC_CLK_MUX_NFIELDS; i++) {
+		unsigned int sh = ovc_clk_mux_shift[i];
+		u32 code = (before >> sh) & OVC_CLK_MUX_FIELD;
+
+		ovc_clkrst_wr(ovc, OVC_CLK_MUX_CLR, OVC_CLK_MUX_FIELD << sh);
+		ovc_clkrst_wr(ovc, OVC_CLK_MUX_SET, code << sh);
+	}
+
+	after = ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD);
+	dev_info(ovc->dev, "clk-src mux applied: MUX_RD %#06x -> %#06x (want %#06x)\n",
+		 before, after, OVC_CLK_MUX_READY);
+	if (after != OVC_CLK_MUX_READY)
+		dev_warn(ovc->dev,
+			 "clk-src mux: MUX_RD %#06x != golden %#06x -- SIF/IFE config writes may still drop (spec-vin-write-enable §6)\n",
+			 after, OVC_CLK_MUX_READY);
+}
+
+/*
+ * Clock / reset bring-up, from spec §8.3 (vendor global-create path) +
+ * spec-vin-write-enable §5: pulse the mux-domain reset, apply the clock-source
+ * mux (the write-enable), ungate clocks, THEN release the datapath reset --
+ * order preserved from the vendor's ax_isp_clk_prepare / VIN_glb_create.
  */
 static void ovc_clkrst_init(struct ovc_dev *ovc)
 {
 	int t;
 
-	/* Pulse reset-group-1 bit20 (spec §8.3 step 1 / clock-source mux). */
+	/* Pulse reset-group-1 bit20 (spec §8.3 step 1 / clock-source mux
+	 * domain kick -- the rst1-bit20 pulse the vendor's ax_isp_clk_prepare
+	 * issues right before the mux rate/source setup). */
 	ovc_clkrst_wr(ovc, OVC_RST1_ASSERT, BIT(20));
 	ovc_clkrst_wr(ovc, OVC_RST1_DEASSERT, BIT(20));
+
+	/*
+	 * Apply the ISP clock-source mux (spec-vin-write-enable §1). THIS is
+	 * the newly-identified write-enable: without it the SIF (0x2406xxx)
+	 * and IFE/WDMA (0x2414xxx) config flops have bus power but no
+	 * functional clock, so writes to them silently drop even after the
+	 * gates + IFE reset below. Must run before the gates/reset.
+	 */
+	ovc_clk_mux_apply(ovc);
 
 	/*
 	 * Ungate clocks. HW-validated 2026-08-31: the SIF (0x2406xxx) and

@@ -236,21 +236,32 @@ Three findings from the specs materially change the plan below:
    frames at 1080p + 4K30, zero vendor modules, A/B-verified. Serial bring-up.
    **Bring-up progress (2026-08-31, on hardware, base-only boot):** probe +
    /dev/video0 + IRQ35 register clean, S_FMT/REQBUFS/QBUF/STREAMON run with no
-   hang. Frames do NOT yet flow — the SIF/IFE datapath sub-blocks read
-   0xDEADBEEF. Recovered + folded in: the `VIN_glb_create` reset RE
+   hang. Frames did NOT yet flow — the SIF/IFE datapath sub-blocks read 0 but
+   DROPPED writes. Recovered + folded in: the `VIN_glb_create` reset RE
    (`spec-vin-reset.md`); clk-enable (`0x025000D0/D8`, full mask) devmem-proven
    to un-DEADBEEF the blocks; reset polarity confirmed (`0xE0` assert / `0xE4`
-   deassert); golden corrections (SIF IN_FMT=0x40, default geometry 4K). **The
-   one remaining gap:** even clocked + IFE-reset-deasserted, the SIF/IFE config
-   registers read 0 but DROP writes. The vendor's full 32-bit rst0 sweep (which
-   the RE says releases SIF) HANGS the SoC (it pulses a fabric/bus reset), and
-   the IFE AXI-quiesce latches the master into a held state clk-enable can't
-   clear. So the "make config regs writable" enable is a subtle bit-level step
-   still to pin — needs more RE of the vendor's per-block write-enable/AXI path
-   (not safely brute-forceable on-device). Everything upstream (probe, IRQ,
-   WDMA address gate, geometry, reset polarity, clock wake) is proven; this is
-   the last blocker for frames. `pkgs/open-vin-capture` carries the narrow,
-   non-hanging reset (clk-enable + IFE 0x5E000) + the golden corrections.
+   deassert); golden corrections (SIF IN_FMT=0x40, default geometry 4K).
+   **The write-enable gap RESOLVED (2026-08-31, clean-room RE
+   `spec-vin-write-enable.md`, main-session-verified against the golden dumps):**
+   there is no write-protect register — the datapath flops had bus power but no
+   functional clock because the **ISP clock-source MUX (`0x025000C8/CC`) was never
+   applied**. The vendor programs it once, at `ax_proton` probe (`ax_isp_clk_prepare`),
+   and no per-open path repeats it, so M1's gate-only bring-up (`0xD0/0xD8`) omitted
+   it. Device-proven signature: `MUX_RD` (`0x02500000+0x00`) reads `0x5ac` base-only
+   vs `0x5af` live-vendor (delta = bits[1:0], the domains' clock-active status the
+   apply-strobe raises; the source-select fields `[10:8]/[7:5]/[4:2]` already read
+   `3/5/5` on a base boot, so the missing action is the strobe, not new codes).
+   Folded into `pkgs/open-vin-capture` (`ovc_clk_mux_apply`): re-strobe each domain's
+   live source code through CLR(`0xCC`) then SET(`0xC8`) before the gates/IFE-reset,
+   and verify `MUX_RD → 0x5af`. Everything upstream (probe, IRQ, WDMA address gate,
+   geometry, reset polarity, clock wake) is proven. `pkgs/open-vin-capture` carries
+   the mux apply + the narrow, non-hanging reset (clk-enable + IFE `0x5E000`) +
+   golden corrections.
+   **Remaining device-loop step (base-only boot):** insmod, confirm the
+   `MUX_RD → 0x5af` log, then a **non-shadowed** write/read round-trip sticks (test SIF
+   `0x02406408`, not the double-buffered WDMA `0x024140d4`) and YUYV frames land in DDR;
+   if the mux alone is insufficient, add the reset assert→deassert *pulse* (spec §2) and
+   the AXI-quiesce release (spec §3), both already understood.
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure
