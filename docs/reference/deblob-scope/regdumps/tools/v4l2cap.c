@@ -56,11 +56,14 @@ int main(int argc, char **argv)
 		printf("frame seq=%u idx=%u used=%u flags=%#x nz-pages=%lu first=%02x%02x%02x%02x\n",
 		       b.sequence, b.index, b.bytesused, b.flags, nz, d[0], d[1], d[2], d[3]);
 		fflush(stdout);
-		if (argc > 5 && !saved && got >= 2) {
+		if (argc > 5 && !saved && got >= 1) {
 			FILE *o = fopen(argv[5], "wb");
 			for (unsigned y = 0; y < H; y += 8)
 				for (unsigned x = 0; x < W; x += 8)
 					fputc(d[(unsigned long)y * W * 2 + x * 2], o);
+			for (unsigned y = 0; y < H; y += 8)
+				for (unsigned x = 0; x < W; x += 8)
+					fputc(d[(unsigned long)y * W * 2 + x * 2 + 1], o);
 			fclose(o); saved = 1;
 		}
 		got++;

@@ -117,6 +117,11 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_INT_CLEAR(n)	(0x10 * (n) + 0x14)	/* W1C */
 #define OVC_INT_RAW(n)		(0x10 * (n) + 0x18)
 #define OVC_INT_MASKED(n)	(0x10 * (n) + 0x1c)
+/* Second interrupt bank (the isp0-1 GIC line's view; the vendor-live
+ * snapshot shows its enables all-ones at reset), same layout from +0xb0. */
+#define OVC_INT1_ENABLE(n)	(0x10 * (n) + 0xb0)
+#define OVC_INT1_CLEAR(n)	(0x10 * (n) + 0xb4)
+#define OVC_INT1_MASKED(n)	(0x10 * (n) + 0xbc)
 #define OVC_INT_GRP_FSOF	1	/* frame-start, bit0 for dev0 */
 #define OVC_INT_GRP_FDONE	4	/* IFE WDMA frame-done */
 /*
@@ -176,9 +181,25 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_IFE_GO_KEEP		0x0000f81c
 
 /* IFE-WDMA per-channel control bank, stride 0x18 (spec §3) */
+/*
+ * Per-channel WDMA words, stride 0x18 (spec-ife-start §2.3, device-proven
+ * 2026-09-01): +0x0c = SHADOW-LOAD TRIGGER (bit0, re-issued EVERY frame),
+ * +0x10 = 16-bit sequence token (software writes the low half; the upper
+ * half is the hardware's latched copy, so 0x1e2d1e2d in the vendor state
+ * means "loaded"), +0x14 = buffer phys>>3, +0x18 = control word (from the
+ * golden table), +0x1c = channel enable. The earlier spec called +0x18 the
+ * commit; pulsing it never loaded anything -- the first strobe on +0x0c
+ * put a full 4K frame in DDR.
+ */
+#define OVC_WDMA_TRIG(c)	(OVC_IFE_BLOCK + 0x18 * (c) + 0x0c)	/* bit0 */
+#define OVC_WDMA_SEQ(c)		(OVC_IFE_BLOCK + 0x18 * (c) + 0x10)	/* low16 */
 #define OVC_WDMA_ADDR(c)	(OVC_IFE_BLOCK + 0x18 * (c) + 0x14)	/* phys>>3 */
-#define OVC_WDMA_SHADOW(c)	(OVC_IFE_BLOCK + 0x18 * (c) + 0x18)	/* bit0 latch */
 #define OVC_WDMA_ENABLE(c)	(OVC_IFE_BLOCK + 0x18 * (c) + 0x1c)	/* bit0 */
+/* ISP-top data-source mux: readable mirror +0x16c, write-only enable +0x170
+ * / disable +0x174 strobes (spec-ife-start §1.2). Vendor mirror = 0x30. */
+#define OVC_TOP_MUX_EN		0x170
+#define OVC_TOP_MUX_VAL		0x30
+#define OVC_IFE_FLUSH		0x146e0	/* written 0xffffffff after the go RMW */
 /* Per-channel format/geometry bank, stride 0x20, base (chn+0xf)<<5 (spec §3 sel 3) */
 #define OVC_WDMA_FMT_BANK(c)	(OVC_IFE_BLOCK + (((c) + 0xf) << 5))
 /* Packing/burst + WxH (spec §3 selector 2) */
@@ -221,6 +242,7 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_RST0_NLINES		32
 #define OVC_RST1_NLINES		23
 #define OVC_RST1_SKIP_LINE	20	/* mux-domain kick line; never in the sweeps (spec) */
+#define OVC_RST0_CSI_LINES	0x00001c3c	/* csirx0 pixel/ppi/prst/sys + deskew0/1 + dphyrx */
 
 /* AXI-master quiesce ctrl/status regs, in the 0x02400000 ISP file
  * (spec-vin-reset step 4/9): write 0xFFFFFFFF to ctrl, poll status clear,
@@ -508,6 +530,18 @@ static void ovc_clkrst_init(struct ovc_dev *ovc)
 {
 	int i, t;
 
+	/*
+	 * Reload-safe: if the register file is already live (a previous
+	 * instance, or a warm boot that kept the domain up) do not re-run
+	 * the reset sweeps -- they would tear down a CSI receiver that is
+	 * already locked (device-observed 2026-09-01).
+	 */
+	if (ovc_rd(ovc, 0) != 0xdeadbeef) {
+		dev_info(ovc->dev, "ISP register file already live (file[0]=%#010x, rst0=%#010x); skipping clk/rst bring-up\n",
+			 ovc_rd(ovc, 0), ovc_clkrst_rd(ovc, OVC_RST0_STATUS));
+		return;
+	}
+
 	/* Pulse reset-group-1 bit20 (spec §8.3 step 1 / clock-source mux
 	 * domain kick -- the rst1-bit20 pulse the vendor's ax_isp_clk_prepare
 	 * issues right before the mux rate/source setup). */
@@ -569,6 +603,13 @@ static void ovc_clkrst_init(struct ovc_dev *ovc)
 	 * boot -- merely reading it hangs the bus (device-proven).
 	 */
 	for (i = 0; i < OVC_RST0_NLINES; i++) {
+		/* Leave the CSI receiver's own lines (pixel/ppi/presetn/sys
+		 * 2-5, deskew0/1 10-11, dphyrx 12) to open_vin_csi2: pulsing
+		 * them after M1 has locked kills the front end (device-observed
+		 * 2026-09-01 when this module was reloaded after M1). They are
+		 * already released by the deassert-all above. */
+		if (BIT(i) & OVC_RST0_CSI_LINES)
+			continue;
 		ovc_clkrst_wr(ovc, OVC_RST0_ASSERT, BIT(i));
 		ovc_clkrst_wr(ovc, OVC_RST0_DEASSERT, BIT(i));
 	}
@@ -686,7 +727,9 @@ static void ovc_wdma_program_buffer(struct ovc_dev *ovc, dma_addr_t dma_addr)
 	const unsigned int c = wdma_chn;
 
 	ovc_wr(ovc, OVC_WDMA_ADDR(c), lower_32_bits(dma_addr >> 3));
-	ovc_rmw(ovc, OVC_WDMA_SHADOW(c), ~(u32)BIT(0), BIT(0));
+	/* per-frame token (low 16 bits) + the shadow-load strobe */
+	ovc_rmw(ovc, OVC_WDMA_SEQ(c), 0xffff0000, ovc->sequence & 0xffff);
+	ovc_rmw(ovc, OVC_WDMA_TRIG(c), ~(u32)BIT(0), BIT(0));
 }
 
 static void ovc_wdma_enable(struct ovc_dev *ovc, bool on)
@@ -707,10 +750,12 @@ static void ovc_irq_setup(struct ovc_dev *ovc)
 {
 	unsigned int n;
 
-	/* deterministic baseline: disable + ack every bank-0 group */
+	/* deterministic baseline: disable + ack every group of BOTH banks */
 	for (n = 0; n < OVC_INT_NGROUPS; n++) {
 		ovc_wr(ovc, OVC_INT_ENABLE(n), 0);
 		ovc_wr(ovc, OVC_INT_CLEAR(n), 0xFFFFFFFF);
+		ovc_wr(ovc, OVC_INT1_ENABLE(n), 0);
+		ovc_wr(ovc, OVC_INT1_CLEAR(n), 0xFFFFFFFF);
 	}
 
 	/* group-4 frame-done for our channel (device-confirmed 0x200) */
@@ -739,7 +784,33 @@ static irqreturn_t ovc_isr(int irq, void *priv)
 	struct ovc_buffer *done = NULL;
 	u32 status;
 
+	bool other = false;
+	unsigned int n;
+
 	spin_lock(&ovc->irqlock);
+
+	/*
+	 * The GIC line is shared by every group of both interrupt banks.
+	 * Ack anything pending that is not ours so the level line drops
+	 * (otherwise the kernel sees an unhandled storm and disables IRQ 35
+	 * -- "nobody cared", device-observed 2026-09-01).
+	 */
+	for (n = 0; n < OVC_INT_NGROUPS; n++) {
+		u32 s;
+
+		if (n == OVC_INT_GRP_FDONE)
+			continue;
+		s = ovc_rd(ovc, OVC_INT_MASKED(n));
+		if (s) {
+			ovc_wr(ovc, OVC_INT_CLEAR(n), s);
+			other = true;
+		}
+		s = ovc_rd(ovc, OVC_INT1_MASKED(n));
+		if (s) {
+			ovc_wr(ovc, OVC_INT1_CLEAR(n), s);
+			other = true;
+		}
+	}
 
 	status = ovc_rd(ovc, OVC_INT_MASKED(OVC_INT_GRP_FDONE));
 	if (!(status & OVC_INT_FDONE_BIT(wdma_chn))) {
@@ -747,7 +818,7 @@ static irqreturn_t ovc_isr(int irq, void *priv)
 		if (status)
 			ovc_wr(ovc, OVC_INT_CLEAR(OVC_INT_GRP_FDONE), status);
 		spin_unlock(&ovc->irqlock);
-		return status ? IRQ_HANDLED : IRQ_NONE;
+		return (status || other) ? IRQ_HANDLED : IRQ_NONE;
 	}
 
 	/* W1C ack (spec §5.4) */
@@ -766,6 +837,7 @@ static irqreturn_t ovc_isr(int irq, void *priv)
 	 * the latch precedes frame-done, rotation must be re-keyed off
 	 * FSOF (group 1 bit0).
 	 */
+	ovc->sequence++;
 	if (ovc->active && !list_empty(&ovc->buf_list)) {
 		struct ovc_buffer *next;
 
@@ -776,8 +848,16 @@ static irqreturn_t ovc_isr(int irq, void *priv)
 			ovc_buf_dma_addr(&next->vb.vb2_buf));
 		done = ovc->active;
 		ovc->active = next;
+	} else if (ovc->active) {
+		/*
+		 * Underrun: the hardware only writes a frame after a shadow
+		 * load, so re-arm on the same buffer (the frame is dropped)
+		 * to keep frame-done coming -- device-proven 2026-09-01: one
+		 * strobe == exactly one frame in DDR.
+		 */
+		ovc_wdma_program_buffer(ovc,
+			ovc_buf_dma_addr(&ovc->active->vb.vb2_buf));
 	}
-	ovc->sequence++;
 
 	spin_unlock(&ovc->irqlock);
 
@@ -855,6 +935,21 @@ static int ovc_start_streaming(struct vb2_queue *vq, unsigned int count)
 	ovc_ife_bypass_setup(ovc);
 	ovc_sif_setup(ovc);
 
+	/* data-source mux enable strobe (write-only; mirror +0x16c = 0x30) */
+	ovc_wr(ovc, OVC_TOP_MUX_EN, OVC_TOP_MUX_VAL);
+	/* go RMW under the vendor's keep-mask, then the flush word */
+	ovc_ife_go(ovc, true);
+	ovc_wr(ovc, OVC_IFE_FLUSH, 0xffffffff);
+	ovc_wdma_enable(ovc, true);
+	ovc_irq_setup(ovc);
+	ovc_sif_start(ovc);
+
+	/*
+	 * First buffer + shadow-load strobe LAST, once the SIF is streaming:
+	 * the vendor issues address + trigger per frame from its scheduler
+	 * after pipe start, and a strobe issued before SIF start is lost
+	 * (device-observed 2026-09-01: 0 frames vs 1 frame per strobe).
+	 */
 	spin_lock_irqsave(&ovc->irqlock, flags);
 	ovc->sequence = 0;
 	ovc->active = list_first_entry(&ovc->buf_list, struct ovc_buffer,
@@ -863,11 +958,6 @@ static int ovc_start_streaming(struct vb2_queue *vq, unsigned int count)
 	ovc_wdma_program_buffer(ovc,
 		ovc_buf_dma_addr(&ovc->active->vb.vb2_buf));
 	spin_unlock_irqrestore(&ovc->irqlock, flags);
-
-	ovc_ife_go(ovc, true);
-	ovc_wdma_enable(ovc, true);
-	ovc_irq_setup(ovc);
-	ovc_sif_start(ovc);
 
 	return 0;
 }
@@ -880,6 +970,8 @@ static void ovc_stop_streaming(struct vb2_queue *vq)
 
 	/* reverse order: stop the source, then the datapath, then the IRQ */
 	ovc_sif_stop(ovc);
+	/* vendor stop case: clear the shadow-load trigger */
+	ovc_rmw(ovc, OVC_WDMA_TRIG(wdma_chn), ~(u32)BIT(0), 0);
 	ovc_wdma_enable(ovc, false);
 	ovc_ife_go(ovc, false);
 	ovc_irq_teardown(ovc);
@@ -911,9 +1003,10 @@ static const struct vb2_ops ovc_vb2_ops = {
 /* V4L2 ioctl ops                                                           */
 /* ------------------------------------------------------------------------ */
 
+/* The bypass WDMA packing (golden table) is U0 Y0 V0 Y1 -- device-confirmed
+ * 2026-09-01 by rendering a captured frame: byte 1 of each pair is luma. */
 static const u32 ovc_pix_formats[] = {
-	V4L2_PIX_FMT_YUYV,
-	V4L2_PIX_FMT_VYUY,
+	V4L2_PIX_FMT_UYVY,
 };
 
 static void ovc_fill_pix_format(struct v4l2_pix_format *pix)
