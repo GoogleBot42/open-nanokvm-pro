@@ -1,5 +1,6 @@
 { pkgs, nanokvm-server, nanokvm-web, kvm-encoder, kernel, nanokvm-display
-, libsns-dummy, vc8000-vcmd, edid, boot, dtb-slot-image, kernel-slot-image
+, libsns-dummy, vc8000-vcmd, open-vin-csi2, open-vin-capture, edid, boot
+, dtb-slot-image, kernel-slot-image
 , version ? "0.0.0-dev", ... }:
 
 # ---------------------------------------------------------------------------
@@ -48,15 +49,18 @@
 #       override.conf                            vendor wifi.service crash-restart
 #                                                loop (#43); needs a daemon-reload
 #                                                or a reboot to take effect.
-#     soc/scripts/auto_load_all_drv.sh           our CURATED /soc/ko module loader
-#                                                -- 10 vendor blobs + our open
-#                                                VCMD encode driver in place of
-#                                                ax_venc/ax_jenc (#39, #25).
-#                                                Takes effect on the NEXT REBOOT;
-#                                                the installer forces one when it
-#                                                sees the loader change.
+#     soc/scripts/auto_load_all_drv.sh           our OPEN-STACK /soc/ko module
+#                                                loader -- three from-source
+#                                                modules, zero vendor kernel
+#                                                blobs (#60). Takes effect on the
+#                                                NEXT REBOOT; the installer forces
+#                                                one when it sees the loader change.
 #     soc/ko/ax630c_venc_vcmd.ko                 our from-source open VC8000E VCMD
 #                                                encode driver (blob-free encode).
+#     soc/ko/open_vin_csi2.ko                    our open CSI-2 receiver (M1).
+#     soc/ko/open_vin_capture.ko                 our open VIN/IFE V4L2 capture (M2).
+#     soc/scripts/auto_load_all_drv.sh.openvenc  previous curated loader (10 vendor
+#                                                capture blobs + open venc), rollback.
 #     soc/scripts/auto_load_all_drv.sh.vendor    pristine vendor loader kept for
 #                                                on-device rollback (restore + reboot).
 #     etc/rc.local                               vendor rc.local minus the axbox
@@ -170,12 +174,15 @@ pkgs.stdenvNoCC.mkDerivation {
     # The open VCMD encode driver is loaded by the curated loader at boot; it
     # must be vermagic-compatible with the same kernel or insmod fails and H.264
     # goes dark (#25). Assert it here too (it ships from /soc/ko, not modroot).
-    vcmdvm=$(modinfo -F vermagic "${vc8000-vcmd}/ax630c_venc_vcmd.ko")
-    echo "  vermagic(ax630c_venc_vcmd.ko) = $vcmdvm"
-    case "$vcmdvm" in
-      "${release} "*) ;;
-      *) echo "ERROR: ax630c_venc_vcmd.ko vermagic '$vcmdvm' != ${release}" >&2; exit 1 ;;
-    esac
+    for oko in "${vc8000-vcmd}/ax630c_venc_vcmd.ko" "${open-vin-csi2}/open_vin_csi2.ko" \
+               "${open-vin-capture}/open_vin_capture.ko"; do
+      ovm=$(modinfo -F vermagic "$oko")
+      echo "  vermagic($(basename "$oko")) = $ovm"
+      case "$ovm" in
+        "${release} "*) ;;
+        *) echo "ERROR: $(basename "$oko") vermagic '$ovm' != ${release}" >&2; exit 1 ;;
+      esac
+    done
     # (c) modules.dep exists and resolves our marker module.
     test -f "$modroot/modules.dep" || { echo "ERROR: modules.dep not generated" >&2; exit 1; }
     grep -q 'lt6911_manage' "$modroot/modules.dep" \
@@ -226,47 +233,58 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q '^Restart=no$' "$rfs/etc/systemd/system/wifi.service.d/override.conf" \
       || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
 
-    # --- curated /soc/ko module loader (#39 + #25, mirrors pkgs/rootfs.nix [5b7]).
-    # Replaces the vendor auto_load_all_drv.sh (all 22 blobs) with 10 vendor blobs
-    # (the ax_proton capture closure) PLUS our from-source open VC8000E VCMD
-    # encode driver (ax630c_venc_vcmd.ko) in place of vendor ax_venc/ax_jenc; the
-    # pristine vendor script ships beside it as .vendor for on-device rollback.
-    # Takes effect on the NEXT REBOOT -- when the OTA lands the vendor set is
-    # already loaded, so nothing is unloaded and the running pipeline is untouched;
-    # on reboot the open VCMD driver loads instead and the openvenc libkvm drives
-    # it. NOTE: unlike the rootfs build there is no vendor-loader byte-compare here
-    # (the OTA has no copy of the base rootfs to diff against); pkgs/rootfs.nix
-    # step [5b7] is the guard that catches a base .axp changing the loader.
+    # --- open-stack /soc/ko module loader (#60, mirrors pkgs/rootfs.nix [5b7]).
+    # Replaces the vendor auto_load_all_drv.sh (all 22 blobs) with exactly three
+    # from-source modules -- open VCMD encoder, open CSI-2 receiver, open VIN/IFE
+    # V4L2 capture -- and ZERO vendor kernel blobs. The previous curated loader
+    # (.openvenc: 10 vendor capture blobs + open venc) and the pristine vendor
+    # script (.vendor) ship beside it for on-device rollback. Takes effect on
+    # the NEXT REBOOT -- when the OTA lands the old set is already loaded, so
+    # nothing is unloaded and the running pipeline is untouched; on reboot the
+    # open drivers load and the V4L2 libkvm drives them. NOTE: unlike the rootfs
+    # build there is no vendor-loader byte-compare here (the OTA has no copy of
+    # the base rootfs to diff against); pkgs/rootfs.nix step [5b7] is the guard
+    # that catches a base .axp changing the loader.
     mkdir -p "$rfs/soc/scripts" "$rfs/soc/ko"
-    cp ${./rootfs/ax-load-drv.sh}        "$rfs/soc/scripts/auto_load_all_drv.sh"
-    cp ${./rootfs/ax-load-drv.vendor.sh} "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
+    cp ${./rootfs/ax-load-drv.sh}          "$rfs/soc/scripts/auto_load_all_drv.sh"
+    cp ${./rootfs/ax-load-drv.openvenc.sh} "$rfs/soc/scripts/auto_load_all_drv.sh.openvenc"
+    cp ${./rootfs/ax-load-drv.vendor.sh}   "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
     chmod 755 "$rfs/soc/scripts/auto_load_all_drv.sh" \
+              "$rfs/soc/scripts/auto_load_all_drv.sh.openvenc" \
               "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
-    # The open VCMD encode driver, loaded by the curated loader in place of
-    # vendor ax_venc/ax_jenc (built against our kernel; provides /dev/es_venc).
-    cp ${vc8000-vcmd}/ax630c_venc_vcmd.ko "$rfs/soc/ko/ax630c_venc_vcmd.ko"
-    chmod 644 "$rfs/soc/ko/ax630c_venc_vcmd.ko"
-    # ax_cmm without its cmmpool= param is the strlen(NULL) boot-loop panic, and
-    # the module count is the whole point of the change -- assert both in-build.
-    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$rfs/soc/scripts/auto_load_all_drv.sh" \
-      || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
-    grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$rfs/soc/scripts/auto_load_all_drv.sh" \
-      || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
-    grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko' "$rfs/soc/scripts/auto_load_all_drv.sh" \
-      || { echo "ERROR: curated loader lost the open ax630c_venc_vcmd.ko (no encode)" >&2; exit 1; }
-    if grep -Eq 'insmod /soc/ko/ax_(venc|jenc)\.ko' "$rfs/soc/scripts/auto_load_all_drv.sh"; then
-      echo "ERROR: curated loader still insmods vendor ax_venc/ax_jenc -- clashes with the open VCMD driver" >&2; exit 1
+    # The three open modules the loader insmods (built against our kernel).
+    cp ${vc8000-vcmd}/ax630c_venc_vcmd.ko      "$rfs/soc/ko/ax630c_venc_vcmd.ko"
+    cp ${open-vin-csi2}/open_vin_csi2.ko       "$rfs/soc/ko/open_vin_csi2.ko"
+    cp ${open-vin-capture}/open_vin_capture.ko "$rfs/soc/ko/open_vin_capture.ko"
+    chmod 644 "$rfs/soc/ko/ax630c_venc_vcmd.ko" "$rfs/soc/ko/open_vin_csi2.ko" \
+              "$rfs/soc/ko/open_vin_capture.ko"
+    # Assert the loader's invariants in-build (same set as pkgs/rootfs.nix [5b7]).
+    ldr="$rfs/soc/scripts/auto_load_all_drv.sh"
+    grep -qF 'compute_mem_map' "$ldr" \
+      || { echo "ERROR: loader lost the #53 DMA memory-map split" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param' "$ldr" \
+      || { echo "ERROR: loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/open_vin_capture.ko $capture_param' "$ldr" \
+      || { echo "ERROR: loader does not pass the #53 carveout params to open_vin_capture" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/open_vin_csi2.ko start_on_probe=1' "$ldr" \
+      || { echo "ERROR: loader lost the open CSI-2 receiver (no link bring-up)" >&2; exit 1; }
+    if grep -Eq 'insmod /soc/ko/ax_[a-z_]+\.ko' "$ldr"; then
+      echo "ERROR: default loader still insmods a vendor ax_*.ko -- the open stack needs none (#60)" >&2; exit 1
     fi
-    nins=$(grep -c '^[[:space:]]*insmod ' "$rfs/soc/scripts/auto_load_all_drv.sh" || true)
-    if [ "$nins" -ne 11 ]; then
-      echo "ERROR: curated loader has $nins insmod lines, expected 11 (10 vendor + open venc, #25)" >&2; exit 1
+    nins=$(grep -c '^[[:space:]]*insmod ' "$ldr" || true)
+    if [ "$nins" -ne 3 ]; then
+      echo "ERROR: loader has $nins insmod lines, expected 3 (open venc + open csi2 + open capture, #60)" >&2; exit 1
     fi
+    # The .openvenc rollback loader must still carry the ax_cmm cmmpool= parameter
+    # (ax_cmm without it is the strlen(NULL) boot-loop panic).
+    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$rfs/soc/scripts/auto_load_all_drv.sh.openvenc" \
+      || { echo "ERROR: .openvenc rollback loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     # No modprobe/depmod: the loader must insmod by PATH with explicit params, or
     # modules.dep resolution could load ax_cmm parameter-less (the autoload brick).
     if grep -Eq '(^|[^[:alnum:]_])(modprobe|depmod)([^[:alnum:]_]|$)' "$rfs/soc/scripts/auto_load_all_drv.sh"; then
       echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
     fi
-    echo "  module loader: curated set OK ($nins insmod lines) + .vendor rollback copy"
+    echo "  module loader: open-stack set OK ($nins insmod lines) + .openvenc/.vendor rollback copies"
 
     # --- drop the axbox syslog daemon (mirrors pkgs/rootfs.nix [5b8]). The
     # vendor /etc/rc.local starts /etc/init.d/{axsyslogd,axklogd} -> /bin/axbox,

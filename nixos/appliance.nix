@@ -113,15 +113,20 @@ let
       "/opt/lib for the Nix rootfs: Axera media libs autoPatchelf'd for NixOS, plus our from-source libsns_dummy.so";
   };
 
-  # ---- /soc/ko : the pinned prebuilt Axera media modules -----------------
-  # Same set the vendor rootfs carries at /soc/ko, but sourced from OUR pinned
-  # derivation (pkgs/ax-ko-blobs.nix) instead of the retained vendor image.
+  # ---- /soc/ko : the three open video modules + the pinned vendor blobs ----
+  # The default loader (below) insmods only our from-source modules: the open
+  # VCMD encoder, the open CSI-2 receiver and the open VIN/IFE V4L2 capture
+  # driver (#60). The vendor ax_*.ko set (pkgs/ax-ko-blobs.nix) is carried
+  # alongside solely for the .openvenc/.vendor rollback loaders (#54 drops it).
   axKo = pkgs.runCommand "nanokvm-soc-ko" { } ''
     mkdir -p "$out"
     cp -a ${nanokvm.ax-ko-blobs}/lib/modules/ax/. "$out/"
+    cp ${nanokvm.vc8000-vcmd}/ax630c_venc_vcmd.ko      "$out/ax630c_venc_vcmd.ko"
+    cp ${nanokvm.open-vin-csi2}/open_vin_csi2.ko       "$out/open_vin_csi2.ko"
+    cp ${nanokvm.open-vin-capture}/open_vin_capture.ko "$out/open_vin_capture.ko"
   '';
 
-  # ---- /soc/scripts/auto_load_all_drv.sh : our curated 12-module loader ---
+  # ---- /soc/scripts/auto_load_all_drv.sh : the open-stack module loader ----
   # Byte-identical to pkgs/rootfs/ax-load-drv.sh, only the interpreter and the
   # PATH are made explicit: the script is bash (it uses `function` and `[ ==
   # ]`), and it needs insmod/rmmod plus coreutils. It still insmods BY PATH
@@ -384,11 +389,11 @@ in
   # script; here it is a first-class unit, ordered before anything that opens
   # the capture pipeline.
   systemd.services.ax-modules = {
-    description = "Load Axera media kernel modules (curated 12 of 22, issue #39)";
+    description = "Load the open video kernel modules (VCMD encoder + CSI-2 + VIN/IFE capture, #60)";
     wantedBy = [ "multi-user.target" ];
     before = [ "nanokvm.service" ];
     after = [ "systemd-modules-load.service" ];
-    unitConfig.ConditionPathExists = "/soc/ko/ax_sys.ko";
+    unitConfig.ConditionPathExists = "/soc/ko/open_vin_capture.ko";
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;

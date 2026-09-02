@@ -216,10 +216,16 @@ for pending/TODO/unverified markers still present in the tree:
   made open frames `vendor<<4` — fixed, open frames now match vendor pool frames at
   720p/1080p/4K, packing is **YUYV** (not UYVY), 30 fps sustained. The bench HTPC is a
   couch-UI session that PINS its mode regardless of EDID (a real 1080p60 signal is a
-  human step). Still open under #59: the M1<->M2 async subdev link, dma-buf export.
-  Then **#60 M3**: V4L2 backend
-  in kvm-encoder, parity, retire the 10-module closure + blobs (#54 absorbs the disk
-  cleanup). #53 DMA map shipped + hw-validated. #63 = pre-existing encoder DMA-mask WARN
+  human step). **#60 M3 SHIPPED 2026-09-02 (same session):** `kvm_capture_v4l2.c`
+  (`.#kvm-encoder-v4l2`, now the image default) drives `/dev/video0` over plain V4L2 and
+  hands the open encoder each frame zero-copy via dma-buf (capture driver exports; open
+  VCMD driver imports through new ioctls 38/39). The default loader insmods exactly three
+  from-source modules and ZERO vendor ax_*.ko (ax_sys/cmm/pool/base proven unnecessary by
+  live rmmod + cold boot); `.openvenc` (previous set) and `.vendor` loaders ship for
+  rollback. Hardware-proven: web 200, 4K MJPEG, H.264 over wss (1080p crop), cold boot of
+  the shipped config. Vendor capture .ko still on the image as rollback only -> #54.
+  Residuals: async subdev link (polish), real non-4K signal (human), #52 4K H.264,
+  #61 EDID hw validation. #53 DMA map shipped + hw-validated. #63 = pre-existing encoder DMA-mask WARN
   at module load (cosmetic). Harness: base-only loader swap + reboot (memory
   device-hardware-status has the exact paths); never read 0x04403000 on an open boot.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in

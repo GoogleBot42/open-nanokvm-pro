@@ -177,11 +177,14 @@ fail:
 static int mj_send(AX_VIDEO_FRAME_INFO_T *frame)
 {
     AX_VIDEO_FRAME_T *vf = &frame->stVFrame;
-    if (!vf->u64PhyAddr[0]) return -1;
+    if (!vf->u64PhyAddr[0] && !vf->u64VirAddr[0]) return -1;
     uint32_t stride = vf->u32PicStride[0] ? vf->u32PicStride[0] : M.w;
     if (stride & 1) stride = M.w;       /* YUYV macropixels need even stride */
     uint32_t fsz = vf->u32FrameSize ? vf->u32FrameSize : stride * 2 * M.h;
-    const uint8_t *src = kvm_frame_map(vf->u64PhyAddr[0], fsz);
+    /* CPU view: the capture backend's own mapping when it has one (V4L2
+     * mmap), else a /dev/mem window over the frame's physical address. */
+    const uint8_t *src = (const uint8_t *)(uintptr_t)vf->u64VirAddr[0];
+    if (!src) src = kvm_frame_map(vf->u64PhyAddr[0], fsz);
     if (!src) return -1;
 
     unsigned char *old = M.jout;        /* set before setjmp, never changed */

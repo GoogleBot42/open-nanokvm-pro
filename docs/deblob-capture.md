@@ -303,11 +303,29 @@ Three findings from the specs materially change the plan below:
    Evidence: `regdumps/` (vendor-live ISP file; front-end banks idle vs
    streaming under `regdumps/frontend/`), the session tooling in
    `regdumps/tools/` (`ispbring.c` step tool, `replay.c`, `v4l2cap.c`).
-5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
-   to the open venc path; geometry envelope, audio, mini-display preview
-   (software downscale) all at parity; swap the default, retire the closure
-   from the loader and the blobs from the image (#54 round 2 absorbs the disk
-   cleanup).
+5. **Backend parity (M3) -- SHIPPED 2026-09-02 (#60).** Third capture backend
+   in kvm-encoder: `kvm_capture_v4l2.c` (`.#kvm-encoder-v4l2`, flag
+   `v4l2Capture`) speaks plain V4L2 to `/dev/video0` -- S_FMT YUYV, REQBUFS
+   mmap, EXPBUF, STREAMON, poll/DQBUF -- and hands the open encoder each frame
+   zero-copy: the capture driver's vb2 mem_ops export dma-bufs (a self-owned
+   exporter; the carveout has no struct pages) and the open VCMD driver gained
+   `HANTRO_IOCH_IMPORT_DMABUF` (nr 38; release 39), which resolves a dma-buf
+   to the bus address the register program consumes. Soft-JPEG and the
+   mini-display preview read the V4L2 mmap (no `/dev/mem` window).
+   Device-proven on the base-only harness: web 200, 4K MJPEG over
+   `/api/stream/mjpeg`, H.264 over the real wss h264-direct endpoint (at a
+   1080p crop via the bench-only `OPENKVM_FORCE_GEOM` hook; the encoder stays
+   1920-wide until #52), 0 libax mappings -- then the vendor
+   `ax_sys/cmm/pool/base` were **rmmod'd live** and both streams kept running:
+   nothing in our stack needs the ax base stack. The default loader now insmods
+   exactly three from-source modules (open venc, `open_vin_csi2`,
+   `open_vin_capture`) and zero vendor blobs; the previous curated set ships as
+   `auto_load_all_drv.sh.openvenc` beside `.vendor` for rollback. **Cold boot of
+   the shipped configuration on the device: three modules, nanokvm active, 4K
+   MJPEG, 0 libax.** The vendor capture `.ko` files stay on the image this
+   cycle as rollback material only; #54 removes them. Residuals: a real non-4K
+   *signal* on the bench (human), the M1<->M2 async subdev link (polish), 4K
+   H.264 (#52).
 6. **Mainline port** rides with #26 once M3 ships on 4.19.
 
 EDID (step 3 of the epic) is DONE: all six bins clean-room as of this commit

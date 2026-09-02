@@ -217,6 +217,12 @@
         kvm-encoder-openvenc = callPkg ./pkgs/kvm-encoder.nix {
           inherit axera-libs; openCapture = true; openVenc = true;
         };
+        # #55 M3 (#60): open encoder fed by the OPEN V4L2 capture driver
+        # (pkgs/open-vin-capture) -- zero vendor capture modules on the device:
+        #   nix build .#kvm-encoder-v4l2 -L
+        kvm-encoder-v4l2 = callPkg ./pkgs/kvm-encoder.nix {
+          inherit axera-libs; openCapture = true; openVenc = true; v4l2Capture = true;
+        };
         # #50 diagnostic probe: openvenc with AX_SYS_Init restored (links
         # libax_sys only) -- isolates whether libax_sys's kernel-side OSAL
         # registration is what protects ax_proton's exception-exit path.
@@ -245,12 +251,13 @@
         # Releases: rootfs overlay (app/web/libkvm/modules) + A/B partition
         # images (kernel/dtb/boot chain). See docs/updates.md.
         update-package = callPkg ./pkgs/update-package.nix {
-          # The SHIPPED encode backend is now the blob-free openvenc build (#25
-          # default, fixed-QP v1); it loads the open VCMD driver (vc8000-vcmd)
-          # in place of vendor ax_venc/ax_jenc. The server links the ABI header
-          # only, so it keeps the plain kvm-encoder.
-          kvm-encoder = kvm-encoder-openvenc;
+          # The SHIPPED video stack is fully open (#60, 2026-09-02): the V4L2
+          # libkvm (open capture drivers + open VCMD encoder, fixed-QP v1) and a
+          # loader with zero vendor kernel blobs. The server links the ABI
+          # header only, so it keeps the plain kvm-encoder.
+          kvm-encoder = kvm-encoder-v4l2;
           inherit nanokvm-server nanokvm-web nanokvm-display vc8000-vcmd edid
+            open-vin-csi2 open-vin-capture
             libsns-dummy version kernel boot dtb-slot-image kernel-slot-image;
         };
 
@@ -268,11 +275,11 @@
         edid = callPkg ./pkgs/edid.nix { };
 
         rootfs = callPkg ./pkgs/rootfs.nix {
-          # Shipped encode backend = blob-free openvenc (#25 default); the open
-          # VCMD driver (vc8000-vcmd) replaces vendor ax_venc/ax_jenc in the
-          # curated loader. See pkgs/rootfs.nix step [5b7]/[5b7a].
-          kvm-encoder = kvm-encoder-openvenc;
-          inherit base-axp kernel vc8000-vcmd
+          # Shipped video stack = fully open (#60): V4L2 libkvm over the open
+          # capture drivers + open VCMD encoder; the loader insmods only those
+          # three from-source modules. See pkgs/rootfs.nix step [5b7]/[5b7a].
+          kvm-encoder = kvm-encoder-v4l2;
+          inherit base-axp kernel vc8000-vcmd open-vin-csi2 open-vin-capture
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy edid version;
         };
 
@@ -283,6 +290,7 @@
         nixos-rootfs = callPkg ./nixos/rootfs.nix {
           nixpkgsRootfs = inputs.nixpkgs-rootfs;
           inherit axera-libs ax-ko-blobs kernel kvm-encoder
+            vc8000-vcmd open-vin-csi2 open-vin-capture
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
         };
 
@@ -309,7 +317,7 @@
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
             open-vin-csi2 open-vin-capture
             kernel-slot-image
-            kvm-encoder kvm-encoder-open kvm-encoder-openvenc
+            kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
             vcenc-geom-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy

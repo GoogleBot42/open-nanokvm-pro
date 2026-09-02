@@ -32,6 +32,7 @@
 #include <linux/of_irq.h>
 
 #include "vc8000_driver.h"      /* struct vcmd_config, extern venc_pdev, ABI */
+#include "framebuf_alloc.h"   /* vcmd_fb_set_dev: dma-buf import device (#60) */
 
 /*
  * AX630C VC8000E VCMD command-engine base. Recovered by device tracing
@@ -214,6 +215,7 @@ static int __init ax630c_vcmd_init(void)
 		return ret;
 	}
 	dma_coerce_mask_and_coherent(&venc_pdev->dev, DMA_BIT_MASK(32));
+	vcmd_fb_set_dev(&venc_pdev->dev);   /* dma-buf imports attach here (#60) */
 
 	if (coherent_size) {
 		ret = dma_declare_coherent_memory(&venc_pdev->dev,

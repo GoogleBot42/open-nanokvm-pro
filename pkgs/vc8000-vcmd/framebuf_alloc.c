@@ -20,6 +20,11 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/fs.h>
+#include <linux/device.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-direction.h>
+#include <linux/scatterlist.h>
+#include <linux/err.h>
 
 #include "framebuf_alloc.h"
 
@@ -101,6 +106,8 @@ int vcmd_fb_free(struct file *filp, unsigned long bus)
 	return ret;
 }
 
+static void vcmd_imp_release_filp(struct file *filp);
+
 void vcmd_fb_release_filp(struct file *filp)
 {
 	struct fb_alloc *a, *tmp;
@@ -113,6 +120,7 @@ void vcmd_fb_release_filp(struct file *filp)
 		}
 	}
 	mutex_unlock(&fb_lock);
+	vcmd_imp_release_filp(filp);
 }
 
 int vcmd_fb_lookup(unsigned long phy, unsigned long *size)
@@ -130,4 +138,143 @@ int vcmd_fb_lookup(unsigned long phy, unsigned long *size)
 	}
 	mutex_unlock(&fb_lock);
 	return ret;
+}
+
+/* ------------------------------------------------------------------------ */
+/* dma-buf import (#60 M3): V4L2 capture frame -> encoder bus address       */
+/* ------------------------------------------------------------------------ */
+
+struct fb_import {
+	struct list_head node;
+	struct dma_buf *dbuf;
+	struct dma_buf_attachment *att;
+	struct sg_table *sgt;
+	unsigned long bus;
+	unsigned long size;
+	struct file *owner;
+};
+
+static LIST_HEAD(imp_list);            /* guarded by fb_lock */
+static struct device *fb_dev;
+
+void vcmd_fb_set_dev(struct device *dev)
+{
+	fb_dev = dev;
+}
+
+static void imp_drop(struct fb_import *im)
+{
+	dma_buf_unmap_attachment(im->att, im->sgt, DMA_TO_DEVICE);
+	dma_buf_detach(im->dbuf, im->att);
+	dma_buf_put(im->dbuf);
+	kfree(im);
+}
+
+int vcmd_dmabuf_import(struct file *filp, int fd, unsigned long *bus,
+		       unsigned long *size)
+{
+	struct fb_import *im;
+	struct dma_buf *dbuf;
+	struct dma_buf_attachment *att;
+	struct sg_table *sgt;
+	int ret;
+
+	if (!fb_dev)
+		return -ENODEV;
+
+	dbuf = dma_buf_get(fd);
+	if (IS_ERR(dbuf))
+		return PTR_ERR(dbuf);
+
+	im = kzalloc(sizeof(*im), GFP_KERNEL);
+	if (!im) {
+		ret = -ENOMEM;
+		goto err_put;
+	}
+
+	att = dma_buf_attach(dbuf, fb_dev);
+	if (IS_ERR(att)) {
+		ret = PTR_ERR(att);
+		goto err_free;
+	}
+
+	sgt = dma_buf_map_attachment(att, DMA_TO_DEVICE);
+	if (IS_ERR(sgt)) {
+		ret = PTR_ERR(sgt);
+		goto err_detach;
+	}
+	/* The encoder register program takes one base address: the buffer
+	 * must be a single contiguous run (the open capture exporter's are). */
+	if (sgt->nents != 1 || !sg_dma_len(sgt->sgl)) {
+		ret = -EINVAL;
+		goto err_unmap;
+	}
+
+	im->dbuf = dbuf;
+	im->att = att;
+	im->sgt = sgt;
+	im->bus = sg_dma_address(sgt->sgl);
+	im->size = sg_dma_len(sgt->sgl);
+	im->owner = filp;
+
+	mutex_lock(&fb_lock);
+	list_add_tail(&im->node, &imp_list);
+	mutex_unlock(&fb_lock);
+
+	*bus = im->bus;
+	*size = im->size;
+	return 0;
+
+err_unmap:
+	dma_buf_unmap_attachment(att, sgt, DMA_TO_DEVICE);
+err_detach:
+	dma_buf_detach(dbuf, att);
+err_free:
+	kfree(im);
+err_put:
+	dma_buf_put(dbuf);
+	return ret;
+}
+
+int vcmd_dmabuf_release(struct file *filp, unsigned long bus)
+{
+	struct fb_import *im, *found = NULL;
+	int ret = -ENOENT;
+
+	mutex_lock(&fb_lock);
+	list_for_each_entry(im, &imp_list, node) {
+		if (im->bus == bus) {
+			if (im->owner != filp) {
+				ret = -EPERM;
+				break;
+			}
+			list_del(&im->node);
+			found = im;
+			ret = 0;
+			break;
+		}
+	}
+	mutex_unlock(&fb_lock);
+	if (found)
+		imp_drop(found);
+	return ret;
+}
+
+/* device close: drop every import this file made (called by
+ * vcmd_fb_release_filp after the allocations) */
+static void vcmd_imp_release_filp(struct file *filp)
+{
+	struct fb_import *im, *tmp;
+	LIST_HEAD(mine);
+
+	mutex_lock(&fb_lock);
+	list_for_each_entry_safe(im, tmp, &imp_list, node)
+		if (im->owner == filp)
+			list_move_tail(&im->node, &mine);
+	mutex_unlock(&fb_lock);
+
+	list_for_each_entry_safe(im, tmp, &mine, node) {
+		list_del(&im->node);
+		imp_drop(im);
+	}
 }

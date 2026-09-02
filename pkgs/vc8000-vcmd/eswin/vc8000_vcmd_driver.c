@@ -2277,6 +2277,29 @@ static long hantrovcmd_ioctl(struct file *filp, unsigned int cmd,
 			return -EFAULT;
 		return vcmd_fb_free(filp, fb.bus_addr);
 	}
+	/* AX630C-PORT: dma-buf import -> bus address, for zero-copy V4L2 capture
+	 * frames as encoder input (#60 M3). */
+	case HANTRO_IOCH_IMPORT_DMABUF: {
+		struct dmabuf_import_parameter im;
+
+		if (copy_from_user(&im, (void __user *)arg, sizeof(im)))
+			return -EFAULT;
+		retval = vcmd_dmabuf_import(filp, im.fd, &im.bus_addr, &im.size);
+		if (retval)
+			return retval;
+		if (copy_to_user((void __user *)arg, &im, sizeof(im))) {
+			vcmd_dmabuf_release(filp, im.bus_addr);
+			return -EFAULT;
+		}
+		break;
+	}
+	case HANTRO_IOCH_RELEASE_DMABUF: {
+		struct dmabuf_import_parameter im;
+
+		if (copy_from_user(&im, (void __user *)arg, sizeof(im)))
+			return -EFAULT;
+		return vcmd_dmabuf_release(filp, im.bus_addr);
+	}
 	default: {
 		LOG_DBG("inivalid IOCTL\n");
 		return -1;

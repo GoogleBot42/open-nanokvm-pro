@@ -1,4 +1,4 @@
-{ pkgs, base-axp, kvm-encoder, kernel, vc8000-vcmd
+{ pkgs, base-axp, kvm-encoder, kernel, vc8000-vcmd, open-vin-csi2, open-vin-capture
 , nanokvm-server, nanokvm-web, nanokvm-display, libsns-dummy, edid
 , version ? "0.0.0-dev"   # stamped into /kvmapp/version; the update baseline
 , ...
@@ -318,14 +318,17 @@ pkgs.stdenvNoCC.mkDerivation {
     emit_file "${./rootfs/wifi-service-override.conf}" \
               "/etc/systemd/system/wifi.service.d/override.conf" 0100644
 
-    # 5b7. CURATED /soc/ko module loader (#39). The vendor
-    # /soc/scripts/auto_load_all_drv.sh insmods all 22 blobs at boot; we load 10
-    # vendor blobs (the ax_proton capture closure) + our from-source open VCMD
-    # encode driver (ax630c_venc_vcmd.ko) IN PLACE of vendor ax_venc/ax_jenc
-    # (#25 default). We ship a curated loader in its place and keep
-    # the pristine vendor script alongside as auto_load_all_drv.sh.vendor, so a
-    # rollback on the device is `cp <name>.vendor <name>` + reboot. Rationale and
-    # the full keep/drop table: docs/blob-replacement.md.
+    # 5b7. OPEN-STACK /soc/ko module loader (#60, was the #39 curated set). The
+    # vendor /soc/scripts/auto_load_all_drv.sh insmods all 22 blobs at boot; ours
+    # loads exactly three from-source modules -- the open VCMD encoder (#25),
+    # the open CSI-2 receiver (M1) and the open VIN/IFE V4L2 capture driver (M2)
+    # -- and ZERO vendor kernel blobs (device-proven 2026-09-02: the ax base
+    # stack is not needed either). Two rollback loaders ship alongside:
+    # auto_load_all_drv.sh.openvenc (the previous 10-blob capture closure + open
+    # venc; pairs with a .#kvm-encoder-openvenc libkvm) and .vendor (pristine,
+    # 22 blobs). Rollback on the device is `cp <name>.<variant> <name>` + reboot.
+    # The vendor capture blobs stay in /soc/ko for those rollbacks this cycle;
+    # their removal is #54. Rationale: docs/deblob-capture.md.
     #
     # The vendor loader is asserted BYTE-IDENTICAL to our pinned copy: if a base
     # .axp bump ever ships a different auto_load_all_drv.sh, this build FAILS
@@ -344,55 +347,59 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "       docs/blob-replacement.md) and re-pin both files." >&2
       exit 1
     }
-    # Content asserts on OUR loader (fail in-build, never on the device):
-    # the ax_cmm pool parameter and the proton IQ level are load-bearing --
-    # ax_cmm without cmmpool= is the strlen(NULL) panic from the OTA brick --
-    # and the whole point of the change is the module count.
+    # Content asserts on OUR loader (fail in-build, never on the device).
     curated="${./rootfs/ax-load-drv.sh}"
-    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$curated" \
-      || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
-    grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$curated" \
-      || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
-    # DMA memory map (#53): the loader must compute the split and hand the open
-    # VCMD driver its two carveouts. Without the parameters the driver falls back
-    # to 1G-board constants that OVERLAP the ax_cmm pool on any other board.
+    # DMA memory map (#53): the loader must compute the split and hand each open
+    # driver its carveout. Without the parameters the drivers fall back to
+    # 1G-board constants that are wrong on any other board.
     grep -qF 'compute_mem_map' "$curated" \
-      || { echo "ERROR: curated loader lost the #53 DMA memory-map split" >&2; exit 1; }
+      || { echo "ERROR: loader lost the #53 DMA memory-map split" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param' "$curated" \
-      || { echo "ERROR: curated loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
-    # Blob-free encode (#25 default): the open VCMD driver must be loaded, and
-    # the vendor venc/jenc blobs must NOT be (they'd grab the VCMD MMIO+IRQ).
-    grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko' "$curated" \
-      || { echo "ERROR: curated loader lost the open ax630c_venc_vcmd.ko (no encode)" >&2; exit 1; }
-    if grep -Eq 'insmod /soc/ko/ax_(venc|jenc)\.ko' "$curated"; then
-      echo "ERROR: curated loader still insmods vendor ax_venc/ax_jenc -- clashes with the open VCMD driver" >&2; exit 1
+      || { echo "ERROR: loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/open_vin_capture.ko $capture_param' "$curated" \
+      || { echo "ERROR: loader does not pass the #53 carveout params to open_vin_capture" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/open_vin_csi2.ko start_on_probe=1' "$curated" \
+      || { echo "ERROR: loader lost the open CSI-2 receiver (no link bring-up)" >&2; exit 1; }
+    # Zero vendor kernel blobs (#60): no ax_*.ko may be insmod'd by the default
+    # loader. In particular ax_cmm (parameter-less = the strlen(NULL) boot-loop
+    # panic) and ax_venc/ax_jenc (they'd grab the VCMD MMIO+IRQ from our driver).
+    if grep -Eq 'insmod /soc/ko/ax_[a-z_]+\.ko' "$curated"; then
+      echo "ERROR: default loader still insmods a vendor ax_*.ko -- the open stack needs none (#60)" >&2; exit 1
     fi
     nins=$(grep -c '^[[:space:]]*insmod ' "$curated" || true)
-    if [ "$nins" -ne 11 ]; then
-      echo "ERROR: curated loader has $nins insmod lines, expected 11 (10 vendor + open venc, #25)" >&2; exit 1
+    if [ "$nins" -ne 3 ]; then
+      echo "ERROR: loader has $nins insmod lines, expected 3 (open venc + open csi2 + open capture, #60)" >&2; exit 1
     fi
+    # The .openvenc rollback loader is the previous curated set: it MUST still
+    # carry the cmmpool= parameter (ax_cmm without it panics at boot).
+    openvenc="${./rootfs/ax-load-drv.openvenc.sh}"
+    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$openvenc" \
+      || { echo "ERROR: .openvenc rollback loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     # No modprobe/depmod: the loader must insmod by PATH with explicit params.
     # A modprobe here would resolve through modules.dep and could load ax_cmm
     # parameter-less -- the exact autoload brick step [4] guards against.
     if grep -Eq '(^|[^[:alnum:]_])(modprobe|depmod)([^[:alnum:]_]|$)' "$curated"; then
       echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
     fi
-    echo "  module loader: vendor script pinned + curated set asserted ($nins insmod lines)."
-    emit_file "${./rootfs/ax-load-drv.vendor.sh}" "$vloader.vendor" 0100755
-    emit_file "${./rootfs/ax-load-drv.sh}"        "$vloader"        0100755
+    echo "  module loader: vendor script pinned + open-stack set asserted ($nins insmod lines)."
+    emit_file "${./rootfs/ax-load-drv.vendor.sh}"   "$vloader.vendor"   0100755
+    emit_file "${./rootfs/ax-load-drv.openvenc.sh}" "$vloader.openvenc" 0100755
+    emit_file "${./rootfs/ax-load-drv.sh}"          "$vloader"          0100755
 
-    # 5b7a. The from-source open VC8000E VCMD driver (#44/#25), loaded by the
-    # curated loader above in place of vendor ax_venc/ax_jenc. Built against OUR
-    # kernel (vermagic-compatible). Provides /dev/es_venc for the openvenc libkvm
-    # backend. Emitted into /soc/ko (flat, insmod-by-path -- no depmod needed).
-    # debugfs `stat` exits 0 even for a MISSING path -- test the output for
-    # "Inode:" (the idiom used for the libkvm/loader guards; a bare exit-status
-    # check here would be a silent no-op).
+    # 5b7a. The three from-source kernel modules the loader above insmods: the
+    # open VC8000E VCMD encoder (#44/#25, /dev/es_venc), the open CSI-2 receiver
+    # (#57) and the open VIN/IFE V4L2 capture driver (#59, /dev/video0). All
+    # built against OUR kernel (vermagic-compatible). Emitted into /soc/ko (flat,
+    # insmod-by-path -- no depmod needed, and NEVER into /usr/lib/modules where
+    # udev would autoload them parameter-less). debugfs `stat` exits 0 even for
+    # a MISSING path -- test the output for "Inode:".
     if ! debugfs -R "stat /soc/ko" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
       echo "ERROR: /soc/ko missing in vendor rootfs -- layout changed" >&2
       exit 1
     fi
-    emit_file "${vc8000-vcmd}/ax630c_venc_vcmd.ko" "/soc/ko/ax630c_venc_vcmd.ko" 0100644
+    emit_file "${vc8000-vcmd}/ax630c_venc_vcmd.ko"      "/soc/ko/ax630c_venc_vcmd.ko" 0100644
+    emit_file "${open-vin-csi2}/open_vin_csi2.ko"       "/soc/ko/open_vin_csi2.ko"    0100644
+    emit_file "${open-vin-capture}/open_vin_capture.ko" "/soc/ko/open_vin_capture.ko" 0100644
 
     # 5b8. DROP the axbox syslog daemon (docs/provenance.md). The vendor
     # /etc/rc.local starts /etc/init.d/{axsyslogd,axklogd}, which start-stop-daemon
@@ -642,6 +649,20 @@ pkgs.stdenvNoCC.mkDerivation {
       *) echo "ERROR: ax630c_venc_vcmd.ko vermagic '$vcmdvm' != ${release}" >&2; exit 1 ;;
     esac
     echo "  open venc driver: /soc/ko/ax630c_venc_vcmd.ko -- verified in image (vermagic $vcmdvm)."
+    # Same for the two open capture modules (#60): byte-identical + vermagic.
+    for pair in "${open-vin-csi2}/open_vin_csi2.ko:open_vin_csi2.ko" \
+                "${open-vin-capture}/open_vin_capture.ko:open_vin_capture.ko"; do
+      src="''${pair%%:*}"; name="''${pair##*:}"
+      debugfs -R "dump /soc/ko/$name $PWD/chk.ovm" rootfs.ext4 2>/dev/null
+      cmp -s $PWD/chk.ovm "$src" \
+        || { echo "ERROR: $name missing/differs in image (/soc/ko)" >&2; exit 1; }
+      ovm=$(modinfo -F vermagic "$src")
+      case "$ovm" in
+        "${release} "*) ;;
+        *) echo "ERROR: $name vermagic '$ovm' != ${release}" >&2; exit 1 ;;
+      esac
+      echo "  open capture module: /soc/ko/$name -- verified in image (vermagic $ovm)."
+    done
 
     # The vendor ENCODE blobs must be GONE (#25 -- open VCMD driver replaces
     # them). debugfs `stat` prints "File not found" (no "Inode:") for a removed

@@ -49,6 +49,9 @@
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-memops.h>
 
+#include <linux/dma-buf.h>
+#include <linux/scatterlist.h>
+
 #include "ovc_golden_4k.h"
 
 #define OVC_DRV_NAME		"open_vin_capture"
@@ -444,16 +447,123 @@ static int ovc_mem_mmap(void *buf_priv, struct vm_area_struct *vma)
 }
 
 /*
- * TODO(bringup): dma-buf export (VIDIOC_EXPBUF) for zero-copy hand-off to
- * the open venc (#25 stack). The memory is already physically contiguous
- * and coherent, so export is natural, but the carveout lies outside the
- * kernel linear map (no struct pages), so the generic
- * dma_get_sgtable()-based exporter does not apply; a small self-owned
- * dma_buf_ops carrying {dma_addr, size} is needed (the venc consumer only
- * requires the bus address). Until then get_dmabuf is left NULL and EXPBUF
- * fails cleanly; the encoder can consume frames by physical address inside
- * the shared CMM carveout.
+ * dma-buf export (VIDIOC_EXPBUF): the zero-copy hand-off to the open venc
+ * (#60 M3). The buffer is physically contiguous and coherent, but the
+ * carveout lies outside the kernel linear map (no struct pages), so the
+ * generic dma_get_sgtable() exporter does not apply. This self-owned
+ * exporter hands importers a one-entry sg_table that already carries the
+ * bus address -- there is no IOMMU on this SoC and the memory is coherent,
+ * so no dma_map_sg() is done on either side. The importer (our open VCMD
+ * driver, HANTRO_IOCH_IMPORT_DMABUF) only reads sg_dma_address(); it never
+ * touches sg_page(). Modeled on the 4.19 vb2-dma-contig exporter.
  */
+struct ovc_dmabuf_attachment {
+	struct sg_table sgt;
+};
+
+static int ovc_dmabuf_attach(struct dma_buf *dbuf,
+			     struct dma_buf_attachment *att)
+{
+	struct ovc_mem_buf *buf = dbuf->priv;
+	struct ovc_dmabuf_attachment *a;
+	int ret;
+
+	a = kzalloc(sizeof(*a), GFP_KERNEL);
+	if (!a)
+		return -ENOMEM;
+	ret = sg_alloc_table(&a->sgt, 1, GFP_KERNEL);
+	if (ret) {
+		kfree(a);
+		return ret;
+	}
+	a->sgt.sgl->offset = 0;
+	a->sgt.sgl->length = buf->size;
+	sg_dma_address(a->sgt.sgl) = buf->dma_addr;
+	sg_dma_len(a->sgt.sgl) = buf->size;
+	att->priv = a;
+	return 0;
+}
+
+static void ovc_dmabuf_detach(struct dma_buf *dbuf,
+			      struct dma_buf_attachment *att)
+{
+	struct ovc_dmabuf_attachment *a = att->priv;
+
+	if (!a)
+		return;
+	sg_free_table(&a->sgt);
+	kfree(a);
+	att->priv = NULL;
+}
+
+static struct sg_table *ovc_dmabuf_map(struct dma_buf_attachment *att,
+				       enum dma_data_direction dir)
+{
+	struct ovc_dmabuf_attachment *a = att->priv;
+
+	return &a->sgt;
+}
+
+static void ovc_dmabuf_unmap(struct dma_buf_attachment *att,
+			     struct sg_table *sgt, enum dma_data_direction dir)
+{
+}
+
+static void ovc_dmabuf_release(struct dma_buf *dbuf)
+{
+	ovc_mem_put(dbuf->priv);
+}
+
+static void *ovc_dmabuf_kmap(struct dma_buf *dbuf, unsigned long pgnum)
+{
+	struct ovc_mem_buf *buf = dbuf->priv;
+
+	return buf->vaddr + pgnum * PAGE_SIZE;
+}
+
+static int ovc_dmabuf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
+{
+	return ovc_mem_mmap(dbuf->priv, vma);
+}
+
+static void *ovc_dmabuf_vmap(struct dma_buf *dbuf)
+{
+	struct ovc_mem_buf *buf = dbuf->priv;
+
+	return buf->vaddr;
+}
+
+static const struct dma_buf_ops ovc_dmabuf_ops = {
+	.attach		= ovc_dmabuf_attach,
+	.detach		= ovc_dmabuf_detach,
+	.map_dma_buf	= ovc_dmabuf_map,
+	.unmap_dma_buf	= ovc_dmabuf_unmap,
+	.release	= ovc_dmabuf_release,
+	.map		= ovc_dmabuf_kmap,
+	.mmap		= ovc_dmabuf_mmap,
+	.vmap		= ovc_dmabuf_vmap,
+};
+
+static struct dma_buf *ovc_mem_get_dmabuf(void *buf_priv, unsigned long flags)
+{
+	struct ovc_mem_buf *buf = buf_priv;
+	struct dma_buf *dbuf;
+	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
+
+	exp_info.ops = &ovc_dmabuf_ops;
+	exp_info.size = buf->size;
+	exp_info.flags = flags;
+	exp_info.priv = buf;
+
+	dbuf = dma_buf_export(&exp_info);
+	if (IS_ERR(dbuf))
+		return NULL;
+
+	/* the dma-buf holds its own reference; dropped in ovc_dmabuf_release */
+	refcount_inc(&buf->refcount);
+	return dbuf;
+}
+
 static const struct vb2_mem_ops ovc_mem_ops = {
 	.alloc		= ovc_mem_alloc,
 	.put		= ovc_mem_put,
@@ -461,6 +571,7 @@ static const struct vb2_mem_ops ovc_mem_ops = {
 	.cookie		= ovc_mem_cookie,
 	.num_users	= ovc_mem_num_users,
 	.mmap		= ovc_mem_mmap,
+	.get_dmabuf	= ovc_mem_get_dmabuf,
 };
 
 static dma_addr_t ovc_buf_dma_addr(struct vb2_buffer *vb)
@@ -886,6 +997,18 @@ static int ovc_queue_setup(struct vb2_queue *vq, unsigned int *nbuffers,
 
 	if (*nplanes)
 		return sizes[0] < ovc->fmt.sizeimage ? -EINVAL : 0;
+
+	/* Never promise more buffers than the carveout holds (a 4K YUYV frame
+	 * is 15.8 MB; the 56 MB default fits three) -- otherwise vb2 tries the
+	 * allocation and dma_alloc_coherent logs a failure for every start. */
+	if (carveout_size) {
+		unsigned int max = carveout_size / PAGE_ALIGN(ovc->fmt.sizeimage);
+
+		if (max < 2)
+			return -ENOMEM;
+		if (*nbuffers > max)
+			*nbuffers = max;
+	}
 
 	*nplanes = 1;
 	sizes[0] = ovc->fmt.sizeimage;

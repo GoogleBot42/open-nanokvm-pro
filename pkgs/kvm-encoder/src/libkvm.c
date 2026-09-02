@@ -170,6 +170,18 @@ static int init_pipeline_locked(int w, int h)
     if (kvm_read_source(&sw, &sh, &sf, &locked) == 0 && locked && sw > 0 && sh > 0) {
         w = sw; h = sh; s_fps = sf ? sf : s_fps;   /* trust the live source geometry */
     }
+    /* BENCH HOOK (unset in production): capture a WxH top-left crop of the
+     * live source instead of its full geometry. The open V4L2 driver's SIF
+     * window crops, so a 4K-only bench source can exercise the sub-4K encode
+     * paths (#60 parity runs; the open H.264 encoder is 1920-wide until #52). */
+    {
+        const char *fg = getenv("OPENKVM_FORCE_GEOM");
+        int fw = 0, fh = 0;
+        if (fg && sscanf(fg, "%dx%d", &fw, &fh) == 2 && fw > 0 && fh > 0) {
+            fprintf(stderr, "OPEN-KVM: OPENKVM_FORCE_GEOM=%dx%d overrides source %dx%d\n", fw, fh, w, h);
+            w = fw; h = fh;
+        }
+    }
     if (w <= 0 || h <= 0) {
         /* HDMI unlocked and the caller passed 0x0 (screen.go forwards the raw
          * /proc values): a 0-byte VB pool and a 0x0 VIN dev "succeed" partway

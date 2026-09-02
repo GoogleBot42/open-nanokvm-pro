@@ -1,24 +1,20 @@
 #!/bin/sh
-# open-nanokvm-pro module loader -- the OPEN video stack (#55 M3 / #60,
-# 2026-09-02). Replaces the vendor auto_load_all_drv.sh (all 22 /soc/ko blobs).
-# Three from-source modules, ZERO vendor kernel blobs:
-#   ax630c_venc_vcmd.ko  open VC8000E VCMD encode driver (#25 default since 08-31)
-#   open_vin_csi2.ko     MIPI CSI-2 / D-PHY receiver (M1, #57)
-#   open_vin_capture.ko  VIN/IFE bypass capture -> V4L2 /dev/video0 (M2, #59)
-# libkvm's V4L2 backend (kvm_capture_v4l2.c) drives them; frames reach the
-# encoder zero-copy via dma-buf. Device-proven 2026-09-02: MJPEG 4K + H.264
-# stream over the real web endpoints with the vendor ax_sys/cmm/pool/base
-# unloaded too -- nothing in our stack needs the ax base stack any more.
-# Rollback variants shipped alongside (cp <name>.<variant> <name> + reboot):
-#   auto_load_all_drv.sh.openvenc  the previous curated set: 10 vendor capture
-#                                  blobs (ax_proton closure) + open venc
-#   auto_load_all_drv.sh.vendor    the pristine vendor script (22 blobs)
-# The board-id / memory-size helpers below are the vendor script verbatim;
-# compute_mem_map is OURS since #53 (see the DMA MEMORY MAP block): it still
-# derives every carveout from the board's pool geometry and exports the map to
-# /run/openkvm-memmap.env. get_cmm_param is kept for the .openvenc rollback
-# loader's sake -- ax_cmm must never be loaded without it (the
-# ota-modules-autoload-brick incident); this loader does not load ax_cmm at all.
+# open-nanokvm-pro CURATED module loader (issue #39) -- replaces the vendor
+# auto_load_all_drv.sh, which loaded all 22 /soc/ko modules. Capture needs the
+# symbol-dependency closure of {ax_proton} + the ax base stack; ENCODE is now
+# our from-source open VC8000E VCMD driver (ax630c_venc_vcmd.ko, #25 default
+# 2026-08-31) in place of vendor ax_venc + ax_jenc. So: 10 vendor blobs + 1
+# open module (was 12 vendor blobs). Dropped vendor modules:
+# hynitron_touch (touchscreen, unused), ax_tdp (2D engine, no runtime users),
+# ax_vo/ax_fb (video out / vfb, we never output video; the mini panel is
+# fb_jd9853 via modules-load.d), ax_vdec (decoder), ax_mipi_switch (multi-cam
+# mux), ax_audio (MPI audio; ALSA path is built-in, libkvm opens hw: direct),
+# ax_ddr_dfs (DDR freq scaling), ax_ive/ax_avs (CV/stitching, unused).
+# The pristine vendor script is kept alongside as auto_load_all_drv.sh.vendor
+# -- restore it + reboot to roll back. The board-id / memory-size helpers below
+# are the vendor script verbatim; get_cmm_param is OURS since #53 (see the DMA
+# MEMORY MAP block). It still computes the load-bearing cmmpool= parameter for
+# ax_cmm -- never load ax_cmm without it (the ota-modules-autoload-brick incident).
 
 if [ $# -eq 0 ]; then
     mode="-i"
@@ -215,53 +211,52 @@ function get_venc_param()
     fi
 }
 
-# Capture-buffer carveout for the open V4L2 capture driver (#53 map slice).
-# Without it the driver falls back to its 1G-board constants.
-function get_capture_param()
-{
-    compute_mem_map
-    if [ "$MAP_SPLIT" -eq 1 ]; then
-        printf "carveout_base=%#x carveout_size=%#x" \
-            "$MAP_CAPTURE_BASE" "$MAP_CAPTURE_BYTES"
-    else
-        printf ""
-    fi
-}
-
 function load_drv()
 {
-    echo "run auto_load_all_drv.sh (open video stack, #60) start "
+    echo "run auto_load_all_drv.sh (curated, #39) start "
+    insmod /soc/ko/ax_sys.ko
 
     compute_mem_map
     print_mem_map
     write_mem_map_env
 
-    # BLOB-FREE ENCODE (#25): our from-source open VC8000E VCMD driver in place
-    # of the vendor ax_venc.ko + ax_jenc.ko (they hold the VCMD MMIO + IRQ, so
-    # coexistence is impossible). Provides /dev/es_venc; libkvm's KVM_OPEN_VENC
-    # backend drives it (H.264 from-source register program; MJPEG is
-    # from-source software JPEG).
+    cmm_param=$(get_cmm_param)
+    echo "insmod ax_cmm, param: $cmm_param"
+    insmod /soc/ko/ax_cmm.ko $cmm_param
+    insmod /soc/ko/ax_pool.ko
+    insmod /soc/ko/ax_base.ko
+    insmod /soc/ko/ax_npu.ko
+    insmod /soc/ko/ax_ivps.ko
+    insmod /soc/ko/ax_vpp.ko
+    insmod /soc/ko/ax_gdc.ko
+    # BLOB-FREE ENCODE (#25 default, 2026-08-31): our from-source open VC8000E
+    # VCMD driver replaces the vendor ax_venc.ko + ax_jenc.ko (they hold the
+    # VCMD MMIO + IRQ, so coexistence is impossible). It provides /dev/es_venc;
+    # libkvm's KVM_OPEN_VENC backend drives it (H.264 from-source register
+    # program; MJPEG is from-source software JPEG). The vendor ax_venc/ax_jenc
+    # stay in /soc/ko unused (rollback: swap these two lines back).
     venc_param=$(get_venc_param)
     echo "insmod ax630c_venc_vcmd, param: $venc_param"
     insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param
+    insmod /soc/ko/ax_mipi_rx.ko
+    insmod /soc/ko/ax_proton.ko mem_iq_level=1
 
-    # BLOB-FREE CAPTURE (#55 M1+M2): the open CSI-2 receiver brings the D-PHY /
-    # CSI-2 link up at probe; the open VIN/IFE driver registers /dev/video0 and
-    # streams YUYV frames into its carveout. Load order does not matter (both
-    # bring-ups are reload-safe), receiver first is simply the datapath order.
-    insmod /soc/ko/open_vin_csi2.ko start_on_probe=1
-    capture_param=$(get_capture_param)
-    echo "insmod open_vin_capture, param: $capture_param"
-    insmod /soc/ko/open_vin_capture.ko $capture_param
-
-    echo "run auto_load_all_drv.sh (open video stack, #60) end "
+    echo "run auto_load_all_drv.sh (curated, #39; open venc) end "
 }
 
 function remove_drv()
 {
-    rmmod open_vin_capture
-    rmmod open_vin_csi2
+    rmmod ax_proton
+    rmmod ax_mipi_rx
     rmmod ax630c_venc_vcmd
+    rmmod ax_gdc
+    rmmod ax_vpp
+    rmmod ax_ivps
+    rmmod ax_npu
+    rmmod ax_base
+    rmmod ax_pool
+    rmmod ax_cmm
+    rmmod ax_sys
 }
 
 function auto_drv()

@@ -49,6 +49,17 @@ struct framebuf_parameter {
 	unsigned long bus_addr;  /* out (alloc) / in (free) */
 };
 
+/* dma-buf import (#60 M3, mirrors pkgs/vc8000-vcmd/framebuf_alloc.h): resolve
+ * a dma-buf fd (a V4L2 EXPBUF export of an open capture buffer) to the bus
+ * address the encoder register program consumes. Owned by the open file. */
+struct dmabuf_import_parameter {
+	int fd;                  /* in: dma-buf file descriptor */
+	unsigned long bus_addr;  /* out (import) / in (release) */
+	unsigned long size;      /* out: bytes */
+};
+#define HANTRO_IOCH_IMPORT_DMABUF         _IOWR(HANTRO_IOC_MAGIC, 38, struct dmabuf_import_parameter)
+#define HANTRO_IOCH_RELEASE_DMABUF        _IOWR(HANTRO_IOC_MAGIC, 39, struct dmabuf_import_parameter)
+
 /* module_type (vc8000_driver.h:256) */
 #define VCMD_TYPE_ENCODER 0
 

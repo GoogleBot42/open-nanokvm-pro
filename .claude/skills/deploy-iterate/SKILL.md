@@ -237,3 +237,30 @@ off-device; `[openvenc] MJPEG up:` must appear in
 /var/log/nanokvm/NanoKVM-Server.log (the unit's stderr goes there, NOT to
 journalctl). Restore = vendor libkvm back into both trees + vendor module
 insmod + restart (or reboot, which restores modules via the boot loader).
+
+# Variant: the shipped OPEN stack (V4L2 libkvm + three open modules, #60)
+
+Since 2026-09-02 the image default is `.#kvm-encoder-v4l2` over the open
+capture drivers: the loader insmods exactly `ax630c_venc_vcmd.ko`,
+`open_vin_csi2.ko start_on_probe=1` and `open_vin_capture.ko` (carveout
+params from `/run/openkvm-memmap.env`) and NO vendor `ax_*.ko` -- `lsmod |
+grep -E '^ax_'` must print nothing on a healthy boot. The #50 ax_proton caveats
+above apply only to the `.openvenc` rollback loader + `.#kvm-encoder-openvenc`
+(the raw-ioctl replay backend), not to this stack.
+
+Module iteration (validated 2026-09-02): `open_vin_capture.ko` is
+reload-safe -- `systemctl stop nanokvm; rmmod open_vin_capture; insmod
+/tmp/open_vin_capture.ko carveout_base=$OPENKVM_CAPTURE_BASE
+carveout_size=$OPENKVM_CAPTURE_SIZE` (source the env file first) -- but
+register STATE persists across a reload, so any test that depends on
+reset-vs-programmed values (a golden-table change) needs a fresh boot.
+`ax630c_venc_vcmd.ko` swaps the same way with `coherent_*`/`framebuf_*` from
+the env. libkvm: stage+`mv` into both trees as above; success markers in
+`/var/log/nanokvm/NanoKVM-Server.log` are `[openkvm-v4l2] capture up WxH ...
+bus[0]=0x7c000000 (V4L2 + dma-buf, blob-free)` and `[openvenc] MJPEG up:`.
+Bench-only geometry override: `systemctl set-environment
+OPENKVM_FORCE_GEOM=1920x1080` before the restart makes libkvm capture a
+top-left crop (the open driver's SIF window crops) -- the only way to drive
+the 1920-wide H.264 path from the 4K-pinning bench source; `systemctl
+unset-environment OPENKVM_FORCE_GEOM` afterwards. A ready-made run script
+lives on the device at `/root/axbring/m3/h264run.sh` (uses `tools/wsgrab.py`).

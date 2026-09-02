@@ -1,4 +1,11 @@
-{ pkgs, crossPkgs, axera-libs, openCapture ? false, openVenc ? false, axsysProbe ? false, ... }:
+{ pkgs, crossPkgs, axera-libs, openCapture ? false, openVenc ? false, v4l2Capture ? false, axsysProbe ? false, ... }:
+
+# v4l2Capture (default false; requires openVenc): capture through the OPEN
+#   V4L2 driver (pkgs/open-vin-capture, #55 M3 / #60) instead of replaying
+#   vendor ax_proton ioctls: kvm_capture_v4l2.c does S_FMT/REQBUFS/EXPBUF/
+#   STREAMON and hands the encoder each frame's bus address via a dma-buf
+#   import on our open VCMD driver. Needs open_vin_csi2.ko + open_vin_capture.ko
+#   on the device and NONE of the 10 vendor capture/ISP modules.
 
 # openCapture (default false): select the capture backend.
 #   false -> vendor-MPI capture (kvm_pipeline.c; links libax_sys/mipi/proton).
@@ -60,6 +67,7 @@
 # ---------------------------------------------------------------------------
 
 assert openVenc -> openCapture;   # the open encoder presumes the open capture path
+assert v4l2Capture -> openVenc;   # the V4L2 backend hands frames to the open encoder only
 
 let
   cc = "${crossPkgs.stdenv.cc.targetPrefix}gcc";
@@ -73,8 +81,12 @@ let
   # Capture backend selection (see openCapture above).
   # kvm_capture_geom.c holds the parametric geometry payloads (#17). It is
   # compiled ONLY on the open path -- the vendor-MPI build is untouched.
-  captureSrc  = if openCapture then "kvm_capture_open.c kvm_capture_geom.c" else "";
-  captureDef  = pkgs.lib.optionalString openCapture "-DKVM_OPEN_CAPTURE";
+  # v4l2Capture swaps in kvm_capture_v4l2.c; KVM_OPEN_CAPTURE stays defined so
+  # kvm_pipeline.c compiles out its vendor-MPI capture half either way.
+  captureSrc  = if v4l2Capture then "kvm_capture_v4l2.c"
+                else if openCapture then "kvm_capture_open.c kvm_capture_geom.c" else "";
+  captureDef  = pkgs.lib.optionalString openCapture "-DKVM_OPEN_CAPTURE"
+                + pkgs.lib.optionalString v4l2Capture " -DKVM_V4L2_CAPTURE";
   # Encode backend selection (see openVenc above). kvm_venc_open.c shares the
   # register-program/cmdbuf/SPS-PPS sources with pkgs/vcenc-ewl via -I.
   vencSrc     = pkgs.lib.optionalString openVenc "kvm_venc_open.c";
@@ -124,7 +136,7 @@ crossPkgs.stdenv.mkDerivation {
     # GLIBC_2.38 and does NOT exist on the target Ubuntu 22.04 rootfs (glibc 2.35),
     # so the Go server fails to load libkvm.so ("GLIBC_2.38 not found"). gnu17
     # drops the only >2.35 symbol; the rest are <= 2.34 and load fine on 2.35.
-    echo "capture backend: ${if openCapture then "BLOB-FREE (kvm_capture_open.c)" else "vendor MPI (kvm_pipeline.c)"}"
+    echo "capture backend: ${if v4l2Capture then "OPEN V4L2 DRIVER (kvm_capture_v4l2.c)" else if openCapture then "BLOB-FREE (kvm_capture_open.c)" else "vendor MPI (kvm_pipeline.c)"}"
     echo "encode  backend: ${if openVenc then "BLOB-FREE (kvm_venc_open.c, fixed-QP32)" else "vendor AX_VENC (kvm_pipeline.c)"}"
     ${cc} -shared -fPIC -O2 -Wall -std=gnu17 ${captureDef} ${vencDef} \
       -I. -I${axera-libs}/include \

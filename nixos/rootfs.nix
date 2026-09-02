@@ -5,6 +5,9 @@
 , ax-ko-blobs
 , kernel
 , kvm-encoder
+, vc8000-vcmd
+, open-vin-csi2
+, open-vin-capture
 , nanokvm-server
 , nanokvm-web
 , nanokvm-display
@@ -62,7 +65,7 @@ let
   lib = pkgs.lib;
 
   nanokvm = {
-    inherit axera-libs ax-ko-blobs kernel kvm-encoder
+    inherit axera-libs ax-ko-blobs kernel kvm-encoder vc8000-vcmd open-vin-csi2 open-vin-capture
       nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
     # libkvm.so.0 DT_NEEDEDs libopus and libasound but its DT_RPATH is only
     # "/opt/lib:<axera-libs>"; NanoKVM-Server's DT_RUNPATH
