@@ -1003,10 +1003,13 @@ static const struct vb2_ops ovc_vb2_ops = {
 /* V4L2 ioctl ops                                                           */
 /* ------------------------------------------------------------------------ */
 
-/* The bypass WDMA packing (golden table) is U0 Y0 V0 Y1 -- device-confirmed
- * 2026-09-01 by rendering a captured frame: byte 1 of each pair is luma. */
+/* The bypass WDMA packing is Y0 U Y1 V (YUYV), byte-identical to the vendor
+ * pool frames and to what libkvm's open venc/soft-JPEG consume. The 2026-09-01
+ * "UYVY, byte 1 is luma" reading came from frames stored through the reset
+ * value of WDMA 0x142f8 (12-bit samples << 4): the odd byte then carried the
+ * luma's upper nibble. Fixed in the golden table (2026-09-02). */
 static const u32 ovc_pix_formats[] = {
-	V4L2_PIX_FMT_UYVY,
+	V4L2_PIX_FMT_YUYV,
 };
 
 static void ovc_fill_pix_format(struct v4l2_pix_format *pix)

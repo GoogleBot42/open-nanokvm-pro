@@ -8,6 +8,14 @@
  * SIF start/stop/ctrl/id, the ISP-top gate) are excluded; geometry words are
  * marked so the driver recomputes them per format. Offsets are relative to
  * the ISP register file base 0x02400000.
+ *
+ * Geometry validation (2026-09-02, regdumps/geom/): the vendor driver was run
+ * at 720p, 1080p, 1200p, 1440p and 4K against the same 4K source and the
+ * register file diffed. Exactly four datapath words follow the geometry --
+ * SIF WIN0_SIZE 0x6518 and WDMA 0x142ec (W|H<<16), WDMA 0x142f0/0x142f4
+ * (bytes-per-line/8) -- every other word below is geometry-invariant.
+ * The snapshot only held non-zero words; 0x142f8 is the one zero-valued
+ * config word found by diffing against the open driver's own streaming state.
  */
 #ifndef OVC_GOLDEN_4K_H
 #define OVC_GOLDEN_4K_H
@@ -32,19 +40,13 @@ static const struct ovc_reg_init ovc_golden_4k[] = {
 	{ 0x00178, 0x0000000c, OVC_GEOM_NONE },
 	/* file +0x1a4..+0x1a8 */
 	{ 0x001a4, 0x57fffbbf, OVC_GEOM_NONE },
-	/* file +0x1000..+0x1100 */
-	{ 0x01000, 0x000001bd, OVC_GEOM_NONE },
-	{ 0x01004, 0x0eeeb200, OVC_GEOM_NONE },
-	{ 0x0100c, 0x0000ffff, OVC_GEOM_NONE },
-	{ 0x01010, 0x00000088, OVC_GEOM_NONE },
-	{ 0x0101c, 0x00400000, OVC_GEOM_NONE },
-	{ 0x01024, 0x000001b5, OVC_GEOM_NONE },
-	{ 0x01028, 0x000001b5, OVC_GEOM_NONE },
-	{ 0x0102c, 0x00000006, OVC_GEOM_NONE },
-	{ 0x01034, 0xffffffff, OVC_GEOM_NONE },
-	{ 0x01038, 0x00040404, OVC_GEOM_NONE },
-	{ 0x01070, 0x3fffffff, OVC_GEOM_NONE },
-	{ 0x01078, 0x00000003, OVC_GEOM_NONE },
+	/* file +0x1000..+0x1100 is the CDMA command engine (spec-cdma.md), which
+	 * this driver does not use: plain writel() reproduces the config. The
+	 * vendor's residue there was its last descriptor (0x1000 = 0x1bd, 0x1004 =
+	 * a pointer into its isp_model allocation, (phys+0x3000)>>3) plus reset
+	 * values. Dropped 2026-09-02 -- verified from a cold boot that frames are
+	 * unchanged with the block left at reset, and the driver no longer points
+	 * an engine at memory it does not own. */
 	/* file +0xd1000..+0xd2000 */
 	{ 0xd1098, 0x00010f00, OVC_GEOM_NONE },
 	{ 0xd10b0, 0x00002215, OVC_GEOM_NONE },
@@ -83,7 +85,9 @@ static const struct ovc_reg_init ovc_golden_4k[] = {
 	{ 0x06520, 0x01000100, OVC_GEOM_NONE },
 	{ 0x06528, 0x00000020, OVC_GEOM_NONE },
 	{ 0x0652c, 0x00000020, OVC_GEOM_NONE },
-	{ 0x06530, 0x00000870, OVC_GEOM_H },
+	/* NOT height: the vendor leaves this 0x870 at 720p/1080p/1200p/1440p/4K
+	 * (2026-09-02 fake-geometry differential, regdumps/geom/). */
+	{ 0x06530, 0x00000870, OVC_GEOM_NONE },
 	{ 0x06534, 0x0000ffff, OVC_GEOM_NONE },
 	{ 0x06538, 0x0000ffff, OVC_GEOM_NONE },
 	{ 0x0653c, 0x00000001, OVC_GEOM_NONE },
@@ -214,6 +218,12 @@ static const struct ovc_reg_init ovc_golden_4k[] = {
 	{ 0x142ec, 0x08700f00, OVC_GEOM_WH },
 	{ 0x142f0, 0x000003c0, OVC_GEOM_STRIDE8 },
 	{ 0x142f4, 0x000003c0, OVC_GEOM_STRIDE8 },
+	/* Output sample width. The vendor writes 0 here; the reset value is 4 and
+	 * makes the WDMA store each 16-bit YUYV pixel as a 12-bit sample << 4
+	 * (top chroma nibble lost -> psychedelic colours). Zero-valued words were
+	 * missing from this table until the 2026-09-02 vendor-vs-open streaming
+	 * diff at 1080p (regdumps/geom/README.md) exposed this one. */
+	{ 0x142f8, 0x00000000, OVC_GEOM_NONE },
 	{ 0x142fc, 0x00000004, OVC_GEOM_NONE },
 	{ 0x14300, 0x00000100, OVC_GEOM_NONE },
 	{ 0x14304, 0x00000100, OVC_GEOM_NONE },

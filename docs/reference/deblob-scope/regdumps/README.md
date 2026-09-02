@@ -81,3 +81,10 @@ identifies the step), `replay.c` (replays ranges of `regfile-vendor-live.bin` wi
 WDMA address pointed at a test buffer, polls frame-start/done, inspects DDR),
 `v4l2cap.c` (minimal V4L2 mmap capture test), `bringup.sh` (the one-shot sequence).
 Build on device with `gcc`. Never read `0x04403000` (VPP/MM domain) on an open boot.
+
+## 2026-09-02: geometry differential + pixel parity -> `geom/`
+The vendor driver run at five geometries against the one 4K source, the open driver
+streamed at the same five, frames and register files diffed. Four geometry words
+(all already parametric), `0x6530` is a constant, and the `0x142f8 = 0` WDMA sample
+width word (missing from the non-zero-only snapshot) was the cause of the shifted
+pixel values. Open frames now match the vendor's; packing is YUYV. `geom/README.md`.

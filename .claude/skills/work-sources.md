@@ -205,13 +205,19 @@ for pending/TODO/unverified markers still present in the tree:
   specs), implementation from specs only.
   **2026-09-02 STATUS — M1 + M2 HARDWARE-PROVEN; M3 is the open front.** #56/#57/#58
   closed (stub 0 edge hits; CSI-2 core is custom; specs verified). **#59 M2 milestone
-  reached 2026-09-01:** 4K30 UYVY frames to DDR with the two open drivers alone, zero
+  reached 2026-09-01:** 4K30 YUYV frames to DDR with the two open drivers alone, zero
   vendor capture modules, either load order — docs/deblob-capture.md step 4 has the
   resolved picture (the DEADBEEF wall was resets + the ISP-top gate; M2 config is a
   golden-table replay; M1 is spec-exact per specs/spec-dphy-writes.md; the WDMA shadow
-  strobe per frame per specs/spec-ife-start.md). Still open under #59: non-4K geometry
-  (the table is 4K; needs a 1080p source on the bench — the KDE host honours EDID, see
-  memory), the M1<->M2 async subdev link, dma-buf export. Then **#60 M3**: V4L2 backend
+  strobe per frame per specs/spec-ife-start.md). **2026-09-02: geometry + pixel parity
+  CLOSED** without a second source (vendor driver run at fake geometries vs the 4K
+  source; `regdumps/geom/README.md`): four geometry words, all already parametric; the
+  `0x142f8 = 0` WDMA sample-width word was missing from the non-zero-only snapshot and
+  made open frames `vendor<<4` — fixed, open frames now match vendor pool frames at
+  720p/1080p/4K, packing is **YUYV** (not UYVY), 30 fps sustained. The bench HTPC is a
+  couch-UI session that PINS its mode regardless of EDID (a real 1080p60 signal is a
+  human step). Still open under #59: the M1<->M2 async subdev link, dma-buf export.
+  Then **#60 M3**: V4L2 backend
   in kvm-encoder, parity, retire the 10-module closure + blobs (#54 absorbs the disk
   cleanup). #53 DMA map shipped + hw-validated. #63 = pre-existing encoder DMA-mask WARN
   at module load (cosmetic). Harness: base-only loader swap + reboot (memory

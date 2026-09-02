@@ -280,9 +280,26 @@ Three findings from the specs materially change the plan below:
      both interrupt banks (the shared line otherwise ends in "irq 35: nobody
      cared"); bring-up is reload-safe (skips the reset sweeps when the file
      is already live, and never pulses the CSI receiver's own reset lines),
-     so module order no longer matters. Open follow-ups: non-4K geometry
-     (the golden table is 4K; needs a 1080p source), the async subdev link,
-     dma-buf export, and M3 parity.
+     so module order no longer matters.
+   - **Geometry + pixel parity CLOSED (2026-09-02, `regdumps/geom/README.md`).**
+     No second source was needed: the bench HTPC pins 4K30 regardless of EDID,
+     so the *vendor* driver was run at 720p/1080p/1200p/1440p/4K against the 4K
+     source (libkvm's `kvm_sys_init(w,h)` from Python) and the register file
+     diffed. Exactly four datapath words follow geometry -- SIF `0x6518` and
+     WDMA `0x142ec` (`W|H<<16`), WDMA `0x142f0/f4` (`bytes_per_line/8`) -- all
+     already recomputed by the driver; `0x6530` is a constant `0x870`, not a
+     height (fixed). The open driver then streamed all five geometries on the
+     harness, each frame byte-identical to the top-left crop of its 4K frame,
+     at a sustained 30.0 fps (4K and 1080p). That comparison also exposed a
+     pixel-value bug: open frames were `vendor_word << 4` -- the WDMA sample
+     width word `0x142f8` is 4 at reset and the vendor writes **0**, which the
+     non-zero-only snapshot never captured. With the explicit zero the open
+     frames match the vendor's at 720p/1080p/4K and the packing is plain
+     **YUYV** (the 09-01 "UYVY" reading was the shifted-sample artefact).
+     The CDMA block (`+0x1000`) is no longer replayed (cold-boot verified).
+     Still open: the async subdev link, dma-buf export, M3 parity, and a true
+     non-4K *signal* (the 1080p runs crop a 4K CSI stream; link timing at a
+     real 1080p60 source is untested -- a human bench step).
    Evidence: `regdumps/` (vendor-live ISP file; front-end banks idle vs
    streaming under `regdumps/frontend/`), the session tooling in
    `regdumps/tools/` (`ispbring.c` step tool, `replay.c`, `v4l2cap.c`).
