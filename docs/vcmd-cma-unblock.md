@@ -62,17 +62,11 @@ kernel. So the glue (`pkgs/vc8000-vcmd/ax630c_vcmd_glue.c`) now:
    during encoder bring-up the vendor app stack — the only large CMM
    consumer — is stopped anyway.
 
-   **Since the openvenc-default flip (2026-08-31, #25):** the coherent 8MB is
-   now formally reserved — the curated boot loader subtracts 8MB from the
-   `cmmpool=` size (`get_cmm_param` in `pkgs/rootfs/ax-load-drv.sh`) so ax_cmm's
-   ceiling drops to `0x7F800000` and never hands out the VCMD cmdbuf region,
-   even with capture + encode running concurrently (which is now always). The
-   larger 120MB **framebuf** carveout at `0x78000000` is still inside the
-   ax_cmm pool — safe at the operating point (capture tops out ~55MB below it
-   at 1080p, ~7MB at 4K) but not formally reserved, because a clean static
-   split is impossible alongside 4K capture without first downsizing the 120MB
-   framebuf. That, plus making both bases board-id-aware, is **#53** (the
-   concrete sub-task of the #45 permanent-carveout work).
+   **Since #53 (2026-09-01) the base is no longer a constant:** the curated
+   loader computes the whole DMA map from the board's pool geometry and passes
+   `coherent_base`/`coherent_size` in, and lowers ax_cmm's `cmmpool=` ceiling
+   below every open carveout. The defaults above are only the 1G-board
+   fallback. See "DMA memory map" below.
 2. **Enables the block clock** via the *open, in-tree* clk driver: the DT node
    `venc@4010000` (compatible `"axera, venc-encoder"` — note the space) has
    `clocks = <&vpu_clk AX620X_CLK_VENC_EB>` = `clk_venc_eb`
@@ -107,6 +101,84 @@ Worth fixing in the core later.
 
 **Next (#45):** drive an IDR through `RESERVE→LINK→WAIT→RELEASE` via
 `/dev/es_venc` with an open EWL, then the frame-buffer glue → closes #25.
+
+## DMA memory map (#53)
+
+Four consumers DMA out of the same CMM pool, and until #53 three of them
+overlapped: the vendor CMM allocator `ax_cmm`, the open encoder's frame-buffer
+carveout (`framebuf_alloc.c`), the open capture driver's buffer carveout
+(`open_vin_capture.c`), and the open encoder's coherent VCMD cmdbuf pool
+(`ax630c_vcmd_glue.c`). The curated loader
+(`pkgs/rootfs/ax-load-drv.sh`, `compute_mem_map`) now computes one map at boot
+and hands every consumer its slice as a module parameter.
+
+**Derivation rule.** The pool `[pool_base, pool_top)` is what the vendor
+`get_cmm_size` math already yields from the board id and the kernel `mem=`
+(`pool_base = 0x40000000 + os_mem_size`, `pool_top = pool_base + cmm_size`).
+Everything is carved from `pool_top` **downward**; nothing is a literal
+address, so a 0.5G/2G/4G board relocates the whole map automatically.
+`pool_base` itself is never moved — shrinking `cmm_size` before the base is
+computed would shove the base *up* and leave the top of DRAM owned by nobody.
+
+| Region | Extent | Size | 1G board |
+|---|---|---|---|
+| VCMD coherent cmdbuf pool | `[pool_top-8M, pool_top)` | 8 MB | `0x7F800000` |
+| Open capture buffers | next 56 MB down | 56 MB | `0x7C000000` |
+| Open encoder frame buffers | next 64 MB down | 64 MB | `0x78000000` |
+| `ax_cmm` | `[pool_base, framebuf_base)` | remainder | `0x73800000` +72 MB |
+
+On the 1G board the pool is `0x73800000..0x80000000` (200 MB) and the map lands
+exactly on the addresses the drivers used to hard-code.
+
+**Why those sizes.**
+
+- **8 MB coherent** — `vcmd_mem_init`'s three 2 MB pools plus slack. Reserving
+  the *top* is what makes it safe: `ax_cmm` is bottom-up first-fit, so lowering
+  its ceiling is the whole mechanism.
+- **56 MB capture** — three 4K YUYV frames (3840×2160×2 ≈ 15.9 MB each).
+- **64 MB frame buffers** — the real 1080p encode floorplan is ~43 MB. 4K
+  blob-free *encode* needs more than this and is **#52**; it will have to take
+  the space from `ax_cmm`, which is only affordable if the vendor capture path
+  is gone (epic #55) or the source is 1080p.
+- **72 MB for `ax_cmm`** — the vendor capture path uses ~16.5 MB at 1080p and
+  ~66 MB at 4K, so 72 MB keeps 4K capture working with the full split in place.
+
+**Safety valve.** If a board / `mem=` combination would leave `ax_cmm` below
+72 MB (`MAP_CMM_MIN_MB`), the loader prints a five-line `*** WARNING (#53)`
+block, **abandons the split**, and falls back to the pre-#53 behaviour —
+reserve only the top 8 MB, leave the encoder/capture carveouts on their
+compiled-in defaults (which then overlap the pool, safe only because `ax_cmm`
+allocates bottom-up). A degraded-but-known state beats a silently broken pool.
+
+**What the loader passes.**
+
+```
+insmod ax_cmm.ko cmmpool=anonymous,0,<pool_base>,<remainder>M
+insmod ax630c_venc_vcmd.ko coherent_base=… coherent_size=… \
+                           framebuf_base=… framebuf_size=…
+```
+
+The open capture driver is still insmod'd by hand during bring-up, so the
+loader also writes `/run/openkvm-memmap.env`:
+
+```
+. /run/openkvm-memmap.env
+insmod open_vin_capture.ko carveout_base=$OPENKVM_CAPTURE_BASE \
+                           carveout_size=$OPENKVM_CAPTURE_SIZE
+```
+
+The file additionally carries `OPENKVM_POOL_BASE/TOP/SIZE_MB`,
+`OPENKVM_CMM_BASE/SIZE_MB`, `OPENKVM_FRAMEBUF_*`, `OPENKVM_COHERENT_*` and
+`OPENKVM_MEMMAP_SPLIT` (0 when the safety valve fired). The map is printed to
+the boot console either way.
+
+The module defaults in `ax630c_vcmd_glue.c`, `framebuf_alloc.c` and
+`open_vin_capture.c` are kept at the 1G-board values so an unparameterized
+`insmod` still works on the test unit; on any other board the loader's
+parameters are load-bearing.
+
+Cross-references: `docs/architecture.md` (boot chain / module load),
+`docs/deblob-capture.md` step 4 (the capture carveout under epic #55).
 
 ## Finding 3: the A/B slot-B test harness works (and how)
 

@@ -92,9 +92,11 @@ platform layer, and stands up a minimal char-device instance:
 
 The other half of #45: a from-source CMM frame-buffer allocator replacing the
 Stage-B fixed-address `/dev/mem` placement. First-fit over a bus-sorted list
-covering a module-parameter carveout (default `0x78000000+0x07800000`, the
-spare middle of the 200MB CMM region: above ax_cmm's bottom-up boot blocks at
-`0x738xxxxx`, below the glue's 8MB coherent VCMD-pool region at `0x7F800000`).
+covering a module-parameter carveout (default `0x78000000+0x04000000` on the 1G
+board; the curated loader computes and passes it since #53 — a formal 64 MB
+slice of the 200MB CMM region: above ax_cmm’s lowered `cmmpool=` ceiling,
+below the open capture carveout and the glue’s 8MB coherent VCMD-pool region
+at `0x7F800000` — layout table in docs/vcmd-cma-unblock.md).
 Pure address-space bookkeeping: the kernel never maps the memory — the encoder
 DMAs it and userspace mmaps it (writecombine) through the driver. Allocations
 are owned by the open file and freed on close. Device-proven 2026-08-30: the

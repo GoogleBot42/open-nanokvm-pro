@@ -351,6 +351,13 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: curated loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/ax_proton.ko mem_iq_level=1' "$curated" \
       || { echo "ERROR: curated loader lost ax_proton mem_iq_level=1" >&2; exit 1; }
+    # DMA memory map (#53): the loader must compute the split and hand the open
+    # VCMD driver its two carveouts. Without the parameters the driver falls back
+    # to 1G-board constants that OVERLAP the ax_cmm pool on any other board.
+    grep -qF 'compute_mem_map' "$curated" \
+      || { echo "ERROR: curated loader lost the #53 DMA memory-map split" >&2; exit 1; }
+    grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param' "$curated" \
+      || { echo "ERROR: curated loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
     # Blob-free encode (#25 default): the open VCMD driver must be loaded, and
     # the vendor venc/jenc blobs must NOT be (they'd grab the VCMD MMIO+IRQ).
     grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko' "$curated" \

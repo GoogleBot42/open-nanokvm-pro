@@ -230,9 +230,9 @@ Three findings from the specs materially change the plan below:
    `dma_declare_coherent_memory` carveout (CMA is off — #49), the
    device-confirmed WDMA address gate, SIF/IFE-bypass/IFE-go programming, and a
    real frame-done ISR on group-4 bit9 (poll retired). CDMA-optional honored
-   (plain `writel`). Remaining (8 marked `TODO(bringup)`): MODE10 mask +
-   IFE-top block base, the carveout base/size split (coordinate #53), the async
-   subdev link to M1, dma-buf export, and the on-hardware milestone — YUYV
+   (plain `writel`). Remaining (`TODO(bringup)` in the source): MODE10 mask +
+   IFE-top block base, dma-buf export, the async subdev link to M1, and the
+   on-hardware milestone — YUYV
    frames at 1080p + 4K30, zero vendor modules, A/B-verified. Serial bring-up.
    **Bring-up status (2026-09-01, on hardware, base-only harness — supersedes the
    2026-08-31 clock/power-domain narrative, which is kept only in git history):**

@@ -2822,8 +2822,10 @@ everything. Remaining for #45: refinement 3, the from-source CMM allocator.
 Refinement 3 is done, device-proven, and with it every item in #45's title
 (EWL + CMM allocator glue). `pkgs/vc8000-vcmd/framebuf_alloc.c` (our code) is
 a from-source frame-buffer allocator over a module-parameter CMM carveout
-(default `0x78000000+0x07800000` — the spare middle of the 200MB CMM region,
-above ax_cmm's bottom-up boot blocks, below the 8MB coherent VCMD-pool region).
+(default `0x78000000+0x04000000` — a formal 64 MB slice of the 200MB CMM
+region on the 1G board, passed in by the curated loader since #53:
+above ax_cmm’s lowered ceiling, below the open capture carveout and the 8MB
+coherent VCMD-pool region — see docs/vcmd-cma-unblock.md, “DMA memory map”).
 First-fit over a bus-sorted allocation list; pure address-space bookkeeping (the
 kernel never maps the memory); allocations owned by the open fd, freed on
 close. Three `AX630C-PORT` hooks wire it into the core: ioctl nrs 36/37
@@ -3213,8 +3215,8 @@ already held from the encoder differential.
 ENCODER (`vcenc_geom.h`) stays 1920×1200 for now: its from-source register
 program is geometry-proven to 4K (the vendor VC8000E encodes 4K under our
 laws — a 4K IDR/IPPP stream was driven and decoded), but the open driver's
-`framebuf_alloc.c` carveout is 120 MB and a 4K recon/aux/output floorplan
-exceeds it, so 4K blob-free ENCODE needs a carveout resize (follow-up). Until
+`framebuf_alloc.c` carveout is 64 MB (#53) and a 4K recon/aux/output floorplan
+exceeds it, so 4K blob-free ENCODE needs a carveout resize (#52). Until
 then 4K uses the vendor encoder (open capture + closed encode), or downscale.
 
 **This also answers #17's capture bring-up:** a non-1080p source captured

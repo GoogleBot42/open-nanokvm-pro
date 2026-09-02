@@ -58,13 +58,19 @@
 /* ------------------------------------------------------------------------ */
 
 /*
- * TODO(bringup): carveout base/size -- coordinate with the encoder memory
- * map (docs/vcmd-cma-unblock.md): CMM = 0x73800000..0x7FFFFFFF, VCMD
- * coherent pool = 0x7F800000+8MB (formally reserved), open framebuf
- * allocator = 0x78000000+120MB (first-fit, bottom-up). Default here takes
- * the top of the framebuf range, below the VCMD pool: 56MB fits 3x 4K
- * YUYV frames (3840*2160*2 = ~15.9MB each). Must become a formal
- * reserved-memory split (#53) before production.
+ * Capture-buffer carveout. Since #53 this is a FORMAL slice of the CMM pool:
+ * the curated boot loader (pkgs/rootfs/ax-load-drv.sh) derives the whole DMA
+ * map from the board's pool geometry, lowers ax_cmm's cmmpool= ceiling below
+ * every open carveout, and exports the numbers to /run/openkvm-memmap.env --
+ *     . /run/openkvm-memmap.env
+ *     insmod open_vin_capture.ko carveout_base=$OPENKVM_CAPTURE_BASE \
+ *                               carveout_size=$OPENKVM_CAPTURE_SIZE
+ * (this module is still loaded by hand during bring-up; fold it into the
+ * loader when it ships). The defaults below are the 1G-board values that map
+ * computes (pool 0x73800000-0x7FFFFFFF -> 0x7C000000 + 56MB, between the open
+ * encoder framebuf carveout below and the VCMD coherent pool above). 56MB
+ * fits 3x 4K YUYV frames (3840*2160*2 = ~15.9MB each).
+ * Layout table: docs/vcmd-cma-unblock.md, "DMA memory map".
  */
 static unsigned long carveout_base = 0x7C000000UL;
 module_param(carveout_base, ulong, 0444);

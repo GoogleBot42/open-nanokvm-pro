@@ -11,10 +11,10 @@
 # mux), ax_audio (MPI audio; ALSA path is built-in, libkvm opens hw: direct),
 # ax_ddr_dfs (DDR freq scaling), ax_ive/ax_avs (CV/stitching, unused).
 # The pristine vendor script is kept alongside as auto_load_all_drv.sh.vendor
-# -- restore it + reboot to roll back. Everything below load_drv/remove_drv
-# is the vendor script verbatim (get_cmm_param computes the load-bearing
-# cmmpool= parameter for ax_cmm -- see the ota-modules-autoload-brick
-# incident; never load ax_cmm without it).
+# -- restore it + reboot to roll back. The board-id / memory-size helpers below
+# are the vendor script verbatim; get_cmm_param is OURS since #53 (see the DMA
+# MEMORY MAP block). It still computes the load-bearing cmmpool= parameter for
+# ax_cmm -- never load ax_cmm without it (the ota-modules-autoload-brick incident).
 
 if [ $# -eq 0 ]; then
     mode="-i"
@@ -72,7 +72,38 @@ function get_cmm_size()
     fi
 }
 
-function get_cmm_param()
+# ---------------------------------------------------------------------------
+# DMA MEMORY MAP (#53). The CMM pool [pool_base, pool_top) is split so that the
+# vendor CMM allocator (ax_cmm) and the three open-driver carveouts can never
+# overlap. Everything below is DERIVED from the pool geometry computed from the
+# board id + mem= -- no 1G-board address is hard-coded here. Carved from the
+# TOP of the pool downward:
+#
+#   [pool_top-8M,        pool_top)      open VCMD coherent cmdbuf pool
+#   [pool_top-64M,       pool_top-8M)   open capture buffer carveout (56M)
+#   [pool_top-128M,      pool_top-64M)  open encoder frame-buffer carveout (64M)
+#   [pool_base,          pool_top-128M) ax_cmm -- the remainder
+#
+# On the 1G board (pool 0x73800000..0x80000000, 200MB) that lands exactly on
+# 0x7F800000+8M / 0x7C000000+56M / 0x78000000+64M, leaving ax_cmm 72MB from
+# 0x73800000 -- enough for the vendor capture path at 4K (~66MB; ~16.5MB at
+# 1080p). 64MB of encoder frame buffers covers the real 1080p encode floorplan
+# (~43MB); 4K blob-free ENCODE needs more and is issue #52.
+#
+# If a board / mem= combination would leave ax_cmm below MAP_CMM_MIN_MB the
+# split is ABANDONED with a loud warning and the loader falls back to the
+# pre-#53 behaviour (reserve only the top 8MB, leave the encoder/capture
+# carveouts on their module defaults) rather than shipping a broken pool.
+# ---------------------------------------------------------------------------
+MAP_COHERENT_MB=8       # open VCMD coherent cmdbuf pool (ax630c_venc_vcmd.ko)
+MAP_CAPTURE_MB=56       # open capture buffers (open_vin_capture.ko, #56)
+MAP_FRAMEBUF_MB=64      # open encoder frame buffers (ax630c_venc_vcmd.ko)
+MAP_CMM_MIN_MB=72       # floor for ax_cmm's remainder (vendor 4K capture ~66MB)
+MAP_ENV_FILE=/run/openkvm-memmap.env
+
+# Sets MAP_* globals. Prints NOTHING (get_cmm_param/get_venc_param call it from
+# a command substitution) -- print_mem_map does the talking.
+function compute_mem_map()
 {
     emmc_size=$(get_emmc_size)
     cmm_size=$(get_cmm_size)
@@ -83,32 +114,119 @@ function get_cmm_param()
         os_mem_size=$((emmc_size / 2))
         cmm_size=$((emmc_size / 2))
     fi
-    offset=$((os_mem_size * 1024 * 1024 + 0x40000000))
-    # BLOB-FREE ENCODE (#25 default): reserve the TOP 8MB of the CMM pool for the
-    # open VCMD driver's COHERENT cmdbuf pool (ax630c_vcmd_glue.c coherent_base=
-    # 0x7F800000, +8MB -- the per-frame-DMA hot region). ax_cmm allocates
-    # bottom-up, so dropping its ceiling by 8MB (WITHOUT touching `offset`, which
-    # fixes the pool BASE -- reducing cmm_size before this line would instead
-    # shove the base up and leave the top mapped) hands ax_cmm [base,0x7F800000)
-    # and leaves [0x7F800000,0x80000000) exclusively to the encoder. Costs
-    # capture nothing (it never reaches within ~70MB of the top even at 4K).
-    # NOTE: pairs with the glue's 1G-board 0x7F800000 default; the larger 120MB
-    # framebuf carveout at 0x78000000 stays shared (a clean static split is
-    # impossible alongside 4K capture without downsizing it -- tracked, #45/#53).
-    cmm_size=$((cmm_size - 8))
-    printf "cmmpool=anonymous,0,%#x,%dM" "$offset" "$cmm_size"
+
+    # Pool geometry. `offset` (the pool BASE) is fixed by the OS split and must
+    # never be moved -- shrinking cmm_size before this point would shove the
+    # base UP and leave the top of DRAM mapped by nobody.
+    MAP_POOL_BASE=$((os_mem_size * 1024 * 1024 + 0x40000000))
+    MAP_POOL_MB=$cmm_size
+    MAP_POOL_TOP=$((MAP_POOL_BASE + cmm_size * 1024 * 1024))
+
+    # The coherent cmdbuf pool is always the top of the pool: ax_cmm allocates
+    # bottom-up, so lowering its ceiling is what reserves this.
+    MAP_COHERENT_BASE=$((MAP_POOL_TOP - MAP_COHERENT_MB * 1024 * 1024))
+    MAP_COHERENT_BYTES=$((MAP_COHERENT_MB * 1024 * 1024))
+
+    MAP_CMM_MB=$((cmm_size - MAP_COHERENT_MB - MAP_CAPTURE_MB - MAP_FRAMEBUF_MB))
+    if [ $MAP_CMM_MB -ge $MAP_CMM_MIN_MB ]; then
+        MAP_SPLIT=1
+        MAP_CAPTURE_BASE=$((MAP_COHERENT_BASE - MAP_CAPTURE_MB * 1024 * 1024))
+        MAP_CAPTURE_BYTES=$((MAP_CAPTURE_MB * 1024 * 1024))
+        MAP_FRAMEBUF_BASE=$((MAP_CAPTURE_BASE - MAP_FRAMEBUF_MB * 1024 * 1024))
+        MAP_FRAMEBUF_BYTES=$((MAP_FRAMEBUF_MB * 1024 * 1024))
+    else
+        MAP_SPLIT=0
+        MAP_CMM_SHORT_MB=$MAP_CMM_MB
+        MAP_CMM_MB=$((cmm_size - MAP_COHERENT_MB))
+        MAP_CAPTURE_BASE=0
+        MAP_CAPTURE_BYTES=0
+        MAP_FRAMEBUF_BASE=0
+        MAP_FRAMEBUF_BYTES=0
+    fi
+}
+
+function print_mem_map()
+{
+    printf "openkvm DMA map (#53): CMM pool %#x..%#x (%dMB)\n" \
+        "$MAP_POOL_BASE" "$MAP_POOL_TOP" "$MAP_POOL_MB"
+    printf "  ax_cmm           %#010x +%4dMB\n" "$MAP_POOL_BASE" "$MAP_CMM_MB"
+    if [ "$MAP_SPLIT" -eq 1 ]; then
+        printf "  venc framebuf    %#010x +%4dMB\n" "$MAP_FRAMEBUF_BASE" "$MAP_FRAMEBUF_MB"
+        printf "  capture buffers  %#010x +%4dMB\n" "$MAP_CAPTURE_BASE" "$MAP_CAPTURE_MB"
+    fi
+    printf "  vcmd coherent    %#010x +%4dMB\n" "$MAP_COHERENT_BASE" "$MAP_COHERENT_MB"
+    if [ "$MAP_SPLIT" -ne 1 ]; then
+        echo "*** WARNING (#53): a ${MAP_POOL_MB}MB CMM pool leaves ax_cmm only ${MAP_CMM_SHORT_MB}MB after the"
+        echo "*** WARNING (#53): encoder/capture carveouts (floor ${MAP_CMM_MIN_MB}MB). DMA SPLIT ABANDONED --"
+        echo "*** WARNING (#53): falling back to reserving only the top ${MAP_COHERENT_MB}MB. The open encoder"
+        echo "*** WARNING (#53): framebuf and capture carveouts keep their module defaults and"
+        echo "*** WARNING (#53): OVERLAP the ax_cmm pool. Re-tune MAP_*_MB for this board."
+    fi
+}
+
+# Export the map for consumers that are not insmod'd here -- today that is the
+# open capture driver (#56), loaded by hand during bring-up:
+#   . /run/openkvm-memmap.env
+#   insmod open_vin_capture.ko carveout_base=$OPENKVM_CAPTURE_BASE \
+#                              carveout_size=$OPENKVM_CAPTURE_SIZE
+function write_mem_map_env()
+{
+    [ -d "${MAP_ENV_FILE%/*}" ] || return 0
+    {
+        printf "OPENKVM_POOL_BASE=%#x\n"      "$MAP_POOL_BASE"
+        printf "OPENKVM_POOL_TOP=%#x\n"       "$MAP_POOL_TOP"
+        printf "OPENKVM_POOL_SIZE_MB=%d\n"    "$MAP_POOL_MB"
+        printf "OPENKVM_MEMMAP_SPLIT=%d\n"    "$MAP_SPLIT"
+        printf "OPENKVM_CMM_BASE=%#x\n"       "$MAP_POOL_BASE"
+        printf "OPENKVM_CMM_SIZE_MB=%d\n"     "$MAP_CMM_MB"
+        printf "OPENKVM_FRAMEBUF_BASE=%#x\n"  "$MAP_FRAMEBUF_BASE"
+        printf "OPENKVM_FRAMEBUF_SIZE=%#x\n"  "$MAP_FRAMEBUF_BYTES"
+        printf "OPENKVM_CAPTURE_BASE=%#x\n"   "$MAP_CAPTURE_BASE"
+        printf "OPENKVM_CAPTURE_SIZE=%#x\n"   "$MAP_CAPTURE_BYTES"
+        printf "OPENKVM_COHERENT_BASE=%#x\n"  "$MAP_COHERENT_BASE"
+        printf "OPENKVM_COHERENT_SIZE=%#x\n"  "$MAP_COHERENT_BYTES"
+    } > "$MAP_ENV_FILE" 2>/dev/null || true
+}
+
+function get_cmm_param()
+{
+    compute_mem_map
+    printf "cmmpool=anonymous,0,%#x,%dM" "$MAP_POOL_BASE" "$MAP_CMM_MB"
+}
+
+# Module parameters for the open VC8000E VCMD driver. Both carveouts are
+# derived from the pool top, so the 1G-board constants compiled into
+# ax630c_vcmd_glue.c / framebuf_alloc.c are only a fallback for an
+# unparameterized insmod.
+function get_venc_param()
+{
+    compute_mem_map
+    if [ "$MAP_SPLIT" -eq 1 ]; then
+        printf "coherent_base=%#x coherent_size=%#x framebuf_base=%#x framebuf_size=%#x" \
+            "$MAP_COHERENT_BASE" "$MAP_COHERENT_BYTES" \
+            "$MAP_FRAMEBUF_BASE" "$MAP_FRAMEBUF_BYTES"
+    else
+        printf "coherent_base=%#x coherent_size=%#x" \
+            "$MAP_COHERENT_BASE" "$MAP_COHERENT_BYTES"
+    fi
 }
 
 function load_drv()
 {
     echo "BASE-ONLY loader (deblob bring-up): sys/cmm/pool/base/venc, NO capture stack"
     insmod /soc/ko/ax_sys.ko
+    compute_mem_map
+    print_mem_map
+    write_mem_map_env
+
     cmm_param=$(get_cmm_param)
     echo "insmod ax_cmm, param: $cmm_param"
     insmod /soc/ko/ax_cmm.ko $cmm_param
     insmod /soc/ko/ax_pool.ko
     insmod /soc/ko/ax_base.ko
-    insmod /soc/ko/ax630c_venc_vcmd.ko
+    venc_param=$(get_venc_param)
+    echo "insmod ax630c_venc_vcmd, param: $venc_param"
+    insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param
     echo "BASE-ONLY loader end (capture stack intentionally NOT loaded)"
 }
 

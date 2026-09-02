@@ -3,11 +3,15 @@
  * From-source frame-buffer allocator over a CMM carveout (#45).
  * See framebuf_alloc.h for the ABI and design notes.
  *
- * First-fit over a bus-address-sorted allocation list. The region defaults to
- * the spare middle of the 200MB CMM carveout: above the vendor boot blocks
- * (ax_cmm allocates bottom-up from 0x73800000; its boot allocations sit at
- * 0x738xxxxx) and below the 8MB coherent VCMD-pool region at 0x7F800000.
- * Both bounds are module parameters.
+ * First-fit over a bus-address-sorted allocation list. The region is a formal
+ * slice of the CMM pool (#53): the curated boot loader
+ * (pkgs/rootfs/ax-load-drv.sh) computes the whole DMA map from the board's
+ * pool geometry and passes framebuf_base/framebuf_size here, so this carveout
+ * is EXCLUSIVE -- ax_cmm's ceiling is lowered to framebuf_base and never hands
+ * it out. The defaults below are the 1G-board values that map computes
+ * (0x78000000 + 64MB), kept so an unparameterized insmod still works there.
+ * 64MB covers the real 1080p encode floorplan (~43MB); 4K encode needs more
+ * and is issue #52. See docs/vcmd-cma-unblock.md, "DMA memory map".
  */
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -20,7 +24,7 @@
 #include "framebuf_alloc.h"
 
 static unsigned long framebuf_base = 0x78000000UL;
-static unsigned long framebuf_size = 0x07800000UL;   /* 120MB */
+static unsigned long framebuf_size = 0x04000000UL;   /* 64MB (#53; loader overrides) */
 module_param(framebuf_base, ulong, 0444);
 MODULE_PARM_DESC(framebuf_base, "phys base of the frame-buffer CMM carveout");
 module_param(framebuf_size, ulong, 0444);

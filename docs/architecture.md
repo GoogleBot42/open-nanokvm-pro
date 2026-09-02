@@ -110,8 +110,13 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    the dependency closure of `{ax_proton}` — plus our from-source open VC8000E
    VCMD encode driver (`/soc/ko/ax630c_venc_vcmd.ko`) **in place of** vendor
    `ax_venc`/`ax_jenc`, so the encode path is blob-free too (#25 default,
-   2026-08-31). It also reserves the top 8MB of the CMM pool for the VCMD
-   coherent cmdbuf region (`cmm_size - 8`). The two vendor encode blobs
+   2026-08-31). It also **splits the DMA pool** (#53): one `compute_mem_map`
+   derives the whole map from the board's pool geometry and hands `ax_cmm`
+   (`cmmpool=`), the open encoder (`framebuf_base/size`, `coherent_base/size`)
+   and the open capture driver (via `/run/openkvm-memmap.env`) non-overlapping
+   slices, printing the map at boot — layout table and derivation rule in
+   [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53).
+   The two vendor encode blobs
    (`ax_venc.ko`, `ax_jenc.ko`) are **removed from the flashed image** — the
    open VCMD driver replaces them and nothing kept depends on them. The
    pristine vendor script still ships as `auto_load_all_drv.sh.vendor`; a

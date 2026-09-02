@@ -53,12 +53,16 @@
  * declared region FIRST (include/linux/dma-mapping.h), so the pools allocate
  * from it with no kernel or DTB change.
  *
- * Default region: the TOP 8MB of the 200MB CMM carveout
- * (0x73800000-0x7FFFFFFF, outside kernel-managed DRAM). ax_cmm allocates
- * bottom-up first-fit, so the top is untouched until CMM usage exceeds 192MB
- * -- and during open-encoder bring-up the vendor app stack (the only big CMM
- * consumer) is stopped. Both knobs are module parameters so the region can be
- * moved once a permanent carveout is decided (#45).
+ * Region: the TOP coherent_size of the CMM pool. Since #53 this is a FORMAL
+ * slice -- the curated boot loader (pkgs/rootfs/ax-load-drv.sh) derives the
+ * whole DMA map from the board's pool geometry and passes coherent_base /
+ * coherent_size (and framebuf_base/size, framebuf_alloc.c) here, lowering
+ * ax_cmm's cmmpool= ceiling to match, so nothing else can ever allocate into
+ * it. The defaults below are the 1G-board values that map computes (pool
+ * 0x73800000-0x7FFFFFFF, so 0x7F800000 + 8MB) and exist only so an
+ * unparameterized insmod still works there -- a different board/mem= puts the
+ * pool elsewhere and the loader's parameters are then load-bearing.
+ * See docs/vcmd-cma-unblock.md, "DMA memory map".
  */
 static unsigned long coherent_base = 0x7F800000UL;
 static unsigned long coherent_size = 0x00800000UL;   /* 8MB: 3x2MB pools + slack */
