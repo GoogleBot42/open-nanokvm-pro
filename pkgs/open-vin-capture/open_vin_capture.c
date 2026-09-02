@@ -49,6 +49,8 @@
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-memops.h>
 
+#include "ovc_golden_4k.h"
+
 #define OVC_DRV_NAME		"open_vin_capture"
 
 /* ------------------------------------------------------------------------ */
@@ -73,21 +75,19 @@ module_param(carveout_size, ulong, 0444);
 MODULE_PARM_DESC(carveout_size, "size of the capture-buffer coherent carveout (0 = use default pool)");
 
 /*
- * TODO(bringup): the MODE10 bypass bitmask constant (spec §2). Reg 0x154 is
- * a per-module bypass bitmask ("MODE10 sets all pipeline-module bits so
- * pixel data flows IFE-input -> WDMA untouched"); 0x158 is the paired
- * clear/complement mask. Both read 0 live (write-only), so the exact
- * constant could not be captured (spec header, checklist #4). Best guess:
- * all bits set / clear-mask 0. Confirm by read-back-after-write during
- * bring-up and adjust these defaults.
+ * ISP-top module gate masks (spec §2 "MODE10 bypass mask"). Device-confirmed
+ * 2026-09-01 (see OVC_TOP_GATE_*): the status word 0x02400150 resets to
+ * all-ones and the vendor clears bits 0,1,2,15 (status 0xffff7ff8); the SET
+ * strobe is not needed (0 = skip). Clearing those four bits is the gate that
+ * makes every SIF/IFE/WDMA config write take effect.
  */
-static u32 bypass_set_mask = 0xFFFFFFFF;
+static u32 bypass_set_mask;
 module_param(bypass_set_mask, uint, 0444);
-MODULE_PARM_DESC(bypass_set_mask, "IFE-top MODE10 bypass set-mask (reg +0x154), spec 2");
+MODULE_PARM_DESC(bypass_set_mask, "ISP-top module gate SET strobe (0x02400154); 0 = skip");
 
-static u32 bypass_clr_mask;
+static u32 bypass_clr_mask = 0x00008007;
 module_param(bypass_clr_mask, uint, 0444);
-MODULE_PARM_DESC(bypass_clr_mask, "IFE-top MODE10 bypass clear-mask (reg +0x158), spec 2");
+MODULE_PARM_DESC(bypass_clr_mask, "ISP-top module gate CLR strobe (0x02400158); golden 0x8007");
 
 /*
  * WDMA channel for single-plane packed YUV422. Channel 8 device-confirmed
@@ -151,16 +151,21 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 /*
  * IFE block. WDMA block base device-confirmed at absolute 0x02414000 =
  * file +0x14000 (spec header). The IFE-go register is at absolute file
- * offset 0x146dc (spec §2, device-confirmed bit0 set while streaming), i.e.
- * inside the same 0x14000 block, so the IFE-top bypass registers +0x154 /
- * +0x158 are placed in that block too.
- * TODO(bringup): the IFE-top block base for the bypass mask pair is NOT
- * device-confirmed (the registers read 0 = write-only; spec §2, checklist
- * #4). Confirm 0x14154/0x14158 by write + behavioral check during bring-up.
+ * offset 0x146dc (spec §2, device-confirmed bit0 set while streaming).
+ *
+ * ISP-top module gate ("MODE10 bypass mask", spec §2). DEVICE-CONFIRMED
+ * 2026-09-01: the pair lives in the ISP TOP block (file +0x154 SET /
+ * +0x158 CLR) with a readable status word at +0x150, NOT in the IFE block
+ * (+0x14154 is a WDMA per-channel stride register). The status word resets
+ * to all-ones; the vendor-live golden reads 0xffff7ff8, and writing the
+ * 0x8007 clear-mask is exactly what makes SIF/IFE/WDMA config writes stick
+ * (before it every datapath write reads back 0).
  */
 #define OVC_IFE_BLOCK		0x14000
-#define OVC_IFE_BYPASS_SET	(OVC_IFE_BLOCK + 0x154)
-#define OVC_IFE_BYPASS_CLR	(OVC_IFE_BLOCK + 0x158)
+#define OVC_TOP_GATE_STATUS	0x150
+#define OVC_TOP_GATE_SET	0x154
+#define OVC_TOP_GATE_CLR	0x158
+#define OVC_TOP_GATE_GOLDEN	0xffff7ff8	/* status after the vendor bring-up */
 #define OVC_IFE_GO		0x146dc	/* RMW keep 0xf81c, set bit0 (spec §2) */
 #define OVC_IFE_GO_KEEP		0x0000f81c
 
@@ -202,9 +207,14 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_RST0_DEASSERT	0xE4
 #define OVC_RST1_ASSERT		0xE8
 #define OVC_RST1_DEASSERT	0xEC
-
-/* IFE/WDMA reset mask (ax_isp_reset_ife_legacy): bits 13,14,15,16,18. */
-#define OVC_IFE_RST_MASK	0x0005E000
+/* Read views of the two reset groups: bit set = line held in reset. Deep-off
+ * boot reads 0xffffffff / 0x007fffff; the vendor streaming state reads 0 / 0.
+ * (device-confirmed 2026-09-01) */
+#define OVC_RST0_STATUS		0x0C
+#define OVC_RST1_STATUS		0x10
+#define OVC_RST0_NLINES		32
+#define OVC_RST1_NLINES		23
+#define OVC_RST1_SKIP_LINE	20	/* mux-domain kick line; never in the sweeps (spec) */
 
 /* AXI-master quiesce ctrl/status regs, in the 0x02400000 ISP file
  * (spec-vin-reset step 4/9): write 0xFFFFFFFF to ctrl, poll status clear,
@@ -490,7 +500,7 @@ static void ovc_clk_mux_apply(struct ovc_dev *ovc)
  */
 static void ovc_clkrst_init(struct ovc_dev *ovc)
 {
-	int t;
+	int i, t;
 
 	/* Pulse reset-group-1 bit20 (spec §8.3 step 1 / clock-source mux
 	 * domain kick -- the rst1-bit20 pulse the vendor's ax_isp_clk_prepare
@@ -508,68 +518,102 @@ static void ovc_clkrst_init(struct ovc_dev *ovc)
 	ovc_clk_mux_apply(ovc);
 
 	/*
-	 * Ungate clocks. HW-validated 2026-08-31: the SIF (0x2406xxx) and
-	 * IFE/WDMA (0x2414xxx) datapath clocks are NOT in the 0x3F/0x3FE
-	 * subset the first draft enabled -- those blocks stayed at 0xDEADBEEF.
-	 * Enabling the full gate mask un-DEADBEEFs them (devmem-proven). The
-	 * gate regs are W1S, so setting reserved bits is a no-op.
+	 * Ungate clocks: the vendor's streaming state is gate-A 0x3F /
+	 * gate-B 0x3FE (device-confirmed 2026-09-01; the earlier "full mask
+	 * un-DEADBEEFs the blocks" reading was wrong -- the reset release below
+	 * is what does that). W1S registers.
 	 * (spec §8.3 step 2; docs/reference/deblob-scope/specs/spec-vin-reset.md)
 	 */
-	ovc_clkrst_wr(ovc, OVC_CLK_GATE_A_SET, 0xFFFFFFFF);
-	ovc_clkrst_wr(ovc, OVC_CLK_GATE_B_SET, 0xFFFFFFFF);
+	ovc_clkrst_wr(ovc, OVC_CLK_GATE_A_SET, 0x3F);
+	ovc_clkrst_wr(ovc, OVC_CLK_GATE_B_SET, 0x3FE);
 
 	/*
-	 * IFE/WDMA reset ONLY (mask 0x5E000, from ax_isp_reset_ife_legacy).
-	 * HW-validated 2026-08-31: the full 32-bit rst0 sweep (spec-vin-reset
-	 * step 5) HANGS the SoC on this config (it pulses a bit that resets the
-	 * AXI fabric / a bus the CPU depends on); the narrow IFE mask alone is
-	 * devmem-proven not to hang. So we release only the IFE/WDMA datapath,
-	 * which is what writes frames to DDR. (SIF's own reset line is unknown
-	 * and only the full sweep releases it per the RE -- tracked as the
-	 * remaining bring-up gap; SIF may run on post-clock defaults.)
+	 * spec-vin-reset steps 1-2: per-bit DEASSERT of EVERY rst0 and rst1
+	 * line (one W1S strobe per bit). DEVICE-PROVEN 2026-09-01: this is the
+	 * step that takes the whole ISP register file out of 0xDEADBEEF (the
+	 * deep-off boot holds all 32 + 23 lines; the first draft released only
+	 * the IFE subset and the file stayed dead). No hang.
 	 */
-	ovc_wr(ovc, OVC_AXI_IFE_CTRL, 0xFFFFFFFF);	/* IFE AXI quiesce */
+	for (i = 0; i < OVC_RST0_NLINES; i++)
+		ovc_clkrst_wr(ovc, OVC_RST0_DEASSERT, BIT(i));
+	for (i = 0; i < OVC_RST1_NLINES; i++)
+		if (i != OVC_RST1_SKIP_LINE)
+			ovc_clkrst_wr(ovc, OVC_RST1_DEASSERT, BIT(i));
+
+	/* step 4: quiesce the three AXI masters (IFE / ITP / YUV) */
+	ovc_wr(ovc, OVC_AXI_IFE_CTRL, 0xFFFFFFFF);
+	ovc_wr(ovc, OVC_AXI_ITP_CTRL, 0xFFFFFFFF);
+	ovc_wr(ovc, OVC_AXI_YUV_CTRL, 0xFFFFFFFF);
 	for (t = 0; t < 51; t++) {
-		if (!ovc_rd(ovc, OVC_AXI_IFE_STAT))
+		if (!ovc_rd(ovc, OVC_AXI_IFE_STAT) &&
+		    !ovc_rd(ovc, OVC_AXI_ITP_STAT) &&
+		    !ovc_rd(ovc, OVC_AXI_YUV_STAT))
 			break;
 		udelay(200);
 	}
-	ovc_clkrst_wr(ovc, OVC_RST0_ASSERT, OVC_IFE_RST_MASK);
-	ovc_clkrst_wr(ovc, OVC_RST0_DEASSERT, OVC_IFE_RST_MASK);
-	ovc_wr(ovc, OVC_AXI_IFE_CTRL, 0);
-}
-
-/* SIF front-end static config (spec §1) -- all SIF regs are RMW */
-static void ovc_sif_setup(struct ovc_dev *ovc)
-{
-	const unsigned int d = OVC_SIF_DEV_ID;
-	u32 w = ovc->fmt.width, h = ovc->fmt.height;
-
-	/* §1.2: YUV422-8 progressive from CSI-2 DT 0x1E */
-	ovc_rmw(ovc, OVC_SIF_IN_FMT(d), OVC_SIF_IN_FMT_KEEP,
-		OVC_SIF_IN_FMT_YUV422_8);
-
-	/* §1.3: full-frame crop window; ends exclusive, no +1 */
-	ovc_wr(ovc, OVC_SIF_WIN0_START(d), 0);
-	ovc_wr(ovc, OVC_SIF_WIN0_SIZE(d), w | (h << 16));
 
 	/*
-	 * §1.3 fact 3: VC + data-type matching. Matcher 0 takes VC0 /
-	 * DT 0x1E (YUV422-8); matcher 1 is parked on DT 0x3A (never in
-	 * real traffic) with the WIN1 park idiom.
-	 * TODO(bringup): the field layout inside the VC/DT match registers
-	 * is [speculative] (spec §1.1 lists the pair addresses only);
-	 * capture the live values during a vendor YUV422 run (checklist
-	 * #8) and adjust.
+	 * step 5: per-bit rst0 PULSE sweep (assert then deassert, each line).
+	 * The 2026-08-31 hang came from pulsing lines while OTHER lines were
+	 * still held; once everything is deasserted first (above) the sweep
+	 * is device-proven clean. Steps 6-8 (the rst1 pulse under the
+	 * 0x0440306C hold) are deliberately skipped: they cover the ITP/YUV
+	 * rst1 domains, which the bypass path does not use, and the hold
+	 * register lives in the MM/VPP domain, which is unclocked on an open
+	 * boot -- merely reading it hangs the bus (device-proven).
 	 */
-	ovc_wr(ovc, OVC_SIF_VC_MATCH(d, 0), 0);
-	ovc_wr(ovc, OVC_SIF_DT_MATCH(d, 0), OVC_CSI2_DT_YUV422_8);
-	ovc_wr(ovc, OVC_SIF_VC_MATCH(d, 1), 0);
-	ovc_wr(ovc, OVC_SIF_DT_MATCH(d, 1), OVC_CSI2_DT_PARK);
-	ovc_wr(ovc, OVC_SIF_WIN1_START(d), OVC_SIF_WIN1_PARK);
+	for (i = 0; i < OVC_RST0_NLINES; i++) {
+		ovc_clkrst_wr(ovc, OVC_RST0_ASSERT, BIT(i));
+		ovc_clkrst_wr(ovc, OVC_RST0_DEASSERT, BIT(i));
+	}
 
-	/* §1.4: MIPI input enable */
-	ovc_rmw(ovc, OVC_SIF_MIPI_CTRL(d), ~(u32)BIT(0), BIT(0));
+	/* step 9: release the AXI masters */
+	ovc_wr(ovc, OVC_AXI_IFE_CTRL, 0);
+	ovc_wr(ovc, OVC_AXI_ITP_CTRL, 0);
+	ovc_wr(ovc, OVC_AXI_YUV_CTRL, 0);
+
+	dev_info(ovc->dev, "clk/rst up: mux=%#06x rst0=%#010x rst1=%#010x file[0]=%#010x\n",
+		 ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD),
+		 ovc_clkrst_rd(ovc, OVC_RST0_STATUS),
+		 ovc_clkrst_rd(ovc, OVC_RST1_STATUS), ovc_rd(ovc, 0));
+}
+
+/*
+ * Bypass-path static configuration: SIF front-end, IFE core, WDMA channel
+ * and the small top/AXI blocks, programmed from OUR OWN device-observed
+ * register image (ovc_golden_4k.h) with the geometry words recomputed for
+ * the negotiated format. Device-proven 2026-09-01: with this image (and the
+ * SIF arm sequence in ovc_sif_start) the SIF frame counter runs at the
+ * source rate and the IFE event bits match the vendor state exactly; the
+ * first draft's hand-derived SIF matcher / WDMA format programming did not
+ * (matcher layout, WDMA mode word, stride bank and several IFE bits were
+ * wrong or missing). All plain writes; the ISP-top gate must already be
+ * open (ovc_ife_bypass_setup).
+ */
+static void ovc_sif_setup(struct ovc_dev *ovc)
+{
+	u32 w = ovc->fmt.width, h = ovc->fmt.height;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(ovc_golden_4k); i++) {
+		const struct ovc_reg_init *r = &ovc_golden_4k[i];
+		u32 v = r->val;
+
+		switch (r->geom) {
+		case OVC_GEOM_WH:
+			v = w | (h << 16);
+			break;
+		case OVC_GEOM_H:
+			v = h;
+			break;
+		case OVC_GEOM_STRIDE8:
+			v = ovc->fmt.bytesperline / 8;
+			break;
+		default:
+			break;
+		}
+		ovc_wr(ovc, r->off, v);
+	}
 }
 
 /* SIF start (spec §1.4): pre-clear CTRL/ID -> STOP -> START -> re-arm */
@@ -582,7 +626,10 @@ static void ovc_sif_start(struct ovc_dev *ovc)
 	ovc_rmw(ovc, OVC_SIF_STOP, ~(u32)7, BIT(d) & 7);
 	ovc_rmw(ovc, OVC_SIF_START, ~(u32)7, BIT(d) & 7);
 	ovc_rmw(ovc, OVC_SIF_CTRL(d), ~(u32)7, BIT(d) & 7);
-	ovc_wr(ovc, OVC_SIF_ID(d), d + 1);
+	/* ID word: the vendor streaming state reads 0x00010001 (two halfword
+	 * ids), not d+1 -- device-confirmed 2026-09-01; with this arm sequence
+	 * the SIF/IFE event bits match the vendor's exactly. */
+	ovc_wr(ovc, OVC_SIF_ID(d), 0x00010001);
 
 	/*
 	 * §1.4 note: START is asserted BEFORE the vbus is enabled at node
@@ -601,45 +648,24 @@ static void ovc_sif_stop(struct ovc_dev *ovc)
 	msleep(40);
 }
 
-/* IFE-top bypass MODE10 masks (spec §2) -- plain full-word writes */
+/*
+ * ISP-top module gate (spec §2 "MODE10 bypass masks"), SET/CLR strobes with
+ * a readable status word. Must run before any SIF/IFE/WDMA config write --
+ * device-proven 2026-09-01: until the 0x8007 clear lands, every datapath
+ * register write reads back 0.
+ */
 static void ovc_ife_bypass_setup(struct ovc_dev *ovc)
 {
-	ovc_wr(ovc, OVC_IFE_BYPASS_SET, bypass_set_mask);
-	ovc_wr(ovc, OVC_IFE_BYPASS_CLR, bypass_clr_mask);
-	/* Registers are write-only live; log for bring-up read-back checks */
-	dev_dbg(ovc->dev, "bypass set/clr readback: %08x/%08x\n",
-		ovc_rd(ovc, OVC_IFE_BYPASS_SET),
-		ovc_rd(ovc, OVC_IFE_BYPASS_CLR));
-}
+	u32 st;
 
-/*
- * WDMA static per-channel config, spec §4.2 selector order 8 -> 6 -> 2
- * (the first buffer address -- selector 6 -- is programmed by the caller
- * between steps via ovc_wdma_program_buffer()).
- */
-static void ovc_wdma_setup(struct ovc_dev *ovc)
-{
-	const unsigned int c = wdma_chn;
-	u32 w = ovc->fmt.width, h = ovc->fmt.height;
-
-	/*
-	 * TODO(bringup): selector 8 (mode/format word reg at word index
-	 * (param+0x14a)<<2, spec §3) and the selector-3 format/geometry
-	 * bank at (chn+0xf)<<5 (+0x10/+0x14/+0x18 low4/+0x1c low3
-	 * format-code) carry values the spec marks [speculative] / could
-	 * not pin for packed single-plane YUYV. Capture the live bank
-	 * during a vendor run (checklist #7), then program the same
-	 * values here. First draft leaves vendor-boot defaults in place.
-	 */
-
-	/* Selector 2 (spec §3): packing/burst bitfield -- keep-mask
-	 * 0xFFFC8880 preserved, packed fields TODO(bringup) as above --
-	 * and whole-frame geometry. */
-	ovc_rmw(ovc, OVC_WDMA_PACK(c), OVC_WDMA_PACK_KEEP, 0);
-	/* TODO(bringup): W|H halfword order inferred from the SIF WIN0
-	 * convention (spec §1.3 vs §3 sel 2 "bfi #16,#16"); confirm via
-	 * checklist #7. */
-	ovc_wr(ovc, OVC_WDMA_WH(c), w | (h << 16));
+	if (bypass_set_mask)
+		ovc_wr(ovc, OVC_TOP_GATE_SET, bypass_set_mask);
+	ovc_wr(ovc, OVC_TOP_GATE_CLR, bypass_clr_mask);
+	st = ovc_rd(ovc, OVC_TOP_GATE_STATUS);
+	dev_info(ovc->dev, "isp-top gate status %#010x (golden %#010x)\n",
+		 st, OVC_TOP_GATE_GOLDEN);
+	if (st != OVC_TOP_GATE_GOLDEN)
+		dev_warn(ovc->dev, "isp-top gate != golden: datapath writes may not stick\n");
 }
 
 /*
@@ -815,13 +841,13 @@ static int ovc_start_streaming(struct vb2_queue *vq, unsigned int count)
 	/*
 	 * Full bring-up order per spec §4.1/§4.2 and the §1.4/§2 notes:
 	 * static config first, every enable/commit bit last:
-	 *   SIF front-end -> IFE bypass masks -> WDMA channel config ->
-	 *   first buffer addr + shadow -> IFE-go -> WDMA channel enable ->
-	 *   IRQ enable -> SIF START (begins capture) -> vbus.
+	 *   ISP-top gate (must precede every datapath write) -> SIF front-end
+	 *   -> WDMA channel config -> first buffer addr + shadow -> IFE-go ->
+	 *   WDMA channel enable -> IRQ enable -> SIF START (begins capture)
+	 *   -> vbus.
 	 */
-	ovc_sif_setup(ovc);
 	ovc_ife_bypass_setup(ovc);
-	ovc_wdma_setup(ovc);
+	ovc_sif_setup(ovc);
 
 	spin_lock_irqsave(&ovc->irqlock, flags);
 	ovc->sequence = 0;
@@ -1117,6 +1143,9 @@ static int ovc_probe(struct platform_device *pdev)
 	 * proton-first is FORCED -- the reset pulse covers the RX front-end).
 	 */
 	ovc_clkrst_init(ovc);
+	/* Open the ISP-top module gate now so the register file is live for
+	 * everything that follows (probe-time int-ctrl programming included). */
+	ovc_ife_bypass_setup(ovc);
 
 	ret = devm_request_irq(dev, irq, ovc_isr, 0, OVC_DRV_NAME, ovc);
 	if (ret) {

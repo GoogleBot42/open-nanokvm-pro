@@ -191,13 +191,15 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
  * Spec sections 3/6/7. HAZARD: shared with the VIN stack and the in-tree
  * axera reset provider; only ever write single bits via SET/CLR.
  *
- * D-PHY power register pair layout is inferred from spec sections 6a/6c/7:
- * section 6a says power_off deassert = CLR at +0x1f0, section 7 says "DPHY
- * power (+0x1ec/+0x1f8)". The consistent reading is two SET/CLR pairs:
- * power_off {SET 0x1ec, CLR 0x1f0} and power_ready {SET 0x1f4, CLR 0x1f8}.
- * TODO(bringup): confirm both pairs and the bit position (bit0 assumed) by
- * dumping 0x023401ec..0x023401f8 around a vendor start/stop
- * (spec section 9 item 7).
+ * D-PHY power registers follow the bank's (STATUS, SET, CLR) triple layout,
+ * the same shape as the clock gate at +0x24/+0x28/+0x2c. DEVICE-CONFIRMED
+ * 2026-09-01 (our own /dev/mem observation on a base-only boot vs the
+ * vendor streaming state): power_off = {status 0x1e8, SET 0x1ec, CLR 0x1f0},
+ * power_ready = {status 0x1f4, SET 0x1f8, CLR 0x1fc}. The first draft's
+ * "CLR ready" write went to 0x1f8, which is the SET strobe: 0x1f4 read 1
+ * afterwards (vendor streaming reads 0) and the ISP pixel clocks stayed
+ * dead (isp_sys_glb +0xc4 = 0 instead of 0xf0f). Writing 1 to 0x1fc clears
+ * it and the pixel clocks come up immediately.
  * ---------------------------------------------------------------------------
  */
 #define COMMON_GLB_PHYS			0x02340000
@@ -207,11 +209,13 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 #define CGLB_CLK_EB_CLR			0x2c
 #define CGLB_CLK_DPHYRX_TLB_EB		BIT(9)
 
-#define CGLB_DPHY_POWER_OFF_SET		0x1ec	/* [speculative pair layout] */
+#define CGLB_DPHY_POWER_OFF_STATUS	0x1e8
+#define CGLB_DPHY_POWER_OFF_SET		0x1ec
 #define CGLB_DPHY_POWER_OFF_CLR		0x1f0	/* spec section 6a step 18 */
-#define CGLB_DPHY_POWER_READY_SET	0x1f4	/* [speculative pair layout] */
-#define CGLB_DPHY_POWER_READY_CLR	0x1f8
-#define CGLB_DPHY_POWER_BIT		BIT(0)	/* [speculative] */
+#define CGLB_DPHY_POWER_READY_STATUS	0x1f4
+#define CGLB_DPHY_POWER_READY_SET	0x1f8
+#define CGLB_DPHY_POWER_READY_CLR	0x1fc
+#define CGLB_DPHY_POWER_BIT		BIT(0)
 
 /* Deskew lock poll (spec section 5: retry ~20x with delay). */
 #define OPENVIN_LOCK_POLL_US		1000
@@ -550,7 +554,18 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	/* Step 17: dphyrx TLB clock enable (common_glb, single-bit SET). */
 	cglb_wr(priv, CGLB_CLK_EB_SET, CGLB_CLK_DPHYRX_TLB_EB);
 
-	/* Steps 18-20: D-PHY power-up with settle delays. */
+	/*
+	 * Steps 18-20: D-PHY power-up. The vendor's reset path (spec section
+	 * 6c step 4) first asserts ready then off (a power cycle), and the
+	 * start path releases off then ready. DEVICE-PROVEN 2026-09-01: the
+	 * ISP pixel clocks (isp_sys_glb +0xc4 -> 0xf0f) come up on the
+	 * ready 1->0 EDGE; clearing an already-clear ready bit does nothing
+	 * and the SIF never sees a pixel. So always run the full cycle.
+	 */
+	cglb_wr(priv, CGLB_DPHY_POWER_READY_SET, CGLB_DPHY_POWER_BIT);
+	udelay(100);
+	cglb_wr(priv, CGLB_DPHY_POWER_OFF_SET, CGLB_DPHY_POWER_BIT);
+	udelay(100);
 	cglb_wr(priv, CGLB_DPHY_POWER_OFF_CLR, CGLB_DPHY_POWER_BIT);
 	udelay(100);
 	cglb_wr(priv, CGLB_DPHY_POWER_READY_CLR, CGLB_DPHY_POWER_BIT);
