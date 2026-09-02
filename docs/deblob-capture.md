@@ -234,60 +234,45 @@ Three findings from the specs materially change the plan below:
    IFE-top block base, the carveout base/size split (coordinate #53), the async
    subdev link to M1, dma-buf export, and the on-hardware milestone — YUYV
    frames at 1080p + 4K30, zero vendor modules, A/B-verified. Serial bring-up.
-   **Bring-up progress (2026-08-31, on hardware, base-only boot):** probe +
-   /dev/video0 + IRQ35 register clean, S_FMT/REQBUFS/QBUF/STREAMON run with no
-   hang. Frames did NOT yet flow — the SIF/IFE datapath sub-blocks read 0 but
-   DROPPED writes. Recovered + folded in: the `VIN_glb_create` reset RE
-   (`spec-vin-reset.md`); clk-enable (`0x025000D0/D8`, full mask) devmem-proven
-   to un-DEADBEEF the blocks; reset polarity confirmed (`0xE0` assert / `0xE4`
-   deassert); golden corrections (SIF IN_FMT=0x40, default geometry 4K).
-   **Write-enable RE + device test (2026-08-31, clean-room `spec-vin-write-enable.md`,
-   then base-only-boot hardware test with M1 locked + live 4K source):** there is no
-   write-protect register. The RE identified the **ISP clock-source MUX
-   (`0x025000C8/CC`)** — programmed by the vendor once at `ax_proton` probe
-   (`ax_isp_clk_prepare`) and omitted by M1's gate-only bring-up — as the primary
-   suspect, and the hardware test CONFIRMED it is necessary: writing codes `5/5/3`
-   drives `MUX_RD` (`0x02500000+0x00`) to the live-vendor golden `0x5af`. **But it is
-   NOT sufficient:** even with `MUX_RD=0x5af` + rst1-bit20 kick + gates
-   (`0x3F/0x3FE` and `0xFFFFFFFF`) + IFE reset pulse `0x5E000`, the SIF (`0x2406xxx`) /
-   IFE (`0x2414xxx`) windows STAY `0xDEADBEEF` and the clock-level readbacks
-   `0x025000C0/C4` STAY `0`. So the ISP clock SOURCE is selected but the clock is not
-   RUNNING. Two more rounds of clean-room RE + device testing then RULED OUT the entire
-   clock hypothesis:
-   - **`spec-isp-clock-enable.md`** found the ISP datapath's parent clocks live in the
-     **common_clk bank `0x02340000`** (a bank the driver never touched), from GPL
-     `clk-ax620e.c`: ACLK_ISP_TOP_SEL `+0x00[29:27]`, CLK_ISP_MM `+0x0C[19:17]`/`+0x24 b11`,
-     CLK_VI_EB `+0x24 b17`. On device `CLK_VI_EB` was genuinely off vs vendor.
-   - **But clocks are NOT the wall (device-proven):** with BOTH banks matched bit-for-bit
-     to the live-vendor golden (common `0x24=0x2ce00`, `0x78=0x7400`; isp_clk MUX_RD=`0x5af`,
-     gates, IFE reset, sys_glb `0x90`), `0x025000C0/C4` STAY `0` and `0x02400000` STAYS
-     `0xDEADBEEF`. A source sweep of ACLK_ISP_TOP across npll/cpll_416m/cpll_208m/**cpll_24m
-     (always-on ref)** woke nothing — a block that ignores even the always-on reference is
-     UNPOWERED or held in a top-level reset.
-   - **REFRAME (device-proven 2026-08-31, the key finding):** the ISP is powered/clocked
-     **ON-DEMAND by the vendor's runtime STREAM-START**, not at boot. `0x02400000` reads
-     `0xDEADBEEF` even in FULL PRODUCTION at idle (vendor stack loaded, ax_proton running);
-     triggering an actual capture (curl the MJPEG stream) makes it read real values and
-     frames flow. So DEADBEEF-at-idle is the NORMAL resting state — the golden
-     `regfile-vendor-live.bin` had real values only because it was captured *during*
-     streaming. (This supersedes `spec-isp-power-domain.md`'s static "boot-firmware"
-     conclusion: the static RE looked at probe/create, but ax_proton does the power/clock
-     bring-up at **streamon**.) An idle→streaming register diff on the same production boot
-     is captured in **`regdumps/stream-delta/DELTA.txt`**: `0x02500000` gate-status
-     `+0x04/+0x08` go `0→0x3f/0x3fe`, MUX `0x5ac→0x5af`, `C0/C4` light up; plus changes in
-     undocumented banks `0x02240000`/`0x02250000` (per-lane/instance stride = likely
-     DPHY/PLL) and CPU bank `0x01900000` (probably encode-load noise).
-   - **Remaining M2 work:** reproduce the vendor ISP **streamon** clock/power sequence from
-     that delta — separating the ISP/proton writes from the CSI/mipi ones M1 already does,
-     and identifying what `0x02240000`/`0x02250000` are. This is a well-scoped next phase
-     with ground-truth data, not a mystery. `pkgs/open-vin-capture` (`ovc_clk_mux_apply`)
-     carries the corrected mux step; the confirmed-missing common-bank writes (`CLK_VI_EB`)
-     + the delta sequence get folded in and tested end-to-end. Everything else upstream
-     (probe, IRQ, WDMA address gate, geometry, reset polarity, CSI link, live source) is proven.
-   **Remaining device-loop step (base-only boot):** apply the streamon delta, confirm
-   `0x02400000` un-DEADBEEFs + a non-shadowed write/read round-trip sticks (SIF `0x02406408`),
-   then YUYV frames to DDR. Evidence preserved: `regdumps/stream-delta/` (idle vs streaming
-   dumps + DELTA.txt), `regdumps/glb-wedged.bin`/`cglb-wedged.bin`, `regdumps/dumpreg.c`.
+   **Bring-up status (2026-09-01, on hardware, base-only harness — supersedes the
+   2026-08-31 clock/power-domain narrative, which is kept only in git history):**
+   - **The `0xDEADBEEF` wall was the resets.** A deep-off boot holds every rst0 (32)
+     and rst1 (23) line — the read views `0x0250000c/0x10` show `0xffffffff` /
+     `0x007fffff`. `spec-vin-reset` steps 1-2, a per-bit *deassert-all* of both
+     groups, takes the whole register file live (`0x02400000` reads `0x40`); the
+     first draft released only the IFE subset. The "full sweep hangs the SoC"
+     came from *pulsing* lines while others were still held; deassert-all →
+     AXI quiesce → per-bit pulse is clean. The rst1 pulse under the `0x0440306C`
+     hold is skipped on purpose: that is the MM/VPP domain, unclocked on an open
+     boot — merely reading it hangs the bus. Clocks were never the wall
+     (`0x02210000` PLLs never change; `0x02240000`/`0x02250000` are timers).
+   - **Datapath writes then need the ISP-top module gate:** status `0x02400150`
+     (all-ones at reset), SET `0x154` / CLR `0x158`. The vendor-golden clear
+     `0x8007` (status → `0xffff7ff8`) is what makes SIF/IFE/WDMA config writes
+     stick. This is the spec's "MODE10 bypass mask" pair; its base is the ISP
+     top, not `+0x14000`.
+   - **Driver programming is now table-driven** from our own vendor-streaming
+     register image (`pkgs/open-vin-capture/ovc_golden_4k.h`, geometry words
+     recomputed); the draft's hand-derived SIF matcher / WDMA format
+     programming did not match. SIF arm uses the golden ID word `0x00010001`.
+   - **M1 receiver made spec-exact** (`specs/spec-dphy-writes.md`, a describer
+     pass over the vendor RX module): lane-swap map `{d0,d1,d2,d3,c0,c1} =
+     {0,1,3,4,2,5}` (clock on physical lane 2), the `0xd4/0xd0` mode pair
+     (`0xfff`/`0x820`), csi_ctrl_sel mode 4, one global-init pass, the
+     common_glb power triples (`power_ready` CLR is `0x1fc`; the draft's clear
+     hit the SET strobe), deskew status at isp_sys_glb `+0xc4`. Every readable
+     D-PHY mirror and the common_glb status bits now equal the vendor state.
+   - **Where it stands:** with the two open drivers alone the SIF frame counter
+     runs at source rate and the IFE frame counter follows it, group-1/5
+     interrupt words equal the vendor's, but the IFE core never processes a
+     frame (`0x02414704/0x724` stay 0, the WDMA active config `0x140d0[31:16]`
+     never loads, no frame-done, no DDR writes). Every *readable* word matches
+     the vendor, so the missing element is a write-only strobe / sequence /
+     per-frame action — a describer pass over the vendor VIN module's pipe-start
+     and ISR paths (`specs/spec-ife-start.md`) is the next input.
+   Evidence: `regdumps/` (vendor-live ISP file; front-end banks idle vs
+   streaming under `regdumps/frontend/`), the session tooling in
+   `regdumps/tools/` (`ispbring.c` step tool, `replay.c`, `v4l2cap.c`).
 5. **Backend parity (M3):** third capture backend in kvm-encoder (V4L2), wired
    to the open venc path; geometry envelope, audio, mini-display preview
    (software downscale) all at parity; swap the default, retire the closure

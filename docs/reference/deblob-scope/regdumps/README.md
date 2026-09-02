@@ -59,3 +59,25 @@ enable / power-domain (the 0xC0/0xC4 producers), now under RE in
 `../specs/spec-isp-clock-enable.md`. NOTE the 0xC0/0xC4 nonzero-vs-zero split in these
 dumps is the key signature to reproduce. Folded so far into
 `pkgs/open-vin-capture` (`ovc_clk_mux_apply`, constant codes 5/5/3).
+
+## 2026-09-01: the wall resolved (resets + ISP-top gate), front-end goldens, tools
+Everything above the "superseded" notes is history; the resolved picture is in
+`docs/deblob-capture.md` step 4. Short version: the deep-off boot holds every rst0/rst1
+line (read views `0x0250000c/0x10`); per-bit deassert-all wakes the file; the ISP-top
+gate `0x02400150` (SET `0x154`/CLR `0x158`, golden `0xffff7ff8` via CLR `0x8007`) makes
+datapath writes stick. `0x02210000` (pllc) never changes; `0x02240000`/`0x02250000` are
+timers. glibc memset/memcpy on a `/dev/mem` mapping SIGBUSes (DC ZVA on Device memory).
+
+`frontend/` — our own `/dev/mem` dumps of the CSI front end: `vendor-idle-*` (fresh
+production boot, deep-off) vs `vendor-streaming-*` (same boot, MJPEG stream running)
+for 0x02340000 (0x1000), 0x02500000 (0x800), 0x02600000 (0x4000), 0x023f0000 (0x1000);
+`m1-draft-*` = the same banks under the first-draft open receiver (before the
+spec-dphy-writes fixes); `vendor-service-stopped-*` = production with nanokvm stopped
+(ISP stays powered, only rst0 bits 10-12 held).
+
+`tools/` — `ispbring.c` (mmap step tool: status / mux / gates / per-bit deassert,
+pulse / AXI quiesce / top-gate probes; every subcommand is one SSH call so a bus hang
+identifies the step), `replay.c` (replays ranges of `regfile-vendor-live.bin` with the
+WDMA address pointed at a test buffer, polls frame-start/done, inspects DDR),
+`v4l2cap.c` (minimal V4L2 mmap capture test), `bringup.sh` (the one-shot sequence).
+Build on device with `gcc`. Never read `0x04403000` (VPP/MM domain) on an open boot.
