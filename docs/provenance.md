@@ -23,8 +23,10 @@ re-pinned or the vendor base `.axp` changes.
 Genuinely compiled from pinned sources — verified, no prebuilt artifact
 substituted: the **boot chain** (SPL/ATF/OP-TEE/U-Boot), the **kernel** + DTS +
 `lt6911_manage.ko`, the **embedded kernel initramfs** (`pkgs/initramfs.nix`),
-our **`libkvm.so`** (`pkgs/kvm-encoder/src/`), the **Go server**, the **React web
-UI**, and the **`axdl`** host flasher.
+the **whole open video stack** — `ax630c_venc_vcmd.ko` (`pkgs/vc8000-vcmd/`),
+`open_vin_csi2.ko` + `open_vin_capture.ko` (`pkgs/open-vin-{csi2,capture}/`)
+and our **`libkvm.so`** (`pkgs/kvm-encoder/src/`) — the **Go server**, the
+**React web UI**, and the **`axdl`** host flasher.
 
 The initramfs baked into the `Image` used to be the vendor SDK's prebuilt tree —
 five aarch64 blobs (`busybox` 1.37.0, `e2fsck`, `ld-linux-aarch64.so.1`,
@@ -49,8 +51,8 @@ four pinned inputs or `pkgs/kvm-encoder/src/`.
 
 | Blob | Origin | License | Why approved |
 |---|---|---|---|
-| `libax_*.so` (Axera media/NPU userspace) | **shipped** by the retained vendor rootfs at `/opt/lib` (part of the base `.axp`); `pkgs/axera-libs.nix` supplies the ABI-matched headers + link stubs at **build time only** — it stages nothing into the image | BSD-3, redistributable | Unavoidable on this SoC; the documented "link, don't rebuild" stance. **Since #25 (2026-08-31) the shipped `libkvm.so` is the openvenc build and `DT_NEEDED`s ZERO `libax_*` — 0 vendor libs on the video path** (open capture via raw ioctls + open VC8000E encode; only `-ljpeg`/`-lopus`/`-lasound` remain, all on the Ubuntu base). All **33 `/opt/lib/libax_*.so`** (~8.3 MB) are therefore dead weight and are now **PURGED from the flashed image** (`pkgs/rootfs.nix` step 5d1, enumerated + build-asserted empty; device-proven safe — the openvenc stack captures + streams with every libax removed). Sipeed's original closed **`libkvm.so.0.1.0`** (2.3 MB, `DT_NEEDED`s the full libax closure) is likewise removed. The remaining closed `/opt/lib` content — vendor `libsns_*.so` (~24 MB) + NPU `.axmodel` data (~70 MB) — is dead weight too, a later purge (#54). (OTA can't delete, so an OTA-upgraded device keeps all of this until reflash.) (`libsns_dummy.so` is no longer in this bucket — built from SDK source since 2026-08-16, `pkgs/libsns-dummy.nix`, issue #30.) |
-| `ax_*.ko` (media kernel modules; **20 shipped, 10 loaded** since #25) | shipped by the retained **vendor rootfs at `/soc/ko`** (part of the base `.axp`); `/soc/scripts/auto_load_all_drv.sh` insmods them at boot with their required params — and since issue #39 that loader is **ours** (`pkgs/rootfs/ax-load-drv.sh`), loading only the 10-module `{ax_proton}` capture closure. **The two ENCODE blobs `ax_venc.ko` + `ax_jenc.ko` are now REMOVED from the flashed image (#25):** our from-source open VC8000E VCMD driver (`ax630c_venc_vcmd.ko`) replaces them, nothing kept depends on them, and the shipped libkvm links zero vendor libs. | GPL-tagged, source unpublished | Same stance for the 10 loaded capture blobs. The other **10 unloaded `ax_*.ko`** (`ax_audio`/`avs`/`ddr_dfs`/`fb`/`ive`/`mipi_switch`/`tdp`/`vdec`/`vo` + `ax_perf_monitor`) stay on disk so restoring `auto_load_all_drv.sh.vendor` + rebooting rolls back the **capture** stack (the removed encode pair means vendor encode rollback needs a reflash). `ax_perf_monitor.ko` is loaded by neither loader — pure dead weight. (`hynitron_touch.ko` is a touchscreen driver, not `ax_*`, and has from-source in the SDK tree — separate.) Keep/drop rationale: [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39). Still NOT overlaid into `/usr/lib/modules` by us — `pkgs/ax-ko-blobs.nix` exists as a pinned reference but is deliberately not merged into the modules tree: doing so made `depmod` emit `of:` aliases that udev autoloaded parameter-less → `ax_cmm` panic → boot loop (bricked a device once; see [provenance nuance](#blobs-pending-a-decision) and the guard in `pkgs/rootfs.nix` step [4]). |
+| `libax_*.so` (Axera media/NPU userspace) | **shipped** by the retained vendor rootfs at `/opt/lib` (part of the base `.axp`); `pkgs/axera-libs.nix` supplies the ABI-matched headers + link stubs at **build time only** — it stages nothing into the image | BSD-3, redistributable | Unavoidable on this SoC; the documented "link, don't rebuild" stance. **Since #25 (2026-08-31) the shipped `libkvm.so` `DT_NEEDED`s ZERO `libax_*` — 0 vendor libs on the video path**; since #55 M3 (2026-09-02) that build is `.#kvm-encoder-v4l2` (V4L2 capture over our open drivers + open VC8000E encode; only `-ljpeg`/`-lopus`/`-lasound` remain, all on the Ubuntu base). All **33 `/opt/lib/libax_*.so`** (~8.3 MB) are therefore dead weight and are now **PURGED from the flashed image** (`pkgs/rootfs.nix` step 5d1, enumerated + build-asserted empty; device-proven safe — the open stack captures + streams with every libax removed). Sipeed's original closed **`libkvm.so.0.1.0`** (2.3 MB, `DT_NEEDED`s the full libax closure) is likewise removed. The remaining closed `/opt/lib` content — vendor `libsns_*.so` (~24 MB) + NPU `.axmodel` data (~70 MB) — is dead weight too, a later purge (#54). (OTA can't delete, so an OTA-upgraded device keeps all of this until reflash.) (`libsns_dummy.so` is no longer in this bucket — built from SDK source since 2026-08-16, `pkgs/libsns-dummy.nix`, issue #30.) |
+| `ax_*.ko` (media kernel modules; **20 shipped, 0 loaded** since #55 M3) | shipped by the retained **vendor rootfs at `/soc/ko`** (part of the base `.axp`); `/soc/scripts/auto_load_all_drv.sh` is **ours** since issue #39 (`pkgs/rootfs/ax-load-drv.sh`) and since #55 M3 (#60, 2026-09-02) it insmods **three from-source modules and zero vendor blobs**: `ax630c_venc_vcmd.ko` (open VC8000E encode), `open_vin_csi2.ko` (open MIPI CSI-2 receiver) and `open_vin_capture.ko` (open VIN capture → V4L2). **The two ENCODE blobs `ax_venc.ko` + `ax_jenc.ko` are REMOVED from the flashed image (#25)**; the whole vendor capture closure — `ax_proton`/`ax_mipi_rx`/`ax_sys`/`ax_cmm`/`ax_pool`/`ax_base`/`ax_npu`/`ax_ivps`/`ax_vpp`/`ax_gdc` — is still on disk but is **never loaded**. | GPL-tagged, source unpublished | Approved this cycle **as rollback material only**: the 20 remaining `ax_*.ko` stay on disk so `cp auto_load_all_drv.sh.openvenc auto_load_all_drv.sh` (the previous 10-blob capture closure + open venc, paired with a `.#kvm-encoder-openvenc` libkvm) or `.vendor` (the pristine 22-blob script) + reboot restores the vendor capture stack. Restoring vendor **encode** needs a reflash — that pair is gone. Removing the capture blobs from the image entirely is **issue #54**. (`hynitron_touch.ko` is a touchscreen driver, not `ax_*`, and has from-source in the SDK tree — separate.) Keep/drop rationale: [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39). Still NOT overlaid into `/usr/lib/modules` by us — `pkgs/ax-ko-blobs.nix` exists as a pinned reference but is deliberately not merged into the modules tree: doing so made `depmod` emit `of:` aliases that udev autoloaded parameter-less → `ax_cmm` panic → boot loop (bricked a device once; see [provenance nuance](#blobs-pending-a-decision) and the guard in `pkgs/rootfs.nix` step [4]). |
 | Vendor `.axp` overlay base (whole Ubuntu-arm64 rootfs + kept vendor boot members) | `pkgs/base-axp.nix`, sha256-pinned v1.0.15 | mixed (GPL/misc) | v1 low-risk base; a pure-nix rootfs is the long-term goal — feasibility + scaffold in [nixos-rootfs.md](nixos-rootfs.md) (`.#nixos-rootfs` builds, not yet booted). Its retained *contents* are inventoried below. |
 
 ### Build-time only (do not ship, but shape outputs)
@@ -86,23 +88,22 @@ retained base rootfs. Listed here until explicitly approved or removed.
 ### Shipped but never loaded — `/opt/lib` dead weight
 
 The retained vendor rootfs shipped **50** `.so` files in `/opt/lib`. **Since #25
-(2026-08-31) our runtime needs ZERO of them** — the shipped `libkvm.so` is the
-openvenc build (open capture over raw ioctls + open VC8000E encode) and
+(2026-08-31) our runtime needs ZERO of them** — the shipped `libkvm.so`
+(`.#kvm-encoder-v4l2` since #55 M3: V4L2 capture + open VC8000E encode)
 `DT_NEEDED`s no `libax_*` at all (only `libjpeg`/`libopus`/`libasound`, all on
 the Ubuntu base). So **all 33 `libax_*.so` are now PURGED from the flashed
 image** (`pkgs/rootfs.nix` step 5d1), together with Sipeed's leftover closed
 `libkvm.so.0.1.0`. What remains in `/opt/lib` is the vendor `libsns_*.so`
 (~24 MB) — also unreferenced now (our `libsns_dummy.so` is dlopen'd only on the
 unshipped closed-capture path) — a later purge (#54). Device-proven safe: with
-every `/opt/lib/libax_*.so` moved aside the openvenc stack still captures +
+every `/opt/lib/libax_*.so` moved aside the open stack still captures +
 streams (0 libax maps). Historical note (pre-#25): the vendor-MPI `libkvm`
 `DT_NEEDED`ed 7 of them (`libax_venc/sys/proton/mipi/ivps` + transitive
 `libax_engine` → `libax_interpreter`).
 
-Deleting the 42 is a real blob reduction with no expected functional change,
-but it wants one device confirmation (`lsof` / `/proc/<server>/maps` while
-streaming) before it ships — its own ticket. `libax_syslog.so` left this bucket
-by deletion, below.
+The `libsns_*.so` remainder is the same shape of dead weight — no functional
+change expected from deleting it — and goes out with the unloaded `ax_*.ko` in
+#54. `libax_syslog.so` left this bucket by deletion, below.
 
 ### Closed binaries — REMOVED from the image
 
@@ -163,11 +164,12 @@ source that cannot reach the headline mode still locks.
 The `kvm_ui` `srcs/*` bitmaps and the inert
 `/kvmapp/cua` Python are harmless non-binaries, left in place.
 
-> **Provenance nuance:** on a running device the `ax_*.ko` and `/opt/lib/libax_*.so`
-> that execute are the **vendor base-rootfs copies retained wholesale**, not the
-> `ax-ko-blobs`/`axera-libs` derivations (those feed the build/link step). The
-> content is the same SDK snapshot, and the base `.axp` is sha256-pinned, so it is
-> still reproducible — but the running media stack is vendor-origin, not our pin.
+> **Provenance nuance:** nothing vendor-origin executes on the media path any
+> more — the `libax_*.so` are purged and no `ax_*.ko` is loaded. The copies that
+> remain on disk for rollback are the **vendor base-rootfs copies retained
+> wholesale**, not the `ax-ko-blobs`/`axera-libs` derivations (those feed the
+> build/link step). Same SDK snapshot, and the base `.axp` is sha256-pinned, so
+> a rollback is still reproducible.
 
 ---
 

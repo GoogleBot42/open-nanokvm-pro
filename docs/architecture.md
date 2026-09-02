@@ -104,25 +104,32 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    emit `of:` aliases that udev coldplug autoloads parameter-less at boot;
    `ax_cmm` without its `cmm=` parameter panics and the device boot-loops
    (this bricked a unit on the first OTA). They stay in the vendor rootfs at
-   `/soc/ko`, where `/soc/scripts/auto_load_all_drv.sh` insmods them by path
-   with the required parameters. That loader is **ours** since issue #39
-   (`pkgs/rootfs/ax-load-drv.sh`): it loads **10** of the vendor's 22 blobs —
-   the dependency closure of `{ax_proton}` — plus our from-source open VC8000E
-   VCMD encode driver (`/soc/ko/ax630c_venc_vcmd.ko`) **in place of** vendor
-   `ax_venc`/`ax_jenc`, so the encode path is blob-free too (#25 default,
-   2026-08-31). It also **splits the DMA pool** (#53): one `compute_mem_map`
-   derives the whole map from the board's pool geometry and hands `ax_cmm`
-   (`cmmpool=`), the open encoder (`framebuf_base/size`, `coherent_base/size`)
-   and the open capture driver (via `/run/openkvm-memmap.env`) non-overlapping
-   slices, printing the map at boot — layout table and derivation rule in
+   `/soc/ko`, reachable only by `/soc/scripts/auto_load_all_drv.sh`, which
+   insmods by path with the required parameters. That loader is **ours** since issue #39
+   (`pkgs/rootfs/ax-load-drv.sh`), and since #55 M3 (#60, 2026-09-02) it loads
+   **three from-source modules and zero vendor blobs**:
+   `ax630c_venc_vcmd.ko` (open VC8000E encode, #25), `open_vin_csi2.ko` (open
+   MIPI CSI-2 / D-PHY receiver, #57) and `open_vin_capture.ko` (open VIN/IFE
+   bypass capture → V4L2 `/dev/video0`, #59). The vendor `ax_sys`/`ax_cmm`/
+   `ax_pool`/`ax_base` base stack and the 10-module `ax_proton` capture closure
+   are no longer loaded at all — device-proven from a cold boot. It also
+   **splits the DMA pool** (#53): one `compute_mem_map` derives the whole map
+   from the board's pool geometry and hands the open encoder
+   (`framebuf_base/size`, `coherent_base/size`), the open capture driver
+   (`carveout_base/size`) and — for the rollback loader — `ax_cmm`
+   (`cmmpool=`) non-overlapping slices, printing the map at boot and exporting
+   it to `/run/openkvm-memmap.env`; layout table and derivation rule in
    [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53).
    The two vendor encode blobs
-   (`ax_venc.ko`, `ax_jenc.ko`) are **removed from the flashed image** — the
-   open VCMD driver replaces them and nothing kept depends on them. The
-   pristine vendor script still ships as `auto_load_all_drv.sh.vendor`; a
-   `cp` + reboot rolls back to the vendor **capture** stack (it has no
-   `set -e`, so it skips the now-absent encode pair — restoring vendor encode
-   needs a reflash). Keep/drop rationale:
+   (`ax_venc.ko`, `ax_jenc.ko`) are **removed from the flashed image**; the
+   vendor capture blobs still ship, unloaded, purely as rollback material
+   (their eviction is #54). Two rollback loaders ship beside ours:
+   `auto_load_all_drv.sh.openvenc` (the previous curated set — 10 vendor
+   capture blobs + open venc; needs a matching `.#kvm-encoder-openvenc`
+   libkvm) and `auto_load_all_drv.sh.vendor` (the pristine 22-blob vendor
+   script). Rolling back is `cp <name>.<variant> <name>` + reboot; restoring
+   vendor *encode* needs a reflash, since that pair is gone. Keep/drop
+   rationale:
    [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39).
 3. **Service selection** (see below): disable `kvmcomm.service`, enable
    `nanokvm.service` in `multi-user.target.wants`.
@@ -143,39 +150,50 @@ correct before re-sparsing the image.
 `pkgs/kvm-encoder.nix` cross-builds **`libkvm.so`**, our open reimplementation of
 Sipeed's withheld glue. It implements the `kvm_vision.h` ABI that the Go server
 links against (`kvmv_init` / `kvmv_read_img` / `kvmv_read_audio` / `kvmv_set_fps` /
-`kvmv_hdmi_control` / …) and drives the **documented Axera MPI** path end-to-end:
+`kvmv_hdmi_control` / …) and drives an entirely **from-source** path end-to-end:
 
 ```
 LT6911UXC HDMI→CSI-2
-  └─► MIPI_RX  (DPHY 4-lane, 600 Mbps, LaneCombo MODE_0, RAW/RAW16, BGGR)
-        └─► VIN dev
-              └─► VIN pipe  (ISP_BYPASS_MODE — dummy sensor via libsns_dummy.so)
-                    └─► VIN chn  (YUV420 SP)
-                          └─► AX_VENC  (H.264 chn7 / MJPEG chn6)   → web stream
-        └─► ALSA capture (LT6911 audio card) ─► Opus encode         → web audio
+  └─► open_vin_csi2.ko    (D-PHY 4-lane, 600 Mbps, CSI-2 receiver)
+        └─► open_vin_capture.ko  (VIN/IFE, ISP bypassed)
+              └─► V4L2 /dev/video0  (YUYV, mmap + EXPBUF dma-buf)
+                    └─► ax630c_venc_vcmd.ko  (open VC8000E, dma-buf zero-copy)
+                          ├─► H.264 register program              → web stream
+                          └─► from-source software JPEG (MJPEG)   → web stream
+        └─► ALSA capture (LT6911 audio card) ─► Opus encode       → web audio
 ```
 
 The host HDMI is captured as already-formed YUV (the LT6911 bridge does the
 conversion), so the ISP is **bypassed** — no ISP/3A algorithm blobs are needed on
 the KVM path.
 
-The diagram above is the *conceptual* pipeline; the vendor `AX_VENC` box is
-historical. **The shipped `libkvm` is the openvenc build** (`.#kvm-encoder-openvenc`,
-`openCapture` + `openVenc`): capture drives the VIN/MIPI char devices over **raw
-ioctls** (`kvm_capture_open.c` — no `libax_sys`/`proton`/`mipi`/`ivps`), and
-encode is our **from-source open VC8000E** path (`kvm_venc_open.c` over
-`ax630c_venc_vcmd.ko`; H.264 register program + software MJPEG). It links
-**zero** `libax_*` — only `-ljpeg -lopus -lasound`. The older vendor-MPI build
-(`.#kvm-encoder`, which *did* link `-lax_venc -lax_sys -lax_proton -lax_mipi
--lax_ivps` and drove `AX_VENC`) still exists as a reference/fallback but is no
-longer shipped (#25, 2026-08-31). Capture still relies on the vendor **kernel**
-modules (`ax_proton`/`ax_mipi_rx`/`ax_vin`/`ax_ivps`/…) being loaded — those
-remain pinned; the encode modules `ax_venc`/`ax_jenc` are removed.
+**The shipped `libkvm` is the V4L2 build** (`.#kvm-encoder-v4l2`, flags
+`openCapture` + `openVenc` + `v4l2Capture`; source `kvm_capture_v4l2.c`), the
+default since #55 M3 (2026-09-02). Capture is plain V4L2 — `S_FMT` YUYV →
+`REQBUFS` mmap → `EXPBUF` → `STREAMON` → `poll`/`DQBUF`. Each buffer's dma-buf
+is imported **once** through the open VCMD driver's `HANTRO_IOCH_IMPORT_DMABUF`
+ioctl (nr 38; `RELEASE` is 39), which resolves it to the bus address the
+encoder register program consumes, so frames reach the encoder **zero-copy**;
+the same mmap is the CPU view for the soft-JPEG MJPEG path and the mini-display
+preview. Encode is our from-source open VC8000E path (`kvm_venc_open.c` over
+`ax630c_venc_vcmd.ko`: H.264 register program + software MJPEG). The library
+links **zero** `libax_*` — only `-ljpeg -lopus -lasound` — and nothing in the
+path touches a vendor kernel module. The source format is `V4L2_PIX_FMT_YUYV`,
+byte-identical to what the vendor pool used to hand back; the geometry envelope
+is 64×64…3840×2160 (even dimensions), 30 fps sustained at both 4K and 1080p.
+
+Earlier backends stay buildable as alternatives:
+`.#kvm-encoder-openvenc` (raw-ioctl replay against the vendor `ax_proton`
+capture closure — the shipped default from #25 until 2026-09-02, and the
+partner of the `.openvenc` rollback loader) and `.#kvm-encoder` (the original
+vendor-MPI build, which *did* link `-lax_venc -lax_sys -lax_proton -lax_mipi
+-lax_ivps` and drove `AX_VENC`).
 
 ### Capture lifecycle & idle power-down
 
 The pipeline is **lazy**: nothing is initialized until the first
-`kvmv_read_img` call, which brings up SYS/pool → MIPI_RX → VIN → VENC at the
+`kvmv_read_img` call, which opens `/dev/video0`, sets the format, starts
+streaming and brings the encoder up at the
 *live* source geometry read from `/proc/lt6911_info` (`init_pipeline_locked`
 in `libkvm.c`). Every streamer loop in the Go server (WebRTC, MJPEG, direct
 H.264) exits as soon as its client count reaches zero, so frames are only ever
@@ -188,10 +206,10 @@ a watcher that, after **`videoIdleTimeout` seconds without any read** (config
 key in `/etc/kvm/server.yaml`; `0`/unset = **300 s**, negative = disabled),
 calls our libkvm extension `kvmv_video_suspend()`:
 
-- **Torn down:** VENC channel + `AX_VENC_Deinit`, `AX_ISP`/`AX_VIN` stop &
-  destroy, `AX_MIPI_RX_Stop`/`DeInit`, `AX_POOL_Exit` (releases the ~16 MB CMM
-  video pool), `AX_SYS_Deinit`, plus the ALSA/Opus HDMI-audio capture. This is
-  the exact `kvmv_deinit` teardown sequence, re-used.
+- **Torn down:** the encoder instance and its frame buffers, then `STREAMOFF` +
+  dma-buf release + `close()` on `/dev/video0` (which frees the capture
+  carveout buffers), plus the ALSA/Opus HDMI-audio capture. This is the exact
+  `kvmv_deinit` teardown sequence, re-used.
 - **Deliberately kept powered:** the **LT6911UXC HDMI receiver**. Its only
   power control (`/proc/lt6911_info/power` → `lt6911_pwr_ctrl()` → the chip's
   PWR GPIO in `drivers/misc/lt6911_manage.c` — this is also what the legacy
@@ -219,8 +237,10 @@ No-signal behavior is unchanged: HDMI-unplugged with a viewer attached keeps
 the pipeline up (reads continue, frames time out), and with no viewer the
 ordinary idle timer suspends anyway.
 
-**Load-bearing linker detail:** `libkvm` needs `DT_RPATH` (transitive), **not**
-`DT_RUNPATH`. It `DT_NEEDED`s `libax_proton`, which in turn needs `libax_engine`.
+**Load-bearing linker detail** (moot for the shipped V4L2 build, which links no
+vendor library at all — but it bites the instant a `libax_*`-linking variant is
+deployed, so it stays recorded): such a `libkvm` needs `DT_RPATH` (transitive),
+**not** `DT_RUNPATH`. It `DT_NEEDED`s `libax_proton`, which in turn needs `libax_engine`.
 `DT_RUNPATH` is searched only for a library's *own* direct deps, so the transitive
 `libax_engine` would fail to resolve under systemd (which has neither `/opt/lib`
 on `LD_LIBRARY_PATH` nor in `ld.so.cache`) — the server would crash-loop with
@@ -324,27 +344,27 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
 
 The project's stance has shifted with progress: the original v1 goal was to
 **link** Axera's redistributable blobs rather than chase a blob-free build. As
-of #25 (2026-08-31) the **entire video path is blob-free** and the standing
-direction is now a **zero-vendor-blob device, ISP included** (Jeremy,
-2026-08-30). What's pinned has shrunk accordingly:
+of #55 M3 (2026-09-02) the **entire video stack is blob-free down to the kernel
+drivers** and the standing direction is a **zero-vendor-blob device, ISP
+included** (Jeremy, 2026-08-30). What's pinned has shrunk accordingly:
 
 - **From source:** boot chain, kernel + DTS, `lt6911_manage.ko`, the **open
-  VC8000E encode driver** (`ax630c_venc_vcmd.ko`), our `libkvm` (open capture +
+  VC8000E encode driver** (`ax630c_venc_vcmd.ko`), the **open capture drivers**
+  (`open_vin_csi2.ko` + `open_vin_capture.ko`), our `libkvm` (V4L2 capture +
   open encode, **zero `libax_*` linked**), `libsns_dummy.so`, the Go server, the
   React web UI.
 - **No longer needed / removed:**
   - `ax_venc.ko` + `ax_jenc.ko` — the vendor **encode** kernel modules,
     **removed from the flashed image**; the open VCMD driver replaces them.
-  - `libax_*.so` — the Axera userspace media libs are **still shipped at
-    `/opt/lib` by the base rootfs but no longer linked or `dlopen`ed by anything
-    we ship** (the openvenc `libkvm` needs none). Dead weight; a follow-up purge.
-- **Still pinned (capture-side, on this SoC for now):**
+  - `libax_*.so` — the Axera userspace media libs are **purged from the flashed
+    image** (`pkgs/rootfs.nix` step 5d1); nothing we ship links or `dlopen`s them.
+- **Shipped but never loaded (rollback material, eviction is #54):**
   - the **capture** `ax_*.ko` kernel modules (`ax_proton`/`ax_mipi_rx`/`ax_vin`/
-    `ax_ivps`/`ax_sys`/`ax_cmm`/…) — GPL-tagged, source not published; our open
-    capture drives them over raw ioctls. They `insmod` into our from-source
-    kernel, so `vermagic` (defconfig + GCC) must match — see
-    [building.md](building.md#ax_ko-vermagic). Replacing the ISP/VIN stack from
-    source is the remaining blob-free frontier.
+    `ax_ivps`/`ax_sys`/`ax_cmm`/…) — GPL-tagged, source not published. Our open
+    drivers replace them outright; they stay on disk only so the `.openvenc` /
+    `.vendor` rollback loaders work. While they are still on the image the
+    `vermagic` constraint (defconfig + GCC) applies to them — see
+    [building.md](building.md#ax_ko-vermagic).
 - **Pinned base:** the vendor Ubuntu 22.04 arm64 rootfs (v1 decision — matches the
   on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
   long-term north star; the feasibility study, the systemd-vs-4.19 version wall

@@ -201,6 +201,10 @@ dependency mapping):
 
 ## Module curation (issue #39 → #25)
 
+> **Superseded 2026-09-02 (#55 M3 / #60):** the shipped loader now insmods three
+> from-source modules and **no vendor blob at all**. Everything below describes
+> the `.openvenc` rollback loader and the history that produced it.
+
 The vendor `/soc/scripts/auto_load_all_drv.sh` insmods all 22 `/soc/ko` blobs at
 boot. We replace it with a curated loader (`pkgs/rootfs/ax-load-drv.sh`, shipped
 by both `pkgs/rootfs.nix` step `[5b7]` and the OTA payload).
@@ -3223,3 +3227,16 @@ then 4K uses the vendor encoder (open capture + closed encode), or downscale.
 cleanly end-to-end through the fully parametric open path — the hardware test
 the issue was blocked on. Tooling: `docs/reference/vcenc-open/geom-probe/`
 (the ioctl tracer + cap driver reused here).
+
+---
+
+### 2026-09-02 — the vendor capture closure is RETIRED (#55 M3 / #60)
+
+Everything above is history now: the shipped stack loads **three from-source
+kernel modules and zero vendor blobs** (`ax630c_venc_vcmd.ko`,
+`open_vin_csi2.ko`, `open_vin_capture.ko`), and libkvm captures over plain
+**V4L2** (`.#kvm-encoder-v4l2`) with dma-buf zero-copy into the open encoder.
+No `ax_proton`/`ax_mipi_rx`/`ax_sys`/`ax_cmm` — the raw-ioctl replay path this
+document spent months mapping ships only as the `.openvenc` rollback loader.
+The M1–M3 record and what remains open live in
+[deblob-capture.md](deblob-capture.md).

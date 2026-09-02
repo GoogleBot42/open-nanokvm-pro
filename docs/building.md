@@ -40,8 +40,12 @@ All are `nix build .#<name>`. State reflects the current tree.
 | Package | Output | Notes |
 |---|---|---|
 | `axera-libs` | `libax_*.so` + V3.0.0 headers | pinned blob install (msp repo) |
-| `ax-ko-blobs` | prebuilt `ax_*.ko` | pinned blob install |
-| `kvm-encoder` | `libkvm.so` / `.so.0` | our from-source capture+encode backend |
+| `ax-ko-blobs` | prebuilt `ax_*.ko` | pinned blob install; shipped **unloaded** as rollback material only (#54) |
+| `kvm-encoder` | `libkvm.so` / `.so.0` | the original vendor-MPI backend (links `libax_*`); reference/fallback only |
+| **`kvm-encoder-v4l2`** | `libkvm.so` / `.so.0` | **the shipped backend** — V4L2 capture + open VC8000E encode, zero `libax_*`. `kvm-encoder-open`/`-openvenc` are the earlier open variants (raw-ioctl capture against the vendor closure) |
+| `vc8000-vcmd` | `ax630c_venc_vcmd.ko` | our open VC8000E VCMD encode driver (replaces `ax_venc`/`ax_jenc`) |
+| `open-vin-csi2` | `open_vin_csi2.ko` | our open MIPI CSI-2 / D-PHY receiver |
+| `open-vin-capture` | `open_vin_capture.ko` | our open VIN/IFE bypass capture driver → V4L2 `/dev/video0` |
 | `nanokvm-web` | React `dist/` bundle | pnpm-hash pinned |
 | `nanokvm-server` | `NanoKVM-Server` (aarch64) | Go+cgo, links libkvm+libopus; vendorHash pinned |
 | `kernel` | `Image` + `dtbs` + modules + `lt6911_manage.ko` | Linux 4.19.125 |
@@ -63,12 +67,17 @@ All are `nix build .#<name>`. State reflects the current tree.
 ## Build DAG
 
 ```
-axera-libs ─┬─> kvm-encoder ──> nanokvm-server ─┐
-            │                                    ├─> rootfs ──> firmware-image
-ax-ko-blobs ┼──────────────────────> kernel ─────┤              ▲
-            │                    nanokvm-web ─────┘              │
-boot ───────┴──> {kernel,dtb}-slot-image ──────────────────────┘
+axera-libs ──> kvm-encoder-v4l2 ──> nanokvm-server ─┐
+nanokvm-web ────────────────────────────────────────┤
+kernel ─┬───────────────────────────────────────────┤
+        ├──> vc8000-vcmd ───────────────────────────┼─> rootfs ──> firmware-image
+        ├──> open-vin-csi2 ─────────────────────────┤                 ▲
+        └──> open-vin-capture ──────────────────────┘                 │
+boot ──────> {kernel,dtb}-slot-image ─────────────────────────────────┘
 ```
+
+(`ax-ko-blobs` is a pinned reference for the vendor `ax_*.ko`; nothing in the
+image path builds from it.)
 
 `nix flake check` evaluates the whole tree without building the heavy leaves.
 
@@ -113,13 +122,14 @@ The `base-axp` FOD hash changes only if you re-pin a different vendor release
   it with a native `pkgs.go_*` breaks cgo (native go passes `-m64` to the aarch64
   gcc). `GOEXPERIMENT=boringcrypto` is kept for parity with upstream `build.sh`.
 - **cgo link:** the server links our real `libkvm.so` (`-L../dl_lib -lkvm`) and
-  `libopus`. `libkvm` pulls in the full AX graph, so the build adds
-  `-Wl,-rpath-link,${axera-libs}/lib` so `ld` can *resolve* the transitive
-  `libax_engine` (via `libax_proton`) at link time **without** adding it as
-  `DT_NEEDED` to the server binary. On-device those libs load from `/opt/lib`.
+  `libopus`. The shipped `kvm-encoder-v4l2` pulls in no AX graph at all; the
+  build keeps `-Wl,-rpath-link,${axera-libs}/lib` so `ld` can still *resolve*
+  the transitive `libax_engine` (via `libax_proton`) for the vendor-linked
+  `kvm-encoder` variant **without** adding it as `DT_NEEDED` to the server binary.
 - **libkvm rpath:** `kvm-encoder.nix` uses `patchelf --force-rpath` to emit
-  `DT_RPATH` (transitive), not `DT_RUNPATH`. This is load-bearing — see
-  [architecture.md](architecture.md#the-videoaudio-pipeline-our-libkvm).
+  `DT_RPATH` (transitive), not `DT_RUNPATH`. Moot for the shipped build (zero
+  vendor libs), load-bearing the moment a `libax_*`-linking variant is deployed —
+  see [architecture.md](architecture.md#the-videoaudio-pipeline-our-libkvm).
 - **Vendor triples:** the SDK Makefiles expect `aarch64-none-linux-gnu-`; nixpkgs
   is `aarch64-unknown-linux-gnu-`. `CROSS_COMPILE` is passed explicitly.
 
@@ -127,19 +137,24 @@ The `base-axp` FOD hash changes only if you re-pin a different vendor release
 
 ## `ax_*.ko` vermagic
 
-The prebuilt Axera media modules must `insmod` into our **from-source** kernel, so
-the kernel's `vermagic` (kernel version + key `CONFIG_*` + compiler) has to line up
-with what the blobs were built against. `kernel.nix` builds against the vendor
-`axera_AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig` for this reason;
+Our loader stopped insmod'ing the prebuilt Axera media modules entirely in
+#55 M3 (2026-09-02) — three from-source video modules replace the whole set — so
+nothing enforces `vermagic` on a default boot any more. It still binds the
+**rollback** loaders
+(`auto_load_all_drv.sh.openvenc` / `.vendor`), which do insmod the vendor blobs
+into our from-source kernel: the kernel's `vermagic` (kernel version + key
+`CONFIG_*` + compiler) has to line up with what those blobs were built against,
+which is why `kernel.nix` builds against the vendor
+`axera_AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig`. And vermagic match is
+not ABI safety — a config flag that adds `#ifdef` fields to a struct the blobs
+touch still kills the boot; see [vcmd-cma-unblock.md](vcmd-cma-unblock.md).
+
 The blobs are **not** installed under `/lib/modules/4.19.125/` — `rootfs.nix`
 stages only the from-source modules there and hard-fails if any `ax_*.ko`
 sneak in (a merged tree gives them `of:` modaliases, udev autoloads `ax_cmm`
-parameter-less, and the device panic-loops; this bricked a unit once). They
-load instead from the vendor rootfs at `/soc/ko` via
-`/soc/scripts/auto_load_all_drv.sh`, which passes the required parameters. Since
-issue #39 that loader is ours (`pkgs/rootfs/ax-load-drv.sh`, 12 of 22 modules) —
-the vermagic constraint is unchanged, it just applies to a shorter list. The
-vermagic match still matters because that insmod targets our kernel.
+parameter-less, and the device panic-loops; this bricked a unit once). They sit
+in the vendor rootfs at `/soc/ko`, where only a rollback loader reaches them,
+by path and with the required parameters.
 
 ---
 

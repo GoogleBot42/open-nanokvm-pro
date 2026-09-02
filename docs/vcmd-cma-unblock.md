@@ -108,9 +108,12 @@ Four consumers DMA out of the same CMM pool, and until #53 three of them
 overlapped: the vendor CMM allocator `ax_cmm`, the open encoder's frame-buffer
 carveout (`framebuf_alloc.c`), the open capture driver's buffer carveout
 (`open_vin_capture.c`), and the open encoder's coherent VCMD cmdbuf pool
-(`ax630c_vcmd_glue.c`). The curated loader
-(`pkgs/rootfs/ax-load-drv.sh`, `compute_mem_map`) now computes one map at boot
-and hands every consumer its slice as a module parameter.
+(`ax630c_vcmd_glue.c`). Our loader
+(`pkgs/rootfs/ax-load-drv.sh`, `compute_mem_map`) computes one map at boot
+and hands every consumer its slice as a module parameter. Since #55 M3
+(2026-09-02) `ax_cmm` is not loaded at all, so its slice is simply unclaimed on
+a default boot; the map still reserves it, which is what keeps the `.openvenc`
+rollback loader safe.
 
 **Derivation rule.** The pool `[pool_base, pool_top)` is what the vendor
 `get_cmm_size` math already yields from the board id and the kernel `mem=`
@@ -137,11 +140,11 @@ exactly on the addresses the drivers used to hard-code.
   its ceiling is the whole mechanism.
 - **56 MB capture** — three 4K YUYV frames (3840×2160×2 ≈ 15.9 MB each).
 - **64 MB frame buffers** — the real 1080p encode floorplan is ~43 MB. 4K
-  blob-free *encode* needs more than this and is **#52**; it will have to take
-  the space from `ax_cmm`, which is only affordable if the vendor capture path
-  is gone (epic #55) or the source is 1080p.
-- **72 MB for `ax_cmm`** — the vendor capture path uses ~16.5 MB at 1080p and
-  ~66 MB at 4K, so 72 MB keeps 4K capture working with the full split in place.
+  blob-free *encode* needs more than this and is **#52**; the space is now
+  there for the taking, since epic #55 retired the vendor capture path and left
+  `ax_cmm`'s 72 MB unclaimed on a default boot.
+- **72 MB for `ax_cmm`** — sized for the vendor capture path (~16.5 MB at
+  1080p, ~66 MB at 4K) so a `.openvenc` rollback still captures at 4K.
 
 **Safety valve.** If a board / `mem=` combination would leave `ax_cmm` below
 72 MB (`MAP_CMM_MIN_MB`), the loader prints a five-line `*** WARNING (#53)`
@@ -153,13 +156,15 @@ allocates bottom-up). A degraded-but-known state beats a silently broken pool.
 **What the loader passes.**
 
 ```
-insmod ax_cmm.ko cmmpool=anonymous,0,<pool_base>,<remainder>M
 insmod ax630c_venc_vcmd.ko coherent_base=… coherent_size=… \
                            framebuf_base=… framebuf_size=…
+insmod open_vin_capture.ko carveout_base=… carveout_size=…
 ```
 
-The open capture driver is still insmod'd by hand during bring-up, so the
-loader also writes `/run/openkvm-memmap.env`:
+The `.openvenc` rollback loader additionally passes
+`cmmpool=anonymous,0,<pool_base>,<remainder>M` to `ax_cmm` (never load it
+without that parameter — it panics). For consumers insmod'd by hand during
+bring-up the loader also writes `/run/openkvm-memmap.env`:
 
 ```
 . /run/openkvm-memmap.env

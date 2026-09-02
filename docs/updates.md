@@ -171,7 +171,7 @@ web UI           ─► reconnects after the restart / reboot
 |---|---|
 | app server, web UI, `libkvm.so{,.0}` | SPL (p1), ddrinit (p2) |
 | `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d; `ax_*.ko` stay in `/soc/ko`) | env (p7), logo (p10/11) |
-| `/soc/scripts/auto_load_all_drv.sh` — our curated `/soc/ko` loader (10 vendor blobs + `ax630c_venc_vcmd.ko` in place of `ax_venc`/`ax_jenc`, #25) + the `.vendor` rollback copy, **and** `/soc/ko/ax630c_venc_vcmd.ko` itself; takes effect on the **next reboot** — the installer forces one when the loader changed | the *vendor* `/soc/ko` blobs (`ax_*.ko`) |
+| `/soc/scripts/auto_load_all_drv.sh` — our `/soc/ko` loader (three from-source modules, zero vendor blobs, #55 M3) + the `.openvenc` and `.vendor` rollback copies, **and** the three modules themselves (`ax630c_venc_vcmd.ko`, `open_vin_csi2.ko`, `open_vin_capture.ko`); takes effect on the **next reboot** — the installer forces one when the loader changed | the *vendor* `/soc/ko` blobs (`ax_*.ko`) |
 | kernel (p14/p15), dtb (p12/p13) | base Ubuntu rootfs (p17) |
 | U-Boot (p5/p6), ATF (p3/p4), OP-TEE (p8/p9) | repartitioning / GPT layout |
 

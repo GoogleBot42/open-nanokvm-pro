@@ -109,11 +109,12 @@ test](#validation-ladder) exists to close before anything is flashed.
 
 "Just run a newer kernel" is the obvious escape and it is closed:
 
-- The prebuilt Axera media modules (`ax_venc`, `ax_proton`, `ax_mipi_rx`,
-  `ax_cmm`, …) load only into a kernel whose `vermagic` matches
-  `4.19.125 SMP preempt mod_unload aarch64` — [building.md](building.md#ax_ko-vermagic).
-  Source for them is GPL-owed but unpublished. Without them there is no capture
-  and no encode.
+- ~~The prebuilt Axera media modules pin `vermagic`.~~ **No longer binding for
+  the video path (#55 M3, 2026-09-02):** capture and encode run on three
+  from-source modules and no `ax_*.ko` is loaded, so nothing in the shipped
+  stack demands `4.19.125 SMP preempt mod_unload aarch64`. Our own drivers are
+  written against 4.19 APIs and would need porting, and the vendor blobs are
+  still on the image as rollback — but the hard vermagic wall is gone.
 - Config changes to the *same* kernel are not free either. The vendor defconfig
   has `# CONFIG_NAMESPACES is not set` and **no cgroup controllers at all**
   (`CGROUP_SCHED`, `MEMCG`, `BLK_CGROUP`, `CGROUP_PIDS`, `CGROUP_FREEZER`,
@@ -278,8 +279,10 @@ leftover **PiKVM** accounts (`kvmd`, `kvmd-vnc`, `kvmd-janus`, …) and
   The `libax_*.so` themselves must be `autoPatchelf`'d (the scaffold does this)
   or reached through `nix-ld`. `libsns_dummy.so` is `dlopen`'d by bare name and
   needs the FHS path present.
-- **`/soc/ko` + `/soc/scripts/auto_load_all_drv.sh`.** The curated 12-module
-  loader must keep insmod-by-path-with-parameters semantics; `ax_cmm` without
+- **`/soc/ko` + `/soc/scripts/auto_load_all_drv.sh`.** The loader (three
+  from-source modules since #55 M3; the `.openvenc`/`.vendor` rollback copies
+  still insmod vendor blobs) must keep insmod-by-path-with-parameters
+  semantics; `ax_cmm` without
   `cmmpool=` is the panic that bricked a device. It is bash (`function`, `[ ==
   ]`) despite its `#!/bin/sh`, reads `/sys/bus/iio/devices/iio:device0/in_voltage0_raw`,
   `/proc/cmdline` and optionally `/boot/configs`.
@@ -602,8 +605,9 @@ Ordered by how much they block a boot-test.
    by default). On `serverPath` and `systemPackages`. Untested on hardware.
 8. **`/opt/etc`** (173 MB of Axera sensor tuning `.ini` files) is unaudited.
    The ISP is bypassed on the KVM path, so the sensor tuning data is probably
-   dead weight — but "probably" is not "verified", and `ax_proton
-   mem_iq_level=1` is in the loader. (**`/kvmcomm/edid/*`** is no longer a
+   dead weight — and since #55 M3 nothing reads it on a default boot
+   (`ax_proton mem_iq_level=1` survives only in the `.openvenc` rollback
+   loader). (**`/kvmcomm/edid/*`** is no longer a
    question: the whole set is generated from source by `pkgs/edid` — just
    install the `edid` derivation's bins under `/kvmcomm/edid` with the vendor
    filenames.)
