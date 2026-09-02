@@ -142,9 +142,11 @@ DTD. **All six** are now generated from source (`pkgs/edid/mkedid.py`,
 E-EDID 1.3 + CTA-861, no vendor bytes — every mode re-derived from
 porch/pixel-clock arithmetic; `pkgs/edid.nix` enforces `--check` PASS in the
 build) with distinct product-id + serial but the same byte 12 and the same
-filename, so `NanoKVM-Server`'s `EDIDMap` and the web UI's mode list are
-unchanged; a from-source `NanoKVM-720P60.bin` is added. No vendor EDID bytes
-remain in the image.
+filename, so `NanoKVM-Server`'s `EDIDMap` and the web UI's mode list keep
+naming them; a from-source `NanoKVM-720P60.bin` is added, and both maps gain a
+matching entry (`EDIDMap` `0x72` → `NanoKVM-720P60`, plus the dropdown's
+"1280 x 720 60Hz") so 720p60 is selectable from the UI like every other mode.
+No vendor EDID bytes remain in the image.
 
 `E54-1080P60FPS.bin` and `E18-4K30FPS.bin` are hardware-validated: written to
 the LT6911 SPI flash via `/proc/lt6911_info/edid`, served back byte-identical,

@@ -32,7 +32,16 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   # closed third-party code; see docs/provenance.md), so the vendor UI surfaces
   # would 404. Applied against the pinned source; a pin bump that drifts these
   # files fails the patch loudly rather than silently resurfacing dead panels.
-  patches = [ ./patches/web-remove-dead-extensions.patch ];
+  #
+  # Add the 720p60 EDID to the mode dropdown. Our clean-room set ships
+  # NanoKVM-720P60.bin (pkgs/edid, installed as /kvmcomm/edid/NanoKVM-720P60.bin)
+  # but upstream's defaultEdidList never listed it, so 720p was reachable only by
+  # a raw POST /api/vm/edid (#62). The matching server-side EDIDMap entry
+  # (0x72 -> "NanoKVM-720P60") is added in pkgs/nanokvm-server.nix.
+  patches = [
+    ./patches/web-remove-dead-extensions.patch
+    ./patches/web-add-720p-edid.patch
+  ];
 
   nativeBuildInputs = [
     nodejs

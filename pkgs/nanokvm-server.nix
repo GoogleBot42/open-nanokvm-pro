@@ -256,6 +256,18 @@ EOF
 			continue
 		}
 		failStreak = 0'
+
+    # 8. Expose the 720p60 EDID in the UI. Our clean-room EDID set ships
+    #    NanoKVM-720P60.bin (byte 12 = 0x72, installed as
+    #    /kvmcomm/edid/NanoKVM-720P60.bin by pkgs/rootfs.nix), but upstream's
+    #    EDIDMap has no 0x72 key, so GetEdid could not name the mode and the web
+    #    dropdown never offered it -- only a raw POST /api/vm/edid could select
+    #    it (#62). The map value is the bin's basename, which is what SwitchEdid
+    #    joins with ".bin". The web-side list entry lives in
+    #    pkgs/patches/web-add-720p-edid.patch.
+    substituteInPlace service/vm/edid.go \
+      --replace-fail '	0x3f: "E63-Ultrawide",' '	0x3f: "E63-Ultrawide",
+	0x72: "NanoKVM-720P60",'
   '';
 
   # cgo on for the kvm_vision + opus bindings.

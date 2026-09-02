@@ -310,7 +310,8 @@ pkgs.stdenvNoCC.mkDerivation {
 
     # --- clean-room EDID set over Sipeed's shipped bins (mirrors pkgs/rootfs.nix
     # [5a1b]): all six same-role vendor bins replaced in place (distinct identity
-    # per mode, byte-12 UI selector kept), NanoKVM-720P60 added. Keeps an
+    # per mode, byte-12 UI selector kept), NanoKVM-720P60 added and UI-selectable
+    # (server EDIDMap 0x72 + web dropdown entry, #62). Keeps an
     # OTA-upgraded device's /kvmcomm/edid consistent with a freshly-flashed image.
     mkdir -p "$rfs/kvmcomm/edid"
     cp ${edid}/NanoKVM-1080P60.bin  "$rfs/kvmcomm/edid/E54-1080P60FPS.bin"

@@ -178,10 +178,12 @@ pkgs.stdenvNoCC.mkDerivation {
     # so the web UI still names them. Every bin passes edid-decode --check
     # (enforced in pkgs/edid.nix). ALL SIX stock files are replaced in place
     # (filename + byte 12 preserved, so NanoKVM-Server's EDIDMap and the web
-    # UI's mode list are untouched); 720p is added. No vendor EDID bytes remain
-    # in the image. The four exotic modes (4K39/2K60/4K-16:10/ultrawide) are
-    # spec-derived and edid-decode-clean but NOT yet hardware-validated on a
-    # real source -- 1080p60 and 4K30 are.
+    # UI's mode list are untouched); 720p is added, and both the server EDIDMap
+    # (0x72) and the web dropdown gain a NanoKVM-720P60 entry so it is
+    # selectable from the UI. No vendor EDID bytes remain in the image. The
+    # four exotic modes (4K39/2K60/4K-16:10/ultrawide) are spec-derived and
+    # edid-decode-clean but NOT yet hardware-validated on a real source --
+    # 1080p60 and 4K30 are.
     if ! debugfs -R "stat /kvmcomm/edid" rootfs.ext4 >/dev/null 2>&1; then
       echo "ERROR: /kvmcomm/edid missing in vendor rootfs -- layout changed" >&2
       exit 1
@@ -801,7 +803,9 @@ pkgs.stdenvNoCC.mkDerivation {
                                                 place (filename + byte 12 kept, so
                                                 the server EDIDMap / web UI mode
                                                 list are unchanged) + NanoKVM-720P60
-                                                added. No vendor EDID bytes remain.
+                                                added and wired into both (UI-
+                                                selectable). No vendor EDID bytes
+                                                remain.
       /opt/nanokvm-display/                  <- mini-display status daemon
                                                 (pure Python + generated fonts)
       /etc/systemd/system/nanokvm-display.service (enabled)
