@@ -262,14 +262,27 @@ Three findings from the specs materially change the plan below:
      common_glb power triples (`power_ready` CLR is `0x1fc`; the draft's clear
      hit the SET strobe), deskew status at isp_sys_glb `+0xc4`. Every readable
      D-PHY mirror and the common_glb status bits now equal the vendor state.
-   - **Where it stands:** with the two open drivers alone the SIF frame counter
-     runs at source rate and the IFE frame counter follows it, group-1/5
-     interrupt words equal the vendor's, but the IFE core never processes a
-     frame (`0x02414704/0x724` stay 0, the WDMA active config `0x140d0[31:16]`
-     never loads, no frame-done, no DDR writes). Every *readable* word matches
-     the vendor, so the missing element is a write-only strobe / sequence /
-     per-frame action — a describer pass over the vendor VIN module's pipe-start
-     and ISR paths (`specs/spec-ife-start.md`) is the next input.
+   - **M2 MILESTONE REACHED (2026-09-01 late): YUYV-family frames to DDR at
+     3840x2160@30 with the two open drivers alone, zero vendor capture modules
+     loaded** (lsmod: `open_vin_capture open_vin_csi2` + the base set; no
+     `ax_proton`/`ax_mipi_rx`). 90 consecutive frames via a plain V4L2 mmap
+     client, a captured frame renders as the host desktop. The last two
+     pieces came from a describer pass over the vendor VIN module
+     (`specs/spec-ife-start.md`): the WDMA **shadow-load strobe is
+     chn*0x18+0x0c** (`0x140cc`; the older spec's `+0x18` is the control
+     word) and must be re-issued **per frame** — one strobe == exactly one
+     frame in DDR, so the driver re-arms it from the frame-done ISR (also on
+     underrun) and issues the first one *after* SIF start; plus the ISP-top
+     data-source mux enable strobe `+0x170` (mirror `+0x16c` = 0x30) and the
+     type-0 tail (go RMW under keep-mask `0xf81c`, then `0x146e0` =
+     `0xffffffff`). The packing is UYVY (byte 1 of each pair is luma).
+     Hardening from the same session: the ISR acks every pending group of
+     both interrupt banks (the shared line otherwise ends in "irq 35: nobody
+     cared"); bring-up is reload-safe (skips the reset sweeps when the file
+     is already live, and never pulses the CSI receiver's own reset lines),
+     so module order no longer matters. Open follow-ups: non-4K geometry
+     (the golden table is 4K; needs a 1080p source), the async subdev link,
+     dma-buf export, and M3 parity.
    Evidence: `regdumps/` (vendor-live ISP file; front-end banks idle vs
    streaming under `regdumps/frontend/`), the session tooling in
    `regdumps/tools/` (`ispbring.c` step tool, `replay.c`, `v4l2cap.c`).
