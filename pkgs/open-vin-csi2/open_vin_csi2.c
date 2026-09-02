@@ -123,7 +123,7 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 #define ISP_SYS_GLB_PHYS		0x02500000
 #define ISP_SYS_GLB_SIZE		0x1000
 
-#define ISP_GLB_CSIRX_STATUS		0x00	/* bits[1:0]==3: lanes locked */
+#define ISP_GLB_CSIRX_STATUS		0xc4	/* deskew status: bits[1:0]==3 locked, 2 = recovery trigger (spec-dphy-writes s5) */
 #define ISP_GLB_CSIRX_LOCK_MASK		0x3
 #define ISP_GLB_CSIRX_LOCKED		0x3
 
@@ -156,20 +156,22 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 #define ISP_GLB_CSI_CTRL_SEL_DEV0_MASK	0x3	/* dev0 field; dev1 = 0x30 */
 
 /*
- * csi_ctrl_sel values (spec sections 3 + 6b). The spec records that
- * ax_dphyrx_glb_init selects mode "4" before the analog config and mode "2"
- * after releasing the D-PHY reset, and that the register takes field values
- * 0x3/0x2 (dev0, mask 0x3) - but the arg->value mapping is not pinned.
- * TODO(bringup): read 0x02500218 live under the vendor stack (before and
- * after start) and correct these two constants (spec section 9 checklist).
+ * csi_ctrl_sel (spec-dphy-writes section 3): a masked-write pair, 0x21c =
+ * mask/write-enable, 0x218 = value; field [1:0] = controller-0 select,
+ * [5:4] = controller-1 select. For "4 lanes on one PHY" (lane_divide_mode
+ * 0, our HDMI case) the vendor selects mode 4 = {mask 3, value 0} then
+ * {mask 0x30, value 0x30}, once, at the top of the D-PHY global init. The
+ * first draft wrote {mask 3, value 3} (mode 0) and a second "running" value
+ * that does not exist on the vendor path.
  */
-#define ISP_GLB_CSI_CTRL_SEL_CFG	0x3	/* [speculative] pre-config routing */
-#define ISP_GLB_CSI_CTRL_SEL_RUN	0x2	/* [speculative] running routing */
 
 /*
  * ---------------------------------------------------------------------------
  * D-PHY global config (phys 0x023f0000) - lane swap, HS-RX timing, PHY enable
- * Spec section 4.
+ * Spec section 4 + spec-dphy-writes sections 2-4 (instruction-level list).
+ * Every config register is a write-only SET (0xc0 + 8k) / CLR (+4) pair with
+ * a readable mirror at 0x34 + (SET - 0xc8) / 2. Vendor idiom: CLR(mask) then
+ * SET(value << shift).
  * ---------------------------------------------------------------------------
  */
 #define DPHY_GLB_PHYS			0x023f0000
@@ -177,8 +179,41 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 
 #define DPHY_LANE_CFG_SET		0xc8	/* lane swap fields, databus16, 1d2c */
 #define DPHY_LANE_CFG_CLR		0xcc
-#define DPHY_HSRX_CLK_PRE_TIME_GRP0_SET	0xd8	/* bits[31:24] */
-#define DPHY_HSRX_CLK_PRE_TIME_GRP0_CLR	0xdc
+#define DPHY_DPDN_SWAP_MASK		0x0000003f
+#define DPHY_SWAP_FIELD			0x7
+#define DPHY_C1_SWAP_SHIFT		6
+#define DPHY_C0_SWAP_SHIFT		9
+#define DPHY_D3_SWAP_SHIFT		12
+#define DPHY_D2_SWAP_SHIFT		15
+#define DPHY_D1_SWAP_SHIFT		18
+#define DPHY_D0_SWAP_SHIFT		21
+#define DPHY_DATABUS16_SEL		BIT(24)
+#define DPHY_1D2C_EN			BIT(25)
+/*
+ * Physical lane slot feeding each logical lane {d0, d1, d2, d3, c0, c1}.
+ * Board wiring for the LT6911UXC bridge on the NanoKVM-Pro: clock on
+ * physical slot 2, data on 0,1,3,4 (the "map[0,1,3,4]/clk[2,5]" this
+ * repo's kvm_pipeline.h has always documented). DEVICE-CONFIRMED
+ * 2026-09-01: the vendor streaming state reads 0x0005c540 in the +0x34
+ * mirror; the first draft's naive 0..5 map read 0x00053940 and produced a
+ * locked PHY that forwarded only short packets (no pixel data).
+ */
+static const u8 openvin_lane_swap[6] = { 0, 1, 3, 4, 2, 5 };
+static const u8 openvin_lane_swap_shift[6] = {
+	DPHY_D0_SWAP_SHIFT, DPHY_D1_SWAP_SHIFT, DPHY_D2_SWAP_SHIFT,
+	DPHY_D3_SWAP_SHIFT, DPHY_C0_SWAP_SHIFT, DPHY_C1_SWAP_SHIFT,
+};
+
+#define DPHY_MODE_SET			0xd0	/* mirror +0x38; vendor 0x820 (MIPI) */
+#define DPHY_MODE_CLR			0xd4
+#define DPHY_MODE_FIELD_MASK		0x00000fff
+#define DPHY_MODE_MIPI			0x00000820
+#define DPHY_PRE_TIME_SET		0xd8	/* mirror +0x3c: 4 x 8-bit pre-times */
+#define DPHY_PRE_TIME_CLR		0xdc
+#define DPHY_PRE_TIME_VAL		8	/* all four groups, fixed (no rate scaling) */
+#define DPHY_DESKEW_DBG_SET		0xe8	/* mirror +0x44: debug-ctrl deskew reset */
+#define DPHY_DESKEW_DBG_CLR		0xec
+#define DPHY_DESKEW_DBG_4LANE		0x3c00
 
 #define DPHY_PHY_EN			0x110	/* write-1-to-enable, per lane */
 #define DPHY_PHY_DISABLE		0x114	/* write-1-to-disable mirror */
@@ -208,6 +243,8 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 #define CGLB_CLK_EB_SET			0x28
 #define CGLB_CLK_EB_CLR			0x2c
 #define CGLB_CLK_DPHYRX_TLB_EB		BIT(9)
+#define CGLB_RST_CLR			0x5c	/* comm_sys_reset deassert (async pair 0x58 SET / 0x5c CLR) */
+#define CGLB_RST_DPHYRX_TLB		BIT(7)
 
 #define CGLB_DPHY_POWER_OFF_STATUS	0x1e8
 #define CGLB_DPHY_POWER_OFF_SET		0x1ec
@@ -356,14 +393,6 @@ static void isp_glb_field_wr(struct openvin_csi2 *priv, u32 val_off,
 	isp_glb_wr(priv, val_off, val & mask);
 }
 
-/* Route D-PHY -> controller (isp_sys_glb csi_ctrl_sel, dev0 field). */
-static void isp_glb_csi_ctrl_sel(struct openvin_csi2 *priv, u32 sel)
-{
-	isp_glb_field_wr(priv, ISP_GLB_CSI_CTRL_SEL_VAL,
-			 ISP_GLB_CSI_CTRL_SEL_MASK,
-			 ISP_GLB_CSI_CTRL_SEL_DEV0_MASK, sel);
-}
-
 static bool openvin_link_locked(struct openvin_csi2 *priv)
 {
 	return (isp_glb_rd(priv, ISP_GLB_CSIRX_STATUS) &
@@ -371,63 +400,59 @@ static bool openvin_link_locked(struct openvin_csi2 *priv)
 }
 
 /* --------------------------------------------------------------------------
- * D-PHY global init - spec section 6b (ax_dphyrx_glb_init behavioral order).
+ * D-PHY global init -- spec-dphy-writes section 3, rows 1-33, resolved for
+ * dev 0 / MIPI / 4 lanes on one PHY. Exact vendor order; every D-PHY config
+ * write is CLR(field mask) then SET(value). One pass (the vendor start path
+ * calls it once).
  */
 static void openvin_dphy_glb_init(struct openvin_csi2 *priv)
 {
-	/* Route selection before the analog config (spec section 6b). */
-	isp_glb_csi_ctrl_sel(priv, ISP_GLB_CSI_CTRL_SEL_CFG);
+	unsigned int i;
 
-	/*
-	 * Lane swap (D-PHY +0xc8 SET / +0xcc CLR, six 3-bit fields at bits
-	 * [8:6],[11:9],[14:12],[17:15],[20:18],[23:21]).
-	 *
-	 * The fixed source uses DataLaneMap [0,1,3,4] / ClkLane [2,5], which
-	 * is the silicon's default physical layout; the hardware reset value
-	 * is assumed to already encode the identity mapping, so no swap
-	 * fields are written. databus16_sel (bit24) and 1d2c_en (bit25) stay
-	 * clear: 4-lane single-clock mode.
-	 *
-	 * TODO(bringup): dump 0x023f00c8 under the vendor stack and compare
-	 * against the reset value on an open-stack boot. If the vendor
-	 * programs a non-default swap, write it here via the SET register
-	 * (identity candidate: lane N in field N).
-	 */
+	/* rows 1-4: csi_ctrl_sel(dev0, mode 4): {mask 3, val 0}, {mask 0x30, val 0x30} */
+	isp_glb_wr(priv, ISP_GLB_CSI_CTRL_SEL_MASK, 0x3);
+	isp_glb_wr(priv, ISP_GLB_CSI_CTRL_SEL_VAL, 0x0);
+	isp_glb_wr(priv, ISP_GLB_CSI_CTRL_SEL_MASK, 0x30);
+	isp_glb_wr(priv, ISP_GLB_CSI_CTRL_SEL_VAL, 0x30);
 
-	/*
-	 * Analog / PPI configuration block.
-	 *
-	 * The spec (section 6b) records the vendor writing a fixed constant
-	 * sequence - 0x3f, 0xff0000, 0x80000, 0x8000000, 0xff, 0xff00,
-	 * 0x800, 0xfff, 0x820, 0x2 - into the D-PHY lane/timing/config
-	 * registers here, but could not statically pin which offset receives
-	 * which constant (only hsrx_clk_pre_time_grp0 = +0xd8 is confirmed,
-	 * and none of the constants is a plausible bits[31:24] field write).
-	 * Timing is FIXED per combo mode, never derived from DataRate
-	 * (spec section 4 note), so once captured these become constants.
-	 *
-	 * TODO(bringup): capture the vendor's D-PHY register file
-	 * (0x023f00c8..0x023f0110) before/after a vendor start per spec
-	 * section 9 items 3/4, then emit the exact offset/value writes here.
-	 * Until then the PHY runs on reset-default analog timing, which may
-	 * be enough for lock at DataRate 600 - the M1 hardware pass decides.
-	 */
+	/* row 5: the thirteen plain words 0x00..0x30 are zeroed */
+	for (i = 0; i <= 0x30; i += 4)
+		dphy_wr(priv, i, 0);
 
-	/* Required settle between analog config and D-PHY reset release. */
+	/* rows 6-17: lane swap, one 3-bit field per logical lane */
+	for (i = 0; i < ARRAY_SIZE(openvin_lane_swap); i++) {
+		dphy_wr(priv, DPHY_LANE_CFG_CLR,
+			DPHY_SWAP_FIELD << openvin_lane_swap_shift[i]);
+		dphy_wr(priv, DPHY_LANE_CFG_SET,
+			(u32)openvin_lane_swap[i] << openvin_lane_swap_shift[i]);
+	}
+	/* row 18: 1d2c_en = 0 (single clock) */
+	dphy_wr(priv, DPHY_LANE_CFG_CLR, DPHY_1D2C_EN);
+	/* rows 19-20: dpdn_swap = 0 */
+	dphy_wr(priv, DPHY_LANE_CFG_CLR, DPHY_DPDN_SWAP_MASK);
+	dphy_wr(priv, DPHY_LANE_CFG_SET, 0);
+	/* row 21: databus16_sel = 0 */
+	dphy_wr(priv, DPHY_LANE_CFG_CLR, DPHY_DATABUS16_SEL);
+
+	/* rows 22-29: HS-RX pre-times, clk grp1, clk grp0, data grp1, data grp0 */
+	dphy_wr(priv, DPHY_PRE_TIME_CLR, 0x00ff0000);
+	dphy_wr(priv, DPHY_PRE_TIME_SET, DPHY_PRE_TIME_VAL << 16);
+	dphy_wr(priv, DPHY_PRE_TIME_CLR, 0xff000000);
+	dphy_wr(priv, DPHY_PRE_TIME_SET, DPHY_PRE_TIME_VAL << 24);
+	dphy_wr(priv, DPHY_PRE_TIME_CLR, 0x000000ff);
+	dphy_wr(priv, DPHY_PRE_TIME_SET, DPHY_PRE_TIME_VAL);
+	dphy_wr(priv, DPHY_PRE_TIME_CLR, 0x0000ff00);
+	dphy_wr(priv, DPHY_PRE_TIME_SET, DPHY_PRE_TIME_VAL << 8);
+
+	/* rows 30-31: the MIPI mode word (the first draft missed this pair) */
+	dphy_wr(priv, DPHY_MODE_CLR, DPHY_MODE_FIELD_MASK);
+	dphy_wr(priv, DPHY_MODE_SET, DPHY_MODE_MIPI);
+
+	/* row 32: required settle before the D-PHY reset release */
 	usleep_range(2000, 2500);
 
-	/* Release the D-PHY soft reset (isp_sys_glb, deassert = CLR). */
+	/* row 33: release the D-PHY soft reset (isp_sys_glb, deassert = CLR) */
 	isp_glb_wr(priv, ISP_GLB_SWRST_CLR, ISP_GLB_RST_DPHYRX);
-
-	/* Final routing selection (spec section 6b). */
-	isp_glb_csi_ctrl_sel(priv, ISP_GLB_CSI_CTRL_SEL_RUN);
-
-	/*
-	 * HS-RX pre-time group writes (hsrx_clk_pre_time_grp0/1,
-	 * hsrx_data_pre_time_grp0/1) follow here in the vendor order.
-	 * Offsets beyond grp0 (+0xd8) are unconfirmed - covered by the same
-	 * TODO(bringup) capture above.
-	 */
 }
 
 /* --------------------------------------------------------------------------
@@ -457,7 +482,6 @@ static void openvin_csi_ctrl_init(struct openvin_csi2 *priv)
 		CSI_MONITOR_CTRL_VAL);
 	/* Stream monitor bit4 toggle (spec section 2 step 8). */
 	csi_rmw(priv, CSI_CTRL_STREAM0_MONITOR, BIT(4), BIT(4));
-	csi_rmw(priv, CSI_CTRL_STREAM0_MONITOR, BIT(4), 0);
 	csi_wr(priv, CSI_CTRL_STREAM0_MONITOR_LB, CSI_MONITOR_LB_VAL);
 
 	/* 10-11. Stream soft-reset pulse, then settle. */
@@ -509,20 +533,16 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	isp_glb_wr(priv, ISP_GLB_SWRST_CLR, ISP_GLB_RST_SYS(0));
 
 	/*
-	 * Step 6: deassert the deskew reset. The paired
-	 * dphyrx_glb_debug_ctrl_deskew_reset write lives in the D-PHY debug
-	 * register whose offset the spec could not pin.
-	 * TODO(bringup): capture the D-PHY debug-ctrl offset during the
-	 * section 9 item 3 register-file dump and add the write here.
+	 * Step 5: deassert both deskew resets (4 lanes -> deskew0 + deskew1),
+	 * then step 6: the D-PHY debug-ctrl deskew reset release (CLR 0x3c00
+	 * for 4 lanes) -- spec-dphy-writes section 5 rows 5-6.
 	 */
 	isp_glb_wr(priv, ISP_GLB_SWRST_CLR, ISP_GLB_RST_DESKEW(0));
+	isp_glb_wr(priv, ISP_GLB_SWRST_CLR, ISP_GLB_RST_DESKEW(1));
+	dphy_wr(priv, DPHY_DESKEW_DBG_CLR, DPHY_DESKEW_DBG_4LANE);
 
-	/*
-	 * Step 7: common_glb dphyrx TLB soft-reset deassert. Offset not
-	 * given by the spec (only the clock-enable bit is pinned).
-	 * TODO(bringup): locate common_glb_dphyrx_tlb_sw_reset's register in
-	 * the section 9 item 7 common_glb snapshot and add the deassert.
-	 */
+	/* Step 7: common_glb dphyrx TLB soft-reset deassert (row 7). */
+	cglb_wr(priv, CGLB_RST_CLR, CGLB_RST_DPHYRX_TLB);
 
 	/* Step 8: settle. */
 	udelay(10);
@@ -531,15 +551,13 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	isp_glb_wr(priv, ISP_GLB_CLK_EB1_SET, ISP_GLB_CSIRX_PCLK_EB(0));
 	isp_glb_wr(priv, ISP_GLB_CLK_EB1_SET, ISP_GLB_SYS_PIXEL_CLK_EB(0));
 
-	/* Step 11: first D-PHY global init pass. */
-	openvin_dphy_glb_init(priv);
-
 	/*
+	 * The vendor start path runs the D-PHY global init exactly ONCE, after
+	 * the power-up and lane disable below (spec-dphy-writes section 5 row
+	 * 20); the earlier two-pass reading of the older spec was wrong.
 	 * Step 12 (dphy_pin_mux_config): NOT performed - see the pinmux note
 	 * in the header comment. Step 13 (ax_dvp_bt_soc_init, 0x02303000) is
 	 * omitted: not on the MIPI data path (spec section 0).
-	 * TODO(bringup): confirm the DVP/BT block gates no shared clock
-	 * (spec section 9 item 8).
 	 */
 
 	/* Step 14: csirx cfg clock select. */
@@ -555,26 +573,21 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	cglb_wr(priv, CGLB_CLK_EB_SET, CGLB_CLK_DPHYRX_TLB_EB);
 
 	/*
-	 * Steps 18-20: D-PHY power-up. The vendor's reset path (spec section
-	 * 6c step 4) first asserts ready then off (a power cycle), and the
-	 * start path releases off then ready. DEVICE-PROVEN 2026-09-01: the
-	 * ISP pixel clocks (isp_sys_glb +0xc4 -> 0xf0f) come up on the
-	 * ready 1->0 EDGE; clearing an already-clear ready bit does nothing
-	 * and the SIF never sees a pixel. So always run the full cycle.
+	 * Steps 15-18 (spec-dphy-writes section 5): D-PHY power-up -- release
+	 * power_off, settle, release power_ready, settle. Both are CLR strobes
+	 * of the (status, SET, CLR) triples; the ready/off SET writes belong
+	 * to the vendor's reset/PM path (mipi_rx_reset), which our teardown
+	 * mirrors, not to the start path.
 	 */
-	cglb_wr(priv, CGLB_DPHY_POWER_READY_SET, CGLB_DPHY_POWER_BIT);
-	udelay(100);
-	cglb_wr(priv, CGLB_DPHY_POWER_OFF_SET, CGLB_DPHY_POWER_BIT);
-	udelay(100);
 	cglb_wr(priv, CGLB_DPHY_POWER_OFF_CLR, CGLB_DPHY_POWER_BIT);
 	udelay(100);
 	cglb_wr(priv, CGLB_DPHY_POWER_READY_CLR, CGLB_DPHY_POWER_BIT);
 	udelay(100);
 
-	/* Step 21: disable all PHY lanes before the real analog config. */
+	/* Step 19: disable all PHY lanes before the analog config. */
 	dphy_wr(priv, DPHY_PHY_DISABLE, DPHY_PHY_ALL_LANES);
 
-	/* Step 22: second D-PHY global init pass (real PHY analog config). */
+	/* Step 20: the D-PHY global init (lane swap, timing, mode, reset). */
 	openvin_dphy_glb_init(priv);
 
 	/* Step 23: enable clock + data lanes (4-lane: 0x3f). */
