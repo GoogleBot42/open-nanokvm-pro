@@ -18,7 +18,11 @@ reciprocal of the save-usage Opus-delegation rule — memory
 `delegate-to-opus-subagents`). If the session is already Fable/Mythos, you may still
 fan this out to a Fable subagent to keep the deep trace logs out of the main context.
 
-Launch: `Agent` with `subagent_type: "general-purpose"`, `model: "fable"`. For a
+Launch: `Agent` with `subagent_type: "general-purpose"`, `model: "fable"` for on-device
+tracing/feasibility. For pure STATIC describing passes over an unstripped vendor .ko
+(instruction-level register write lists) `model: "opus"` has proven sufficient twice
+(2026-09-01: spec-dphy-writes.md, spec-ife-start.md -- both device-verified) -- use it
+and save the Fable budget. For a
 multi-step campaign, resume the same agent with `SendMessage` (it keeps the tooling
 + offsets it built) rather than starting fresh.
 

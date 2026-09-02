@@ -56,6 +56,11 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   capture init re-muxes it — the server re-asserts it per press. A GPIO `value`
   read only echoes the output latch, it proves nothing about the ball. Details:
   `docs/mini-display.md` ("The SW_PWR pinmux trap").
+- On an open (base-only) boot the MM/VPP domain is unclocked: **reading `0x04403000`
+  (the vendor's rst1 "hold" register block) hangs the AXI bus → watchdog reboot** —
+  proven 2026-09-01. Only ax_vpp/production clocks it. And glibc `memset`/`memcpy` on a
+  `/dev/mem` mapping SIGBUSes (DC ZVA on Device memory): use word loops. Details:
+  `docs/reference/deblob-scope/regdumps/README.md`.
 
 ## Hardware tripwires
 

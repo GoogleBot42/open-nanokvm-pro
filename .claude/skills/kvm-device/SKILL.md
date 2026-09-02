@@ -137,6 +137,9 @@ those:
   the comm_pool block layout was proven (docs/blob-replacement.md,
   2026-08-17 section). Zero-run analysis of a dump discriminates
   meta/unwritten pages from live YUYV (real video is never long zero runs;
+  glibc memset/memcpy on such a mapping SIGBUSes -- DC ZVA on Device memory --
+  so zero/copy with plain word loops, and never read 0x04403000 on a base-only
+  boot: that VPP/MM block is unclocked there and the read hangs the bus);
   YUV zeros decode green).
 - libkvm can be exercised WITHOUT the Go server via python3 ctypes
   (service stopped first): dlopen `/dev/shm/kvmapp/server/dl_lib/libkvm.so`,

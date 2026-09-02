@@ -203,22 +203,19 @@ for pending/TODO/unverified markers still present in the tree:
   **#61** hw validation is Jeremy-gated; **#62** 720p UI omission, pre-existing).
   Standing rule: vendor-binary RE only via describing subagents (behavioral
   specs), implementation from specs only.
-  **2026-08-30 UPDATE — spec+stub phase DONE (specs verified, committed):**
-  #56 ax_stub.ko built+committed (`pkgs/ax-stub`, 7f1529d) — DEVICE TEST
-  PENDING (reboot+capture+dmesg). #57/#58 clean-room specs delivered and
-  main-session-verified, in `docs/reference/deblob-scope/specs/` (spec-mipi-rx,
-  spec-cdma, spec-proton-bypass; commits 44246c1/e6cce8c/d3196d2). Big
-  de-risks: CDMA descriptor engine is OPTIONAL (plain writel() suffices); the
-  IFE-WDMA buffer-address gate is SOLVED (writel(dma_addr>>3, wdma+0x18*chn+
-  0x14)); frame-done IRQ is real (drop the poll); mc20e reset-bin never read.
-  **#59 (M2) is now UNBLOCKED** — write the V4L2 capture driver from the specs
-  (clean-room, a fresh author agent). **The one gating step before/with M2 is a
-  SERIAL on-device pass** (single unit): CSI-ident read 0x2600000+0x00, proton
-  register-trace confirms (WDMA base, MODE10 @0x154/0x158, frame-done bit/SPI,
-  plane→chan map), then the #56 stub reboot test. Envelope: reads OK, NO
-  /dev/mem register writes, reboots warm-recoverable. Parallelization lesson:
-  describing/spec work fans out with zero device contention; device work is
-  inherently serial — split fan-out on that seam.
+  **2026-09-02 STATUS — M1 + M2 HARDWARE-PROVEN; M3 is the open front.** #56/#57/#58
+  closed (stub 0 edge hits; CSI-2 core is custom; specs verified). **#59 M2 milestone
+  reached 2026-09-01:** 4K30 UYVY frames to DDR with the two open drivers alone, zero
+  vendor capture modules, either load order — docs/deblob-capture.md step 4 has the
+  resolved picture (the DEADBEEF wall was resets + the ISP-top gate; M2 config is a
+  golden-table replay; M1 is spec-exact per specs/spec-dphy-writes.md; the WDMA shadow
+  strobe per frame per specs/spec-ife-start.md). Still open under #59: non-4K geometry
+  (the table is 4K; needs a 1080p source on the bench — the KDE host honours EDID, see
+  memory), the M1<->M2 async subdev link, dma-buf export. Then **#60 M3**: V4L2 backend
+  in kvm-encoder, parity, retire the 10-module closure + blobs (#54 absorbs the disk
+  cleanup). #53 DMA map shipped + hw-validated. #63 = pre-existing encoder DMA-mask WARN
+  at module load (cosmetic). Harness: base-only loader swap + reboot (memory
+  device-hardware-status has the exact paths); never read 0x04403000 on an open boot.
 - **`docs/architecture.md`:** no pending/TODO/unverified markers found in
   this scan — it currently reads as settled. Don't assume that stays true;
   re-grep before trusting it stale.
