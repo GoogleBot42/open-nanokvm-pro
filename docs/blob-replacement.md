@@ -2832,7 +2832,8 @@ everything. Remaining for #45: refinement 3, the from-source CMM allocator.
 Refinement 3 is done, device-proven, and with it every item in #45's title
 (EWL + CMM allocator glue). `pkgs/vc8000-vcmd/framebuf_alloc.c` (our code) is
 a from-source frame-buffer allocator over a module-parameter CMM carveout
-(default `0x78000000+0x04000000` — a formal 64 MB slice of the 200MB CMM
+(default `0x78000000+0x04000000` then, `0x73800000+0x08800000` = 136 MB since
+#52 — a formal slice of the 200MB CMM
 region on the 1G board, passed in by the curated loader since #53:
 above ax_cmm’s lowered ceiling, below the open capture carveout and the 8MB
 coherent VCMD-pool region — see docs/vcmd-cma-unblock.md, “DMA memory map”).
@@ -3222,12 +3223,9 @@ up to 4K. The remaining assumptions (stride==width, geometry-word offsets)
 already held from the encoder differential.
 
 **Scope.** This is the open CAPTURE envelope (now 64×64..3840×2160). The open
-ENCODER (`vcenc_geom.h`) stays 1920×1200 for now: its from-source register
-program is geometry-proven to 4K (the vendor VC8000E encodes 4K under our
-laws — a 4K IDR/IPPP stream was driven and decoded), but the open driver's
-`framebuf_alloc.c` carveout is 64 MB (#53) and a 4K recon/aux/output floorplan
-exceeds it, so 4K blob-free ENCODE needs a carveout resize (#52). Until
-then 4K uses the vendor encoder (open capture + closed encode), or downscale.
+ENCODER (`vcenc_geom.h`) stayed at 1920×1200 for one more day, purely because
+the `framebuf_alloc.c` carveout was 64 MB (#53) and a 4K recon/aux/output
+floorplan exceeds it — closed by **#52** below.
 
 **This also answers #17's capture bring-up:** a non-1080p source captured
 cleanly end-to-end through the fully parametric open path — the hardware test
@@ -3249,3 +3247,32 @@ plus `.#kvm-encoder-openvenc` survive only as bench tooling for a device flashed
 with the vendor `.axp`.
 The M1–M3 record and what remains open live in
 [deblob-capture.md](deblob-capture.md).
+
+---
+
+### 2026-09-03 — 4K blob-free H.264 encode (#52, DONE)
+
+The encoder envelope is now the capture envelope: `VCENC_GEOM_MAX_W/H` went
+1920×1200 → **3840×2160** (the only >1920 gate in `vcenc_geom.h`), and the DMA
+map gave the encoder the room — `MAP_FRAMEBUF_MB` 64 → **136**,
+`MAP_CMM_MIN_MB` 72 → **0**, folding `ax_cmm`'s slice (unclaimed since #55 M3 /
+#54) into the frame-buffer carveout so the 1G map is encoder framebuf
+`0x73800000` +136 MB, capture `0x7C000000` +56 MB, VCMD coherent `0x7F800000`
++8 MB — the whole 200 MB pool. New `vcenc_geom_build_ex(g, w, h, want_input)`
+makes the fallback input region optional: libkvm passes 0 (it points the input
+registers at the capture frame's own bus address), so a 4K floorplan spans
+59.21 MB instead of 90.85 MB. Hardware-proven the same day: the standalone
+prover (`ewl_encode /tmp/out4k.h264 20 8 yuyv 3840x2160`) returned **PASS
+20/20** and ffprobe reports H.264 **Main L5.1 3840×2160**, decoding clean; the
+live path (`mode=h264-direct`, `OPENKVM_FORCE_GEOM` unset, native 4K bench
+source) served 90 NALs / 462 KB with `[openvenc] up: hwid=0x43421500 3840x2160
+framebuf 0x73800000+0x3b35000 fixed-QP32 gop=30`, 0 libax maps, ffmpeg decoding
+84 frames of the real host desktop at ~25 fps. **The whole open video path —
+capture, MJPEG, H.264 — is blob-free at 4K**, and `OPENKVM_FORCE_GEOM` is now
+only a bench downscale hook.
+
+4K caveats worth knowing: there is **no vendor golden vector at 4K** (the
+17-geometry differential tops out at 1920×1200 — the laws extrapolate and the
+device run is the proof), `vcenc_level_idc` falls through to **51** (correct for
+4K30), `out_limit` is 16.65 MB so libkvm's pack copy is ~16 MB/frame at 4K (an
+fps cost, not a failure), and rate control is still fixed QP32 (**#46**).

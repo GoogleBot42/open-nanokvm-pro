@@ -111,9 +111,11 @@ carveout (`framebuf_alloc.c`), the open capture driver's buffer carveout
 (`ax630c_vcmd_glue.c`). Our loader
 (`pkgs/rootfs/ax-load-drv.sh`, `compute_mem_map`) computes one map at boot
 and hands every consumer its slice as a module parameter. Since #55 M3
-(2026-09-02) `ax_cmm` is not loaded at all, so its slice is simply unclaimed on
-a default boot; the map still reserves it, which is what keeps the bench-only
-`.openvenc` harness loader (never shipped since #54) safe.
+(2026-09-02) `ax_cmm` is not loaded at all, and since **#52** (2026-09-03) the
+shipped map no longer reserves anything for it: its 72 MB folded into the
+encoder frame-buffer carveout, which is what makes 4K blob-free H.264 fit. The
+bench-only harness loaders (`.openvenc` / `.base-only` / `.stub`, never shipped
+since #54) keep their own 64/72 split because they still load `ax_cmm`.
 
 **Derivation rule.** The pool `[pool_base, pool_top)` is what the vendor
 `get_cmm_size` math already yields from the board id and the kernel `mem=`
@@ -127,31 +129,40 @@ computed would shove the base *up* and leave the top of DRAM owned by nobody.
 |---|---|---|---|
 | VCMD coherent cmdbuf pool | `[pool_top-8M, pool_top)` | 8 MB | `0x7F800000` |
 | Open capture buffers | next 56 MB down | 56 MB | `0x7C000000` |
-| Open encoder frame buffers | next 64 MB down | 64 MB | `0x78000000` |
-| `ax_cmm` | `[pool_base, framebuf_base)` | remainder | `0x73800000` +72 MB |
+| Open encoder frame buffers | next 136 MB down | 136 MB | `0x73800000` |
+| Remainder (unclaimed; `ax_cmm`'s old slice) | `[pool_base, framebuf_base)` | 0 MB on a 1G board | — |
 
-On the 1G board the pool is `0x73800000..0x80000000` (200 MB) and the map lands
-exactly on the addresses the drivers used to hard-code.
+On the 1G board the pool is `0x73800000..0x80000000` (200 MB) and the three
+carveouts now consume all of it, the encoder framebuf starting exactly at
+`pool_base`.
 
 **Why those sizes.**
 
 - **8 MB coherent** — `vcmd_mem_init`'s three 2 MB pools plus slack. Reserving
-  the *top* is what makes it safe: `ax_cmm` is bottom-up first-fit, so lowering
-  its ceiling is the whole mechanism.
+  the *top* is what made it safe back when `ax_cmm` shared the pool: that
+  allocator is bottom-up first-fit, so lowering its ceiling was the whole
+  mechanism (still true for the bench harness loaders).
 - **56 MB capture** — three 4K YUYV frames (3840×2160×2 ≈ 15.9 MB each).
-- **64 MB frame buffers** — the real 1080p encode floorplan is ~43 MB. 4K
-  blob-free *encode* needs more than this and is **#52**; the space is now
-  there for the taking, since epic #55 retired the vendor capture path and left
-  `ax_cmm`'s 72 MB unclaimed on a default boot.
-- **72 MB for `ax_cmm`** — sized for the vendor capture path (~16.5 MB at
-  1080p, ~66 MB at 4K) so the bench-only `.openvenc` harness loader still captures at 4K.
+- **136 MB frame buffers** (was 64 MB before **#52**, 2026-09-03) — the 4K
+  encode floorplan from `vcenc_geom.h` spans **90.85 MB** with the fallback
+  input region and **59.21 MB** without it (1080p: 22.89 / 14.98 MB). libkvm
+  builds the geometry with `vcenc_geom_build_ex(…, want_input=0)` because it
+  points the encoder's input registers straight at the capture frame's own bus
+  address; the prover and the host tests keep the input region via
+  `vcenc_geom_build()`. 136 MB covers the with-input span plus headroom, which
+  is what the freed `ax_cmm` slice bought. `pkgs/rootfs.nix` and
+  `pkgs/update-package.nix` assert `MAP_FRAMEBUF_MB >= 92` on the curated
+  loader so an image can never ship a map too small for 4K.
+- **`MAP_CMM_MIN_MB` is 0** — nothing shipped claims the remainder any more.
 
-**Safety valve.** If a board / `mem=` combination would leave `ax_cmm` below
-72 MB (`MAP_CMM_MIN_MB`), the loader prints a five-line `*** WARNING (#53)`
-block, **abandons the split**, and falls back to the pre-#53 behaviour —
-reserve only the top 8 MB, leave the encoder/capture carveouts on their
-compiled-in defaults (which then overlap the pool, safe only because `ax_cmm`
-allocates bottom-up). A degraded-but-known state beats a silently broken pool.
+**Safety valve.** `MAP_CMM_MIN_MB` being 0 means the guard now fires only when
+the three carveouts do not fit the pool at all (a smaller board / `mem=`). Then
+the loader prints a five-line `*** WARNING (#53)` block, **abandons the split**,
+and falls back to the pre-#53 behaviour — reserve only the top 8 MB, leave the
+encoder/capture carveouts on their compiled-in defaults. A degraded-but-known
+state beats a silently broken pool. The bench harness loaders keep the old
+`MAP_FRAMEBUF_MB=64` / `MAP_CMM_MIN_MB=72` values, since `ax_cmm` still needs
+its remainder there (~16.5 MB at 1080p, ~66 MB at 4K).
 
 **What the loader passes.**
 
@@ -177,10 +188,10 @@ The file additionally carries `OPENKVM_POOL_BASE/TOP/SIZE_MB`,
 `OPENKVM_MEMMAP_SPLIT` (0 when the safety valve fired). The map is printed to
 the boot console either way.
 
-The module defaults in `ax630c_vcmd_glue.c`, `framebuf_alloc.c` and
-`open_vin_capture.c` are kept at the 1G-board values so an unparameterized
-`insmod` still works on the test unit; on any other board the loader's
-parameters are load-bearing.
+The module defaults in `ax630c_vcmd_glue.c`, `framebuf_alloc.c`
+(`0x73800000` / `0x08800000` since #52) and `open_vin_capture.c` are kept at the
+1G-board values so an unparameterized `insmod` still works on the test unit; on
+any other board the loader's parameters are load-bearing.
 
 Cross-references: `docs/architecture.md` (boot chain / module load),
 `docs/deblob-capture.md` step 4 (the capture carveout under epic #55).

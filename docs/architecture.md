@@ -117,11 +117,16 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    are no longer loaded at all — device-proven from a cold boot. It also
    **splits the DMA pool** (#53): one `compute_mem_map` derives the whole map
    from the board's pool geometry and hands the open encoder
-   (`framebuf_base/size`, `coherent_base/size`), the open capture driver
-   (`carveout_base/size`) non-overlapping slices — the remainder stays reserved
-   as an `ax_cmm` `cmmpool=` for the bench harness — printing the map at boot
+   (`framebuf_base/size`, `coherent_base/size`) and the open capture driver
+   (`carveout_base/size`) non-overlapping slices — printing the map at boot
    and exporting it to `/run/openkvm-memmap.env`; layout table and derivation
-   rule in [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53).
+   rule in [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53). Since
+   **#52** (2026-09-03) the three carveouts take the whole 200 MB pool on the
+   1G board — encoder frame buffers `0x73800000` +136 MB (up from 64 MB, which
+   is what makes 4K blob-free H.264 fit), capture `0x7C000000` +56 MB, VCMD
+   coherent `0x7F800000` +8 MB — since `ax_cmm` is no longer loaded and needs
+   no remainder; the build asserts `MAP_FRAMEBUF_MB >= 92` on the shipped
+   loader.
    **No rollback loader ships any more** (#54): with every vendor `ax_*.ko`
    deleted there is nothing left for one to insmod, so reverting to the vendor
    stack means reflashing the vendor `.axp`.
@@ -180,6 +185,9 @@ links **zero** `libax_*` — only `-ljpeg -lopus -lasound` — and nothing in th
 path touches a vendor kernel module. The source format is `V4L2_PIX_FMT_YUYV`,
 byte-identical to what the vendor pool used to hand back; the geometry envelope
 is 64×64…3840×2160 (even dimensions), 30 fps sustained at both 4K and 1080p.
+Since **#52** (2026-09-03) the **encoder** carries the same 3840×2160 envelope —
+H.264 is blob-free at native 4K (Main L5.1, device-proven live over
+`h264-direct`), with rate control still fixed QP32 (#46).
 
 Earlier backends stay buildable as bench alternatives — both need vendor blobs
 that a #54 image no longer carries, so they only run on a device flashed with

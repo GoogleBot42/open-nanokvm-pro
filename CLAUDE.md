@@ -66,6 +66,10 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   proven 2026-09-01. Only ax_vpp/production clocks it. And glibc `memset`/`memcpy` on a
   `/dev/mem` mapping SIGBUSes (DC ZVA on Device memory): use word loops. Details:
   `docs/reference/deblob-scope/regdumps/README.md`.
+- A bare `platform_device_register_simple()` device on arm64 4.19 gets `dummy_dma_ops`
+  (`dma_supported` = 0), so `dma_coerce_mask_and_coherent()` FAILS silently and the
+  coherent mask stays 0 (WARN at every `dma_alloc_attrs`). Set `dev.coherent_dma_mask`
+  / `dev.dma_mask` directly when the device only uses a declared carveout (#63).
 - Deleting from the vendor ext4 with `debugfs`: `ls -p` also lists **ghost (deleted)
   directory entries with inode 0** — filter `$2 != "0"` in every enumeration and
   post-purge count, or the "still present" assertion trips on entries that are not

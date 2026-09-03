@@ -10,7 +10,8 @@ the device boots **three from-source kernel modules and zero vendor ones** —
 CSI-2 / D-PHY receiver) and `open_vin_capture.ko` (open VIN/IFE bypass capture,
 exposing a plain V4L2 `/dev/video0`). Our `libkvm.so` captures over **standard
 V4L2** and hands each buffer's dma-buf to the encoder zero-copy, doing H.264 +
-MJPEG with **zero** Axera userspace libraries linked. Since #54 (2026-09-03)
+MJPEG with **zero** Axera userspace libraries linked — blob-free all the way up
+to **4K** since #52 (2026-09-03). Since #54 (2026-09-03)
 the vendor media closure is **deleted from the image**, not merely unloaded:
 all 22 `ax_*.ko` plus the vendor `libsns_*.so`, the NPU/AI-ISP model data and
 the ISP sensor-tuning set are gone (~355 files, ~248 MB). Still closed on the

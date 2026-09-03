@@ -178,9 +178,9 @@ for pending/TODO/unverified markers still present in the tree:
   — the MIPI link was never the wall (nDataRate=600 = PHY timing band, not a
   per-lane ceiling; vendor captures 4K30 over the same 4-lane link). Capture
   envelope now 64x64..3840x2160; both non-1080p suspects (os_mem 0xf0, nr54)
-  disproven; stride assumption A2 resolved to stride==width. Only 4K blob-free
-  *encode* remains (framebuf carveout, split to **#52**) — NOT a default-flip
-  blocker. Also landed: clean-room EDID set (pkgs/edid, from source,
+  disproven; stride assumption A2 resolved to stride==width. 4K blob-free
+  *encode* was split to **#52** (framebuf carveout) and is DONE 2026-09-03.
+  Also landed: clean-room EDID set (pkgs/edid, from source,
   --check-clean, fixes Sipeed's shared-identity defect), shipped via rootfs.
   **#25 openvenc-as-default now gates on #46 (RC) only** — or ship fixed-QP v1
   per #25's fallback; the flip+close call is Jeremy's.
@@ -200,7 +200,7 @@ for pending/TODO/unverified markers still present in the tree:
   subdev, **#58** gate RE (ax_base CDMA descriptor + proton bypass/IFE-WDMA
   spec — do before any proton timeline), **#59** M2 frames-to-DDR, **#60** M3
   parity + closure retirement. EDID set COMPLETE from source (all six bins;
-  **#61** hw validation is Jeremy-gated; **#62** 720p UI omission -- FIXED e286ddc, closed 2026-09-03). **#60 + #54 closed 2026-09-03; epic #55 body rewritten to "executing-blob goal MET"** -- what is left there is human bench work (flash the #54 image, #61, real non-4K source, mini-display visual), #52, #63, #28, and the M1<->M2 subdev-link polish.
+  **#61** hw validation is Jeremy-gated; **#62** 720p UI omission -- FIXED e286ddc, closed 2026-09-03). **#60 + #54 closed 2026-09-03; epic #55 body rewritten to "executing-blob goal MET"** -- what is left there is human bench work (flash the #54 image, #61, real non-4K source, mini-display visual), #63, #28, and the M1<->M2 subdev-link polish (**#52 closed 2026-09-03** -- 4K blob-free H.264, see below).
   Standing rule: vendor-binary RE only via describing subagents (behavioral
   specs), implementation from specs only.
   **2026-09-02 STATUS — M1 + M2 HARDWARE-PROVEN; M3 is the open front.** #56/#57/#58
@@ -239,7 +239,23 @@ for pending/TODO/unverified markers still present in the tree:
   Remaining closed content on a flashed image: aic8800 WiFi/BT **firmware** (~3.5 MB,
   #28) + the flash-time-only `eip_ax620e.bin`. Vermagic no longer binds anything shipped.
   OTA can't delete, so an OTA-upgraded device keeps the purged files until reflash.
-  Residuals: async subdev link (polish), real non-4K signal (human), #52 4K H.264,
+  **#52 DONE 2026-09-03 (4K blob-free H.264):** `vcenc_geom.h` envelope 1920x1200 ->
+  3840x2160 plus `vcenc_geom_build_ex(..., want_input)` (libkvm passes 0 -- it points the
+  encoder input registers at the capture frame's own bus address, so a 4K floorplan spans
+  59.21 MB instead of 90.85 MB), and the DMA map gave it room: `MAP_FRAMEBUF_MB` 64 -> 136,
+  `MAP_CMM_MIN_MB` 72 -> 0 (ax_cmm's slice, unclaimed since #55 M3/#54, folded into the
+  encoder framebuf). 1G map is now framebuf 0x73800000 +136MB / capture 0x7C000000 +56MB /
+  coherent 0x7F800000 +8MB = the whole 200 MB pool; rootfs.nix + update-package.nix assert
+  `MAP_FRAMEBUF_MB >= 92`; the bench `.openvenc`/`.base-only`/`.stub` loaders keep 64/72
+  (they still load ax_cmm). Hardware-proven: prover PASS 20/20 at 3840x2160 (ffprobe: Main
+  L5.1, clean decode) and the live wss h264-direct path at the NATIVE 4K bench source with
+  OPENKVM_FORCE_GEOM unset -- 90 NALs / 462 KB, 0 libax maps, ~25 fps. Whole video path
+  (capture, MJPEG, H.264) is now blob-free at 4K; FORCE_GEOM is only a bench downscale hook.
+  Caveats: no vendor golden vector at 4K (the 17-geometry differential tops out at
+  1920x1200 -- laws extrapolate, device run is the proof), `vcenc_level_idc` falls through
+  to 51, `out_limit` 16.65 MB makes libkvm's pack copy ~16 MB/frame at 4K (fps cost), RC
+  still fixed QP32 (#46).
+  Residuals: async subdev link (polish), real non-4K signal (human),
   #61 EDID hw validation. #53 DMA map shipped + hw-validated. #63 = pre-existing encoder DMA-mask WARN
   at module load (cosmetic). Harness: base-only loader swap + reboot (memory
   device-hardware-status has the exact paths); never read 0x04403000 on an open boot.

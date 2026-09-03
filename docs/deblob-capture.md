@@ -314,8 +314,8 @@ Three findings from the specs materially change the plan below:
    mini-display preview read the V4L2 mmap (no `/dev/mem` window).
    Device-proven on the base-only harness: web 200, 4K MJPEG over
    `/api/stream/mjpeg`, H.264 over the real wss h264-direct endpoint (at a
-   1080p crop via the bench-only `OPENKVM_FORCE_GEOM` hook; the encoder stays
-   1920-wide until #52), 0 libax mappings -- then the vendor
+   1080p crop via the bench-only `OPENKVM_FORCE_GEOM` hook, which the encoder
+   needed until **#52** raised it to 4K on 2026-09-03), 0 libax mappings -- then the vendor
    `ax_sys/cmm/pool/base` were **rmmod'd live** and both streams kept running:
    nothing in our stack needs the ax base stack. The default loader now insmods
    exactly three from-source modules (open venc, `open_vin_csi2`,
@@ -337,7 +337,11 @@ Three findings from the specs materially change the plan below:
    `/dev/video0` streams; `standalone`/`start_on_probe` are bench-only now and the
    loader insmods the receiver with no parameters. Device-proven: link re-locks on
    every stream start (three service cycles), cold boot clean.
-   Residuals: a real non-4K *signal* on the bench (human), 4K H.264 (#52).
+   **#52 DONE 2026-09-03:** the open encoder's envelope is now 3840×2160 too
+   (`MAP_FRAMEBUF_MB` 64 -> 136 by absorbing `ax_cmm`'s freed slice), so the
+   live wss h264-direct path streams a **native 4K** source blob-free and
+   `OPENKVM_FORCE_GEOM` is a bench downscale hook, not a requirement.
+   Residuals: a real non-4K *signal* on the bench (human).
 
 6. **Mainline port** rides with #26 once M3 ships on 4.19.
 

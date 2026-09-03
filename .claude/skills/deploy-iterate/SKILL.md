@@ -264,9 +264,10 @@ reset-vs-programmed values (a golden-table change) needs a fresh boot.
 the env. libkvm: stage+`mv` into both trees as above; success markers in
 `/var/log/nanokvm/NanoKVM-Server.log` are `[openkvm-v4l2] capture up WxH ...
 bus[0]=0x7c000000 (V4L2 + dma-buf, blob-free)` and `[openvenc] MJPEG up:`.
-Bench-only geometry override: `systemctl set-environment
-OPENKVM_FORCE_GEOM=1920x1080` before the restart makes libkvm capture a
-top-left crop (the open driver's SIF window crops) -- the only way to drive
-the 1920-wide H.264 path from the 4K-pinning bench source; `systemctl
+Bench-only geometry override (OPTIONAL since #52, 2026-09-03 -- the open
+encoder does native 4K H.264 now, so leave it unset for a real run): `systemctl
+set-environment OPENKVM_FORCE_GEOM=1920x1080` before the restart makes libkvm
+capture a top-left crop (the open driver's SIF window crops), useful only to
+downscale the 4K-pinning bench source; `systemctl
 unset-environment OPENKVM_FORCE_GEOM` afterwards. A ready-made run script
 lives on the device at `/root/axbring/m3/h264run.sh` (uses `tools/wsgrab.py`).
