@@ -200,7 +200,7 @@ for pending/TODO/unverified markers still present in the tree:
   subdev, **#58** gate RE (ax_base CDMA descriptor + proton bypass/IFE-WDMA
   spec — do before any proton timeline), **#59** M2 frames-to-DDR, **#60** M3
   parity + closure retirement. EDID set COMPLETE from source (all six bins;
-  **#61** hw validation is Jeremy-gated; **#62** 720p UI omission, pre-existing).
+  **#61** hw validation is Jeremy-gated; **#62** 720p UI omission -- FIXED e286ddc, closed 2026-09-03). **#60 + #54 closed 2026-09-03; epic #55 body rewritten to "executing-blob goal MET"** -- what is left there is human bench work (flash the #54 image, #61, real non-4K source, mini-display visual), #52, #63, #28, and the M1<->M2 subdev-link polish.
   Standing rule: vendor-binary RE only via describing subagents (behavioral
   specs), implementation from specs only.
   **2026-09-02 STATUS — M1 + M2 HARDWARE-PROVEN; M3 is the open front.** #56/#57/#58

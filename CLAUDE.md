@@ -66,6 +66,10 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   proven 2026-09-01. Only ax_vpp/production clocks it. And glibc `memset`/`memcpy` on a
   `/dev/mem` mapping SIGBUSes (DC ZVA on Device memory): use word loops. Details:
   `docs/reference/deblob-scope/regdumps/README.md`.
+- Deleting from the vendor ext4 with `debugfs`: `ls -p` also lists **ghost (deleted)
+  directory entries with inode 0** — filter `$2 != "0"` in every enumeration and
+  post-purge count, or the "still present" assertion trips on entries that are not
+  files (#54, cost a rebuild). Pattern + helpers: `pkgs/rootfs.nix` step 5d2.
 
 ## Hardware tripwires
 

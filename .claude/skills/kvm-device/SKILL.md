@@ -24,6 +24,11 @@ public:
 - `tools/kvmscp <local-files...> <remote-path>` — copy files to the device
   (remote path is a path on the device, e.g. `/tmp/`; the script adds the
   `root@<ip>:` prefix itself).
+  **Copy first, verify, then edit — never chain a device edit after the copy in
+  one `set -e` script:** a mis-invoked `kvmscp` (e.g. with a `root@…:` prefix)
+  fails silently, and a following `cat /root/new > /opt/scripts/wifi.sh` still
+  TRUNCATES the target to 0 bytes before `set -e` aborts (2026-09-03). Land the
+  file, `sha256sum` it on the device, then install it in a separate command.
 
 Both scripts read credentials from `~/.config/nanokvm/device.env` (chmod
 600). Never inline the IPs or passwords into any tracked file — if you find
