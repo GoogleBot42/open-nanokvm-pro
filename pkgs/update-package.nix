@@ -280,6 +280,10 @@ pkgs.stdenvNoCC.mkDerivation {
     ldr="$rfs/soc/scripts/auto_load_all_drv.sh"
     grep -qF 'compute_mem_map' "$ldr" \
       || { echo "ERROR: loader lost the #53 DMA memory-map split" >&2; exit 1; }
+    # 4K H.264 needs a 91MB framebuf span (#52): the map must give the encoder >= 92MB.
+    fbmb=$(grep -oE '^MAP_FRAMEBUF_MB=[0-9]+' "$ldr" | cut -d= -f2)
+    [ -n "$fbmb" ] && [ "$fbmb" -ge 92 ] \
+      || { echo "ERROR: loader MAP_FRAMEBUF_MB=$fbmb < 92 -- 4K open H.264 would fail (#52)" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param' "$ldr" \
       || { echo "ERROR: loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/open_vin_capture.ko $capture_param' "$ldr" \

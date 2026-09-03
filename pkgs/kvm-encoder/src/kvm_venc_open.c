@@ -32,7 +32,7 @@
  * v1 LIMITS (fixed-QP stage; the #46 seams -- per-frame QP input and
  * per-frame emitted-size readback -- are already in the builder API):
  *  - H.264 geometry: parametric (#17) over the capture envelope
- *    (64x64..1920x1200, even dims) via the vcenc_geom register laws +
+ *    (64x64..3840x2160, even dims; #52 lifted the 1920 ceiling) via the vcenc_geom register laws +
  *    computed floorplan (derived from a 17-geometry vendor differential,
  *    docs/reference/vcenc-open/geom-probe/).
  *  - Rate control: fixed QP32. fps/bitrate/rc-mode knobs are accepted and
@@ -256,7 +256,7 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     }
     {
         const char *why;
-        if (vcenc_geom_check(w, h, &why) || vcenc_geom_build(&V.g, w, h)) {
+        if (vcenc_geom_check(w, h, &why) || vcenc_geom_build_ex(&V.g, w, h, 0)) {
             fprintf(stderr, "[openvenc][FAIL] %dx%d unsupported (%s)\n",
                     w, h, why ? why : "geometry");
             return -1;

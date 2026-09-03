@@ -43,8 +43,8 @@
 
 #define VCENC_GEOM_MIN_W 64
 #define VCENC_GEOM_MIN_H 64
-#define VCENC_GEOM_MAX_W 1920
-#define VCENC_GEOM_MAX_H 1200
+#define VCENC_GEOM_MAX_W 3840
+#define VCENC_GEOM_MAX_H 2160
 
 typedef struct {
 	uint32_t w, h;          /* true source size (even, envelope-checked) */
@@ -90,7 +90,7 @@ static inline int vcenc_geom_check(int w, int h, const char **why)
 	if (w < VCENC_GEOM_MIN_W || h < VCENC_GEOM_MIN_H)
 		r = "below 64x64 minimum";
 	else if (w > VCENC_GEOM_MAX_W || h > VCENC_GEOM_MAX_H)
-		r = "above 1920x1200 envelope";
+		r = "above 3840x2160 envelope";
 	else if ((w | h) & 1)
 		r = "odd width/height (YUYV macropixel)";
 	if (why)
@@ -98,7 +98,15 @@ static inline int vcenc_geom_check(int w, int h, const char **why)
 	return r ? -1 : 0;
 }
 
-static inline int vcenc_geom_build(vcenc_geom *g, int w, int h)
+/*
+ * want_input: reserve the fallback input region (off_in, 4*W*H). Only the
+ * standalone prover (ewl_encode) fills it; libkvm points the input registers
+ * at the capture frame's own bus address, so it passes 0 and the 4K span drops
+ * from 91MB to 59MB (#52). vcenc_encode.h only touches off_in when
+ * input_phys == 0.
+ */
+static inline int vcenc_geom_build_ex(vcenc_geom *g, int w, int h,
+                                      int want_input)
 {
 	if (vcenc_geom_check(w, h, 0))
 		return -1;
@@ -144,7 +152,7 @@ static inline int vcenc_geom_build(vcenc_geom *g, int w, int h)
 	uint32_t o = 0;
 	g->off_out = o;       o += vcg_align(g->out_limit + 0x1000, 4096);
 	g->off_s10 = o;       o += s10sz;
-	g->off_in = o;        o += vcg_align(4 * W * H, 4096);
+	g->off_in = o;        if (want_input) o += vcg_align(4 * W * H, 4096);
 	g->off_luma[0] = o;   o += lupitch;
 	g->off_luma[1] = o;   o += lupitch;
 	g->off_chroma[0] = o; o += chpitch;
@@ -162,6 +170,12 @@ static inline int vcenc_geom_build(vcenc_geom *g, int w, int h)
 	g->off_s27 = o;       o += 0x10000;
 	g->span = o + 0x4000;
 	return 0;
+}
+
+/* Full floorplan including the prover input region (the historical shape). */
+static inline int vcenc_geom_build(vcenc_geom *g, int w, int h)
+{
+	return vcenc_geom_build_ex(g, w, h, 1);
 }
 
 /* level_idc: smallest H.264 level fitting the MB count at 60 fps. */

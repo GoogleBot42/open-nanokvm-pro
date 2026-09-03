@@ -9,9 +9,9 @@
  * pool geometry and passes framebuf_base/framebuf_size here, so this carveout
  * is EXCLUSIVE -- ax_cmm's ceiling is lowered to framebuf_base and never hands
  * it out. The defaults below are the 1G-board values that map computes
- * (0x78000000 + 64MB), kept so an unparameterized insmod still works there.
- * 64MB covers the real 1080p encode floorplan (~43MB); 4K encode needs more
- * and is issue #52. See docs/vcmd-cma-unblock.md, "DMA memory map".
+ * (0x73800000 + 136MB), kept so an unparameterized insmod still works there.
+ * 136MB (the old ax_cmm slice folded in, #52) covers the 4K floorplan (91MB with
+ * the prover input region, 59MB without; 1080p is 23MB). docs/vcmd-cma-unblock.md.
  */
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -28,8 +28,8 @@
 
 #include "framebuf_alloc.h"
 
-static unsigned long framebuf_base = 0x78000000UL;
-static unsigned long framebuf_size = 0x04000000UL;   /* 64MB (#53; loader overrides) */
+static unsigned long framebuf_base = 0x73800000UL;
+static unsigned long framebuf_size = 0x08800000UL;   /* 136MB (#52; loader overrides) */
 module_param(framebuf_base, ulong, 0444);
 MODULE_PARM_DESC(framebuf_base, "phys base of the frame-buffer CMM carveout");
 module_param(framebuf_size, ulong, 0444);

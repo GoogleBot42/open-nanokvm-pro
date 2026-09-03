@@ -85,24 +85,24 @@ function get_cmm_size()
 #
 #   [pool_top-8M,        pool_top)      open VCMD coherent cmdbuf pool
 #   [pool_top-64M,       pool_top-8M)   open capture buffer carveout (56M)
-#   [pool_top-128M,      pool_top-64M)  open encoder frame-buffer carveout (64M)
-#   [pool_base,          pool_top-128M) ax_cmm -- the remainder
+#   [pool_top-200M,      pool_top-64M)  open encoder frame-buffer carveout (136M)
+#   [pool_base,          pool_top-200M) unclaimed remainder (0 on the 1G board)
 #
 # On the 1G board (pool 0x73800000..0x80000000, 200MB) that lands exactly on
-# 0x7F800000+8M / 0x7C000000+56M / 0x78000000+64M, leaving ax_cmm 72MB from
-# 0x73800000 -- enough for the vendor capture path at 4K (~66MB; ~16.5MB at
-# 1080p). 64MB of encoder frame buffers covers the real 1080p encode floorplan
-# (~43MB); 4K blob-free ENCODE needs more and is issue #52.
+# 0x7F800000+8M / 0x7C000000+56M / 0x73800000+136M -- the whole pool. ax_cmm is
+# not loaded since #55 M3 (its old 72MB slice went to the encoder in #52: the 4K
+# H.264 floorplan spans 91MB with the prover input region, 59MB without; 1080p
+# is 23MB). The bench harness loaders keep their own 64/72 split for ax_cmm.
 #
-# If a board / mem= combination would leave ax_cmm below MAP_CMM_MIN_MB the
-# split is ABANDONED with a loud warning and the loader falls back to the
-# pre-#53 behaviour (reserve only the top 8MB, leave the encoder/capture
-# carveouts on their module defaults) rather than shipping a broken pool.
+# If a board / mem= combination cannot fit the three carveouts (remainder below
+# MAP_CMM_MIN_MB) the split is ABANDONED with a loud warning and the loader falls
+# back to the pre-#53 behaviour (reserve only the top 8MB, leave the encoder/
+# capture carveouts on their module defaults) rather than shipping a broken pool.
 # ---------------------------------------------------------------------------
 MAP_COHERENT_MB=8       # open VCMD coherent cmdbuf pool (ax630c_venc_vcmd.ko)
 MAP_CAPTURE_MB=56       # open capture buffers (open_vin_capture.ko, #56)
-MAP_FRAMEBUF_MB=64      # open encoder frame buffers (ax630c_venc_vcmd.ko)
-MAP_CMM_MIN_MB=72       # floor for ax_cmm's remainder (vendor 4K capture ~66MB)
+MAP_FRAMEBUF_MB=136     # open encoder frame buffers (ax630c_venc_vcmd.ko); 4K span is 91MB (#52)
+MAP_CMM_MIN_MB=0        # ax_cmm is not loaded (#55 M3); the remainder is unclaimed
 MAP_ENV_FILE=/run/openkvm-memmap.env
 
 # Sets MAP_* globals. Prints NOTHING (get_cmm_param/get_venc_param call it from
@@ -153,14 +153,14 @@ function print_mem_map()
 {
     printf "openkvm DMA map (#53): CMM pool %#x..%#x (%dMB)\n" \
         "$MAP_POOL_BASE" "$MAP_POOL_TOP" "$MAP_POOL_MB"
-    printf "  ax_cmm           %#010x +%4dMB\n" "$MAP_POOL_BASE" "$MAP_CMM_MB"
+    printf "  unclaimed        %#010x +%4dMB  (ax_cmm slice; not loaded)\n" "$MAP_POOL_BASE" "$MAP_CMM_MB"
     if [ "$MAP_SPLIT" -eq 1 ]; then
         printf "  venc framebuf    %#010x +%4dMB\n" "$MAP_FRAMEBUF_BASE" "$MAP_FRAMEBUF_MB"
         printf "  capture buffers  %#010x +%4dMB\n" "$MAP_CAPTURE_BASE" "$MAP_CAPTURE_MB"
     fi
     printf "  vcmd coherent    %#010x +%4dMB\n" "$MAP_COHERENT_BASE" "$MAP_COHERENT_MB"
     if [ "$MAP_SPLIT" -ne 1 ]; then
-        echo "*** WARNING (#53): a ${MAP_POOL_MB}MB CMM pool leaves ax_cmm only ${MAP_CMM_SHORT_MB}MB after the"
+        echo "*** WARNING (#53): a ${MAP_POOL_MB}MB CMM pool leaves only ${MAP_CMM_SHORT_MB}MB after the"
         echo "*** WARNING (#53): encoder/capture carveouts (floor ${MAP_CMM_MIN_MB}MB). DMA SPLIT ABANDONED --"
         echo "*** WARNING (#53): falling back to reserving only the top ${MAP_COHERENT_MB}MB. The open encoder"
         echo "*** WARNING (#53): framebuf and capture carveouts keep their module defaults and"
