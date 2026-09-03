@@ -214,7 +214,17 @@ static int __init ax630c_vcmd_init(void)
 		pr_err("ax630c-venc-vcmd: platform_device_register_simple failed: %d\n", ret);
 		return ret;
 	}
-	dma_coerce_mask_and_coherent(&venc_pdev->dev, DMA_BIT_MASK(32));
+	/*
+	 * A bare platform device gets arm64's dummy_dma_ops (no arch_setup_dma_ops
+	 * ran for it), whose dma_supported() is 0 -- so dma_coerce_mask_and_coherent()
+	 * FAILS and leaves coherent_dma_mask = 0, and every dma_alloc_attrs() then
+	 * trips WARN_ON_ONCE(!dev->coherent_dma_mask) (dma-mapping.h:516, #63).
+	 * Nothing here needs real ops: the three pools come from the declared
+	 * carveout (dma_alloc_from_dev_coherent, ops-free) and dma-buf imports are
+	 * resolved by the exporter. Set the masks directly.
+	 */
+	venc_pdev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+	venc_pdev->dev.dma_mask = &venc_pdev->dev.coherent_dma_mask;
 	vcmd_fb_set_dev(&venc_pdev->dev);   /* dma-buf imports attach here (#60) */
 
 	if (coherent_size) {

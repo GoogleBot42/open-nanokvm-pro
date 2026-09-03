@@ -3795,7 +3795,7 @@ int vcmd_mem_init(void)
 		return -ENOMEM;
 	}
 	vcmd_buf_mem_pool.busAddress = (unsigned long long)dma_handle;
-	vcmd_buf_mem_pool.phy_address = pfn_to_phys(vmalloc_to_pfn(vcmd_buf_mem_pool.virtualAddress));
+	vcmd_buf_mem_pool.phy_address = dma_handle;	/* AX630C-PORT (#63): carveout virt is a section-mapped memremap -- vmalloc_to_pfn() WARNs (pmd_bad) and returns garbage; bus == phys on AX630C, no IOMMU */
 
 	if (venc_pdev_d1) {
 		dma_handle_d1 = dma_map_page(&venc_pdev_d1->dev,
@@ -3824,7 +3824,7 @@ int vcmd_mem_init(void)
 		return -ENOMEM;
 	}
 	vcmd_status_buf_mem_pool.busAddress = (unsigned long long)dma_handle;
-	vcmd_status_buf_mem_pool.phy_address = pfn_to_phys(vmalloc_to_pfn(vcmd_status_buf_mem_pool.virtualAddress));
+	vcmd_status_buf_mem_pool.phy_address = dma_handle;	/* AX630C-PORT (#63): carveout virt is a section-mapped memremap -- vmalloc_to_pfn() WARNs (pmd_bad) and returns garbage; bus == phys on AX630C, no IOMMU */
 
 	if (venc_pdev_d1) {
 		dma_handle_d1 = dma_map_page(&venc_pdev_d1->dev,
@@ -3853,7 +3853,7 @@ int vcmd_mem_init(void)
 		return -ENOMEM;
 	}
 	vcmd_registers_mem_pool.busAddress = (unsigned long long)dma_handle;
-	vcmd_registers_mem_pool.phy_address = pfn_to_phys(vmalloc_to_pfn(vcmd_registers_mem_pool.virtualAddress));
+	vcmd_registers_mem_pool.phy_address = dma_handle;	/* AX630C-PORT (#63): carveout virt is a section-mapped memremap -- vmalloc_to_pfn() WARNs (pmd_bad) and returns garbage; bus == phys on AX630C, no IOMMU */
 
 	if (venc_pdev_d1) {
 		dma_handle_d1 = dma_map_page(&venc_pdev_d1->dev,
