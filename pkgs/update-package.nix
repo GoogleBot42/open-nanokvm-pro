@@ -284,7 +284,7 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/open_vin_capture.ko $capture_param' "$ldr" \
       || { echo "ERROR: loader does not pass the #53 carveout params to open_vin_capture" >&2; exit 1; }
-    grep -qF 'insmod /soc/ko/open_vin_csi2.ko start_on_probe=1' "$ldr" \
+    grep -qE '^[[:space:]]*insmod /soc/ko/open_vin_csi2.ko[[:space:]]*$' "$ldr" \
       || { echo "ERROR: loader lost the open CSI-2 receiver (no link bring-up)" >&2; exit 1; }
     if grep -Eq 'insmod /soc/ko/ax_[a-z_]+\.ko' "$ldr"; then
       echo "ERROR: default loader still insmods a vendor ax_*.ko -- the open stack needs none (#60)" >&2; exit 1

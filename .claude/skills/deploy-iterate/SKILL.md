@@ -245,7 +245,7 @@ insmod + restart (or reboot, which restores modules via the boot loader).
 
 Since 2026-09-02 the image default is `.#kvm-encoder-v4l2` over the open
 capture drivers: the loader insmods exactly `ax630c_venc_vcmd.ko`,
-`open_vin_csi2.ko start_on_probe=1` and `open_vin_capture.ko` (carveout
+`open_vin_csi2.ko` (bound by the capture driver over v4l2-async, started with the stream) and `open_vin_capture.ko` (carveout
 params from `/run/openkvm-memmap.env`) and NO vendor `ax_*.ko` -- `lsmod |
 grep -E '^ax_'` must print nothing on a healthy boot. Since #54 (2026-09-03)
 the vendor blobs are not even on disk: `/soc/ko` holds exactly those three

@@ -329,10 +329,10 @@ struct openvin_csi2 {
 	u64 irq_count;
 };
 
-static bool standalone = true;
+static bool standalone;
 module_param(standalone, bool, 0444);
 MODULE_PARM_DESC(standalone,
-	"Own a private v4l2_device and expose /dev/v4l-subdev* (M1 bring-up). Set to 0 to register asynchronously for a bridge driver (M2).");
+	"Own a private v4l2_device and expose /dev/v4l-subdev* without a bridge (M1 bench mode). Default 0: register with v4l2-async for the open_vin_capture bridge, which starts/stops the receiver with its stream (M2 link).");
 
 static bool start_on_probe;
 module_param(start_on_probe, bool, 0444);

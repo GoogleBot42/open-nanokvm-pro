@@ -245,11 +245,11 @@ function load_drv()
     echo "insmod ax630c_venc_vcmd, param: $venc_param"
     insmod /soc/ko/ax630c_venc_vcmd.ko $venc_param
 
-    # BLOB-FREE CAPTURE (#55 M1+M2): the open CSI-2 receiver brings the D-PHY /
-    # CSI-2 link up at probe; the open VIN/IFE driver registers /dev/video0 and
-    # streams YUYV frames into its carveout. Load order does not matter (both
-    # bring-ups are reload-safe), receiver first is simply the datapath order.
-    insmod /soc/ko/open_vin_csi2.ko start_on_probe=1
+    # BLOB-FREE CAPTURE (#55 M1+M2): the open VIN/IFE driver registers /dev/video0,
+    # binds the open CSI-2 receiver subdev over v4l2-async (by device name) and
+    # starts/stops the D-PHY/CSI-2 link with its stream. Load order does not
+    # matter (async binding + reload-safe bring-ups); receiver first reads better.
+    insmod /soc/ko/open_vin_csi2.ko
     capture_param=$(get_capture_param)
     echo "insmod open_vin_capture, param: $capture_param"
     insmod /soc/ko/open_vin_capture.ko $capture_param

@@ -44,6 +44,9 @@
 
 #include <media/v4l2-device.h>
 #include <media/v4l2-dev.h>
+#include <media/v4l2-subdev.h>
+#include <media/v4l2-async.h>
+#include <media/media-device.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-fh.h>
 #include <media/videobuf2-v4l2.h>
@@ -55,6 +58,8 @@
 #include "ovc_golden_4k.h"
 
 #define OVC_DRV_NAME		"open_vin_capture"
+/* open_vin_csi2's pad layout: 0 = sink (bridge), 1 = source (to us). */
+#define OVC_CSI2_SOURCE_PAD	1
 
 /* ------------------------------------------------------------------------ */
 /* Module parameters                                                        */
@@ -93,6 +98,22 @@ MODULE_PARM_DESC(carveout_size, "size of the capture-buffer coherent carveout (0
 static u32 bypass_set_mask;
 module_param(bypass_set_mask, uint, 0444);
 MODULE_PARM_DESC(bypass_set_mask, "ISP-top module gate SET strobe (0x02400154); 0 = skip");
+
+/*
+ * M1 <-> M2 link. The open_vin_csi2 subdev (pkgs/open-vin-csi2, loaded with
+ * standalone=0) registers itself with v4l2-async; this driver's notifier
+ * matches it by platform-device name, binds it to our v4l2_device, links its
+ * source pad to our sink pad on the media graph, and fans s_stream out to it
+ * from start/stop_streaming -- so the D-PHY/CSI-2 receiver runs exactly while
+ * /dev/video0 streams, and nobody needs start_on_probe any more. Matching by
+ * device name rather than a DT graph endpoint: the vendor DT has no
+ * port/endpoint nodes and changing the dtb means a slot flash (TODO(mainline):
+ * fwnode graph + v4l2_fwnode_endpoint once the mainline DT exists). Empty
+ * string = no notifier (bench mode: run the receiver standalone).
+ */
+static char *csi2_devname = "2600000.mipi_rx";
+module_param(csi2_devname, charp, 0444);
+MODULE_PARM_DESC(csi2_devname, "platform device name of the open_vin_csi2 subdev to bind (\"\" = none)");
 
 static u32 bypass_clr_mask = 0x00008007;
 module_param(bypass_clr_mask, uint, 0444);
@@ -283,6 +304,14 @@ struct ovc_dev {
 	struct v4l2_device v4l2_dev;
 	struct video_device vdev;
 	struct media_pad pad;	/* sink pad for the CSI-2 subdev (M1) */
+	struct media_device mdev;
+
+	/* M1 link (see csi2_devname) */
+	struct v4l2_async_notifier notifier;
+	struct v4l2_async_subdev asd;
+	struct v4l2_async_subdev *asds[1];
+	struct v4l2_subdev *csi2;	/* bound open_vin_csi2 subdev, or NULL */
+	bool notifier_registered;
 
 	struct mutex lock;	/* serializes ioctls + queue ops */
 	spinlock_t irqlock;	/* protects buf_list / active / sequence */
@@ -1042,10 +1071,70 @@ static void ovc_buf_queue(struct vb2_buffer *vb)
 	spin_unlock_irqrestore(&ovc->irqlock, flags);
 }
 
+/* Hand every queued buffer back to vb2 in @state (start failure / stop). */
+static void ovc_return_buffers(struct ovc_dev *ovc, enum vb2_buffer_state state)
+{
+	struct ovc_buffer *buf, *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ovc->irqlock, flags);
+	if (ovc->active) {
+		vb2_buffer_done(&ovc->active->vb.vb2_buf, state);
+		ovc->active = NULL;
+	}
+	list_for_each_entry_safe(buf, tmp, &ovc->buf_list, list) {
+		list_del(&buf->list);
+		vb2_buffer_done(&buf->vb.vb2_buf, state);
+	}
+	spin_unlock_irqrestore(&ovc->irqlock, flags);
+}
+
+/*
+ * M1 fan-out: push the active geometry to the CSI-2 subdev's source pad and
+ * start/stop the receiver. -ENOIOCTLCMD (no subdev bound) is not an error --
+ * the receiver may be running standalone (bench mode).
+ */
+static int ovc_csi2_stream(struct ovc_dev *ovc, bool on)
+{
+	struct v4l2_subdev *sd = ovc->csi2;
+	int ret;
+
+	if (!sd)
+		return 0;
+
+	if (on) {
+		struct v4l2_subdev_format sfmt = {
+			.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+			.pad = OVC_CSI2_SOURCE_PAD,
+			.format = {
+				.width = ovc->fmt.width,
+				.height = ovc->fmt.height,
+				.code = MEDIA_BUS_FMT_UYVY8_1X16,
+				.field = V4L2_FIELD_NONE,
+			},
+		};
+
+		ret = v4l2_subdev_call(sd, pad, set_fmt, NULL, &sfmt);
+		if (ret && ret != -ENOIOCTLCMD)
+			return ret;
+	}
+	ret = v4l2_subdev_call(sd, video, s_stream, on);
+	return (ret == -ENOIOCTLCMD) ? 0 : ret;
+}
+
 static int ovc_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct ovc_dev *ovc = vb2_get_drv_priv(vq);
 	unsigned long flags;
+	int ret;
+
+	/* Receiver first: no point programming the datapath without a link. */
+	ret = ovc_csi2_stream(ovc, true);
+	if (ret) {
+		dev_err(ovc->dev, "CSI-2 receiver start failed: %d\n", ret);
+		ovc_return_buffers(ovc, VB2_BUF_STATE_QUEUED);
+		return ret;
+	}
 
 	/*
 	 * Full bring-up order per spec §4.1/§4.2 and the §1.4/§2 notes:
@@ -1088,8 +1177,6 @@ static int ovc_start_streaming(struct vb2_queue *vq, unsigned int count)
 static void ovc_stop_streaming(struct vb2_queue *vq)
 {
 	struct ovc_dev *ovc = vb2_get_drv_priv(vq);
-	struct ovc_buffer *buf, *tmp;
-	unsigned long flags;
 
 	/* reverse order: stop the source, then the datapath, then the IRQ */
 	ovc_sif_stop(ovc);
@@ -1099,17 +1186,10 @@ static void ovc_stop_streaming(struct vb2_queue *vq)
 	ovc_ife_go(ovc, false);
 	ovc_irq_teardown(ovc);
 
-	spin_lock_irqsave(&ovc->irqlock, flags);
-	if (ovc->active) {
-		vb2_buffer_done(&ovc->active->vb.vb2_buf,
-				VB2_BUF_STATE_ERROR);
-		ovc->active = NULL;
-	}
-	list_for_each_entry_safe(buf, tmp, &ovc->buf_list, list) {
-		list_del(&buf->list);
-		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
-	}
-	spin_unlock_irqrestore(&ovc->irqlock, flags);
+	ovc_return_buffers(ovc, VB2_BUF_STATE_ERROR);
+
+	/* Receiver last, mirroring start (it was brought up first). */
+	ovc_csi2_stream(ovc, false);
 }
 
 static const struct vb2_ops ovc_vb2_ops = {
@@ -1206,11 +1286,11 @@ static int ovc_s_fmt_vid_cap(struct file *file, void *priv,
 		return ret;
 
 	/*
-	 * TODO(bringup): geometry/format should be derived from (and
-	 * validated against) the CSI-2 subdev's negotiated format once the
-	 * M1 open_vin_csi2 subdev is wired up (see the async-notifier TODO
-	 * in probe). Until then userspace states the source geometry, as
-	 * the current open capture stack (#17) already does.
+	 * Userspace states the source geometry (the HDMI->MIPI bridge is not
+	 * queryable from here); start_streaming pushes it to the bound CSI-2
+	 * subdev via set_fmt so the media graph carries the same format on
+	 * both ends (ovc_csi2_stream). Same contract as the open capture
+	 * stack has had since #17.
 	 */
 	ovc->fmt = f->fmt.pix;
 	return 0;
@@ -1296,6 +1376,68 @@ static const struct v4l2_file_operations ovc_fops = {
 /* Probe / remove                                                           */
 /* ------------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------------ */
+/* M1 subdev binding (v4l2-async)                                            */
+/* ------------------------------------------------------------------------ */
+
+static inline struct ovc_dev *notifier_to_ovc(struct v4l2_async_notifier *n)
+{
+	return container_of(n, struct ovc_dev, notifier);
+}
+
+static int ovc_notifier_bound(struct v4l2_async_notifier *notifier,
+			      struct v4l2_subdev *sd,
+			      struct v4l2_async_subdev *asd)
+{
+	struct ovc_dev *ovc = notifier_to_ovc(notifier);
+	int ret;
+
+	if (sd->entity.num_pads <= OVC_CSI2_SOURCE_PAD) {
+		dev_err(ovc->dev, "subdev %s has no source pad %d\n",
+			sd->name, OVC_CSI2_SOURCE_PAD);
+		return -EINVAL;
+	}
+
+	ret = media_create_pad_link(&sd->entity, OVC_CSI2_SOURCE_PAD,
+				    &ovc->vdev.entity, 0,
+				    MEDIA_LNK_FL_ENABLED |
+				    MEDIA_LNK_FL_IMMUTABLE);
+	if (ret) {
+		dev_err(ovc->dev, "link %s:%d -> %s:0 failed: %d\n", sd->name,
+			OVC_CSI2_SOURCE_PAD, ovc->vdev.name, ret);
+		return ret;
+	}
+
+	ovc->csi2 = sd;
+	dev_info(ovc->dev, "bound CSI-2 subdev %s (%s)\n", sd->name,
+		 dev_name(sd->dev));
+	return 0;
+}
+
+static void ovc_notifier_unbind(struct v4l2_async_notifier *notifier,
+				struct v4l2_subdev *sd,
+				struct v4l2_async_subdev *asd)
+{
+	struct ovc_dev *ovc = notifier_to_ovc(notifier);
+
+	ovc->csi2 = NULL;
+	dev_info(ovc->dev, "CSI-2 subdev %s unbound\n", sd->name);
+}
+
+static int ovc_notifier_complete(struct v4l2_async_notifier *notifier)
+{
+	struct ovc_dev *ovc = notifier_to_ovc(notifier);
+
+	/* /dev/v4l-subdevN for the receiver (log_status, controls). */
+	return v4l2_device_register_subdev_nodes(&ovc->v4l2_dev);
+}
+
+static const struct v4l2_async_notifier_operations ovc_notifier_ops = {
+	.bound		= ovc_notifier_bound,
+	.unbind		= ovc_notifier_unbind,
+	.complete	= ovc_notifier_complete,
+};
+
 static int ovc_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -1378,9 +1520,19 @@ static int ovc_probe(struct platform_device *pdev)
 		goto err_carveout;
 	}
 
+	/* Media controller: the graph is csi2 (source pad 1) -> video0 (pad 0). */
+	ovc->mdev.dev = dev;
+	strscpy(ovc->mdev.model, "AX630C VIN capture", sizeof(ovc->mdev.model));
+	snprintf(ovc->mdev.bus_info, sizeof(ovc->mdev.bus_info),
+		 "platform:%s", dev_name(dev));
+	media_device_init(&ovc->mdev);
+	ovc->v4l2_dev.mdev = &ovc->mdev;
+
 	ret = v4l2_device_register(dev, &ovc->v4l2_dev);
-	if (ret)
+	if (ret) {
+		media_device_cleanup(&ovc->mdev);
 		goto err_carveout;
+	}
 
 	q = &ovc->queue;
 	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -1399,14 +1551,8 @@ static int ovc_probe(struct platform_device *pdev)
 
 	/*
 	 * Media pad: this video node is the sink of the M1 open_vin_csi2
-	 * subdev (issue #57, authored in parallel).
-	 * TODO(bringup): full wiring is the standard fwnode/async-subdev
-	 * mechanism -- v4l2_async_notifier over the DT endpoint to the
-	 * CSI-2 subdev, media_create_pad_link(csi2 source -> this sink),
-	 * s_stream fan-out in start/stop_streaming, plus a registered
-	 * media_device. Deferred until the M1 subdev lands; the capture
-	 * datapath above is real and testable without it (the CSI-2 RX is
-	 * brought up separately during A/B bring-up).
+	 * subdev; the link itself is made when the notifier binds it (see
+	 * ovc_notifier_bound and csi2_devname).
 	 */
 	ovc->pad.flags = MEDIA_PAD_FL_SINK;
 	ret = media_entity_pads_init(&ovc->vdev.entity, 1, &ovc->pad);
@@ -1428,15 +1574,51 @@ static int ovc_probe(struct platform_device *pdev)
 		goto err_entity;
 	}
 
+	ret = media_device_register(&ovc->mdev);
+	if (ret) {
+		dev_err(dev, "media_device_register failed: %d\n", ret);
+		goto err_vdev;
+	}
+
 	platform_set_drvdata(pdev, ovc);
 	dev_info(dev, "registered %s as /dev/video%d (WDMA chn %u)\n",
 		 OVC_DRV_NAME, ovc->vdev.num, wdma_chn);
+
+	/*
+	 * Last: the async notifier for the CSI-2 subdev. If open_vin_csi2 is
+	 * already registered this binds synchronously from here (module order
+	 * does not matter). Registered after the video node so the media link
+	 * has both ends.
+	 */
+	if (csi2_devname && csi2_devname[0]) {
+		ovc->asd.match_type = V4L2_ASYNC_MATCH_DEVNAME;
+		ovc->asd.match.device_name = csi2_devname;
+		ovc->asds[0] = &ovc->asd;
+		ovc->notifier.subdevs = ovc->asds;
+		ovc->notifier.num_subdevs = 1;
+		ovc->notifier.ops = &ovc_notifier_ops;
+		ret = v4l2_async_notifier_register(&ovc->v4l2_dev,
+						   &ovc->notifier);
+		if (ret) {
+			dev_err(dev, "async notifier register failed: %d\n",
+				ret);
+			goto err_mdev;
+		}
+		ovc->notifier_registered = true;
+	} else {
+		dev_info(dev, "no CSI-2 subdev bound (csi2_devname empty)\n");
+	}
 	return 0;
 
+err_mdev:
+	media_device_unregister(&ovc->mdev);
+err_vdev:
+	video_unregister_device(&ovc->vdev);
 err_entity:
 	media_entity_cleanup(&ovc->vdev.entity);
 err_v4l2:
 	v4l2_device_unregister(&ovc->v4l2_dev);
+	media_device_cleanup(&ovc->mdev);
 err_carveout:
 	if (ovc->carveout_declared)
 		dma_release_declared_memory(dev);
@@ -1447,9 +1629,13 @@ static int ovc_remove(struct platform_device *pdev)
 {
 	struct ovc_dev *ovc = platform_get_drvdata(pdev);
 
+	if (ovc->notifier_registered)
+		v4l2_async_notifier_unregister(&ovc->notifier);
+	media_device_unregister(&ovc->mdev);
 	video_unregister_device(&ovc->vdev);
 	media_entity_cleanup(&ovc->vdev.entity);
 	v4l2_device_unregister(&ovc->v4l2_dev);
+	media_device_cleanup(&ovc->mdev);
 	if (ovc->carveout_declared)
 		dma_release_declared_memory(&pdev->dev);
 	return 0;

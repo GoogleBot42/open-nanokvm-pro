@@ -398,7 +398,7 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: loader does not pass the #53 carveout params to ax630c_venc_vcmd" >&2; exit 1; }
     grep -qF 'insmod /soc/ko/open_vin_capture.ko $capture_param' "$curated" \
       || { echo "ERROR: loader does not pass the #53 carveout params to open_vin_capture" >&2; exit 1; }
-    grep -qF 'insmod /soc/ko/open_vin_csi2.ko start_on_probe=1' "$curated" \
+    grep -qE '^[[:space:]]*insmod /soc/ko/open_vin_csi2.ko[[:space:]]*$' "$curated" \
       || { echo "ERROR: loader lost the open CSI-2 receiver (no link bring-up)" >&2; exit 1; }
     # Zero vendor kernel blobs (#60): no ax_*.ko may be insmod'd by the default
     # loader. In particular ax_cmm (parameter-less = the strlen(NULL) boot-loop

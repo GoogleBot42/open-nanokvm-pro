@@ -329,8 +329,16 @@ Three findings from the specs materially change the plan below:
    `/soc/ko` holds exactly our three open modules, no rollback loader ships
    (reverting = reflash the vendor `.axp`), and `wifi.sh` `modprobe`s the
    from-source aic8800 modules instead of insmod'ing `/soc/ko` by path.
-   Residuals: a real non-4K *signal* on the bench (human), the M1<->M2 async
-   subdev link (polish), 4K H.264 (#52).
+   **M1<->M2 link DONE 2026-09-03:** `open_vin_capture` binds the `open_vin_csi2`
+   subdev over v4l2-async (match by platform-device name, no DT graph on the
+   vendor dtb), registers a media device (`/dev/media0`, `/dev/v4l-subdev0`) with
+   the csi2:1 -> video0:0 link, and fans `set_fmt` + `s_stream` out to the
+   receiver from start/stop_streaming -- the D-PHY/CSI-2 link runs exactly while
+   `/dev/video0` streams; `standalone`/`start_on_probe` are bench-only now and the
+   loader insmods the receiver with no parameters. Device-proven: link re-locks on
+   every stream start (three service cycles), cold boot clean.
+   Residuals: a real non-4K *signal* on the bench (human), 4K H.264 (#52).
+
 6. **Mainline port** rides with #26 once M3 ships on 4.19.
 
 EDID (step 3 of the epic) is DONE: all six bins clean-room as of this commit
