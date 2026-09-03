@@ -112,8 +112,8 @@ carveout (`framebuf_alloc.c`), the open capture driver's buffer carveout
 (`pkgs/rootfs/ax-load-drv.sh`, `compute_mem_map`) computes one map at boot
 and hands every consumer its slice as a module parameter. Since #55 M3
 (2026-09-02) `ax_cmm` is not loaded at all, so its slice is simply unclaimed on
-a default boot; the map still reserves it, which is what keeps the `.openvenc`
-rollback loader safe.
+a default boot; the map still reserves it, which is what keeps the bench-only
+`.openvenc` harness loader (never shipped since #54) safe.
 
 **Derivation rule.** The pool `[pool_base, pool_top)` is what the vendor
 `get_cmm_size` math already yields from the board id and the kernel `mem=`
@@ -144,7 +144,7 @@ exactly on the addresses the drivers used to hard-code.
   there for the taking, since epic #55 retired the vendor capture path and left
   `ax_cmm`'s 72 MB unclaimed on a default boot.
 - **72 MB for `ax_cmm`** — sized for the vendor capture path (~16.5 MB at
-  1080p, ~66 MB at 4K) so a `.openvenc` rollback still captures at 4K.
+  1080p, ~66 MB at 4K) so the bench-only `.openvenc` harness loader still captures at 4K.
 
 **Safety valve.** If a board / `mem=` combination would leave `ax_cmm` below
 72 MB (`MAP_CMM_MIN_MB`), the loader prints a five-line `*** WARNING (#53)`
@@ -161,7 +161,7 @@ insmod ax630c_venc_vcmd.ko coherent_base=… coherent_size=… \
 insmod open_vin_capture.ko carveout_base=… carveout_size=…
 ```
 
-The `.openvenc` rollback loader additionally passes
+The bench-only `.openvenc` harness loader (not shipped since #54) additionally passes
 `cmmpool=anonymous,0,<pool_base>,<remainder>M` to `ax_cmm` (never load it
 without that parameter — it panics). For consumers insmod'd by hand during
 bring-up the loader also writes `/run/openkvm-memmap.env`:

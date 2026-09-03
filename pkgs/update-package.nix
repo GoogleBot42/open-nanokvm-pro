@@ -59,11 +59,12 @@
 #                                                encode driver (blob-free encode).
 #     soc/ko/open_vin_csi2.ko                    our open CSI-2 receiver (M1).
 #     soc/ko/open_vin_capture.ko                 our open VIN/IFE V4L2 capture (M2).
-#     soc/scripts/auto_load_all_drv.sh.openvenc  previous curated loader (10 vendor
-#                                                capture blobs + open venc), rollback.
-#     soc/scripts/auto_load_all_drv.sh.vendor    pristine vendor loader kept for
-#                                                on-device rollback (restore + reboot).
-#     etc/rc.local                               vendor rc.local minus the axbox
+#     opt/scripts/wifi.sh                        vendor script with its four
+#                                                insmod/rmmod-by-path lines turned
+#                                                into modprobe (#54): aic8800 loads
+#                                                from our modules tree, not the
+#                                                purged /soc/ko copies.
+#     etc/rc.local                             vendor rc.local minus the axbox
 #                                                syslog launch (rsyslogd covers
 #                                                logging). Overlay-only: the OTA
 #                                                cannot delete /bin/axbox itself,
@@ -233,12 +234,33 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q '^Restart=no$' "$rfs/etc/systemd/system/wifi.service.d/override.conf" \
       || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
 
+    # --- wifi.sh: insmod-by-path -> modprobe (#54, mirrors pkgs/rootfs.nix
+    # [5b6a]). The OTA ships our aic8800 builds in usr/lib/modules (depmod'd
+    # above), so modprobe resolves them there; the /soc/ko copies the vendor
+    # script named are purged from flashed images. Same drift assertions as the
+    # rootfs build: exactly the four lines differ, no by-path load survives.
+    mkdir -p "$rfs/opt/scripts"
+    cp ${./rootfs/wifi.sh} "$rfs/opt/scripts/wifi.sh"
+    chmod 775 "$rfs/opt/scripts/wifi.sh"
+    ndiff=$(diff ${./rootfs/wifi.sh.vendor} "$rfs/opt/scripts/wifi.sh" | grep -c '^[<>]' || true)
+    [ "$ndiff" -eq 8 ] \
+      || { echo "ERROR: wifi.sh patch drifted: $ndiff changed lines, expected 8" >&2; exit 1; }
+    if grep -Eq 'insmod|rmmod|/soc/ko' "$rfs/opt/scripts/wifi.sh"; then
+      echo "ERROR: shipped wifi.sh still loads by path from /soc/ko" >&2; exit 1
+    fi
+    for m in aic8800_bsp aic8800_fdrv; do
+      find "$rfs/usr/lib/modules" -name "$m.ko" | grep -q . \
+        || { echo "ERROR: $m.ko not in the OTA modules tree -- wifi.sh modprobe would fail" >&2; exit 1; }
+    done
+    echo "  wifi.sh: modprobe copy staged; aic8800 modules present in tree"
+
     # --- open-stack /soc/ko module loader (#60, mirrors pkgs/rootfs.nix [5b7]).
     # Replaces the vendor auto_load_all_drv.sh (all 22 blobs) with exactly three
     # from-source modules -- open VCMD encoder, open CSI-2 receiver, open VIN/IFE
-    # V4L2 capture -- and ZERO vendor kernel blobs. The previous curated loader
-    # (.openvenc: 10 vendor capture blobs + open venc) and the pristine vendor
-    # script (.vendor) ship beside it for on-device rollback. Takes effect on
+    # V4L2 capture -- and ZERO vendor kernel blobs. No rollback loader ships
+    # (#54: a flashed image has no vendor .ko left for one to insmod; an OTA-
+    # upgraded device keeps whatever rollback copies an earlier OTA left, since
+    # an OTA cannot delete). Takes effect on
     # the NEXT REBOOT -- when the OTA lands the old set is already loaded, so
     # nothing is unloaded and the running pipeline is untouched; on reboot the
     # open drivers load and the V4L2 libkvm drives them. NOTE: unlike the rootfs
@@ -246,12 +268,8 @@ pkgs.stdenvNoCC.mkDerivation {
     # the base rootfs to diff against); pkgs/rootfs.nix step [5b7] is the guard
     # that catches a base .axp changing the loader.
     mkdir -p "$rfs/soc/scripts" "$rfs/soc/ko"
-    cp ${./rootfs/ax-load-drv.sh}          "$rfs/soc/scripts/auto_load_all_drv.sh"
-    cp ${./rootfs/ax-load-drv.openvenc.sh} "$rfs/soc/scripts/auto_load_all_drv.sh.openvenc"
-    cp ${./rootfs/ax-load-drv.vendor.sh}   "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
-    chmod 755 "$rfs/soc/scripts/auto_load_all_drv.sh" \
-              "$rfs/soc/scripts/auto_load_all_drv.sh.openvenc" \
-              "$rfs/soc/scripts/auto_load_all_drv.sh.vendor"
+    cp ${./rootfs/ax-load-drv.sh} "$rfs/soc/scripts/auto_load_all_drv.sh"
+    chmod 755 "$rfs/soc/scripts/auto_load_all_drv.sh"
     # The three open modules the loader insmods (built against our kernel).
     cp ${vc8000-vcmd}/ax630c_venc_vcmd.ko      "$rfs/soc/ko/ax630c_venc_vcmd.ko"
     cp ${open-vin-csi2}/open_vin_csi2.ko       "$rfs/soc/ko/open_vin_csi2.ko"
@@ -275,16 +293,12 @@ pkgs.stdenvNoCC.mkDerivation {
     if [ "$nins" -ne 3 ]; then
       echo "ERROR: loader has $nins insmod lines, expected 3 (open venc + open csi2 + open capture, #60)" >&2; exit 1
     fi
-    # The .openvenc rollback loader must still carry the ax_cmm cmmpool= parameter
-    # (ax_cmm without it is the strlen(NULL) boot-loop panic).
-    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$rfs/soc/scripts/auto_load_all_drv.sh.openvenc" \
-      || { echo "ERROR: .openvenc rollback loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     # No modprobe/depmod: the loader must insmod by PATH with explicit params, or
     # modules.dep resolution could load ax_cmm parameter-less (the autoload brick).
     if grep -Eq '(^|[^[:alnum:]_])(modprobe|depmod)([^[:alnum:]_]|$)' "$rfs/soc/scripts/auto_load_all_drv.sh"; then
       echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
     fi
-    echo "  module loader: open-stack set OK ($nins insmod lines) + .openvenc/.vendor rollback copies"
+    echo "  module loader: open-stack set OK ($nins insmod lines); no rollback copies (#54)"
 
     # --- drop the axbox syslog daemon (mirrors pkgs/rootfs.nix [5b8]). The
     # vendor /etc/rc.local starts /etc/init.d/{axsyslogd,axklogd} -> /bin/axbox,

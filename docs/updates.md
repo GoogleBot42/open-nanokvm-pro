@@ -170,13 +170,20 @@ web UI           ─► reconnects after the restart / reboot
 | Shipped by OTA (`rootfs/` + `partitions/`) | AXDL-only (re-flash the `.axp`) |
 |---|---|
 | app server, web UI, `libkvm.so{,.0}` | SPL (p1), ddrinit (p2) |
-| `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d; `ax_*.ko` stay in `/soc/ko`) | env (p7), logo (p10/11) |
-| `/soc/scripts/auto_load_all_drv.sh` — our `/soc/ko` loader (three from-source modules, zero vendor blobs, #55 M3) + the `.openvenc` and `.vendor` rollback copies, **and** the three modules themselves (`ax630c_venc_vcmd.ko`, `open_vin_csi2.ko`, `open_vin_capture.ko`); takes effect on the **next reboot** — the installer forces one when the loader changed | the *vendor* `/soc/ko` blobs (`ax_*.ko`) |
+| `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d) | env (p7), logo (p10/11) |
+| `/soc/scripts/auto_load_all_drv.sh` — our `/soc/ko` loader (three from-source modules, zero vendor blobs, #55 M3; no rollback copies ship any more, #54) **and** the three modules themselves (`ax630c_venc_vcmd.ko`, `open_vin_csi2.ko`, `open_vin_capture.ko`); takes effect on the **next reboot** — the installer forces one when the loader changed | **deletions** — the #54 purge of the vendor `/soc/ko` blobs, `libsns_*.so`, NPU model data and ISP tuning set |
+| `/opt/scripts/wifi.sh` — the vendor script with its `insmod`/`rmmod /soc/ko/aic8800_*.ko` lines rewritten to `modprobe`/`modprobe -r` (#54) | |
 | kernel (p14/p15), dtb (p12/p13) | base Ubuntu rootfs (p17) |
 | U-Boot (p5/p6), ATF (p3/p4), OP-TEE (p8/p9) | repartitioning / GPT layout |
 
 So an OTA can now roll forward the entire runtime **and** the boot chain; only the
 first-stage loader, the base filesystem, and the partition table remain AXDL-only.
+
+**An OTA only overlays files — it never deletes.** The blob purges done in the
+image build (`libax_*.so` in #25, the vendor `ax_*.ko` / `libsns_*.so` / NPU
+model data / ISP tuning set in #54) therefore reach an OTA-upgraded device only
+on a reflash. Nothing loads or links them there, so this is dead weight, not a
+functional difference.
 
 ### Dual-slot write strategy (why it is power-cut-safe)
 

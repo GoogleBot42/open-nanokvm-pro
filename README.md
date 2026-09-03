@@ -10,11 +10,11 @@ the device boots **three from-source kernel modules and zero vendor ones** —
 CSI-2 / D-PHY receiver) and `open_vin_capture.ko` (open VIN/IFE bypass capture,
 exposing a plain V4L2 `/dev/video0`). Our `libkvm.so` captures over **standard
 V4L2** and hands each buffer's dma-buf to the encoder zero-copy, doing H.264 +
-MJPEG with **zero** Axera userspace libraries linked. The vendor encode blobs
-`ax_venc.ko`/`ax_jenc.ko` are gone from the image; the vendor ISP/VIN closure
-(`ax_proton`/`ax_mipi_rx`/`ax_sys`/`ax_cmm`/…) still ships purely as rollback
-material and is **never loaded** (its removal is #54). Still closed on the
-image: the aic8800 Wi-Fi/BT firmware and the AXDL flash helper.
+MJPEG with **zero** Axera userspace libraries linked. Since #54 (2026-09-03)
+the vendor media closure is **deleted from the image**, not merely unloaded:
+all 22 `ax_*.ko` plus the vendor `libsns_*.so`, the NPU/AI-ISP model data and
+the ISP sensor-tuning set are gone (~355 files, ~248 MB). Still closed on the
+image: the aic8800 Wi-Fi/BT **firmware** and the flash-time-only AXDL helper.
 
 The result is a reproducible `.axp` firmware image that **boots and runs the full
 web KVM on real hardware**, driven by our own open `libkvm.so` backend instead
@@ -74,16 +74,16 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | `open_vin_csi2.ko` + `open_vin_capture.ko` (open MIPI CSI-2 receiver + VIN/IFE bypass capture → V4L2) | **from source** — replace the entire vendor `ax_proton` capture closure | GPL-2.0 |
 | `lt6911_manage.ko` (HDMI-in bridge) | **from source** | GPL-2.0 |
 | NanoKVM-Server (Go) + web UI (React) | **from source** (`NanoKVM-Pro`) | GPL-3.0 |
-| **capture** `ax_*.ko` modules (`proton`/`mipi_rx`/`vin`/`ivps`/`sys`/`cmm`/…) | **pinned blob**, shipped as rollback material only — **never loaded** (eviction is #54) | GPL-tagged, source not published |
-| ~~`ax_venc.ko` / `ax_jenc.ko`~~ (encode) | **REMOVED** — replaced by our open VCMD driver | — |
+| ~~`ax_*.ko` modules (`proton`/`mipi_rx`/`ivps`/`sys`/`cmm`/`venc`/`jenc`/…)~~ | **REMOVED from the image** — the encode pair in #25, the whole 22-module `/soc/ko` set in #54; `/soc/ko` now holds only our three open modules | — |
+| ~~vendor `libsns_*.so`, NPU/AI-ISP model data, ISP tuning `*.ini`/`*.bin`~~ | **REMOVED from the image** (#54) — no referrer left once `libax_*` went | — |
 | `libax_*.so` | **PURGED from the image** (#25) — nothing we ship links or `dlopen`s them | BSD-3, redistributable |
 | `libsns_dummy.so` | **from source** (`pkgs/libsns-dummy.nix`, #30) | ours |
 | Rootfs base | **pinned** vendor Ubuntu 22.04 arm64 (from the v1.0.15 base `.axp`) | mixed |
 
 The design goal is a **zero-vendor-blob device** (ISP included). The video path
-is there — capture and encode are blob-free down to the kernel drivers; what's
-left is the Wi-Fi/BT firmware and evicting the unloaded vendor `ax_*.ko` from
-the image. See [docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs)
+is there — capture and encode are blob-free down to the kernel drivers, and
+since #54 no closed kernel module or media library ships at all; what's left is
+the aic8800 Wi-Fi/BT firmware. See [docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs)
 and [docs/provenance.md](docs/provenance.md) for the full, current blob audit.
 
 > **Deliberately excluded:** the vendor's closed **mini-display app `kvm_ui`**
@@ -116,7 +116,7 @@ firmware-image (.axp)  ◄── image.nix: streaming zip-rewrite of the vendor 
               ├── open-vin-csi2 → open_vin_csi2.ko       (open MIPI CSI-2 / D-PHY receiver)
               ├── open-vin-capture → open_vin_capture.ko (open VIN capture → V4L2 /dev/video0)
               ├── kernel        → /lib/modules + lt6911_manage.ko
-              └── ax-ko-blobs   → prebuilt ax_*.ko (pinned reference; shipped unloaded, rollback only)
+              └── ax-ko-blobs   → prebuilt ax_*.ko (pinned reference for the bench harness; NOT shipped)
 ```
 
 Full package list and the dependency DAG are in
@@ -162,7 +162,9 @@ enter it, then re-flash any `.axp` (ours or the stock vendor image) with
 
 [GPL-3.0](LICENSE) — Copyright (C) 2026 GoogleBot42.
 
-Some bundled and pinned components keep their own licenses: the (now unlinked)
-Axera `libax_*.so` are BSD-3, the pinned `ax_*.ko` modules kept as rollback are
-GPL-tagged, and the Ubuntu rootfs base is its own mix. See the
+Some bundled and pinned components keep their own licenses: the Ubuntu rootfs
+base is its own mix, and the aic8800 Wi-Fi/BT firmware is redistributable
+vendor firmware. The Axera `libax_*.so` (BSD-3) and `ax_*.ko` (GPL-tagged,
+source unpublished) no longer ship at all — `axera-libs` / `ax-ko-blobs` remain
+only as pinned build-time and bench-harness references. See the
 [table above](#whats-from-source-vs-pinned).

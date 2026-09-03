@@ -27,14 +27,22 @@
 #       (copytruncate; the server holds its stdout fd open -- see #41).
 #   - /etc/systemd/system/wifi.service.d/override.conf -> Restart=no, ends the
 #       vendor wifi.service crash-restart loop (see #43).
-#   - /soc/scripts/auto_load_all_drv.sh -> our CURATED module loader: 10 of the
-#       vendor's 22 /soc/ko blobs (the ax_proton capture closure) PLUS our
-#       from-source open VC8000E VCMD encode driver (ax630c_venc_vcmd.ko, emitted
-#       to /soc/ko in step [5b7a]) in place of vendor ax_venc/ax_jenc -- so the
-#       encode path is now blob-free too (#25 default). The pristine vendor
-#       script is kept beside it as auto_load_all_drv.sh.vendor for on-device
-#       rollback, and step [5b7] byte-compares the base .axp's copy against our
-#       pin so a base bump that changes the loader fails the build.
+#   - /opt/scripts/wifi.sh -> the vendor script with its four insmod/rmmod-by-
+#       path lines rewritten to modprobe, so WiFi bring-up resolves aic8800 from
+#       our from-source modules tree instead of the (purged) /soc/ko copies
+#       (#54). Vendor original pinned as pkgs/rootfs/wifi.sh.vendor, byte-compared.
+#   - /soc/scripts/auto_load_all_drv.sh -> our module loader: exactly three
+#       from-source modules (open VCMD encoder, open CSI-2 receiver, open VIN/IFE
+#       V4L2 capture; emitted to /soc/ko in step [5b7a]) and ZERO vendor kernel
+#       blobs (#55 M3). Step [5b7] byte-compares the base .axp's copy of the
+#       vendor loader against our pin so a base bump that changes it fails the
+#       build. No rollback loader ships any more: the vendor .ko it would insmod
+#       are purged (#54) -- rolling back to the vendor stack is a reflash.
+#   - /soc/ko: EVERY vendor kernel blob removed (#54) -- the 22-module ax_*.ko
+#       closure + ax_perf_monitor, and the aic8800_*/hynitron_touch copies whose
+#       from-source builds live in our /usr/lib/modules tree and udev-autoload.
+#       Also purged: vendor libsns_*.so (libsns_dummy.so, ours, stays), the NPU /
+#       AI-ISP model sets, and the /opt/etc ISP sensor-tuning .ini/.bin set.
 #   - libkvm.so is the openvenc build (open capture + open encode; 0 vendor
 #       libs). Its soft-MJPEG path DT_NEEDEDs libjpeg.so.8, which the vendor
 #       Ubuntu base already ships at /lib/aarch64-linux-gnu/libjpeg.so.8.
@@ -318,17 +326,49 @@ pkgs.stdenvNoCC.mkDerivation {
     emit_file "${./rootfs/wifi-service-override.conf}" \
               "/etc/systemd/system/wifi.service.d/override.conf" 0100644
 
+    # 5b6a. wifi.sh: insmod-by-path -> modprobe (#54). The vendor script loads
+    # /soc/ko/aic8800_{bsp,fdrv}.ko by path; those copies are purged in step 5d2
+    # (our from-source builds of the same modules ship in /usr/lib/modules and
+    # udev already autoloads them before wifi.service runs -- device-proven).
+    # modprobe resolves through our modules tree, so bring-up keeps working
+    # whichever wins the race, and `wifi.sh stop` unloads by name. The vendor
+    # script is pinned + byte-compared like the loader and rc.local; the shipped
+    # copy differs from it in exactly those four lines (asserted).
+    vwifi="/opt/scripts/wifi.sh"
+    if ! debugfs -R "stat $vwifi" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+      echo "ERROR: $vwifi missing in vendor rootfs -- layout changed" >&2
+      exit 1
+    fi
+    debugfs -R "dump $vwifi $PWD/chk.vwifi" rootfs.ext4 2>/dev/null
+    cmp -s "$PWD/chk.vwifi" "${./rootfs/wifi.sh.vendor}" || {
+      echo "ERROR: the base .axp's $vwifi differs from pkgs/rootfs/wifi.sh.vendor." >&2
+      echo "       Re-derive pkgs/rootfs/wifi.sh (modprobe patch, #54) and re-pin both." >&2
+      exit 1
+    }
+    ndiff=$(diff "${./rootfs/wifi.sh.vendor}" "${./rootfs/wifi.sh}" | grep -c '^[<>]' || true)
+    [ "$ndiff" -eq 8 ] \
+      || { echo "ERROR: wifi.sh patch drifted: $ndiff changed lines, expected 8 (4 pairs)" >&2; exit 1; }
+    if grep -Eq 'insmod|rmmod|/soc/ko' "${./rootfs/wifi.sh}"; then
+      echo "ERROR: shipped wifi.sh still loads by path from /soc/ko" >&2; exit 1
+    fi
+    for need in 'modprobe aic8800_bsp' 'modprobe aic8800_fdrv' 'modprobe -r aic8800_fdrv'; do
+      grep -qF "$need" "${./rootfs/wifi.sh}" \
+        || { echo "ERROR: shipped wifi.sh lost '$need'" >&2; exit 1; }
+    done
+    emit_file "${./rootfs/wifi.sh}" "$vwifi" 0100775
+    echo "  wifi.sh: vendor pinned + modprobe patch asserted."
+
     # 5b7. OPEN-STACK /soc/ko module loader (#60, was the #39 curated set). The
     # vendor /soc/scripts/auto_load_all_drv.sh insmods all 22 blobs at boot; ours
     # loads exactly three from-source modules -- the open VCMD encoder (#25),
     # the open CSI-2 receiver (M1) and the open VIN/IFE V4L2 capture driver (M2)
     # -- and ZERO vendor kernel blobs (device-proven 2026-09-02: the ax base
-    # stack is not needed either). Two rollback loaders ship alongside:
-    # auto_load_all_drv.sh.openvenc (the previous 10-blob capture closure + open
-    # venc; pairs with a .#kvm-encoder-openvenc libkvm) and .vendor (pristine,
-    # 22 blobs). Rollback on the device is `cp <name>.<variant> <name>` + reboot.
-    # The vendor capture blobs stay in /soc/ko for those rollbacks this cycle;
-    # their removal is #54. Rationale: docs/deblob-capture.md.
+    # stack is not needed either). No rollback loader ships: every vendor .ko
+    # they would insmod is purged from /soc/ko in step 5d2 (#54), so rolling
+    # back to the vendor stack is a reflash of the vendor .axp. The harness
+    # variants (pkgs/rootfs/ax-load-drv.{openvenc,base-only,stub}.sh) are
+    # bench tooling for a device that still carries the blobs, never shipped.
+    # Rationale: docs/deblob-capture.md.
     #
     # The vendor loader is asserted BYTE-IDENTICAL to our pinned copy: if a base
     # .axp bump ever ships a different auto_load_all_drv.sh, this build FAILS
@@ -370,11 +410,6 @@ pkgs.stdenvNoCC.mkDerivation {
     if [ "$nins" -ne 3 ]; then
       echo "ERROR: loader has $nins insmod lines, expected 3 (open venc + open csi2 + open capture, #60)" >&2; exit 1
     fi
-    # The .openvenc rollback loader is the previous curated set: it MUST still
-    # carry the cmmpool= parameter (ax_cmm without it panics at boot).
-    openvenc="${./rootfs/ax-load-drv.openvenc.sh}"
-    grep -qF 'insmod /soc/ko/ax_cmm.ko $cmm_param' "$openvenc" \
-      || { echo "ERROR: .openvenc rollback loader lost the ax_cmm cmmpool= parameter (panic risk)" >&2; exit 1; }
     # No modprobe/depmod: the loader must insmod by PATH with explicit params.
     # A modprobe here would resolve through modules.dep and could load ax_cmm
     # parameter-less -- the exact autoload brick step [4] guards against.
@@ -382,9 +417,7 @@ pkgs.stdenvNoCC.mkDerivation {
       echo "ERROR: curated loader uses modprobe/depmod -- must insmod by path with params" >&2; exit 1
     fi
     echo "  module loader: vendor script pinned + open-stack set asserted ($nins insmod lines)."
-    emit_file "${./rootfs/ax-load-drv.vendor.sh}"   "$vloader.vendor"   0100755
-    emit_file "${./rootfs/ax-load-drv.openvenc.sh}" "$vloader.openvenc" 0100755
-    emit_file "${./rootfs/ax-load-drv.sh}"          "$vloader"          0100755
+    emit_file "${./rootfs/ax-load-drv.sh}" "$vloader" 0100755
 
     # 5b7a. The three from-source kernel modules the loader above insmods: the
     # open VC8000E VCMD encoder (#44/#25, /dev/es_venc), the open CSI-2 receiver
@@ -525,11 +558,11 @@ pkgs.stdenvNoCC.mkDerivation {
       /usr/bin/kvm_ui_setup \
       /usr/bin/ax_clk \
       /usr/bin/ax_lookat \
-      /soc/ko/ax_venc.ko \
-      /soc/ko/ax_jenc.ko \
       /kvmapp/server/dl_lib/libkvm.so.0.1.0 ; do
       echo "rm $dead" >> "$script"
     done
+    # (ax_venc.ko / ax_jenc.ko, dropped here since #25, now go with the whole
+    # /soc/ko vendor set in step 5d2.)
     # /kvmapp/server/dl_lib/libkvm.so.0.1.0: Sipeed's ORIGINAL closed libkvm
     # (2.3 MB, DT_NEEDEDs the full libax closure). We overwrite libkvm.so + .so.0
     # with ours, but the versioned .so.0.1.0 was left behind -- never mapped (the
@@ -554,18 +587,88 @@ pkgs.stdenvNoCC.mkDerivation {
     echo "  libax purge: queued $libax_n /opt/lib/libax_*.so for removal (0 refs, openvenc)"
     test "$libax_n" -ge 20 \
       || { echo "ERROR: only $libax_n libax_*.so found in /opt/lib -- layout changed, refusing to ship a half-purge" >&2; exit 1; }
-    # The two vendor ENCODE blobs (#25): our from-source open VC8000E VCMD
-    # driver (ax630c_venc_vcmd.ko, loaded in their place by the curated loader)
-    # makes them dead weight -- nothing kept symbol-depends on them (only
-    # ax_jenc depended on ax_venc, both dropped), and the shipped libkvm links
-    # ZERO vendor libs. Removing them shrinks the shipped blob set toward the
-    # zero-vendor-blob goal (standing direction, 2026-08-30). /soc is a real
-    # dir (not a usr symlink), so debugfs `rm` reaches it. The pristine .vendor
-    # rollback loader still references them, but it has no `set -e`, so a
-    # rollback insmods the CAPTURE blobs fine and simply skips the (now absent)
-    # encode pair -- encode rollback needs a reflash, which is the intent.
-    # (OTA can't delete, so an OTA-upgraded device keeps them unused until
-    # reflash -- same pattern as the axbox removal.)
+
+    # ---- 5d2. PURGE round 2 (#54): every remaining closed blob that nothing
+    # we ship executes or reads. Same shape as 5d1 -- enumerated from the vendor
+    # image so the lists can't drift, floor-asserted here, and asserted GONE in
+    # step [6]. /soc and /opt are real dirs (not usr symlinks), so debugfs `rm`
+    # reaches them. OTA can't delete (an OTA-upgraded device keeps all of this
+    # until reflash) -- same pattern as 5d/5d1.
+    #
+    # (a) /soc/ko: ALL vendor kernel modules. The 22-module ax_*.ko closure is
+    #     loaded by nothing since #55 M3 (three open modules replace it, cold-
+    #     boot proven; the ax base stack was rmmod'd live under a running stream
+    #     with no effect); ax_perf_monitor.ko was never loaded by any loader;
+    #     aic8800_{bsp,btlpm,fdrv}.ko + hynitron_touch.ko are the vendor's
+    #     prebuilt copies of modules we build from the SDK kernel source into
+    #     /usr/lib/modules, where udev autoloads them (device-proven: both are
+    #     live on a boot whose loader insmods neither). wifi.sh's by-path
+    #     fallback is rewritten to modprobe in 5b6a. The three open modules we
+    #     write to /soc/ko in 5b7a are NOT in the vendor listing this enumerates.
+    soc_n=0
+    for ko in $(debugfs -R "ls -p /soc/ko" rootfs.ext4 2>/dev/null \
+                | awk -F/ 'NF>6 && $2 != "0" {print $6}' \
+                | grep -E '^(ax_[a-z_]+|aic8800_[a-z]+|hynitron_touch)\.ko$' | sort -u); do
+      echo "rm /soc/ko/$ko" >> "$script"
+      soc_n=$((soc_n + 1))
+    done
+    echo "  /soc/ko purge: queued $soc_n vendor .ko for removal (0 loaded, #54)"
+    test "$soc_n" -ge 24 \
+      || { echo "ERROR: only $soc_n vendor .ko found in /soc/ko -- layout changed, refusing a half-purge" >&2; exit 1; }
+    # (b) /opt/lib/libsns_*.so: real-sensor ISP libs (13 files, ~24 MB). Only
+    #     libsns_dummy.so is named by any binary on the image, and that one is
+    #     OUR from-source build (5a1, #30) -- kept.
+    sns_n=0
+    for lib in $(debugfs -R "ls -p /opt/lib" rootfs.ext4 2>/dev/null \
+                 | awk -F/ 'NF>6 && $2 != "0" {print $6}' | grep -E '^libsns_.*\.so$' \
+                 | grep -vx 'libsns_dummy.so' | sort -u); do
+      echo "rm /opt/lib/$lib" >> "$script"
+      sns_n=$((sns_n + 1))
+    done
+    echo "  libsns purge: queued $sns_n /opt/lib/libsns_*.so for removal (libsns_dummy.so kept)"
+    test "$sns_n" -ge 12 \
+      || { echo "ERROR: only $sns_n vendor libsns_*.so found -- layout changed, refusing a half-purge" >&2; exit 1; }
+    # (c) NPU / AI-ISP model data (~167 MB): /opt/etc/models (aiisp), /opt/etc/
+    #     skelModels, /opt/data/npu. Inert since the #50 nr138 gate and dead
+    #     since M3; the only referrer (libax_opal.so) is already purged in 5d1.
+    #     debugfs has no recursive rm: walk `ls -p`, rm files, rmdir post-order.
+    purge_list="$PWD/purge-tree.list"; : > "$purge_list"
+    rm_tree() {  # <image-dir>
+      local d="$1" ino mode name
+      while IFS=/ read -r _ ino mode _ _ name _; do
+        case "$name" in ""|.|..) continue ;; esac
+        [ "$ino" != "0" ] || continue   # ghost (deleted) dir entries list with inode 0
+        case "$mode" in
+          04*) rm_tree "$d/$name" ;;
+          *)   echo "rm $d/$name" >> "$script"; echo "$d/$name" >> "$purge_list" ;;
+        esac
+      done < <(debugfs -R "ls -p $d" rootfs.ext4 2>/dev/null)
+      echo "rmdir $d" >> "$script"
+    }
+    for tree in /opt/etc/models /opt/etc/skelModels /opt/data/npu; do
+      if ! debugfs -R "stat $tree" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+        echo "ERROR: $tree missing in vendor rootfs -- layout changed" >&2; exit 1
+      fi
+      rm_tree "$tree"
+    done
+    model_n=$(wc -l < "$purge_list")
+    echo "  model purge: queued $model_n files under /opt/etc/models, /opt/etc/skelModels, /opt/data/npu"
+    test "$model_n" -ge 50 \
+      || { echo "ERROR: only $model_n model files found -- layout changed, refusing a half-purge" >&2; exit 1; }
+    # (d) /opt/etc ISP sensor-tuning set: ~254 flat *.ini/*.bin for ~30 real
+    #     sensors (os04a10, sc450ai, imx678, ... + the dummy_*_online ones),
+    #     read only by the vendor ISP libs/blob, all gone. The other flat files
+    #     there (opencc *.ocd2, *.json) are untouched; the dir stays.
+    ini_n=0
+    for f in $(debugfs -R "ls -p /opt/etc" rootfs.ext4 2>/dev/null \
+               | awk -F/ 'NF>6 && $2 != "0" && $3 ~ /^100/ {print $6}' | grep -E '\.(ini|bin)$' | sort -u); do
+      echo "rm /opt/etc/$f" >> "$script"
+      ini_n=$((ini_n + 1))
+    done
+    echo "  ISP tuning purge: queued $ini_n /opt/etc/*.{ini,bin}"
+    test "$ini_n" -ge 200 \
+      || { echo "ERROR: only $ini_n tuning files found in /opt/etc -- layout changed, refusing a half-purge" >&2; exit 1; }
+
     # The axbox set above (step 5b8): axbox is the closed multicall,
     # ax{syslog,klog,dmesg}d are its symlinks (axdmesg is caller-less but would
     # dangle once axbox is gone), /etc/init.d/{axsyslogd,axklogd} the (now
@@ -676,6 +779,40 @@ pkgs.stdenvNoCC.mkDerivation {
     done
     echo "  vendor encode blobs: ax_venc.ko + ax_jenc.ko -- confirmed removed from image."
 
+    # Purge round 2 (#54) must have taken: /soc/ko holds EXACTLY our three open
+    # modules and nothing else; no vendor libsns_*.so (only our libsns_dummy.so);
+    # the model trees are gone; no tuning .ini/.bin left in /opt/etc.
+    socko_left=$(debugfs -R "ls -p /soc/ko" rootfs.ext4 2>/dev/null \
+                 | awk -F/ 'NF>6 && $2 != "0" && $3 ~ /^100/ {print $6}' | sort)
+    socko_want=$(printf '%s\n' ax630c_venc_vcmd.ko open_vin_capture.ko open_vin_csi2.ko)
+    [ "$socko_left" = "$socko_want" ] || {
+      echo "ERROR: /soc/ko after purge is not exactly the three open modules (#54):" >&2
+      echo "$socko_left" >&2; exit 1; }
+    sns_left=$(debugfs -R "ls -p /opt/lib" rootfs.ext4 2>/dev/null \
+               | awk -F/ 'NF>6 && $2 != "0" {print $6}' | grep -E '^libsns_.*\.so$' | sort | tr '\n' ' ')
+    [ "$sns_left" = "libsns_dummy.so " ] \
+      || { echo "ERROR: /opt/lib libsns after purge = '$sns_left', expected only libsns_dummy.so (#54)" >&2; exit 1; }
+    for gone in /opt/etc/models /opt/etc/skelModels /opt/data/npu; do
+      if debugfs -R "stat $gone" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+        echo "ERROR: $gone still present in image (#54 model purge)" >&2; exit 1
+      fi
+    done
+    ini_left=$(debugfs -R "ls -p /opt/etc" rootfs.ext4 2>/dev/null \
+               | awk -F/ 'NF>6 && $2 != "0" {print $6}' | grep -cE '\.(ini|bin)$' || true)
+    [ "$ini_left" -eq 0 ] \
+      || { echo "ERROR: $ini_left tuning .ini/.bin still in /opt/etc after purge (#54)" >&2; exit 1; }
+    for keep in /opt/lib/libsns_dummy.so /opt/etc /opt/data /opt/firmware/aic8800; do
+      debugfs -R "stat $keep" rootfs.ext4 2>/dev/null | grep -q "Inode:" \
+        || { echo "ERROR: $keep missing after purge -- over-deleted (#54)" >&2; exit 1; }
+    done
+    echo "  purge round 2 (#54): /soc/ko = 3 open modules only; libsns/model/tuning sets confirmed removed."
+
+    # wifi.sh must be OUR modprobe copy, byte-identical (5b6a).
+    debugfs -R "dump /opt/scripts/wifi.sh $PWD/chk.wifi" rootfs.ext4 2>/dev/null
+    cmp -s "$PWD/chk.wifi" "${./rootfs/wifi.sh}" \
+      || { echo "ERROR: /opt/scripts/wifi.sh in image != pkgs/rootfs/wifi.sh" >&2; exit 1; }
+    echo "  wifi.sh: modprobe copy verified in image."
+
     # The vendor libax_*.so purge (#25) must have taken -- assert none remain.
     remaining_libax=$(debugfs -R "ls -p /opt/lib" rootfs.ext4 2>/dev/null \
                       | awk -F/ '{print $6}' | grep -cE '^libax_.*\.so$' || true)
@@ -777,19 +914,19 @@ pkgs.stdenvNoCC.mkDerivation {
       || { echo "ERROR: wifi.service drop-in lost Restart=no" >&2; exit 1; }
     echo "  wifi loop: /etc/systemd/system/wifi.service.d/override.conf -- verified in image."
 
-    # Sanity: the curated /soc/ko module loader replaced the vendor one, and the
-    # pristine vendor script is present alongside it for on-device rollback (#39).
+    # Sanity: our /soc/ko module loader replaced the vendor one, and no rollback
+    # copy ships beside it (#54 -- nothing left for one to insmod).
     debugfs -R "dump $vloader $PWD/chk.loader" rootfs.ext4 2>/dev/null
     cmp -s $PWD/chk.loader "${./rootfs/ax-load-drv.sh}" \
-      || { echo "ERROR: $vloader in image != our curated loader" >&2; exit 1; }
-    debugfs -R "dump $vloader.vendor $PWD/chk.loader.vendor" rootfs.ext4 2>/dev/null
-    cmp -s $PWD/chk.loader.vendor "${./rootfs/ax-load-drv.vendor.sh}" \
-      || { echo "ERROR: $vloader.vendor rollback copy missing/differs in image" >&2; exit 1; }
+      || { echo "ERROR: $vloader in image != our loader" >&2; exit 1; }
     debugfs -R "stat $vloader" rootfs.ext4 2>/dev/null | grep -qE "Mode: +0755" \
       || { echo "ERROR: $vloader is not mode 0755 in image" >&2; exit 1; }
-    debugfs -R "stat $vloader.vendor" rootfs.ext4 2>/dev/null | grep -qE "Mode: +0755" \
-      || { echo "ERROR: $vloader.vendor is not mode 0755 in image" >&2; exit 1; }
-    echo "  module loader: curated $vloader + .vendor rollback copy -- verified in image."
+    for stale in "$vloader.vendor" "$vloader.openvenc"; do
+      if debugfs -R "stat $stale" rootfs.ext4 2>/dev/null | grep -q "Inode:"; then
+        echo "ERROR: $stale rollback loader still ships (#54: no vendor .ko left to load)" >&2; exit 1
+      fi
+    done
+    echo "  module loader: $vloader -- verified in image, no rollback copies."
 
     # ---- 7. fsck + re-sparse ----
     echo "=== [7] e2fsck + img2simg (raw -> sparse) ==="

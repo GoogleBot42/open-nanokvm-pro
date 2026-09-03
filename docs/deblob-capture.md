@@ -319,13 +319,18 @@ Three findings from the specs materially change the plan below:
    `ax_sys/cmm/pool/base` were **rmmod'd live** and both streams kept running:
    nothing in our stack needs the ax base stack. The default loader now insmods
    exactly three from-source modules (open venc, `open_vin_csi2`,
-   `open_vin_capture`) and zero vendor blobs; the previous curated set ships as
-   `auto_load_all_drv.sh.openvenc` beside `.vendor` for rollback. **Cold boot of
+   `open_vin_capture`) and zero vendor blobs. **Cold boot of
    the shipped configuration on the device: three modules, nanokvm active, 4K
-   MJPEG, 0 libax.** The vendor capture `.ko` files stay on the image this
-   cycle as rollback material only; #54 removes them. Residuals: a real non-4K
-   *signal* on the bench (human), the M1<->M2 async subdev link (polish), 4K
-   H.264 (#52).
+   MJPEG, 0 libax.** **#54 DONE 2026-09-03:** the vendor `.ko` files are
+   **deleted** from the image (all 22 `ax_*.ko`, `ax_perf_monitor` included,
+   plus the vendor `aic8800_*`/`hynitron_touch` copies — 26 files), along with
+   the vendor `libsns_*.so`, the NPU /
+   AI-ISP model data and the `/opt/etc` ISP tuning set — ~355 files, ~248 MB.
+   `/soc/ko` holds exactly our three open modules, no rollback loader ships
+   (reverting = reflash the vendor `.axp`), and `wifi.sh` `modprobe`s the
+   from-source aic8800 modules instead of insmod'ing `/soc/ko` by path.
+   Residuals: a real non-4K *signal* on the bench (human), the M1<->M2 async
+   subdev link (polish), 4K H.264 (#52).
 6. **Mainline port** rides with #26 once M3 ships on 4.19.
 
 EDID (step 3 of the epic) is DONE: all six bins clean-room as of this commit

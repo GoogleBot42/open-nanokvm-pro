@@ -221,9 +221,24 @@ for pending/TODO/unverified markers still present in the tree:
   hands the open encoder each frame zero-copy via dma-buf (capture driver exports; open
   VCMD driver imports through new ioctls 38/39). The default loader insmods exactly three
   from-source modules and ZERO vendor ax_*.ko (ax_sys/cmm/pool/base proven unnecessary by
-  live rmmod + cold boot); `.openvenc` (previous set) and `.vendor` loaders ship for
-  rollback. Hardware-proven: web 200, 4K MJPEG, H.264 over wss (1080p crop), cold boot of
-  the shipped config. Vendor capture .ko still on the image as rollback only -> #54.
+  live rmmod + cold boot). Hardware-proven: web 200, 4K MJPEG, H.264 over wss (1080p crop),
+  cold boot of the shipped config.
+  **#54 DONE 2026-09-03 (blob purge round 2 -- last executing-blob item of #55):**
+  `pkgs/rootfs.nix` step 5d2 deletes ~355 files / ~248 MB from the flashed image,
+  enumerated from the vendor rootfs and build-asserted gone -- ALL vendor `/soc/ko`
+  modules (all 22 `ax_*.ko`, `ax_perf_monitor` included, + the vendor
+  `aic8800_{bsp,btlpm,fdrv}` /
+  `hynitron_touch` copies, 26 files / ~32 MB; `/soc/ko` now holds only our three open
+  modules), `/opt/lib/libsns_*.so` except our `libsns_dummy.so` (13 / ~24 MB), the NPU /
+  AI-ISP model data `/opt/etc/{models,skelModels}` + `/opt/data/npu` (62 / ~167 MB), and
+  the `/opt/etc` ISP tuning `*.ini`/`*.bin` set (254 / ~26 MB). No rollback loader ships
+  any more (nothing left to insmod -- reverting = reflash the vendor `.axp`);
+  `ax-load-drv.vendor.sh` stays as the byte-compare pin, the `.openvenc`/`.base-only`/
+  `.stub` variants are bench-only. `/opt/scripts/wifi.sh` rewritten insmod-by-path ->
+  `modprobe` (udev already autoloads our from-source aic8800 modules, device-proven).
+  Remaining closed content on a flashed image: aic8800 WiFi/BT **firmware** (~3.5 MB,
+  #28) + the flash-time-only `eip_ax620e.bin`. Vermagic no longer binds anything shipped.
+  OTA can't delete, so an OTA-upgraded device keeps the purged files until reflash.
   Residuals: async subdev link (polish), real non-4K signal (human), #52 4K H.264,
   #61 EDID hw validation. #53 DMA map shipped + hw-validated. #63 = pre-existing encoder DMA-mask WARN
   at module load (cosmetic). Harness: base-only loader swap + reboot (memory

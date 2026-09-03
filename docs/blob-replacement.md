@@ -202,8 +202,10 @@ dependency mapping):
 ## Module curation (issue #39 → #25)
 
 > **Superseded 2026-09-02 (#55 M3 / #60):** the shipped loader now insmods three
-> from-source modules and **no vendor blob at all**. Everything below describes
-> the `.openvenc` rollback loader and the history that produced it.
+> from-source modules and **no vendor blob at all** — and since #54 (2026-09-03)
+> the vendor `ax_*.ko` are deleted from the image, so no rollback loader ships.
+> Everything below is history; `ax-load-drv.openvenc.sh` survives only as bench
+> tooling for a device flashed with the vendor `.axp`.
 
 The vendor `/soc/scripts/auto_load_all_drv.sh` insmods all 22 `/soc/ko` blobs at
 boot. We replace it with a curated loader (`pkgs/rootfs/ax-load-drv.sh`, shipped
@@ -215,10 +217,10 @@ open `ax630c_venc_vcmd.ko` **in place of** the vendor encode blobs `ax_venc` +
 `ax_jenc` (which are now REMOVED from the flashed image entirely; see the
 "openvenc default" work below). The `ax_venc`/`ax_jenc` rows below are marked
 KEEP for the *historical* #39 curation; under #25 they are **dropped** — the
-encode path is blob-free. The pristine vendor script still ships beside the
-curated loader as `auto_load_all_drv.sh.vendor`; a `cp` + reboot rolls back the
-**capture** stack (it has no `set -e`, so it skips the now-absent encode pair —
-restoring vendor encode needs a reflash).
+encode path is blob-free. At the time the pristine vendor script also shipped
+beside the curated loader as `auto_load_all_drv.sh.vendor`, so a `cp` + reboot
+rolled back the **capture** stack; **that stopped being true in #54** — no
+rollback copy ships and the blobs are gone, so reverting is a vendor reflash.
 
 Device-proven 2026-08-17: a 13-module boot came up green, `ax_tdp` sat at
 refcount 0 *while the encoder was actively streaming*. Historical #39 set was
@@ -274,8 +276,12 @@ cmmpool=` parameter, `ax_proton mem_iq_level=1`, the insmod count, and the
 absence of any `modprobe`/`depmod` (which could resolve `ax_cmm` parameter-less
 — the OTA autoload-brick failure mode; see `pkgs/rootfs.nix` step `[4]`).
 
-The blobs themselves stay on disk in `/soc/ko`: this changes what *loads*, not
-what ships, and keeps rollback to a one-line `cp`.
+At this point the blobs themselves stayed on disk in `/soc/ko`: the curation
+changed what *loads*, not what ships. **#54 (2026-09-03) closed that gap** —
+every vendor `.ko` in `/soc/ko` (plus the `aic8800_*`/`hynitron_touch` copies
+named above) is deleted from the image, `wifi.sh` `modprobe`s by name instead of
+insmod'ing by path, and `ax-load-drv.vendor.sh` remains in-repo purely as the
+byte-compare pin.
 
 ---
 
@@ -3236,7 +3242,10 @@ Everything above is history now: the shipped stack loads **three from-source
 kernel modules and zero vendor blobs** (`ax630c_venc_vcmd.ko`,
 `open_vin_csi2.ko`, `open_vin_capture.ko`), and libkvm captures over plain
 **V4L2** (`.#kvm-encoder-v4l2`) with dma-buf zero-copy into the open encoder.
-No `ax_proton`/`ax_mipi_rx`/`ax_sys`/`ax_cmm` — the raw-ioctl replay path this
-document spent months mapping ships only as the `.openvenc` rollback loader.
+No `ax_proton`/`ax_mipi_rx`/`ax_sys`/`ax_cmm` — and since #54 (2026-09-03) those
+blobs are deleted from the image entirely, so the raw-ioctl replay path this
+document spent months mapping ships nowhere at all; `ax-load-drv.openvenc.sh`
+plus `.#kvm-encoder-openvenc` survive only as bench tooling for a device flashed
+with the vendor `.axp`.
 The M1–M3 record and what remains open live in
 [deblob-capture.md](deblob-capture.md).

@@ -103,9 +103,11 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    excluded** — the build fails if any appear. Merging them in makes `depmod`
    emit `of:` aliases that udev coldplug autoloads parameter-less at boot;
    `ax_cmm` without its `cmm=` parameter panics and the device boot-loops
-   (this bricked a unit on the first OTA). They stay in the vendor rootfs at
-   `/soc/ko`, reachable only by `/soc/scripts/auto_load_all_drv.sh`, which
-   insmods by path with the required parameters. That loader is **ours** since issue #39
+   (this bricked a unit on the first OTA). Since #54 (2026-09-03) they are not
+   on the image at all — step 5d2 deletes the whole 22-module vendor set from
+   `/soc/ko`, which now holds exactly our three open modules, insmod'd by path
+   with the required parameters by `/soc/scripts/auto_load_all_drv.sh`. That
+   loader is **ours** since issue #39
    (`pkgs/rootfs/ax-load-drv.sh`), and since #55 M3 (#60, 2026-09-02) it loads
    **three from-source modules and zero vendor blobs**:
    `ax630c_venc_vcmd.ko` (open VC8000E encode, #25), `open_vin_csi2.ko` (open
@@ -116,20 +118,17 @@ editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
    **splits the DMA pool** (#53): one `compute_mem_map` derives the whole map
    from the board's pool geometry and hands the open encoder
    (`framebuf_base/size`, `coherent_base/size`), the open capture driver
-   (`carveout_base/size`) and — for the rollback loader — `ax_cmm`
-   (`cmmpool=`) non-overlapping slices, printing the map at boot and exporting
-   it to `/run/openkvm-memmap.env`; layout table and derivation rule in
-   [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53).
-   The two vendor encode blobs
-   (`ax_venc.ko`, `ax_jenc.ko`) are **removed from the flashed image**; the
-   vendor capture blobs still ship, unloaded, purely as rollback material
-   (their eviction is #54). Two rollback loaders ship beside ours:
-   `auto_load_all_drv.sh.openvenc` (the previous curated set — 10 vendor
-   capture blobs + open venc; needs a matching `.#kvm-encoder-openvenc`
-   libkvm) and `auto_load_all_drv.sh.vendor` (the pristine 22-blob vendor
-   script). Rolling back is `cp <name>.<variant> <name>` + reboot; restoring
-   vendor *encode* needs a reflash, since that pair is gone. Keep/drop
-   rationale:
+   (`carveout_base/size`) non-overlapping slices — the remainder stays reserved
+   as an `ax_cmm` `cmmpool=` for the bench harness — printing the map at boot
+   and exporting it to `/run/openkvm-memmap.env`; layout table and derivation
+   rule in [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53).
+   **No rollback loader ships any more** (#54): with every vendor `ax_*.ko`
+   deleted there is nothing left for one to insmod, so reverting to the vendor
+   stack means reflashing the vendor `.axp`.
+   `pkgs/rootfs/ax-load-drv.vendor.sh` stays in-repo purely as the byte-compare
+   pin against the base `.axp`; the `.openvenc` / `.base-only` / `.stub`
+   variants are bench tooling for a device that still carries the blobs and are
+   never shipped. Keep/drop history:
    [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39).
 3. **Service selection** (see below): disable `kvmcomm.service`, enable
    `nanokvm.service` in `multi-user.target.wants`.
@@ -182,12 +181,13 @@ path touches a vendor kernel module. The source format is `V4L2_PIX_FMT_YUYV`,
 byte-identical to what the vendor pool used to hand back; the geometry envelope
 is 64×64…3840×2160 (even dimensions), 30 fps sustained at both 4K and 1080p.
 
-Earlier backends stay buildable as alternatives:
-`.#kvm-encoder-openvenc` (raw-ioctl replay against the vendor `ax_proton`
-capture closure — the shipped default from #25 until 2026-09-02, and the
-partner of the `.openvenc` rollback loader) and `.#kvm-encoder` (the original
-vendor-MPI build, which *did* link `-lax_venc -lax_sys -lax_proton -lax_mipi
--lax_ivps` and drove `AX_VENC`).
+Earlier backends stay buildable as bench alternatives — both need vendor blobs
+that a #54 image no longer carries, so they only run on a device flashed with
+the vendor `.axp`: `.#kvm-encoder-openvenc` (raw-ioctl replay against the
+vendor `ax_proton` capture closure — the shipped default from #25 until
+2026-09-02, partnered with the bench-only `ax-load-drv.openvenc.sh`) and
+`.#kvm-encoder` (the original vendor-MPI build, which *did* link `-lax_venc
+-lax_sys -lax_proton -lax_mipi -lax_ivps` and drove `AX_VENC`).
 
 ### Capture lifecycle & idle power-down
 
@@ -332,7 +332,13 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
   ~100 MB/week of journal + syslog churn onto eMMC. We ship
   `/etc/systemd/system/wifi.service.d/override.conf` with `Restart=no` (issue
   #43); the vendor unit and its `multi-user.target.wants` symlink are untouched,
-  so the one-shot boot-time module load still happens.
+  so the one-shot boot-time module load still happens. Since #54 the shipped
+  `/opt/scripts/wifi.sh` (`pkgs/rootfs/wifi.sh`, vendor byte-pinned as
+  `wifi.sh.vendor`) is the vendor script with its four
+  `insmod`/`rmmod /soc/ko/aic8800_*.ko` lines rewritten to `modprobe` /
+  `modprobe -r`: the vendor `/soc/ko` copies are gone and our from-source
+  `aic8800_{bsp,btlpm,fdrv}.ko` live in `/usr/lib/modules/4.19.125`, where udev
+  autoloads them anyway (device-proven).
 - **`nanokvm-display.service`** (ours, independent of the two stacks above) runs
   the mini-display status daemon from `/opt/nanokvm-display`; it only reads
   `/dev/fb0`, the backlight sysfs, the knob evdev devices, and the server's
@@ -354,17 +360,19 @@ included** (Jeremy, 2026-08-30). What's pinned has shrunk accordingly:
   open encode, **zero `libax_*` linked**), `libsns_dummy.so`, the Go server, the
   React web UI.
 - **No longer needed / removed:**
-  - `ax_venc.ko` + `ax_jenc.ko` — the vendor **encode** kernel modules,
-    **removed from the flashed image**; the open VCMD driver replaces them.
+  - `ax_venc.ko` + `ax_jenc.ko` — the vendor **encode** kernel modules, dropped
+    from the loader and the image in **#25**; the open VCMD driver replaces them.
   - `libax_*.so` — the Axera userspace media libs are **purged from the flashed
     image** (`pkgs/rootfs.nix` step 5d1); nothing we ship links or `dlopen`s them.
-- **Shipped but never loaded (rollback material, eviction is #54):**
-  - the **capture** `ax_*.ko` kernel modules (`ax_proton`/`ax_mipi_rx`/`ax_vin`/
-    `ax_ivps`/`ax_sys`/`ax_cmm`/…) — GPL-tagged, source not published. Our open
-    drivers replace them outright; they stay on disk only so the `.openvenc` /
-    `.vendor` rollback loaders work. While they are still on the image the
-    `vermagic` constraint (defconfig + GCC) applies to them — see
-    [building.md](building.md#ax_ko-vermagic).
+  - the whole remaining `ax_*.ko` closure (`ax_proton`/`ax_mipi_rx`/`ax_sys`/
+    `ax_cmm`/`ax_ivps`/…, `ax_perf_monitor` included, and the vendor `/soc/ko` copies
+    of `aic8800_*`/`hynitron_touch`) — **deleted in #54** (step 5d2), together
+    with the vendor `libsns_*.so`, the NPU/AI-ISP model data (`/opt/etc/models`,
+    `/opt/etc/skelModels`, `/opt/data/npu`) and the `/opt/etc` ISP sensor-tuning
+    `*.ini`/`*.bin` set: ~355 files, ~248 MB. `/soc/ko` now holds exactly our
+    three open modules, so the `vermagic` constraint no longer binds anything
+    shipped — see [building.md](building.md#ax_ko-vermagic). OTA cannot delete,
+    so an OTA-upgraded device keeps them until a reflash.
 - **Pinned base:** the vendor Ubuntu 22.04 arm64 rootfs (v1 decision — matches the
   on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
   long-term north star; the feasibility study, the systemd-vs-4.19 version wall

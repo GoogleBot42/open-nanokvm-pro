@@ -280,8 +280,8 @@ leftover **PiKVM** accounts (`kvmd`, `kvmd-vnc`, `kvmd-janus`, …) and
   or reached through `nix-ld`. `libsns_dummy.so` is `dlopen`'d by bare name and
   needs the FHS path present.
 - **`/soc/ko` + `/soc/scripts/auto_load_all_drv.sh`.** The loader (three
-  from-source modules since #55 M3; the `.openvenc`/`.vendor` rollback copies
-  still insmod vendor blobs) must keep insmod-by-path-with-parameters
+  from-source modules since #55 M3; no rollback copy ships since #54, the
+  vendor `/soc/ko` blobs are purged) must keep insmod-by-path-with-parameters
   semantics; `ax_cmm` without
   `cmmpool=` is the panic that bricked a device. It is bash (`function`, `[ ==
   ]`) despite its `#!/bin/sh`, reads `/sys/bus/iio/devices/iio:device0/in_voltage0_raw`,
@@ -580,9 +580,9 @@ Ordered by how much they block a boot-test.
    `ethtool -A eth0 rx on`), `npu_set_bw_limiter.sh start`, and the bare
    `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` (the OTA-commit
    `fw_setenv` clears) belongs with the OTA redesign (gap 5), not here.
-4. **WiFi is lost.** `aic8800_{bsp,fdrv,btlpm}.ko` live in the vendor rootfs's
-   `/soc/ko` (26 modules there; `pkgs/ax-ko-blobs.nix` carries only the 22
-   `ax_*.ko`), and their firmware is 28 files under `/opt/firmware/aic8800/`.
+4. **WiFi is lost.** `aic8800_{bsp,fdrv,btlpm}.ko` are built from the SDK kernel source (the vendor
+   `/soc/ko` copies are purged since #54, so the NixOS rootfs needs its own build
+   into our modules tree), and their firmware is 28 files under `/opt/firmware/aic8800/`.
    Needs its own pinned derivation, or WiFi is dropped — it is already listed
    as "approve if wanted" in [provenance.md](provenance.md).
 5. **OTA.** `pkgs/update-package.nix` and [updates.md](updates.md) assume a
@@ -605,9 +605,9 @@ Ordered by how much they block a boot-test.
    by default). On `serverPath` and `systemPackages`. Untested on hardware.
 8. **`/opt/etc`** (173 MB of Axera sensor tuning `.ini` files) is unaudited.
    The ISP is bypassed on the KVM path, so the sensor tuning data is probably
-   dead weight — and since #55 M3 nothing reads it on a default boot
-   (`ax_proton mem_iq_level=1` survives only in the `.openvenc` rollback
-   loader). (**`/kvmcomm/edid/*`** is no longer a
+   dead weight — and since #54 it is deleted from the image
+   (the whole `/opt/etc` tuning set plus the model data; `ax_proton` itself
+   is gone). (**`/kvmcomm/edid/*`** is no longer a
    question: the whole set is generated from source by `pkgs/edid` — just
    install the `edid` derivation's bins under `/kvmcomm/edid` with the vendor
    filenames.)

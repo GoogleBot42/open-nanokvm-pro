@@ -168,7 +168,10 @@ files, so it is its own cycle:
 no-op (vcmd already loaded, vendor venc/jenc already absent) — check
 `lsmod | grep -E 'ax630c_venc_vcmd|ax_venc'` first. The rmmod/insmod dance
 is only needed when testing a *rebuilt* `.ko` against a device still on an
-old (vendor-encode) image, or after a `.vendor`-loader rollback.
+old (vendor-encode) image. **Since #54 (2026-09-03) a flashed image carries no
+vendor `.ko` at all** — `/soc/ko` holds only our three open modules and no
+rollback loader ships, so the "restore vendor" branch below applies only to a
+device flashed with the vendor `.axp` (the bench harness).
 
 1. `nix build .#vcenc-ewl .#vc8000-vcmd`
 2. `tools/kvmscp <ewl bin(s)> <.ko> /tmp/`
@@ -244,9 +247,12 @@ Since 2026-09-02 the image default is `.#kvm-encoder-v4l2` over the open
 capture drivers: the loader insmods exactly `ax630c_venc_vcmd.ko`,
 `open_vin_csi2.ko start_on_probe=1` and `open_vin_capture.ko` (carveout
 params from `/run/openkvm-memmap.env`) and NO vendor `ax_*.ko` -- `lsmod |
-grep -E '^ax_'` must print nothing on a healthy boot. The #50 ax_proton caveats
-above apply only to the `.openvenc` rollback loader + `.#kvm-encoder-openvenc`
-(the raw-ioctl replay backend), not to this stack.
+grep -E '^ax_'` must print nothing on a healthy boot. Since #54 (2026-09-03)
+the vendor blobs are not even on disk: `/soc/ko` holds exactly those three
+modules, and no rollback loader ships. The #50 ax_proton caveats above apply
+only to the bench-only `ax-load-drv.openvenc.sh` + `.#kvm-encoder-openvenc`
+(the raw-ioctl replay backend), which need a device flashed with the vendor
+`.axp` -- not to this stack.
 
 Module iteration (validated 2026-09-02): `open_vin_capture.ko` is
 reload-safe -- `systemctl stop nanokvm; rmmod open_vin_capture; insmod

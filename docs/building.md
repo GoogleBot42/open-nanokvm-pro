@@ -40,7 +40,7 @@ All are `nix build .#<name>`. State reflects the current tree.
 | Package | Output | Notes |
 |---|---|---|
 | `axera-libs` | `libax_*.so` + V3.0.0 headers | pinned blob install (msp repo) |
-| `ax-ko-blobs` | prebuilt `ax_*.ko` | pinned blob install; shipped **unloaded** as rollback material only (#54) |
+| `ax-ko-blobs` | prebuilt `ax_*.ko` | pinned blob install; **not shipped** — the vendor modules are deleted from the image (#54). Bench/harness reference only |
 | `kvm-encoder` | `libkvm.so` / `.so.0` | the original vendor-MPI backend (links `libax_*`); reference/fallback only |
 | **`kvm-encoder-v4l2`** | `libkvm.so` / `.so.0` | **the shipped backend** — V4L2 capture + open VC8000E encode, zero `libax_*`. `kvm-encoder-open`/`-openvenc` are the earlier open variants (raw-ioctl capture against the vendor closure) |
 | `vc8000-vcmd` | `ax630c_venc_vcmd.ko` | our open VC8000E VCMD encode driver (replaces `ax_venc`/`ax_jenc`) |
@@ -137,24 +137,25 @@ The `base-axp` FOD hash changes only if you re-pin a different vendor release
 
 ## `ax_*.ko` vermagic
 
-Our loader stopped insmod'ing the prebuilt Axera media modules entirely in
-#55 M3 (2026-09-02) — three from-source video modules replace the whole set — so
-nothing enforces `vermagic` on a default boot any more. It still binds the
-**rollback** loaders
-(`auto_load_all_drv.sh.openvenc` / `.vendor`), which do insmod the vendor blobs
-into our from-source kernel: the kernel's `vermagic` (kernel version + key
+**Nothing shipped depends on this any more.** Our loader stopped insmod'ing the
+prebuilt Axera media modules in #55 M3 (2026-09-02) — three from-source video
+modules replace the whole set — and #54 (2026-09-03) deleted the blobs from the
+image outright, so a flashed device carries no `ax_*.ko` at all. `vermagic` is
+now purely a **bench-harness** concern: the `ax-load-drv.{openvenc,base-only}.sh`
+variants insmod vendor blobs, and they only run on a device flashed with the
+vendor `.axp`. When you do that, the kernel's `vermagic` (kernel version + key
 `CONFIG_*` + compiler) has to line up with what those blobs were built against,
-which is why `kernel.nix` builds against the vendor
+which is why `kernel.nix` still builds against the vendor
 `axera_AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig`. And vermagic match is
 not ABI safety — a config flag that adds `#ifdef` fields to a struct the blobs
 touch still kills the boot; see [vcmd-cma-unblock.md](vcmd-cma-unblock.md).
 
-The blobs are **not** installed under `/lib/modules/4.19.125/` — `rootfs.nix`
-stages only the from-source modules there and hard-fails if any `ax_*.ko`
-sneak in (a merged tree gives them `of:` modaliases, udev autoloads `ax_cmm`
-parameter-less, and the device panic-loops; this bricked a unit once). They sit
-in the vendor rootfs at `/soc/ko`, where only a rollback loader reaches them,
-by path and with the required parameters.
+The standing rule survives the purge: an `ax_*.ko` must **never** land under
+`/lib/modules/4.19.125/`. `rootfs.nix` stages only the from-source modules
+there and hard-fails if any `ax_*.ko` sneaks in — a merged tree gives them
+`of:` modaliases, udev autoloads `ax_cmm` parameter-less, and the device
+panic-loops (this bricked a unit once). On the bench, vendor blobs are reached
+only by path from `/soc/ko`, with the required parameters.
 
 ---
 
