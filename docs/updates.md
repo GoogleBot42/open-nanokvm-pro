@@ -92,6 +92,12 @@ Publishing a release **is** the OTA push.
 
 Everything starts on Gitea; GitHub only builds and hosts the assets.
 
+**First, write the release notes:** add a `## vX.Y.Z` section to `CHANGELOG.md`
+(newest first), commit, push. `cut-release` and `tools/release` both refuse to
+tag a version without one, and the GitHub release workflow lifts the section
+verbatim into the release description (plus a compare link to the previous
+tag).
+
 **Primary path — from the Gitea web UI:** Actions → **cut-release** → Run
 workflow → enter the version (e.g. `2.0.1`). The job
 (`.gitea/workflows/cut-release.yml`) validates, writes `VERSION`, commits
@@ -111,6 +117,7 @@ back onto stable.
 **Fallback — locally:**
 
 ```bash
+# (CHANGELOG.md section for v2.0.1 already committed)
 echo 2.0.1 > VERSION
 git commit -am "release: 2.0.1" && git push
 tools/release

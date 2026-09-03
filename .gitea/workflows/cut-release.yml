@@ -48,6 +48,12 @@ jobs:
             && { echo "tag v$V already exists"; exit 1; }
           [ "$(tr -d '[:space:]' < VERSION)" = "$V" ] \
             && { echo "VERSION is already $V but no tag exists — finish by pushing the tag manually (tools/release)"; exit 1; }
+          # Release notes are mandatory: CHANGELOG.md must carry a "## v$V"
+          # section (the GitHub release workflow lifts it into the release body).
+          grep -qxF "## v$V" CHANGELOG.md \
+            || { echo "CHANGELOG.md has no '## v$V' section — write the release notes first"; exit 1; }
+          echo "--- release notes for v$V ---"
+          awk -v h="## v$V" '$0==h{p=1;next} /^## /{p=0} p' CHANGELOG.md
           echo "V=$V" >> "$GITHUB_ENV"
 
       - name: Bump VERSION, commit, tag

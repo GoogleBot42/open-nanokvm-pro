@@ -98,6 +98,24 @@ jobs:
           echo "--- release assets ---"; ls -l dist
           grep -q '"version": "${{ steps.ver.outputs.version }}"' dist/nanokvm_pro_latest.json \
             || { echo "::error::manifest version != ${{ steps.ver.outputs.version }}"; exit 1; }
+          # Release description = this version's CHANGELOG.md section (written
+          # on Gitea before the cut; cut-release refuses to tag without it),
+          # plus a compare link to the previous tag. Never fails the build: a
+          # missing section degrades to a one-line body.
+          TAG="${{ steps.ver.outputs.tag }}"
+          {
+            if grep -qxF "## $TAG" CHANGELOG.md 2>/dev/null; then
+              awk -v h="## $TAG" '$0==h{p=1;next} /^## /{p=0} p' CHANGELOG.md
+            else
+              echo "No CHANGELOG.md section for $TAG."
+            fi
+            PREV="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$TAG^" 2>/dev/null || true)"
+            if [ -n "$PREV" ]; then
+              echo
+              echo "**Full changelog:** https://github.com/${GITHUB_REPOSITORY}/compare/${PREV}...${TAG}"
+            fi
+          } > dist/RELEASE_NOTES.md
+          echo "--- release notes ---"; cat dist/RELEASE_NOTES.md
 
       - name: Publish release + OTA assets
         # Small, reliable, and all the OTA needs. Creates (or updates, on
@@ -111,7 +129,7 @@ jobs:
             dist/nanokvm_pro_latest.json
             dist/nanokvm_pro_${{ steps.ver.outputs.version }}.tar.gz
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          body_path: dist/RELEASE_NOTES.md
 
       - name: Refresh the rolling preview-channel release
         # The preview/alpha channel polls the fixed URL

@@ -36,6 +36,10 @@ git fetch -q origin main
   || die "HEAD is not pushed origin/main — commit and push first"
 git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null \
   && die "tag ${TAG} already exists on Gitea — bump VERSION first"
+# Release notes are mandatory (CHANGELOG.md "## v<VERSION>" section -> GitHub
+# release body); the cut-release workflow enforces the same rule.
+grep -qxF "## ${TAG}" CHANGELOG.md \
+  || die "CHANGELOG.md has no '## ${TAG}' section — write the release notes first"
 
 echo "==> tagging ${TAG} on Gitea"
 git tag "$TAG"
