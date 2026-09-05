@@ -34,9 +34,10 @@
  *
  * The pinmux block (0x02300000) is deliberately NOT touched: it is owned by
  * pinctrl and carries the SW_PWR pad trap. The MIPI pads must be muxed by
- * firmware/pinctrl before streaming. TODO(bringup): verify pad mux state on
- * an open-stack boot; if the vendor boot chain no longer muxes the MIPI pads,
- * add a pinctrl handle here (spec section 6a step 12).
+ * firmware/pinctrl before streaming. Verified: a cold boot of the purged
+ * image (#54, no vendor module anywhere) streams 4K30 through this receiver,
+ * so the boot chain muxes the MIPI pads without ax_mipi_rx. Revisit only for
+ * the mainline port (spec section 6a step 12).
  */
 
 #include <linux/delay.h>
