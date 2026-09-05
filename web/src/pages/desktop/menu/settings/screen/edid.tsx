@@ -10,6 +10,7 @@ const defaultEdidList = [
   { value: 'E48-4K39FPS', label: '3840 x 2160 39Hz' },
   { value: 'E56-2K60FPS', label: '2560 x 1440 60Hz' },
   { value: 'E54-1080P60FPS', label: '1920 x 1080 60Hz' },
+  { value: 'NanoKVM-720P60', label: '1280 x 720 60Hz' },
   { value: 'E58-4K16-10', label: '3840 x 2400 30Hz' },
   { value: 'E63-Ultrawide', label: '3440 x 1440 60Hz' }
 ];
