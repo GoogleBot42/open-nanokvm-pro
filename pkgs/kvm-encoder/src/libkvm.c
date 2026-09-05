@@ -60,6 +60,8 @@ static int64_t s_chn_fail_until = 0;  /* VENC-create cooldown: no 120 Hz retry s
 static int64_t s_prev_lease_us = 0;    /* read-path tap active until then */
 static int64_t s_last_enc_cap_us = 0;  /* last kvm_cap_get by the read path */
 static int64_t s_last_geom_us = 0;     /* last live source-geometry poll */
+static int64_t s_last_frame_us = 0;    /* last successful kvm_cap_get */
+static int64_t s_reinit_after_us = 0;  /* throttle: no re-init before this */
 
 static int64_t kvm_mono_us(void)
 {
@@ -193,6 +195,7 @@ static int init_pipeline_locked(int w, int h)
     if (kvm_sys_init(&s_cap, w, h) != 0) { kvm_sys_deinit(&s_cap); return -1; }
     if (kvm_cap_start(&s_cap, w, h, s_fps) != 0) { kvm_cap_stop(&s_cap); kvm_sys_deinit(&s_cap); return -1; }
     s_w = w; s_h = h; s_inited = 1;
+    s_last_frame_us = kvm_mono_us();   /* start the starvation clock fresh */
     return 0;
 }
 
@@ -314,8 +317,32 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
 
     /* 2) otherwise capture+encode a fresh frame */
     AX_IMG_INFO_T img;
-    if (kvm_cap_get(&img, 1000) != 0) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
+    if (kvm_cap_get(&img, 1000) != 0) {
+        /* Frame-starvation self-heal. A capture that STREAMON'd fine can stop
+         * delivering frames after an HPD/link glitch (host sleep/wake, a cable
+         * event, an EDID/HPD cycle) even at the SAME resolution: the CSI-2
+         * receiver re-locks but the WDMA never resumes, and a fresh STREAMON
+         * alone does not clear it -- only a full teardown+re-init does (proven
+         * on device). The geometry poll above misses this (resolution is
+         * unchanged). So if no frame has arrived for >2 s while the source
+         * still reads locked, tear down (throttled) -- the next read rebuilds
+         * the pipeline, which recovers once the link settles. */
+        int64_t now = kvm_mono_us();
+        if (s_inited && now - s_last_frame_us > 2000000 && now > s_reinit_after_us) {
+            int sw, sh, sf, locked;
+            if (kvm_read_source(&sw, &sh, &sf, &locked) == 0 && locked) {
+                fprintf(stderr, "OPEN-KVM: capture starved %lldms (source %dx%d "
+                        "locked); re-initialising pipeline\n",
+                        (long long)((now - s_last_frame_us) / 1000), sw, sh);
+                teardown_locked();
+                s_reinit_after_us = now + 1500000;
+            }
+        }
+        pthread_mutex_unlock(&s_lock);
+        return IMG_NOT_EXIST;
+    }
     s_last_enc_cap_us = kvm_mono_us();
+    s_last_frame_us = s_last_enc_cap_us;
     if (s_last_enc_cap_us < s_prev_lease_us)          /* preview page open: tap */
         kvm_preview_publish(&img.tFrameInfo.stVFrame);
     kvm_venc_send(s_cur_chn, &img.tFrameInfo);
