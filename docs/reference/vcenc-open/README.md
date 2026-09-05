@@ -107,6 +107,14 @@ differential (the RC-enable register set), a 33-knob sweep classifying the
 `opaque` registers, a live MMIO read of the core fuse words, and CBR trajectories
 for #46. See its `README.md` and `REPORT.md`.
 
+## hevc-plan.md — HEVC capture brief + implementation outline (2026-09-05)
+
+Plan of record for adding H.265/HEVC to the open encoder (Gitea #64). The ready-
+to-run vendor HEVC differential campaign brief (H0–H9, mirroring the 2026-09-04
+H.264 method, for a future Fable device subagent) plus the from-source
+implementation outline. The campaign needs the vendor `.axp` flashed and is
+time-sensitive before the mainline move (#26).
+
 ## tools/
 
 Our own capture/decode tooling (libc-only C or python via device libkvm ctypes):
