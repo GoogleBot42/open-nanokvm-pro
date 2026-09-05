@@ -3676,3 +3676,35 @@ frames, RSS flat. Achieved rates on the static desktop are content-limited (~1.7
 at an 8000 target vs the vendor's 2.6 Mbps, whose in-frame CTB RC pads descent
 frames) — quality headroom for a v2 with CTB RC, not a stability issue. Fixed QP32
 is no longer what ships; on a static desktop P frames now sit at the QP 21 floor.
+
+### 2026-09-05 (night, Chromium) — H.264 Direct white screen fixed (#68); H.265 Direct always selectable; WebRTC takeover (#69)
+
+Jeremy's Linux Chromium showed a white screen in H.264 Direct while Firefox
+played it. Root cause, proven with a headless-Chromium WebCodecs harness on a
+pre-#46 grab and a live grab alike (so upstream behaviour, not the rate
+controller): the upstream direct streamer sends SPS and PPS as separate non-key
+messages, the upstream worker creates its decoder on the first key message and
+drops what came before, and Chromium's H.264 decoder fails on a key chunk with no
+parameter sets at every IDR. Fix (`pkgs/nanokvm-server.nix` step 10, plus a
+belt-and-braces fold in the worker): SPS+PPS are folded into their IDR message,
+as the H.265 streamer already did. Proof: every key message on the live wss is
+[7, 8, 5]; headless Chromium decodes 150/150 frames with 0 errors from the raw
+server framing, 0 frames from the old framing. Evidence + reusable CDP harness:
+`docs/reference/vcenc-open/h264-direct-chromium-20260905/`.
+
+H.265 Direct is no longer greyed out by a probe. Finding (nixpkgs Firefox 154):
+Firefox's media pipeline reports HEVC fully supported (`canPlayType`,
+`mediaCapabilities`) while `VideoDecoder.isConfigSupported` says no to every
+HEVC string — WebCodecs, which the direct player is built on, does not expose
+HEVC in Firefox. The option is now always selectable; the page tries several
+codec strings, the worker derives the codec string from the stream's own VPS
+(live 1080p = `hvc1.1.2.L123.80`, level 4.1, not the hard-coded 5.1), and the
+fallback to H.264 Direct happens only on a real decoder failure, with an honest
+notice. Real H.265 in Firefox needs a MediaSource remux player (design note on
+#66), not started.
+
+WebRTC white screen in Chromium: not a profile mismatch (Chromium negotiated
+Baseline fmtp for the Main 4.2 stream and decoded 3594 frames in 60 s). Any other
+stream consumer flips the server's global stream type, the WebRTC page gets
+`video-status -4` and goes transparent, and nothing hands the stream back — #69
+records the repro and fix options.
