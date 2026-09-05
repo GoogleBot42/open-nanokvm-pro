@@ -3576,7 +3576,17 @@ show the moving test card tracked across the P frames. 1080p IDR ≈ 2.08 M
 cycles, 4K ≈ 8.3 M — the vendor's numbers. Stream sizes are roughly a third
 of the H.264 ones at equal QP on the test card.
 
-**Remaining for #64:** `kvm_venc_open.c` accepting `PT_H265` + the libkvm
-`_type` 5..8 dispatch and `IMG_H265_*` NAL typing, then a device proof over
-the web path with a bench reader. Rate control for HEVC rides on #46 (the RC
-register set is codec-agnostic, H4).
+**libkvm dispatch (same session):** `kvm_venc_open.c` accepts `PT_H265`
+(VPS+SPS+PPS + slice pack, `enH265EType` NAL typing, `ENC_RC_FIXQP` default for
+HEVC) and `libkvm.c` maps `IMG_H265_*` requests onto a third channel
+(`KVM_VENC_H265_CHN`); VPS+SPS are cached together as the "SPS". **Device-proven
+through the public ABI**: a ctypes bench reader calling `kvmv_read_img(1920,
+1080, IMG_H265_TYPE_SPS, …)` on the running open stack with the real HDMI
+source gets VPS 27 B, SPS 53 B, PPS 12 B, a 32 KB IDR and ~200 B P frames;
+ffmpeg decodes the 81-frame capture with zero errors, and the H.264/MJPEG
+paths are unchanged (web 200, MJPEG streaming, H.264 bench 84 frames).
+
+**Remaining:** a web consumer (`ReadH265` → a streamer + `hvc1`/pion H.265
+client — separate issue), rate control for HEVC rides on #46 (the RC
+register set is codec-agnostic, H4), and shipping the new libkvm in the next
+image.

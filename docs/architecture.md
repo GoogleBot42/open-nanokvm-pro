@@ -163,6 +163,7 @@ LT6911UXC HDMI→CSI-2
               └─► V4L2 /dev/video0  (YUYV, mmap + EXPBUF dma-buf)
                     └─► ax630c_venc_vcmd.ko  (open VC8000E, dma-buf zero-copy)
                           ├─► H.264 register program              → web stream
+                          ├─► H.265 register program (#64)        → IMG_H265_* (no web consumer yet)
                           └─► from-source software JPEG (MJPEG)   → web stream
         └─► ALSA capture (LT6911 audio card) ─► Opus encode       → web audio
 ```
@@ -190,6 +191,13 @@ H.264 is blob-free at native 4K (Main L5.1, device-proven live over
 `h264-direct`), with rate control still fixed QP32 (#46). Since 2026-09-04 the
 encoder's own ceiling is 3840×2400 (vendor-validated geometry laws, prover-proven
 on device); the capture path is what still caps the pipeline at 2160 rows.
+Since 2026-09-05 (#64) the same builder also emits **H.265/HEVC** (Main, fixed
+QP32, IPPP; VPS/SPS/PPS from `vcenc_hevc_header.h`): `kvmv_read_img` with an
+`IMG_H265_*` type opens a third channel (`KVM_VENC_H265_CHN`) and serves VPS+SPS
+as the "SPS", the PPS, then IDR/P NALs — decodable end to end from a real HDMI
+capture (bench reader + ffmpeg), roughly a third of the H.264 bytes at equal QP.
+The Go server and web client still speak H.264 only; wiring `ReadH265` into a
+streamer is a separate issue.
 
 Earlier backends stay buildable as bench alternatives — both need vendor blobs
 that a #54 image no longer carries, so they only run on a device flashed with

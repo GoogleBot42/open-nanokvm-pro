@@ -10,8 +10,9 @@
 > (`vcenc_encode.h` `ENC_CODEC_HEVC`), `vcenc_hevc_header.h` writes VPS/SPS/PPS
 > byte-identical to the vendor's, 34 vendor HEVC programs are golden vectors,
 > and blob-free IPPP HEVC is device-proven at 1080p…3840×2400
-> (docs/blob-replacement.md, "2026-09-05 (later)"). Open: the `PT_H265` /
-> libkvm dispatch and the web-path proof.
+> (docs/blob-replacement.md, "2026-09-05 (later)"). The `PT_H265` / libkvm
+> dispatch is in too and proven through the public ABI with a bench reader on
+> real HDMI capture. Open: a web consumer (separate issue) and RC (#46).
 
 Plan of record for adding H.265/HEVC to the open encoder (Gitea issue filed
 2026-09-05). The silicon supports it (fuse `HEVC=1`, live-read 2026-09-04) and

@@ -48,7 +48,7 @@ static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 static kvm_cap_ctx s_cap;
 static int  s_debug = 0;
 static int  s_inited = 0;          /* sys+cap+venc up */
-static int  s_cur_type = -1;       /* 0=MJPEG chn, 1=H264 chn currently created */
+static int  s_cur_type = -1;       /* 0=MJPEG, 1=H264, 2=H265 chn currently created */
 static int  s_cur_chn = -1;
 static int  s_w = 0, s_h = 0;
 static int  s_fps = 60, s_gop = 30, s_rc = 0 /*CBR*/, s_qlty = 8000;
@@ -146,7 +146,8 @@ static int effective_fps_locked(void)
 /* (re)create the VENC channel for the requested encode type/params */
 static int ensure_chn_locked(int want_type, int w, int h, int qlty)
 {
-    int chn = (want_type == 0) ? KVM_VENC_MJPEG_CHN : KVM_VENC_H264_CHN;
+    int chn = (want_type == 0) ? KVM_VENC_MJPEG_CHN
+            : (want_type == 2) ? KVM_VENC_H265_CHN : KVM_VENC_H264_CHN;
     if (s_cur_type == want_type && s_cur_chn == chn && s_qlty == qlty) return 0;
     /* A failing create must not be retried at the caller's 120 Hz read rate. */
     if (kvm_mono_us() < s_chn_fail_until) return -1;
@@ -155,7 +156,8 @@ static int ensure_chn_locked(int want_type, int w, int h, int qlty)
      * after the switch would hand e.g. an H.264 SPS+IDR back as a "JPEG". */
     s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0;
     s_qlty = qlty;
-    AX_PAYLOAD_TYPE_E pt = (want_type == 0) ? PT_MJPEG : PT_H264;
+    AX_PAYLOAD_TYPE_E pt = (want_type == 0) ? PT_MJPEG
+                         : (want_type == 2) ? PT_H265 : PT_H264;
     if (kvm_venc_create(chn, pt, w, h, effective_fps_locked(), s_gop, qlty, s_rc) != 0) {
         /* CreateChn can succeed and a later step fail: destroy the half-created
          * channel or every future create gets AX_ERR_VENC_EXIST forever. */
@@ -220,7 +222,17 @@ static void stash_pack(AX_VENC_STREAM_T *st)
     s_pend_idx = 0;
 }
 
-/* Return the next pending NAL (H264) or the whole JPEG (MJPEG). */
+/* Append a NAL to a cached parameter-set buffer (H.265: VPS+SPS are served
+ * together as the "SPS"). */
+static void cache_append(uint8_t **dst, uint32_t *dlen, const uint8_t *b, uint32_t len)
+{
+    uint8_t *n = realloc(*dst, *dlen + len);
+    if (!n) return;
+    memcpy(n + *dlen, b, len);
+    *dst = n; *dlen += len;
+}
+
+/* Return the next pending NAL (H264/H265) or the whole JPEG (MJPEG). */
 static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
 {
     if (s_pend_len == 0) return IMG_NOT_EXIST;
@@ -239,6 +251,8 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
         if (!b) return IMG_NOT_EXIST;   /* pack kept; retried on the next call */
         memcpy(b, s_pend, s_pend_len);
         *out = b; *olen = s_pend_len; s_pend_len = 0;
+        if (type == 2)
+            return (s_pend_coding == AX_VENC_INTRA_FRAME) ? IMG_H265_TYPE_IF : IMG_H265_TYPE_PF;
         return (s_pend_coding == AX_VENC_INTRA_FRAME) ? IMG_H264_TYPE_IF : IMG_H264_TYPE_PF;
     }
     if (s_pend_idx >= s_pend_num) { s_pend_len = 0; return IMG_NOT_EXIST; }
@@ -253,6 +267,16 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
     *out = b; *olen = len;
     if (s_pend_idx >= s_pend_num) s_pend_len = 0;   /* consumed */
 
+    if (type == 2) {   /* H.265 (#64): VPS rides the SPS slot (VPS+SPS cached together) */
+        switch (ni->unNaluType.enH265EType) {
+            case AX_H265E_NALU_VPS: cache_nal(&s_sps, &s_sps_len, b, len); return IMG_H265_TYPE_SPS;
+            case AX_H265E_NALU_SPS: cache_append(&s_sps, &s_sps_len, b, len); return IMG_H265_TYPE_SPS;
+            case AX_H265E_NALU_PPS: cache_nal(&s_pps, &s_pps_len, b, len); return IMG_H265_TYPE_PPS;
+            case AX_H265E_NALU_ISLICE:
+            case AX_H265E_NALU_IDRSLICE: return IMG_H265_TYPE_IF;
+            default:                     return IMG_H265_TYPE_PF;
+        }
+    }
     switch (ni->unNaluType.enH264EType) {
         case AX_H264E_NALU_SPS: cache_nal(&s_sps, &s_sps_len, b, len); return IMG_H264_TYPE_SPS;
         case AX_H264E_NALU_PPS: cache_nal(&s_pps, &s_pps_len, b, len); return IMG_H264_TYPE_PPS;
@@ -294,7 +318,8 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
 
     if (!s_inited && init_pipeline_locked(_width, _height) != 0) { pthread_mutex_unlock(&s_lock); return IMG_VENC_ERROR; }
 
-    int want_type = (_type == IMG_MJPEG_TYPE) ? 0 : 1;
+    int want_type = (_type == IMG_MJPEG_TYPE) ? 0
+                  : (_type >= IMG_H265_TYPE_SPS) ? 2 : 1;   /* 5..8 = H.265 */
     int qlty = _qlty ? _qlty : (want_type ? 8000 : 80);
     if (ensure_chn_locked(want_type, s_w, s_h, qlty) != 0) { pthread_mutex_unlock(&s_lock); return IMG_VENC_ERROR; }
 
@@ -364,8 +389,9 @@ int kvmv_get_sps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
     if (!b) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
     memcpy(b, s_sps, s_sps_len);
     *_pp_kvm_data = b; *_p_kvmv_data_size = s_sps_len;
+    int t = (s_cur_type == 2) ? IMG_H265_TYPE_SPS : IMG_H264_TYPE_SPS;
     pthread_mutex_unlock(&s_lock);
-    return IMG_H264_TYPE_SPS;
+    return t;
 }
 
 int kvmv_get_pps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
@@ -376,8 +402,9 @@ int kvmv_get_pps_frame(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
     if (!b) { pthread_mutex_unlock(&s_lock); return IMG_NOT_EXIST; }
     memcpy(b, s_pps, s_pps_len);
     *_pp_kvm_data = b; *_p_kvmv_data_size = s_pps_len;
+    int t = (s_cur_type == 2) ? IMG_H265_TYPE_PPS : IMG_H264_TYPE_PPS;
     pthread_mutex_unlock(&s_lock);
-    return IMG_H264_TYPE_PPS;
+    return t;
 }
 
 int kvmv_free_data(uint8_t **_pp_kvm_data)
@@ -400,7 +427,8 @@ int kvmv_set_fps(uint8_t _fps)
     pthread_mutex_lock(&s_lock);
     s_fps = _fps;   /* 0 = "auto": resolved per rebuild by effective_fps_locked */
     if (s_cur_chn >= 0)
-        kvm_venc_set_fps(s_cur_chn, (s_cur_type == 0) ? PT_MJPEG : PT_H264,
+        kvm_venc_set_fps(s_cur_chn, (s_cur_type == 0) ? PT_MJPEG
+                                    : (s_cur_type == 2) ? PT_H265 : PT_H264,
                          effective_fps_locked());
     pthread_mutex_unlock(&s_lock);
     return 0;
@@ -412,7 +440,8 @@ int kvmv_set_gop(uint8_t _gop)
 {
     pthread_mutex_lock(&s_lock);
     s_gop = _gop;
-    if (s_cur_chn == KVM_VENC_H264_CHN) kvm_venc_set_gop(s_cur_chn, _gop);
+    if (s_cur_chn == KVM_VENC_H264_CHN || s_cur_chn == KVM_VENC_H265_CHN)
+        kvm_venc_set_gop(s_cur_chn, _gop);
     pthread_mutex_unlock(&s_lock);
     return 0;
 }
@@ -422,7 +451,9 @@ int kvmv_set_rate_control(uint8_t mode)
     pthread_mutex_lock(&s_lock);
     s_rc = (mode == VENC_VBR) ? 1 : 0;
     /* force channel rebuild on next read so new RC mode takes effect */
-    if (s_cur_chn == KVM_VENC_H264_CHN) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
+    if (s_cur_chn == KVM_VENC_H264_CHN || s_cur_chn == KVM_VENC_H265_CHN) {
+        kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1;
+    }
     pthread_mutex_unlock(&s_lock);
     return 0;
 }

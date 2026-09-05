@@ -30,6 +30,7 @@
 
 /* Spare VENC channels (Sipeed uses others on-demand). */
 #define KVM_VENC_H264_CHN 7
+#define KVM_VENC_H265_CHN 8   /* H.265/HEVC (#64, open encoder only) */
 #define KVM_VENC_MJPEG_CHN 6
 
 /* Opaque-ish capture context; all teardown flags live here for safe cleanup. */

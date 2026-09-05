@@ -74,6 +74,7 @@
 #include "vcenc_cmdbuf.h"
 #include "vcenc_encode.h"
 #include "vcenc_header.h"
+#include "vcenc_hevc_header.h"
 
 /* ---------------- session state (one H.264 session) ---------------- */
 static struct {
@@ -87,6 +88,7 @@ static struct {
     vcenc_geom g;                /* session geometry (#17) */
     uint32_t qp;                 /* frame QP (also the PPS pic_init_qp) */
     uint32_t rc_mode;            /* ENC_RC_LEGACY | ENC_RC_FIXQP */
+    uint32_t codec;              /* ENC_CODEC_H264 | ENC_CODEC_HEVC (#64) */
     uint32_t gop;                /* IDR period; 0 = IDR only at start */
     uint32_t n;                  /* session frame counter */
     int      stride_warned;
@@ -95,7 +97,7 @@ static struct {
     uint32_t pack_len;
     int      pack_ready;
     AX_VENC_PICTURE_CODING_TYPE_E pack_coding;
-    AX_VENC_NALU_INFO_T nalu[3];
+    AX_VENC_NALU_INFO_T nalu[4]; /* VPS+SPS+PPS+slice at an HEVC IDR */
     uint32_t nalu_num;
 } V = { .fd = -1, .chn = -1 };
 
@@ -260,10 +262,11 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     if (V.fd >= 0) venc_open_down();
     if (M.active)  mj_down();
     if (type == PT_MJPEG) return mj_create(chn, w, h, qlty);
-    if (type != PT_H264) {
+    if (type != PT_H264 && type != PT_H265) {
         fprintf(stderr, "[openvenc][FAIL] payload type %d unsupported\n", (int)type);
         return -1;
     }
+    V.codec = (type == PT_H265) ? ENC_CODEC_HEVC : ENC_CODEC_H264;
     {
         const char *why;
         if (vcenc_geom_check(w, h, &why) || vcenc_geom_build_ex(&V.g, w, h, 0)) {
@@ -305,9 +308,12 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     V.pack = malloc(V.g.out_limit + 256);   /* SPS+PPS headroom over the HW limit */
     if (!V.pack) goto fail;
 
-    /* bench overrides (#46 seam); default = the shipping fixed-QP32 program */
+    /* bench overrides (#46 seam); default = the shipping fixed-QP32 program.
+     * HEVC defaults to the vendor's true fixed-QP register set (the program
+     * device-proven for H.265, vendor-diff-hevc-20260905); H.264 keeps the
+     * legacy CBR-cluster program it shipped with. */
     V.qp = ENC_QP_FIXED;
-    V.rc_mode = ENC_RC_LEGACY;
+    V.rc_mode = (V.codec == ENC_CODEC_HEVC) ? ENC_RC_FIXQP : ENC_RC_LEGACY;
     {
         const char *e = getenv("OPENKVM_VENC_QP");
         if (e) {
@@ -322,7 +328,9 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
         e = getenv("OPENKVM_VENC_RC");
         if (e && !strcmp(e, "fixqp"))
             V.rc_mode = ENC_RC_FIXQP;
-        else if (e && strcmp(e, "legacy"))
+        else if (e && !strcmp(e, "legacy"))
+            V.rc_mode = ENC_RC_LEGACY;
+        else if (e)
             fprintf(stderr, "[openvenc] ignoring OPENKVM_VENC_RC=%s "
                             "(legacy|fixqp)\n", e);
     }
@@ -331,9 +339,10 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     V.chn = chn;
     V.pack_ready = 0;
     V.stride_warned = 0;
-    fprintf(stderr, "[openvenc] up: hwid=0x%08x %ux%u framebuf 0x%llx+0x%x "
+    fprintf(stderr, "[openvenc] up: hwid=0x%08x %s %ux%u framebuf 0x%llx+0x%x "
                     "rc=%s QP%u gop=%u qlty-req=%d (ignored)\n",
-            cfg.vcmd_hw_version_id, V.g.w, V.g.h,
+            cfg.vcmd_hw_version_id,
+            V.codec == ENC_CODEC_HEVC ? "H.265" : "H.264", V.g.w, V.g.h,
             (unsigned long long)V.fb_bus, V.g.span,
             V.rc_mode == ENC_RC_FIXQP ? "fixqp" : "legacy",
             V.qp, V.gop, qlty);
@@ -386,6 +395,7 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
         .frame_num  = gopn,
         .qp         = V.qp,
         .rc_mode    = V.rc_mode,
+        .codec      = V.codec,
         .input_phys = (uint32_t)vf->u64PhyAddr[0],
     };
     uint32_t *slot = V.cmd_pool + (uint32_t)id * (V.mem.cmd_unit_size / 4);
@@ -417,7 +427,23 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
      * bare slice otherwise */
     uint32_t off = 0;
     V.nalu_num = 0;
-    if (is_idr) {
+    if (is_idr && V.codec == ENC_CODEC_HEVC) {
+        /* VPS+SPS+PPS from vcenc_hevc_header.h (byte-identical to the
+         * vendor's at 1080p); typed with the H265E NAL enums so libkvm can
+         * map them onto IMG_H265_TYPE_{SPS,PPS}. */
+        uint32_t lvl = vcenc_hevc_level_idc(V.g.w, V.g.h);
+        uint32_t vps = vcenc_write_vps(V.pack, lvl);
+        uint32_t sps = vcenc_write_hevc_sps(V.pack + vps, V.g.w, V.g.h, lvl);
+        uint32_t pps = vcenc_write_hevc_pps(V.pack + vps + sps, V.qp);
+        V.nalu[0] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = 0, .u32NaluLength = vps };
+        V.nalu[0].unNaluType.enH265EType = AX_H265E_NALU_VPS;
+        V.nalu[1] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = vps, .u32NaluLength = sps };
+        V.nalu[1].unNaluType.enH265EType = AX_H265E_NALU_SPS;
+        V.nalu[2] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = vps + sps, .u32NaluLength = pps };
+        V.nalu[2].unNaluType.enH265EType = AX_H265E_NALU_PPS;
+        off = vps + sps + pps;
+        V.nalu_num = 3;
+    } else if (is_idr) {
         uint32_t sps = vcenc_write_sps(V.pack, V.g.w, V.g.h);
         /* slice_qp_delta is 0 in the HW's slice header, so the PPS
          * pic_init_qp MUST equal the register program's frame QP. */
@@ -434,8 +460,12 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     for (uint32_t i = 0; i < bytes; i++) V.pack[off + i] = sb[i];
     V.nalu[V.nalu_num] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = off,
                                                 .u32NaluLength = bytes };
-    V.nalu[V.nalu_num].unNaluType.enH264EType =
-        is_idr ? AX_H264E_NALU_IDRSLICE : AX_H264E_NALU_PSLICE;
+    if (V.codec == ENC_CODEC_HEVC)
+        V.nalu[V.nalu_num].unNaluType.enH265EType =
+            is_idr ? AX_H265E_NALU_IDRSLICE : AX_H265E_NALU_PSLICE;
+    else
+        V.nalu[V.nalu_num].unNaluType.enH264EType =
+            is_idr ? AX_H264E_NALU_IDRSLICE : AX_H264E_NALU_PSLICE;
     V.nalu_num++;
     V.pack_len = off + bytes;
     V.pack_coding = is_idr ? AX_VENC_INTRA_FRAME : AX_VENC_PREDICTED_FRAME;
