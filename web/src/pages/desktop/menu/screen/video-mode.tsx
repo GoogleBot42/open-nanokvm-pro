@@ -14,13 +14,17 @@ const videoGroups = [
     name: 'H.264',
     modes: [
       { key: 'h264-webrtc', name: 'H.264 WebRTC' },
-      { key: 'h264-direct', name: 'H.264 Direct ' }
+      { key: 'h264-direct', name: 'H.264 Direct ' },
+      { key: 'h264-mse', name: 'H.264 Direct (MSE)' }
     ]
   },
   {
     key: 'h265',
     name: 'H.265',
-    modes: [{ key: 'h265-direct', name: 'H.265 Direct' }]
+    modes: [
+      { key: 'h265-direct', name: 'H.265 Direct' },
+      { key: 'h265-mse', name: 'H.265 Direct (MSE)' }
+    ]
   },
   {
     key: 'mjpeg',

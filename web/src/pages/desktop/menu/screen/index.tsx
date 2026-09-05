@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import * as api from '@/api/stream.ts';
 import { VideoParameters } from '@/types';
 import * as storage from '@/lib/localstorage.ts';
+import { serverStreamMode } from '@/lib/video.ts';
 import { videoModeAtom, videoParametersAtom } from '@/jotai/screen.ts';
 import { MenuItem } from '@/components/menu-item.tsx';
 
@@ -25,7 +26,7 @@ export const Screen = () => {
   useEffect(() => {
     if (!videoMode) return;
 
-    api.setMode(videoMode);
+    api.setMode(serverStreamMode(videoMode));
     initScreen();
   }, [videoMode]);
 

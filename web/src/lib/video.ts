@@ -94,6 +94,69 @@ export function probeH265DirectConfig(): Promise<H265DecoderConfig | null> {
   return h265DirectProbe;
 }
 
+// Media Source Extensions path: the same direct WebSocket streams, remuxed to
+// fragmented MP4 in the browser and decoded by its own media pipeline, so it
+// works wherever <video> plays the codec -- notably HEVC in browsers whose
+// WebCodecs has no HEVC decoder (Firefox, Chrome on Linux).
+export type MseCodec = 'h264' | 'h265';
+
+export type MseSupport = {
+  supported: boolean;
+  // sample-entry box / codec-string family the browser accepted (HEVC only)
+  hevcBox?: 'hvc1' | 'hev1';
+};
+
+// Representative strings: what the device's encoder writes (H.264 Main 4.2,
+// HEVC Main 4.1 at 1080p, 5.1 at 4K -- read off live streams) plus the
+// Baseline string the WebCodecs path uses. The exact string is derived from
+// the stream's own parameter sets at play time and probed again then.
+const MSE_PROBE_STRINGS: Record<MseCodec, string[]> = {
+  h264: ['avc1.4D002A', 'avc1.42E01F'],
+  h265: ['hvc1.1.2.L123.80', 'hvc1.1.2.L153.80', 'hev1.1.2.L123.80', 'hev1.1.2.L153.80']
+};
+
+const mseSupportCache = new Map<MseCodec, MseSupport>();
+
+export function isMseSupported() {
+  return 'MediaSource' in window && typeof MediaSource.isTypeSupported === 'function';
+}
+
+// Ask MediaSource.isTypeSupported about the codec; every answer is logged once.
+export function mseCodecSupport(codec: MseCodec): MseSupport {
+  const cached = mseSupportCache.get(codec);
+  if (cached) return cached;
+
+  let result: MseSupport = { supported: false };
+
+  if (!isMseSupported()) {
+    console.log('[mse] no MediaSource in this browser');
+  } else {
+    for (const s of MSE_PROBE_STRINGS[codec]) {
+      const ok = MediaSource.isTypeSupported(`video/mp4; codecs="${s}"`);
+      console.log(`[mse] isTypeSupported ${s}: ${ok}`);
+      if (ok && !result.supported) {
+        result = { supported: true, hevcBox: s.startsWith('hev1') ? 'hev1' : s.startsWith('hvc1') ? 'hvc1' : undefined };
+      }
+    }
+  }
+
+  mseSupportCache.set(codec, result);
+  return result;
+}
+
+// The stream mode the server knows for a client video mode: the MSE players
+// consume the direct streams.
+export function serverStreamMode(mode: string): string {
+  switch (mode) {
+    case 'h264-mse':
+      return 'h264-direct';
+    case 'h265-mse':
+      return 'h265-direct';
+    default:
+      return mode;
+  }
+}
+
 export function getSupportedVideoModes() {
   const webrtcSupported = isWebrtcSupported();
   const decoderSupported = isDecoderSupported();
@@ -106,7 +169,21 @@ export function getSupportedVideoModes() {
 
   if (decoderSupported) {
     videoModes.push('h264-direct');
+  }
+
+  if (mseCodecSupport('h264').supported) {
+    videoModes.push('h264-mse');
+  }
+
+  // H.265 Direct picks WebCodecs or MSE at play time; it is offered when
+  // either could work.
+  const h265Mse = mseCodecSupport('h265').supported;
+  if (decoderSupported || h265Mse) {
     videoModes.push('h265-direct');
+  }
+
+  if (h265Mse) {
+    videoModes.push('h265-mse');
   }
 
   return videoModes;
