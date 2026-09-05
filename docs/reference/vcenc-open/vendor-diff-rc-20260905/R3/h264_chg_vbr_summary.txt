@@ -1,0 +1,26 @@
+== h264_chg_vbr: codec=h264 rc=vbr br=8000 fps=60 gop=30 frames=270 total=1324868 B achieved=2355 kbps
+I frames (frame:qp/bytes): 0:32/30428 30:13/74596 60:32/30749 90:27/39754 120:32/30742 150:12/77327 180:10/83929 210:10/83275 240:10/84018
+first P after each I (frame:qp): 1:32 31:12 61:32 91:27 121:32 151:11 181:10 211:10 241:10
+per-GOP: gop#: kbps I_qp P_qp[min..max] P_qp_last
+  0: 3572 kbps I=[32] P=[10..32] last=10 n=30
+  1: 2352 kbps I=[13] P=[10..12] last=10 n=30
+  2: 1757 kbps I=[32] P=[25..34] last=26 n=30
+  3: 1841 kbps I=[27] P=[21..29] last=22 n=30
+  4: 3260 kbps I=[32] P=[10..32] last=10 n=30
+  5: 2190 kbps I=[12] P=[10..11] last=10 n=30
+  6: 2058 kbps I=[10] P=[10..10] last=10 n=30
+  7: 2090 kbps I=[10] P=[10..10] last=10 n=30
+  8: 2079 kbps I=[10] P=[10..10] last=10 n=30
+P->P QP step histogram: -2:8 -1:66 +0:166 +2:12
+I->firstP QP delta: +0 -1 +0 +0 +0 -1 +0 +0 +0
+sw7 frame-QP == slice QP: 270/270 frames with a program agree; mismatches at []
+slot flags: {'': 270}
+sw105-107 distinct (I): [('0x0', '0x0', '0x0')]
+sw172/173 distinct: [('0x14f', '0x662'), ('0x14f', '0x66a')]
+sw6 distinct (I / P): ['0x3'] ['0x3']
+mid-stream changes: [{'frame': 60, 'before': 8000, 'to': 2000, 'g': '0', 's': '0', 'rb': 2000}, {'frame': 120, 'before': 2000, 'to': 16000, 'g': '0', 's': '0', 'rb': 16000}]
+  segment 0..59: 2962 kbps, qp first=32 last=10 min=10 max=32
+  segment 60..119: 1799 kbps, qp first=32 last=22 min=21 max=34
+  segment 120..269: 2335 kbps, qp first=32 last=10 min=10 max=32
+  around change at 60: 56:P1350/q10 57:P1641/q10 58:P1585/q10 59:P1604/q10 60:I30749/q32 61:P4700/q32 62:P2332/q34 63:P2149/q33 64:P2347/q32 65:P2526/q31 66:P2542/q30 67:P3218/q29 68:P2571/q29 69:P3688/q28 70:P1712/q30 71:P2313/q29 72:P2844/q28 73:P2748/q28 74:P3793/q27 75:P1552/q29
+  around change at 120: 116:P2656/q22 117:P4368/q21 118:P1941/q23 119:P2662/q22 120:I30742/q32 121:P4062/q32 122:P3629/q30 123:P4429/q28 124:P6635/q26 125:P10379/q24 126:P10385/q22 127:P12186/q20 128:P9331/q19 129:P9119/q18 130:P7956/q17 131:P7937/q16 132:P7746/q15 133:P8292/q14 134:P8732/q13 135:P9656/q12

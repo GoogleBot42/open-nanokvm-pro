@@ -1,0 +1,26 @@
+== h265_chg: codec=h265 rc=cbr br=8000 fps=60 gop=30 frames=270 total=938635 B achieved=1669 kbps
+I frames (frame:qp/bytes): 0:32/29084 30:30/32530 60:35/23869 90:36/22116 120:32/29190 150:30/32618 180:28/36444 210:26/40160 240:24/44070
+first P after each I (frame:qp): 1:35 31:33 61:38 91:37 121:34 151:33 181:31 211:29 241:27
+per-GOP: gop#: kbps I_qp P_qp[min..max] P_qp_last
+  0: 1994 kbps I=[32] P=[21..35] last=21 n=30
+  1: 2082 kbps I=[30] P=[19..33] last=19 n=30
+  2: 450 kbps I=[35] P=[38..51] last=51 n=30
+  3: 436 kbps I=[36] P=[37..46] last=46 n=30
+  4: 2004 kbps I=[32] P=[21..34] last=21 n=30
+  5: 2085 kbps I=[30] P=[19..33] last=19 n=30
+  6: 2031 kbps I=[28] P=[17..31] last=17 n=30
+  7: 1992 kbps I=[26] P=[15..29] last=15 n=30
+  8: 1944 kbps I=[24] P=[13..27] last=13 n=30
+P->P QP step histogram: -2:1 -1:95 +0:136 +1:18 +2:2
+I->firstP QP delta: +3 +3 +3 +1 +2 +3 +3 +3 +3
+sw7 frame-QP == slice QP: 270/270 frames with a program agree; mismatches at []
+slot flags: {'': 270}
+sw105-107 distinct (I): [('0x0', '0x0', '0x0'), ('0x1adb00', '0x1adb00', '0x1adb00'), ('0x249f00', '0x249f00', '0x249f00'), ('0x46c3f1', '0x46c3f1', '0x46c3f1'), ('0x4dd789', '0x4dd789', '0x4dd789')]
+sw172/173 distinct: [('0x14f', '0x662'), ('0x14f', '0x66a')]
+sw6 distinct (I / P): ['0x20000b'] ['0x200003']
+mid-stream changes: [{'frame': 60, 'before': 8000, 'to': 2000, 'g': '0', 's': '0', 'rb': 2000}, {'frame': 120, 'before': 2000, 'to': 16000, 'g': '0', 's': '0', 'rb': 16000}]
+  segment 0..59: 2038 kbps, qp first=32 last=19 min=19 max=35
+  segment 60..119: 443 kbps, qp first=35 last=46 min=35 max=51
+  segment 120..269: 2011 kbps, qp first=32 last=13 min=13 max=34
+  around change at 60: 56:P1374/q19 57:P1383/q19 58:P1143/q19 59:P1161/q19 60:I23869/q35 61:P721/q38 62:P349/q40 63:P235/q41 64:P223/q42 65:P158/q43 66:P129/q44 67:P108/q45 68:P94/q46 69:P85/q47 70:P95/q48 71:P87/q49 72:P102/q50 73:P94/q51 74:P92/q51 75:P79/q51
+  around change at 120: 116:P119/q46 117:P135/q46 118:P135/q46 119:P131/q46 120:I29190/q32 121:P8736/q34 122:P3622/q33 123:P3535/q32 124:P3613/q31 125:P3363/q30 126:P4260/q29 127:P3974/q28 128:P4337/q27 129:P4609/q26 130:P4509/q25 131:P4784/q24 132:P5240/q23 133:P6090/q22 134:P7109/q21 135:P3867/q21

@@ -1,0 +1,765 @@
+# vdrive tag=h264_cbr16000 codec=h264 1920x1080 rc=cbr br=16000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=10 level=51 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=240
+src=/root/rc65/clips/static.yuyv frames=30 loop=pingpong motion=vscroll mstep=4 window=0..-1
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742d1000 virt=0xffff991c5000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 0: srcf=0 off=4 br=16000
+frame 0: send=0x0 get=0x0 len=30680 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:30640
+  snapshot f000: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 1: srcf=1 off=8 br=16000
+frame 1: send=0x0 get=0x0 len=8617 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8617
+  snapshot f001: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 2: srcf=2 off=12 br=16000
+frame 2: send=0x0 get=0x0 len=11375 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11375
+  snapshot f002: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 3: srcf=3 off=16 br=16000
+frame 3: send=0x0 get=0x0 len=8335 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8335
+  snapshot f003: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 4: srcf=4 off=20 br=16000
+frame 4: send=0x0 get=0x0 len=8412 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8412
+  snapshot f004: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 5: srcf=5 off=24 br=16000
+frame 5: send=0x0 get=0x0 len=6817 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6817
+  snapshot f005: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 6: srcf=6 off=28 br=16000
+frame 6: send=0x0 get=0x0 len=6922 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6922
+  snapshot f006: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 7: srcf=7 off=32 br=16000
+frame 7: send=0x0 get=0x0 len=6893 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6893
+  snapshot f007: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 8: srcf=8 off=36 br=16000
+frame 8: send=0x0 get=0x0 len=6982 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6982
+  snapshot f008: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 9: srcf=9 off=40 br=16000
+frame 9: send=0x0 get=0x0 len=7586 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7586
+  snapshot f009: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 10: srcf=10 off=44 br=16000
+frame 10: send=0x0 get=0x0 len=7476 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7476
+  snapshot f010: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 11: srcf=11 off=48 br=16000
+frame 11: send=0x0 get=0x0 len=7733 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7733
+  snapshot f011: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 12: srcf=12 off=52 br=16000
+frame 12: send=0x0 get=0x0 len=9235 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9235
+  snapshot f012: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 13: srcf=13 off=56 br=16000
+frame 13: send=0x0 get=0x0 len=9499 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9499
+  snapshot f013: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 14: srcf=14 off=60 br=16000
+frame 14: send=0x0 get=0x0 len=10186 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10186
+  snapshot f014: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 15: srcf=15 off=64 br=16000
+frame 15: send=0x0 get=0x0 len=5795 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5795
+  snapshot f015: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 16: srcf=16 off=68 br=16000
+frame 16: send=0x0 get=0x0 len=4553 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4553
+  snapshot f016: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 17: srcf=17 off=72 br=16000
+frame 17: send=0x0 get=0x0 len=3917 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3917
+  snapshot f017: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 18: srcf=18 off=76 br=16000
+frame 18: send=0x0 get=0x0 len=2577 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2577
+  snapshot f018: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 19: srcf=19 off=80 br=16000
+frame 19: send=0x0 get=0x0 len=2542 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2542
+  snapshot f019: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 20: srcf=20 off=84 br=16000
+frame 20: send=0x0 get=0x0 len=2305 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2305
+  snapshot f020: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 21: srcf=21 off=88 br=16000
+frame 21: send=0x0 get=0x0 len=2566 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2566
+  snapshot f021: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 22: srcf=22 off=92 br=16000
+frame 22: send=0x0 get=0x0 len=4008 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4008
+  snapshot f022: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 23: srcf=23 off=96 br=16000
+frame 23: send=0x0 get=0x0 len=5645 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5645
+  snapshot f023: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 24: srcf=24 off=100 br=16000
+frame 24: send=0x0 get=0x0 len=6626 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6626
+  snapshot f024: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 25: srcf=25 off=104 br=16000
+frame 25: send=0x0 get=0x0 len=3008 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3008
+  snapshot f025: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 26: srcf=26 off=108 br=16000
+frame 26: send=0x0 get=0x0 len=2194 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2194
+  snapshot f026: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 27: srcf=27 off=112 br=16000
+frame 27: send=0x0 get=0x0 len=1901 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1901
+  snapshot f027: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 28: srcf=28 off=116 br=16000
+frame 28: send=0x0 get=0x0 len=1598 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1598
+  snapshot f028: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 29: srcf=29 off=120 br=16000
+frame 29: send=0x0 get=0x0 len=1546 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1546
+  snapshot f029: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 30: srcf=28 off=124 br=16000
+frame 30: send=0x0 get=0x0 len=34192 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:34152
+  snapshot f030: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 31: srcf=27 off=128 br=16000
+frame 31: send=0x0 get=0x0 len=9487 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9487
+  snapshot f031: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 32: srcf=26 off=132 br=16000
+frame 32: send=0x0 get=0x0 len=7514 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7514
+  snapshot f032: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 33: srcf=25 off=136 br=16000
+frame 33: send=0x0 get=0x0 len=8281 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8281
+  snapshot f033: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 34: srcf=24 off=140 br=16000
+frame 34: send=0x0 get=0x0 len=7551 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7551
+  snapshot f034: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 35: srcf=23 off=144 br=16000
+frame 35: send=0x0 get=0x0 len=7486 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7486
+  snapshot f035: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 36: srcf=22 off=148 br=16000
+frame 36: send=0x0 get=0x0 len=6584 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6584
+  snapshot f036: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 37: srcf=21 off=152 br=16000
+frame 37: send=0x0 get=0x0 len=7486 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7486
+  snapshot f037: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 38: srcf=20 off=156 br=16000
+frame 38: send=0x0 get=0x0 len=7370 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7370
+  snapshot f038: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 39: srcf=19 off=160 br=16000
+frame 39: send=0x0 get=0x0 len=7625 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7625
+  snapshot f039: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 40: srcf=18 off=164 br=16000
+frame 40: send=0x0 get=0x0 len=7791 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7791
+  snapshot f040: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 41: srcf=17 off=168 br=16000
+frame 41: send=0x0 get=0x0 len=9456 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9456
+  snapshot f041: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 42: srcf=16 off=172 br=16000
+frame 42: send=0x0 get=0x0 len=10001 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10001
+  snapshot f042: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 43: srcf=15 off=176 br=16000
+frame 43: send=0x0 get=0x0 len=11063 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11063
+  snapshot f043: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 44: srcf=14 off=180 br=16000
+frame 44: send=0x0 get=0x0 len=9873 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9873
+  snapshot f044: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 45: srcf=13 off=184 br=16000
+frame 45: send=0x0 get=0x0 len=5798 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5798
+  snapshot f045: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 46: srcf=12 off=188 br=16000
+frame 46: send=0x0 get=0x0 len=4433 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4433
+  snapshot f046: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 47: srcf=11 off=192 br=16000
+frame 47: send=0x0 get=0x0 len=3713 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3713
+  snapshot f047: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 48: srcf=10 off=196 br=16000
+frame 48: send=0x0 get=0x0 len=2673 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2673
+  snapshot f048: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 49: srcf=9 off=200 br=16000
+frame 49: send=0x0 get=0x0 len=2346 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2346
+  snapshot f049: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 50: srcf=8 off=204 br=16000
+frame 50: send=0x0 get=0x0 len=2509 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2509
+  snapshot f050: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 51: srcf=7 off=208 br=16000
+frame 51: send=0x0 get=0x0 len=2901 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2901
+  snapshot f051: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 52: srcf=6 off=212 br=16000
+frame 52: send=0x0 get=0x0 len=2927 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2927
+  snapshot f052: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 53: srcf=5 off=216 br=16000
+frame 53: send=0x0 get=0x0 len=3083 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3083
+  snapshot f053: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 54: srcf=4 off=220 br=16000
+frame 54: send=0x0 get=0x0 len=2545 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2545
+  snapshot f054: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 55: srcf=3 off=224 br=16000
+frame 55: send=0x0 get=0x0 len=1847 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1847
+  snapshot f055: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 56: srcf=2 off=228 br=16000
+frame 56: send=0x0 get=0x0 len=1785 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1785
+  snapshot f056: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 57: srcf=1 off=232 br=16000
+frame 57: send=0x0 get=0x0 len=1927 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1927
+  snapshot f057: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 58: srcf=0 off=236 br=16000
+frame 58: send=0x0 get=0x0 len=1999 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1999
+  snapshot f058: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 59: srcf=1 off=240 br=16000
+frame 59: send=0x0 get=0x0 len=1936 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1936
+  snapshot f059: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 60: srcf=2 off=244 br=16000
+frame 60: send=0x0 get=0x0 len=38434 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:38394
+  snapshot f060: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 61: srcf=3 off=248 br=16000
+frame 61: send=0x0 get=0x0 len=10971 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10971
+  snapshot f061: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 62: srcf=4 off=252 br=16000
+frame 62: send=0x0 get=0x0 len=7860 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7860
+  snapshot f062: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 63: srcf=5 off=256 br=16000
+frame 63: send=0x0 get=0x0 len=7818 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7818
+  snapshot f063: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 64: srcf=6 off=260 br=16000
+frame 64: send=0x0 get=0x0 len=7001 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7001
+  snapshot f064: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 65: srcf=7 off=264 br=16000
+frame 65: send=0x0 get=0x0 len=7036 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7036
+  snapshot f065: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 66: srcf=8 off=268 br=16000
+frame 66: send=0x0 get=0x0 len=7035 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7035
+  snapshot f066: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 67: srcf=9 off=272 br=16000
+frame 67: send=0x0 get=0x0 len=7646 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7646
+  snapshot f067: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 68: srcf=10 off=276 br=16000
+frame 68: send=0x0 get=0x0 len=7366 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7366
+  snapshot f068: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 69: srcf=11 off=280 br=16000
+frame 69: send=0x0 get=0x0 len=8460 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8460
+  snapshot f069: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 70: srcf=12 off=284 br=16000
+frame 70: send=0x0 get=0x0 len=8074 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8074
+  snapshot f070: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 71: srcf=13 off=288 br=16000
+frame 71: send=0x0 get=0x0 len=9515 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9515
+  snapshot f071: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 72: srcf=14 off=292 br=16000
+frame 72: send=0x0 get=0x0 len=9617 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9617
+  snapshot f072: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 73: srcf=15 off=296 br=16000
+frame 73: send=0x0 get=0x0 len=6238 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6238
+  snapshot f073: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 74: srcf=16 off=300 br=16000
+frame 74: send=0x0 get=0x0 len=4267 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4267
+  snapshot f074: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 75: srcf=17 off=304 br=16000
+frame 75: send=0x0 get=0x0 len=3552 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3552
+  snapshot f075: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 76: srcf=18 off=308 br=16000
+frame 76: send=0x0 get=0x0 len=2583 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2583
+  snapshot f076: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 77: srcf=19 off=312 br=16000
+frame 77: send=0x0 get=0x0 len=2652 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2652
+  snapshot f077: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 78: srcf=20 off=316 br=16000
+frame 78: send=0x0 get=0x0 len=2395 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2395
+  snapshot f078: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 79: srcf=21 off=320 br=16000
+frame 79: send=0x0 get=0x0 len=3005 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3005
+  snapshot f079: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 80: srcf=22 off=324 br=16000
+frame 80: send=0x0 get=0x0 len=3251 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3251
+  snapshot f080: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 81: srcf=23 off=328 br=16000
+frame 81: send=0x0 get=0x0 len=4012 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4012
+  snapshot f081: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 82: srcf=24 off=332 br=16000
+frame 82: send=0x0 get=0x0 len=3260 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3260
+  snapshot f082: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 83: srcf=25 off=336 br=16000
+frame 83: send=0x0 get=0x0 len=2314 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2314
+  snapshot f083: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 84: srcf=26 off=340 br=16000
+frame 84: send=0x0 get=0x0 len=1988 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1988
+  snapshot f084: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 85: srcf=27 off=344 br=16000
+frame 85: send=0x0 get=0x0 len=1934 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1934
+  snapshot f085: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 86: srcf=28 off=348 br=16000
+frame 86: send=0x0 get=0x0 len=1732 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1732
+  snapshot f086: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 87: srcf=29 off=352 br=16000
+frame 87: send=0x0 get=0x0 len=2072 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2072
+  snapshot f087: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 88: srcf=28 off=356 br=16000
+frame 88: send=0x0 get=0x0 len=2126 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2126
+  snapshot f088: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 89: srcf=27 off=360 br=16000
+frame 89: send=0x0 get=0x0 len=2746 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2746
+  snapshot f089: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 90: srcf=26 off=364 br=16000
+frame 90: send=0x0 get=0x0 len=42330 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:42290
+  snapshot f090: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 91: srcf=25 off=368 br=16000
+frame 91: send=0x0 get=0x0 len=11082 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11082
+  snapshot f091: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 92: srcf=24 off=372 br=16000
+frame 92: send=0x0 get=0x0 len=7920 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7920
+  snapshot f092: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 93: srcf=23 off=376 br=16000
+frame 93: send=0x0 get=0x0 len=7890 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7890
+  snapshot f093: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 94: srcf=22 off=380 br=16000
+frame 94: send=0x0 get=0x0 len=7054 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7054
+  snapshot f094: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 95: srcf=21 off=384 br=16000
+frame 95: send=0x0 get=0x0 len=7184 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7184
+  snapshot f095: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 96: srcf=20 off=388 br=16000
+frame 96: send=0x0 get=0x0 len=7198 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7198
+  snapshot f096: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 97: srcf=19 off=392 br=16000
+frame 97: send=0x0 get=0x0 len=7771 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7771
+  snapshot f097: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 98: srcf=18 off=396 br=16000
+frame 98: send=0x0 get=0x0 len=7338 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7338
+  snapshot f098: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 99: srcf=17 off=400 br=16000
+frame 99: send=0x0 get=0x0 len=9004 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9004
+  snapshot f099: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 100: srcf=16 off=404 br=16000
+frame 100: send=0x0 get=0x0 len=9173 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9173
+  snapshot f100: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 101: srcf=15 off=408 br=16000
+frame 101: send=0x0 get=0x0 len=6326 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6326
+  snapshot f101: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 102: srcf=14 off=412 br=16000
+frame 102: send=0x0 get=0x0 len=5368 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5368
+  snapshot f102: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 103: srcf=13 off=416 br=16000
+frame 103: send=0x0 get=0x0 len=4829 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4829
+  snapshot f103: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 104: srcf=12 off=420 br=16000
+frame 104: send=0x0 get=0x0 len=2684 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2684
+  snapshot f104: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 105: srcf=11 off=424 br=16000
+frame 105: send=0x0 get=0x0 len=2160 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2160
+  snapshot f105: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 106: srcf=10 off=428 br=16000
+frame 106: send=0x0 get=0x0 len=2168 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2168
+  snapshot f106: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 107: srcf=9 off=432 br=16000
+frame 107: send=0x0 get=0x0 len=2436 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2436
+  snapshot f107: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 108: srcf=8 off=436 br=16000
+frame 108: send=0x0 get=0x0 len=2426 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2426
+  snapshot f108: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 109: srcf=7 off=440 br=16000
+frame 109: send=0x0 get=0x0 len=2506 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2506
+  snapshot f109: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 110: srcf=6 off=444 br=16000
+frame 110: send=0x0 get=0x0 len=2748 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2748
+  snapshot f110: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 111: srcf=5 off=448 br=16000
+frame 111: send=0x0 get=0x0 len=3355 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3355
+  snapshot f111: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 112: srcf=4 off=452 br=16000
+frame 112: send=0x0 get=0x0 len=3158 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3158
+  snapshot f112: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 113: srcf=3 off=456 br=16000
+frame 113: send=0x0 get=0x0 len=3642 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3642
+  snapshot f113: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 114: srcf=2 off=460 br=16000
+frame 114: send=0x0 get=0x0 len=1753 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1753
+  snapshot f114: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 115: srcf=1 off=464 br=16000
+frame 115: send=0x0 get=0x0 len=1827 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1827
+  snapshot f115: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 116: srcf=0 off=468 br=16000
+frame 116: send=0x0 get=0x0 len=1739 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1739
+  snapshot f116: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 117: srcf=1 off=472 br=16000
+frame 117: send=0x0 get=0x0 len=2069 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2069
+  snapshot f117: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 118: srcf=2 off=476 br=16000
+frame 118: send=0x0 get=0x0 len=2368 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2368
+  snapshot f118: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 119: srcf=3 off=480 br=16000
+frame 119: send=0x0 get=0x0 len=2677 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2677
+  snapshot f119: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 120: srcf=4 off=484 br=16000
+frame 120: send=0x0 get=0x0 len=46714 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:46674
+  snapshot f120: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 121: srcf=5 off=488 br=16000
+frame 121: send=0x0 get=0x0 len=12597 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12597
+  snapshot f121: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 122: srcf=6 off=492 br=16000
+frame 122: send=0x0 get=0x0 len=8739 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8739
+  snapshot f122: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 123: srcf=7 off=496 br=16000
+frame 123: send=0x0 get=0x0 len=7804 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7804
+  snapshot f123: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 124: srcf=8 off=500 br=16000
+frame 124: send=0x0 get=0x0 len=7910 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7910
+  snapshot f124: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 125: srcf=9 off=504 br=16000
+frame 125: send=0x0 get=0x0 len=7857 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7857
+  snapshot f125: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 126: srcf=10 off=508 br=16000
+frame 126: send=0x0 get=0x0 len=7325 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7325
+  snapshot f126: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 127: srcf=11 off=512 br=16000
+frame 127: send=0x0 get=0x0 len=8790 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8790
+  snapshot f127: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 128: srcf=12 off=516 br=16000
+frame 128: send=0x0 get=0x0 len=8993 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8993
+  snapshot f128: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 129: srcf=13 off=520 br=16000
+frame 129: send=0x0 get=0x0 len=5893 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5893
+  snapshot f129: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 130: srcf=14 off=524 br=16000
+frame 130: send=0x0 get=0x0 len=4260 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4260
+  snapshot f130: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 131: srcf=15 off=528 br=16000
+frame 131: send=0x0 get=0x0 len=3312 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3312
+  snapshot f131: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 132: srcf=16 off=532 br=16000
+frame 132: send=0x0 get=0x0 len=2534 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2534
+  snapshot f132: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 133: srcf=17 off=536 br=16000
+frame 133: send=0x0 get=0x0 len=2682 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2682
+  snapshot f133: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 134: srcf=18 off=540 br=16000
+frame 134: send=0x0 get=0x0 len=3667 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3667
+  snapshot f134: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 135: srcf=19 off=544 br=16000
+frame 135: send=0x0 get=0x0 len=4175 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4175
+  snapshot f135: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 136: srcf=20 off=548 br=16000
+frame 136: send=0x0 get=0x0 len=3629 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3629
+  snapshot f136: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 137: srcf=21 off=552 br=16000
+frame 137: send=0x0 get=0x0 len=2527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2527
+  snapshot f137: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 138: srcf=22 off=556 br=16000
+frame 138: send=0x0 get=0x0 len=2130 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2130
+  snapshot f138: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 139: srcf=23 off=560 br=16000
+frame 139: send=0x0 get=0x0 len=1903 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1903
+  snapshot f139: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 140: srcf=24 off=564 br=16000
+frame 140: send=0x0 get=0x0 len=1709 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1709
+  snapshot f140: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 141: srcf=25 off=568 br=16000
+frame 141: send=0x0 get=0x0 len=1653 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1653
+  snapshot f141: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 142: srcf=26 off=572 br=16000
+frame 142: send=0x0 get=0x0 len=1774 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1774
+  snapshot f142: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 143: srcf=27 off=576 br=16000
+frame 143: send=0x0 get=0x0 len=2348 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2348
+  snapshot f143: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 144: srcf=28 off=580 br=16000
+frame 144: send=0x0 get=0x0 len=2841 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2841
+  snapshot f144: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 145: srcf=29 off=584 br=16000
+frame 145: send=0x0 get=0x0 len=2807 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2807
+  snapshot f145: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 146: srcf=28 off=588 br=16000
+frame 146: send=0x0 get=0x0 len=2408 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2408
+  snapshot f146: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 147: srcf=27 off=592 br=16000
+frame 147: send=0x0 get=0x0 len=2500 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2500
+  snapshot f147: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 148: srcf=26 off=596 br=16000
+frame 148: send=0x0 get=0x0 len=2356 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2356
+  snapshot f148: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 149: srcf=25 off=600 br=16000
+frame 149: send=0x0 get=0x0 len=1777 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1777
+  snapshot f149: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 150: srcf=24 off=604 br=16000
+frame 150: send=0x0 get=0x0 len=50918 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:50878
+  snapshot f150: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 151: srcf=23 off=608 br=16000
+frame 151: send=0x0 get=0x0 len=12423 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12423
+  snapshot f151: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 152: srcf=22 off=612 br=16000
+frame 152: send=0x0 get=0x0 len=9951 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9951
+  snapshot f152: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 153: srcf=21 off=616 br=16000
+frame 153: send=0x0 get=0x0 len=10254 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10254
+  snapshot f153: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 154: srcf=20 off=620 br=16000
+frame 154: send=0x0 get=0x0 len=8472 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8472
+  snapshot f154: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 155: srcf=19 off=624 br=16000
+frame 155: send=0x0 get=0x0 len=8527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8527
+  snapshot f155: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 156: srcf=18 off=628 br=16000
+frame 156: send=0x0 get=0x0 len=9207 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9207
+  snapshot f156: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 157: srcf=17 off=632 br=16000
+frame 157: send=0x0 get=0x0 len=6253 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6253
+  snapshot f157: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 158: srcf=16 off=636 br=16000
+frame 158: send=0x0 get=0x0 len=4315 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4315
+  snapshot f158: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 159: srcf=15 off=640 br=16000
+frame 159: send=0x0 get=0x0 len=3165 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3165
+  snapshot f159: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 160: srcf=14 off=644 br=16000
+frame 160: send=0x0 get=0x0 len=2154 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2154
+  snapshot f160: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 161: srcf=13 off=648 br=16000
+frame 161: send=0x0 get=0x0 len=2082 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2082
+  snapshot f161: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 162: srcf=12 off=652 br=16000
+frame 162: send=0x0 get=0x0 len=1802 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1802
+  snapshot f162: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 163: srcf=11 off=656 br=16000
+frame 163: send=0x0 get=0x0 len=1763 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1763
+  snapshot f163: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 164: srcf=10 off=660 br=16000
+frame 164: send=0x0 get=0x0 len=1602 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1602
+  snapshot f164: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 165: srcf=9 off=664 br=16000
+frame 165: send=0x0 get=0x0 len=2073 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2073
+  snapshot f165: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 166: srcf=8 off=668 br=16000
+frame 166: send=0x0 get=0x0 len=2363 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2363
+  snapshot f166: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 167: srcf=7 off=672 br=16000
+frame 167: send=0x0 get=0x0 len=2479 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2479
+  snapshot f167: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 168: srcf=6 off=676 br=16000
+frame 168: send=0x0 get=0x0 len=1731 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1731
+  snapshot f168: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 169: srcf=5 off=680 br=16000
+frame 169: send=0x0 get=0x0 len=1616 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1616
+  snapshot f169: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 170: srcf=4 off=684 br=16000
+frame 170: send=0x0 get=0x0 len=1476 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1476
+  snapshot f170: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 171: srcf=3 off=688 br=16000
+frame 171: send=0x0 get=0x0 len=1520 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1520
+  snapshot f171: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 172: srcf=2 off=692 br=16000
+frame 172: send=0x0 get=0x0 len=1444 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1444
+  snapshot f172: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 173: srcf=1 off=696 br=16000
+frame 173: send=0x0 get=0x0 len=1737 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1737
+  snapshot f173: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 174: srcf=0 off=700 br=16000
+frame 174: send=0x0 get=0x0 len=1904 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1904
+  snapshot f174: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 175: srcf=1 off=704 br=16000
+frame 175: send=0x0 get=0x0 len=2127 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2127
+  snapshot f175: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 176: srcf=2 off=708 br=16000
+frame 176: send=0x0 get=0x0 len=2096 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2096
+  snapshot f176: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 177: srcf=3 off=712 br=16000
+frame 177: send=0x0 get=0x0 len=1738 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1738
+  snapshot f177: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 178: srcf=4 off=716 br=16000
+frame 178: send=0x0 get=0x0 len=1545 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1545
+  snapshot f178: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 179: srcf=5 off=720 br=16000
+frame 179: send=0x0 get=0x0 len=1530 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1530
+  snapshot f179: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 180: srcf=6 off=724 br=16000
+frame 180: send=0x0 get=0x0 len=56272 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:56232
+  snapshot f180: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 181: srcf=7 off=728 br=16000
+frame 181: send=0x0 get=0x0 len=13037 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13037
+  snapshot f181: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 182: srcf=8 off=732 br=16000
+frame 182: send=0x0 get=0x0 len=8773 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8773
+  snapshot f182: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 183: srcf=9 off=736 br=16000
+frame 183: send=0x0 get=0x0 len=8978 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8978
+  snapshot f183: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 184: srcf=10 off=740 br=16000
+frame 184: send=0x0 get=0x0 len=9669 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9669
+  snapshot f184: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 185: srcf=11 off=744 br=16000
+frame 185: send=0x0 get=0x0 len=6230 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6230
+  snapshot f185: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 186: srcf=12 off=748 br=16000
+frame 186: send=0x0 get=0x0 len=4802 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4802
+  snapshot f186: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 187: srcf=13 off=752 br=16000
+frame 187: send=0x0 get=0x0 len=3504 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3504
+  snapshot f187: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 188: srcf=14 off=756 br=16000
+frame 188: send=0x0 get=0x0 len=2251 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2251
+  snapshot f188: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 189: srcf=15 off=760 br=16000
+frame 189: send=0x0 get=0x0 len=2042 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2042
+  snapshot f189: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 190: srcf=16 off=764 br=16000
+frame 190: send=0x0 get=0x0 len=1800 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1800
+  snapshot f190: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 191: srcf=17 off=768 br=16000
+frame 191: send=0x0 get=0x0 len=1759 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1759
+  snapshot f191: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 192: srcf=18 off=772 br=16000
+frame 192: send=0x0 get=0x0 len=1681 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1681
+  snapshot f192: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 193: srcf=19 off=776 br=16000
+frame 193: send=0x0 get=0x0 len=2027 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2027
+  snapshot f193: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 194: srcf=20 off=780 br=16000
+frame 194: send=0x0 get=0x0 len=2282 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2282
+  snapshot f194: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 195: srcf=21 off=784 br=16000
+frame 195: send=0x0 get=0x0 len=2301 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2301
+  snapshot f195: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 196: srcf=22 off=788 br=16000
+frame 196: send=0x0 get=0x0 len=1522 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1522
+  snapshot f196: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 197: srcf=23 off=792 br=16000
+frame 197: send=0x0 get=0x0 len=1516 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1516
+  snapshot f197: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 198: srcf=24 off=796 br=16000
+frame 198: send=0x0 get=0x0 len=1474 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1474
+  snapshot f198: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 199: srcf=25 off=800 br=16000
+frame 199: send=0x0 get=0x0 len=1509 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1509
+  snapshot f199: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 200: srcf=26 off=804 br=16000
+frame 200: send=0x0 get=0x0 len=1415 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1415
+  snapshot f200: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 201: srcf=27 off=808 br=16000
+frame 201: send=0x0 get=0x0 len=1591 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1591
+  snapshot f201: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 202: srcf=28 off=812 br=16000
+frame 202: send=0x0 get=0x0 len=1680 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1680
+  snapshot f202: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 203: srcf=29 off=816 br=16000
+frame 203: send=0x0 get=0x0 len=2060 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2060
+  snapshot f203: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 204: srcf=28 off=820 br=16000
+frame 204: send=0x0 get=0x0 len=2026 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2026
+  snapshot f204: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 205: srcf=27 off=824 br=16000
+frame 205: send=0x0 get=0x0 len=1803 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1803
+  snapshot f205: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 206: srcf=26 off=828 br=16000
+frame 206: send=0x0 get=0x0 len=1506 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1506
+  snapshot f206: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 207: srcf=25 off=832 br=16000
+frame 207: send=0x0 get=0x0 len=1594 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1594
+  snapshot f207: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 208: srcf=24 off=836 br=16000
+frame 208: send=0x0 get=0x0 len=1490 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1490
+  snapshot f208: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 209: srcf=23 off=840 br=16000
+frame 209: send=0x0 get=0x0 len=1551 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1551
+  snapshot f209: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 210: srcf=22 off=844 br=16000
+frame 210: send=0x0 get=0x0 len=60745 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:60705
+  snapshot f210: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 211: srcf=21 off=848 br=16000
+frame 211: send=0x0 get=0x0 len=14636 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14636
+  snapshot f211: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 212: srcf=20 off=852 br=16000
+frame 212: send=0x0 get=0x0 len=10144 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10144
+  snapshot f212: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 213: srcf=19 off=856 br=16000
+frame 213: send=0x0 get=0x0 len=6789 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6789
+  snapshot f213: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 214: srcf=18 off=860 br=16000
+frame 214: send=0x0 get=0x0 len=5254 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5254
+  snapshot f214: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 215: srcf=17 off=864 br=16000
+frame 215: send=0x0 get=0x0 len=3734 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3734
+  snapshot f215: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 216: srcf=16 off=868 br=16000
+frame 216: send=0x0 get=0x0 len=2622 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2622
+  snapshot f216: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 217: srcf=15 off=872 br=16000
+frame 217: send=0x0 get=0x0 len=2347 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2347
+  snapshot f217: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 218: srcf=14 off=876 br=16000
+frame 218: send=0x0 get=0x0 len=1843 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1843
+  snapshot f218: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 219: srcf=13 off=880 br=16000
+frame 219: send=0x0 get=0x0 len=1735 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1735
+  snapshot f219: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 220: srcf=12 off=884 br=16000
+frame 220: send=0x0 get=0x0 len=1621 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1621
+  snapshot f220: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 221: srcf=11 off=888 br=16000
+frame 221: send=0x0 get=0x0 len=2017 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2017
+  snapshot f221: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 222: srcf=10 off=892 br=16000
+frame 222: send=0x0 get=0x0 len=2398 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2398
+  snapshot f222: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 223: srcf=9 off=896 br=16000
+frame 223: send=0x0 get=0x0 len=2621 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2621
+  snapshot f223: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 224: srcf=8 off=900 br=16000
+frame 224: send=0x0 get=0x0 len=2366 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2366
+  snapshot f224: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 225: srcf=7 off=904 br=16000
+frame 225: send=0x0 get=0x0 len=1881 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1881
+  snapshot f225: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 226: srcf=6 off=908 br=16000
+frame 226: send=0x0 get=0x0 len=1466 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1466
+  snapshot f226: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 227: srcf=5 off=912 br=16000
+frame 227: send=0x0 get=0x0 len=1445 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1445
+  snapshot f227: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 228: srcf=4 off=916 br=16000
+frame 228: send=0x0 get=0x0 len=1485 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1485
+  snapshot f228: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 229: srcf=3 off=920 br=16000
+frame 229: send=0x0 get=0x0 len=1544 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1544
+  snapshot f229: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 230: srcf=2 off=924 br=16000
+frame 230: send=0x0 get=0x0 len=1539 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1539
+  snapshot f230: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 231: srcf=1 off=928 br=16000
+frame 231: send=0x0 get=0x0 len=1916 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1916
+  snapshot f231: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 232: srcf=0 off=932 br=16000
+frame 232: send=0x0 get=0x0 len=2189 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2189
+  snapshot f232: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 233: srcf=1 off=936 br=16000
+frame 233: send=0x0 get=0x0 len=2367 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2367
+  snapshot f233: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 234: srcf=2 off=940 br=16000
+frame 234: send=0x0 get=0x0 len=1527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1527
+  snapshot f234: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 235: srcf=3 off=944 br=16000
+frame 235: send=0x0 get=0x0 len=1515 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1515
+  snapshot f235: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 236: srcf=4 off=948 br=16000
+frame 236: send=0x0 get=0x0 len=1472 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1472
+  snapshot f236: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 237: srcf=5 off=952 br=16000
+frame 237: send=0x0 get=0x0 len=1521 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1521
+  snapshot f237: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 238: srcf=6 off=956 br=16000
+frame 238: send=0x0 get=0x0 len=1358 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1358
+  snapshot f238: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 239: srcf=7 off=960 br=16000
+frame 239: send=0x0 get=0x0 len=1563 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1563
+  snapshot f239: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h264    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      3283333      198          NONE         0            742d1000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   60.00   16000     10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   198       198       198       0         0         0         0         197       197       50.00     2358.77   0         0         0         -1        129828  129832  1       198       198       0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done h264_cbr16000

@@ -1,0 +1,13 @@
+== h265_jump1_cbr7500: codec=h265 rc=cbr br=7500 fps=60 gop=30 frames=60 total=941540 B achieved=7532 kbps
+I frames (frame:qp/bytes): 0:32/28832 30:32/28909
+first P after each I (frame:qp): 1:35 31:35
+per-GOP: gop#: kbps I_qp P_qp[min..max] P_qp_last
+  0: 7225 kbps I=[32] P=[35..37] last=35 n=30
+  1: 7839 kbps I=[32] P=[33..37] last=37 n=30
+P->P QP step histogram: -2:21 -1:2 +0:5 +1:10 +2:18
+I->firstP QP delta: +3 +3
+sw7 frame-QP == slice QP: 60/60 frames with a program agree; mismatches at []
+slot flags: {'': 60}
+sw105-107 distinct (I): [('0x15be68', '0x15be68', '0x15be68'), ('0x192d50', '0x192d50', '0x192d50')]
+sw172/173 distinct: [('0x14f', '0x662'), ('0x14f', '0x66a')]
+sw6 distinct (I / P): ['0x20000b'] ['0x200003']

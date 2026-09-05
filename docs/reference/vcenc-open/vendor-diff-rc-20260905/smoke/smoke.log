@@ -1,0 +1,37 @@
+# vdrive tag=smoke codec=h264 1920x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=10 level=51 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+src=clips/static.yuyv frames=30 loop=pingpong motion=none mstep=4 window=0..-1
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742d1000 virt=0xffff997f5000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 0: srcf=0 off=0 br=8000
+frame 0: send=0x0 get=0x0 len=30842 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:30802
+  snapshot f000: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 1: srcf=1 off=0 br=8000
+frame 1: send=0x0 get=0x0 len=8800 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8800
+  snapshot f001: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 2: srcf=2 off=0 br=8000
+frame 2: send=0x0 get=0x0 len=10590 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10590
+  snapshot f002: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 3: srcf=3 off=0 br=8000
+frame 3: send=0x0 get=0x0 len=7117 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7117
+  snapshot f003: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 4: srcf=4 off=0 br=8000
+frame 4: send=0x0 get=0x0 len=7369 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7369
+  snapshot f004: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+src frame 5: srcf=5 off=0 br=8000
+frame 5: send=0x0 get=0x0 len=7015 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7015
+  snapshot f005: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done smoke

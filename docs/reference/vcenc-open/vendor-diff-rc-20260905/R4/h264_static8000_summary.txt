@@ -1,0 +1,19 @@
+== h264_static8000: codec=h264 rc=cbr br=8000 fps=60 gop=30 frames=240 total=1303069 B achieved=2606 kbps
+I frames (frame:qp/bytes): 0:32/30842 30:30/34365 60:28/38177 90:26/42391 120:24/46570 150:22/51112 180:20/56299 210:18/60896
+first P after each I (frame:qp): 1:35 31:33 61:31 91:29 121:27 151:25 181:23 211:21
+per-GOP: gop#: kbps I_qp P_qp[min..max] P_qp_last
+  0: 2826 kbps I=[32] P=[21..35] last=21 n=30
+  1: 2999 kbps I=[30] P=[19..33] last=19 n=30
+  2: 2816 kbps I=[28] P=[17..31] last=17 n=30
+  3: 2797 kbps I=[26] P=[15..29] last=15 n=30
+  4: 2531 kbps I=[24] P=[13..27] last=13 n=30
+  5: 2489 kbps I=[22] P=[11..25] last=11 n=30
+  6: 2212 kbps I=[20] P=[10..23] last=10 n=30
+  7: 2179 kbps I=[18] P=[10..21] last=10 n=30
+P->P QP step histogram: -2:1 -1:106 +0:117
+I->firstP QP delta: +3 +3 +3 +3 +3 +3 +3 +3
+sw7 frame-QP == slice QP: 240/240 frames with a program agree; mismatches at []
+slot flags: {'': 240}
+sw105-107 distinct (I): [('0x1adb00', '0x1adb00', '0x1adb00'), ('0x2361f8', '0x2361f8', '0x2361f8'), ('0x26ebc4', '0x26ebc4', '0x26ebc4')]
+sw172/173 distinct: [('0x14f', '0x662'), ('0x14f', '0x66a')]
+sw6 distinct (I / P): ['0x3'] ['0x3']

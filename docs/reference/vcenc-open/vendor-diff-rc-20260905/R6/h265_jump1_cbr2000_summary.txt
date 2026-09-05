@@ -1,0 +1,19 @@
+== h265_jump1_cbr2000: codec=h265 rc=cbr br=2000 fps=60 gop=30 frames=240 total=1098595 B achieved=2197 kbps
+I frames (frame:qp/bytes): 0:35/23659 30:36/22057 60:36/22057 90:36/22057 120:36/22057 150:36/22057 180:36/22057 210:36/22057
+first P after each I (frame:qp): 1:38 31:38 61:38 91:38 121:38 151:38 181:38 211:38
+per-GOP: gop#: kbps I_qp P_qp[min..max] P_qp_last
+  0: 1973 kbps I=[35] P=[38..51] last=51 n=30
+  1: 2229 kbps I=[36] P=[38..46] last=46 n=30
+  2: 2229 kbps I=[36] P=[38..46] last=46 n=30
+  3: 2229 kbps I=[36] P=[38..46] last=46 n=30
+  4: 2229 kbps I=[36] P=[38..46] last=46 n=30
+  5: 2229 kbps I=[36] P=[38..46] last=46 n=30
+  6: 2229 kbps I=[36] P=[38..46] last=46 n=30
+  7: 2229 kbps I=[36] P=[38..46] last=46 n=30
+P->P QP step histogram: +0:189 +1:1 +2:34
+I->firstP QP delta: +3 +2 +2 +2 +2 +2 +2 +2
+sw7 frame-QP == slice QP: 240/240 frames with a program agree; mismatches at []
+slot flags: {'': 240}
+sw105-107 distinct (I): [('0x0', '0x0', '0x0')]
+sw172/173 distinct: [('0x14f', '0x662'), ('0x14f', '0x66a')]
+sw6 distinct (I / P): ['0x20000b'] ['0x200003']
