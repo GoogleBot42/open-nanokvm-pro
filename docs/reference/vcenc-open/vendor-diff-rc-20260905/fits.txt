@@ -1,0 +1,256 @@
+
+#### R1/h264_cbr2000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=37 | (first GOP; br=2000)
+   1  I=35 | 36.8 32 32 41  0.88
+   2  I=33 | 34.0 29 29 41  1.11
+   3  I=31 | 34.6 32 32 39  0.91
+   4  I=28 | 31.5 27 27 36  1.12
+   5  I=28 | 32.4 31 31 35  0.85
+   6  I=25 | 28.9 24 24 33  1.15
+   7  I=24 | 28.7 27 27 32  0.82
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.00,0.50): -2:4 -1:2
+  r in [0.50,0.70): -2:6 -1:13
+  r in [0.70,0.85): -2:7 -1:13
+  r in [0.85,0.95): -2:1 -1:41
+  r in [0.95,1.05): -1:1 +0:82 +1:6
+  r in [1.05,1.15): +1:31 +2:3
+  r in [1.15,1.30): +1:10 +2:2
+  r in [1.30,1.50): +2:2
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P  25752 /  26056 /  27435  I  440000  budget 1000000  bits/frame  33333
+   1: P  31665 /  33154 /  37424  I  440000  budget 1000000  bits/frame  33333
+   2: P  22836 /  23143 /  23123  I  579710  budget 1000000  bits/frame  33333
+   3: P  29232 /  30252 /  39480  I  579710  budget 1000000  bits/frame  33333
+   4: P  18918 /  19081 /  19238  I  578866  budget 1000000  bits/frame  33333
+   5: P  29194 /  29778 /  40255  I  578866  budget 1000000  bits/frame  33333
+   6: P  16387 /  16536 /  16971  I  578702  budget 1000000  bits/frame  33333
+   7: P  28041 /  29287 /  41635  I  578702  budget 1000000  bits/frame  33333
+P frames: sw106/sw105 = 0.300..0.950  sw107/sw105 = 1.050..2.000
+
+#### R1/h264_cbr8000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=32 | (first GOP; br=8000)
+   1  I=30 | 24.2 21 21 35  0.39
+   2  I=28 | 22.6 19 19 33  0.39
+   3  I=26 | 20.6 17 17 31  0.37
+   4  I=24 | 18.6 15 15 29  0.36
+   5  I=22 | 16.6 13 13 27  0.35
+   6  I=20 | 14.6 11 11 25  0.32
+   7  I=18 | 13.1 10 10 23  0.30
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.00,0.50): -2:1 -1:93 +0:116
+  r in [0.50,0.70): -1:9 +0:1
+  r in [0.70,0.85): -1:4
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P 127433 / 147522 / 205324  I 1760000  budget 4000000  bits/frame 133333
+   1: P 212421 / 347955 / 4895192  I 1760000  budget 4000000  bits/frame 133333
+   2: P 124168 / 148241 / 205317  I 2318840  budget 4000000  bits/frame 133333
+   3: P 214087 / 361987 / 5154857  I 2318840  budget 4000000  bits/frame 133333
+   4: P 134716 / 162005 / 230621  I 2550724  budget 4000000  bits/frame 133333
+   5: P 241858 / 424729 / 6162736  I 2550724  budget 4000000  bits/frame 133333
+   6: P 130707 / 160526 / 231462  I 2550724  budget 4000000  bits/frame 133333
+   7: P 245304 / 442176 / 6446981  I 2550724  budget 4000000  bits/frame 133333
+P frames: sw106/sw105 = 0.300..0.950  sw107/sw105 = 1.050..2.000
+
+#### R1/h265_cbr8000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=32 | (first GOP; br=8000)
+   1  I=30 | 24.2 21 21 35  0.25
+   2  I=28 | 22.6 19 19 33  0.26
+   3  I=26 | 20.6 17 17 31  0.26
+   4  I=24 | 18.6 15 15 29  0.26
+   5  I=22 | 16.6 13 13 27  0.26
+   6  I=20 | 14.6 11 11 25  0.25
+   7  I=18 | 13.1 10 10 23  0.24
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.00,0.50): -2:1 -1:105 +0:117
+  r in [0.50,0.70): -1:1
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P 128104 / 157640 / 225908  I 1760000  budget 4000000  bits/frame 133333
+   1: P 232514 / 412921 / 5971264  I 1760000  budget 4000000  bits/frame 133333
+   2: P 125006 / 154285 / 221472  I 2318840  budget 4000000  bits/frame 133333
+   3: P 230042 / 412776 / 5980192  I 2318840  budget 4000000  bits/frame 133333
+   4: P 135841 / 169663 / 244692  I 2550724  budget 4000000  bits/frame 133333
+   5: P 255204 / 465450 / 6821835  I 2550724  budget 4000000  bits/frame 133333
+   6: P 132102 / 166694 / 242249  I 2550724  budget 4000000  bits/frame 133333
+   7: P 255302 / 472185 / 7646767  I 2550724  budget 4000000  bits/frame 133333
+P frames: sw106/sw105 = 0.300..0.950  sw107/sw105 = 1.050..2.000
+
+#### R4/h264_static2000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=37 | (first GOP; br=2000)
+   1  I=35 | 35.3 31 31 40  0.91
+   2  I=33 | 32.4 27 27 38  1.09
+   3  I=30 | 32.4 29 29 36  0.89
+   4  I=28 | 28.1 22 22 33  1.12
+   5  I=26 | 29.2 27 27 32  0.86
+   6  I=24 | 24.6 19 19 29  1.14
+   7  I=22 | 26.5 25 25 28  0.83
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.50,0.70): -1:3
+  r in [0.70,0.85): -2:2 -1:15
+  r in [0.85,0.95): -2:2 -1:43
+  r in [0.95,1.05): -1:2 +0:153 +1:1
+  r in [1.05,1.15): +1:1
+  r in [1.30,1.50): +1:2
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P  25715 /  26000 /  26344  I  440000  budget 1000000  bits/frame  33333
+   1: P  30641 /  31577 /  36672  I  440000  budget 1000000  bits/frame  33333
+   2: P  22868 /  23321 /  23517  I  579710  budget 1000000  bits/frame  33333
+   3: P  29264 /  30329 /  35714  I  579710  budget 1000000  bits/frame  33333
+   4: P  18964 /  19051 /  19129  I  578923  budget 1000000  bits/frame  33333
+   5: P  27935 /  28815 /  35384  I  578923  budget 1000000  bits/frame  33333
+   6: P  15423 /  15448 /  15456  I  578803  budget 1000000  bits/frame  33333
+   7: P  26520 /  27230 /  66996  I  578803  budget 1000000  bits/frame  33333
+P frames: sw106/sw105 = 0.950..0.950  sw107/sw105 = 1.050..1.050
+
+#### R6/h264_jump1_cbr8000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=32 | (first GOP; br=8000)
+   1  I=32 | 36.0 35 35 37  0.97
+   2  I=32 | 35.1 35 33 37  1.03
+   3  I=31 | 34.8 34 34 37  1.05
+   4  I=31 | 35.2 34 34 37  1.02
+   5  I=31 | 34.6 35 34 37  1.05
+   6  I=31 | 35.3 35 34 37  1.01
+   7  I=31 | 34.8 35 34 37  1.04
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.70,0.85): -2:37
+  r in [0.85,0.95): -2:16 -1:42
+  r in [0.95,1.05): -1:2 +0:15 +1:1
+  r in [1.05,1.15): +1:11 +2:16
+  r in [1.15,1.30): +1:53 +2:25
+  r in [1.30,1.50): +1:6
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P 127364 / 127806 / 129734  I 1760000  budget 4000000  bits/frame 133333
+   1: P 133109 / 133178 / 102824  I 1520000  budget 4000000  bits/frame 133333
+   2: P 127361 / 127152 / 127499  I 1680000  budget 4000000  bits/frame 133333
+   3: P 125803 / 124190 / 135687  I 1840000  budget 4000000  bits/frame 133333
+   4: P 125633 / 125633 / 136907  I 1668094  budget 4000000  bits/frame 133333
+   5: P 123816 / 123296 / 143387  I 1668094  budget 4000000  bits/frame 133333
+   6: P 124710 / 124710 / 126908  I 1578143  budget 4000000  bits/frame 133333
+   7: P 124516 / 123149 / 144682  I 1578143  budget 4000000  bits/frame 133333
+P frames: sw106/sw105 = 0.300..0.300  sw107/sw105 = 2.000..2.000
+
+#### R6/h264_jump1_cbr16000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=32 | (first GOP; br=16000)
+   1  I=30 | 26.9 24 24 35  0.94
+   2  I=28 | 24.3 22 21 33  1.07
+   3  I=25 | 25.3 24 24 31  1.00
+   4  I=23 | 24.5 24 23 28  1.03
+   5  I=21 | 24.8 24 24 27  1.01
+   6  I=21 | 25.0 24 24 26  1.03
+   7  I=22 | 25.3 25 24 26  1.01
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.50,0.70): -2:1 -1:6
+  r in [0.70,0.85): -1:25
+  r in [0.85,0.95): -1:86
+  r in [0.95,1.05): -1:1 +0:20 +1:19
+  r in [1.05,1.15): +1:62
+  r in [1.15,1.30): +1:4
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P 267715 / 280101 / 287232  I 3520000  budget 8000000  bits/frame 266666
+   1: P 284153 / 312568 / 312568  I 3520000  budget 8000000  bits/frame 266666
+   2: P 264627 / 274962 / 275620  I 4637681  budget 8000000  bits/frame 266666
+   3: P 270059 / 276195 / 284017  I 4637681  budget 8000000  bits/frame 266666
+   4: P 259065 / 264974 / 268529  I 4622258  budget 8000000  bits/frame 266666
+   5: P 261314 / 265139 / 291442  I 4622258  budget 8000000  bits/frame 266666
+   6: P 256053 / 256635 / 275840  I 4604028  budget 8000000  bits/frame 266666
+   7: P 263002 / 263127 / 269264  I 4604028  budget 8000000  bits/frame 266666
+P frames: sw106/sw105 = 0.300..0.300  sw107/sw105 = 2.000..2.000
+
+#### R6/h265_jump1_cbr8000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=32 | (first GOP; br=8000)
+   1  I=31 | 34.0 34 33 37  1.06
+   2  I=31 | 35.1 37 33 37  0.95
+   3  I=30 | 33.8 33 33 35  1.08
+   4  I=30 | 34.7 35 33 37  1.00
+   5  I=31 | 33.9 34 33 35  1.08
+   6  I=31 | 34.7 35 33 37  1.00
+   7  I=31 | 33.9 34 33 35  1.07
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.70,0.85): -2:15
+  r in [0.85,0.95): -2:30 -1:32
+  r in [0.95,1.05): +0:35
+  r in [1.05,1.15): +1:4 +2:4
+  r in [1.15,1.30): +1:61 +2:6
+  r in [1.30,1.50): +1:32 +2:5
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P 128211 / 125938 / 119673  I 1760000  budget 4000000  bits/frame 133333
+   1: P 121793 / 110459 /  72264  I 1600000  budget 4000000  bits/frame 133333
+   2: P 127479 / 126327 / 129772  I 1200000  budget 4000000  bits/frame 133333
+   3: P 121685 / 118804 / 120403  I 1200000  budget 4000000  bits/frame 133333
+   4: P 127730 / 124865 / 124680  I 1190122  budget 4000000  bits/frame 133333
+   5: P 121386 / 119236 / 118354  I 1190122  budget 4000000  bits/frame 133333
+   6: P 129559 / 124920 / 124655  I 1180983  budget 4000000  bits/frame 133333
+   7: P 121116 / 119867 / 145722  I 1180983  budget 4000000  bits/frame 133333
+P frames: sw106/sw105 = 0.300..0.300  sw107/sw105 = 2.000..2.000
+
+#### R6/h264_jump1_cbr2000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=37 | (first GOP; br=2000)
+   1  I=37 | 49.7 51 40 51  1.18
+   2  I=37 | 45.6 46 40 46  1.38
+   3  I=37 | 45.6 46 40 46  1.36
+   4  I=37 | 45.6 46 40 46  1.32
+   5  I=37 | 45.6 46 40 46  1.34
+   6  I=37 | 45.6 46 40 46  1.33
+   7  I=37 | 45.6 46 40 46  1.34
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.95,1.05): -1:1 +0:20
+  r in [1.05,1.15): +0:6 +1:1
+  r in [1.15,1.30): +0:10 +2:2
+  r in [1.30,1.50): +0:3
+  r in [1.50,2.00): +0:32 +1:1 +2:11
+  r in [2.00,99.00): +0:70 +2:13
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P  25715 /  32880 /  33097  I  440000  budget 1000000  bits/frame  33333
+   1: P  38129 /  33819 /    256  I  300000  budget 1000000  bits/frame  33333
+   2: P  36238 /  21599 /  12919  I  300000  budget 1000000  bits/frame  33333
+   3: P  17695 /    128 /    256  I  300000  budget 1000000  bits/frame  33333
+   4: P  22203 /  18073 /   8156  I  270000  budget 1000000  bits/frame  33333
+   5: P  13115 /     42 /    256  I  270000  budget 1000000  bits/frame  33333
+   6: P  24513 /  18160 /   8445  I  270000  budget 1000000  bits/frame  33333
+   7: P  13396 /     51 /    256  I  270000  budget 1000000  bits/frame  33333
+P frames: sw106/sw105 = 0.231..0.300  sw107/sw105 = 2.000..2.000
+
+#### R6/h265_jump1_cbr16000_trajectory.csv
+I-QP rule: gop I_qp | prevGOP: meanP lastP minP maxP  bits/target
+   0  I=32 | (first GOP; br=16000)
+   1  I=30 | 26.6 24 24 35  0.94
+   2  I=28 | 24.7 21 21 33  1.06
+   3  I=25 | 25.3 24 24 31  1.00
+   4  I=23 | 24.8 24 24 28  1.04
+   5  I=21 | 25.4 24 24 27  1.01
+   6  I=21 | 24.6 26 24 26  1.04
+   7  I=22 | 24.9 25 24 26  1.03
+P-step rule: ratio r = bits(i-1)*8 / sw105(i-1)  ->  dQP(i) histogram
+  r in [0.50,0.70): -2:1 -1:7
+  r in [0.70,0.85): -1:21
+  r in [0.85,0.95): -1:91
+  r in [0.95,1.05): +0:16 +1:6
+  r in [1.05,1.15): +1:74
+  r in [1.15,1.30): +1:8
+I->firstP offsets: [3, 3, 3, 3, 3, 3, 3, 3]
+P target sw105 (bits) per GOP: first / median / last; I target sw105; GOP budget bits = br*1000*gop/fps
+   0: P 268561 / 281563 / 286134  I 3520000  budget 8000000  bits/frame 266666
+   1: P 282400 / 315023 / 365928  I 3520000  budget 8000000  bits/frame 266666
+   2: P 265455 / 277511 / 277511  I 4637681  budget 8000000  bits/frame 266666
+   3: P 270214 / 281501 / 313909  I 4637681  budget 8000000  bits/frame 266666
+   4: P 260206 / 268097 / 276515  I 4619361  budget 8000000  bits/frame 266666
+   5: P 266740 / 264624 / 261249  I 4619361  budget 8000000  bits/frame 266666
+   6: P 263591 / 261896 / 274076  I 4596803  budget 8000000  bits/frame 266666
+   7: P 257759 / 262031 / 257997  I 4596803  budget 8000000  bits/frame 266666
+P frames: sw106/sw105 = 0.300..0.300  sw107/sw105 = 2.000..2.000
