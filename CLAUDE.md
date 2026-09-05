@@ -110,6 +110,9 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 
 ## Working with Jeremy
 
+- **Blob policy (2026-09-04):** the aic8800 wireless *firmware* is the only closed
+  content allowed on the image. No closed userspace, no closed `.ko`, ever. NixOS
+  goes **straight to mainline** (no 4.19 NixOS stage; the custom A/B scheme dies with it).
 - Concise, confident prose — no hedging, no over-explaining (applies to docs, READMEs,
   commit messages).
 - On hardware: prefer the reversible method first, even if it's "only short-term";

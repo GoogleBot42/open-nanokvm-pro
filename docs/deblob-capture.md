@@ -14,8 +14,9 @@ citations; this doc carries the conclusions and the plan.
   machines, struct semantics); drivers are written from the spec only, never
   from vendor code or disassembly. On-device observation of hardware behavior
   (register snapshots, traces) is unrestricted.
-- **End state:** zero closed executing code. WiFi firmware is droppable, not a
-  constraint (#28). Every driver written under this epic must be designed to
+- **End state:** zero closed executing code. **Decided 2026-09-04 (#28): WiFi
+  stays; the aic8800 wireless firmware is the only closed content permitted —
+  no closed userspace or `.ko`, ever.** Every driver written under this epic must be designed to
   port to — ideally live in — mainline (#26 is the sibling epic).
 
 ## What scoping changed

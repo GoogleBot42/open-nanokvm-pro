@@ -7,6 +7,15 @@ from nixpkgs.
 **Status: scaffold. `nix build .#nixos-rootfs` produces a NixOS ext4 image. It
 has never been booted, on any medium.**
 
+> **Staging decision 2026-09-04 (Jeremy, #26): go straight to mainline.** The
+> 4.19-on-`nixos-24.11` scaffold below (stage 1) is **skipped**: it targets an
+> EOL release and would be reworked at the kernel move. The "kernel cannot
+> move" premise is dissolved (#55 replaced every vendor `.ko`, #54 deleted
+> them). What survives from this study: the rootfs contract (`switch_root`
+> handshake, `/sbin/init`, the dlopen ladder), the scaffold's fixed defects,
+> and the systemd-floor table as the reason stage 1 is dead. The custom A/B
+> failover test (#10) is obsolete for the same reason.
+
 - [Verdict](#verdict)
 - [The systemd ceiling](#the-systemd-ceiling)
 - [Why the kernel cannot move](#why-the-kernel-cannot-move)
