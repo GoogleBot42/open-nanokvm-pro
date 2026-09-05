@@ -263,8 +263,8 @@ EOF
     #    EDIDMap has no 0x72 key, so GetEdid could not name the mode and the web
     #    dropdown never offered it -- only a raw POST /api/vm/edid could select
     #    it (#62). The map value is the bin's basename, which is what SwitchEdid
-    #    joins with ".bin". The web-side list entry lives in
-    #    pkgs/patches/web-add-720p-edid.patch.
+    #    joins with ".bin". The web-side list entry is in
+    #    web/src/pages/desktop/menu/settings/screen/edid.tsx.
     substituteInPlace service/vm/edid.go \
       --replace-fail '	0x3f: "E63-Ultrawide",' '	0x3f: "E63-Ultrawide",
 	0x72: "NanoKVM-720P60",'

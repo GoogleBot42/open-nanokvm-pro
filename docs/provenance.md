@@ -25,8 +25,10 @@ substituted: the **boot chain** (SPL/ATF/OP-TEE/U-Boot), the **kernel** + DTS +
 `lt6911_manage.ko`, the **embedded kernel initramfs** (`pkgs/initramfs.nix`),
 the **whole open video stack** — `ax630c_venc_vcmd.ko` (`pkgs/vc8000-vcmd/`),
 `open_vin_csi2.ko` + `open_vin_capture.ko` (`pkgs/open-vin-{csi2,capture}/`)
-and our **`libkvm.so`** (`pkgs/kvm-encoder/src/`) — the **Go server**, the
-**React web UI**, and the **`axdl`** host flasher.
+and our **`libkvm.so`** (`pkgs/kvm-encoder/src/`) — the **Go server** (pinned
+upstream `NanoKVM-Pro/server`, patched at build), the **React web UI** (our
+in-tree fork of `NanoKVM-Pro/web`, `web/` — provenance in `web/FORK.md`), and
+the **`axdl`** host flasher.
 
 The initramfs baked into the `Image` used to be the vendor SDK's prebuilt tree —
 five aarch64 blobs (`busybox` 1.37.0, `e2fsck`, `ld-linux-aarch64.so.1`,

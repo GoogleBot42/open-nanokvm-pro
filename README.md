@@ -74,7 +74,8 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | `ax630c_venc_vcmd.ko` (open VC8000E encode driver) | **from source** — replaces vendor `ax_venc`/`ax_jenc` | GPL-2.0 / MIT |
 | `open_vin_csi2.ko` + `open_vin_capture.ko` (open MIPI CSI-2 receiver + VIN/IFE bypass capture → V4L2) | **from source** — replace the entire vendor `ax_proton` capture closure | GPL-2.0 |
 | `lt6911_manage.ko` (HDMI-in bridge) | **from source** | GPL-2.0 |
-| NanoKVM-Server (Go) + web UI (React) | **from source** (`NanoKVM-Pro`) | GPL-3.0 |
+| NanoKVM-Server (Go) | **from source** (pinned `NanoKVM-Pro`, patched at build) | GPL-3.0 |
+| Web UI (React) | **from source** — our fork of Sipeed's `NanoKVM-Pro/web`, in-tree at `web/` (`web/FORK.md`) | GPL-3.0 |
 | ~~`ax_*.ko` modules (`proton`/`mipi_rx`/`ivps`/`sys`/`cmm`/`venc`/`jenc`/…)~~ | **REMOVED from the image** — the encode pair in #25, the whole 22-module `/soc/ko` set in #54; `/soc/ko` now holds only our three open modules | — |
 | ~~vendor `libsns_*.so`, NPU/AI-ISP model data, ISP tuning `*.ini`/`*.bin`~~ | **REMOVED from the image** (#54) — no referrer left once `libax_*` went | — |
 | `libax_*.so` | **PURGED from the image** (#25) — nothing we ship links or `dlopen`s them | BSD-3, redistributable |

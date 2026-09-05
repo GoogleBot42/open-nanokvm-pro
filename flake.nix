@@ -39,7 +39,8 @@
       flake = false;
     };
 
-    # App layer (GPL-3.0): server/ (Go + cgo -> libkvm.so), web/ (React/pnpm).
+    # App layer (GPL-3.0): server/ (Go + cgo -> libkvm.so). The web UI is our
+    # own fork in ./web (web/FORK.md) and no longer comes from this input.
     nanokvm-pro-src = {
       url = "github:sipeed/NanoKVM-Pro/8d0557b400e20d18590b780df3b7faddb2a5588c";
       flake = false;
@@ -239,7 +240,7 @@
         # trajectory replay + closed-loop simulation. See pkgs/vcenc-rc-test.nix.
         vcenc-rc-test = callPkg ./pkgs/vcenc-rc-test.nix { };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
-        nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
+        nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { inherit version; };
 
         # Mini-display status daemon (pure Python + build-time-generated fonts;
         # the display kernel modules are part of `kernel` -- all from source).

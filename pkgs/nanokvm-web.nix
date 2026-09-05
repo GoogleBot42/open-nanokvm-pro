@@ -1,15 +1,18 @@
-{ pkgs, nanokvm-pro-src, ... }:
+{ pkgs, version, ... }:
 
 # ---------------------------------------------------------------------------
 # NanoKVM-Pro web frontend (React + Vite + TypeScript, pnpm workspace).
-# Source: NanoKVM-Pro/web (GPL-3.0). Build: `pnpm build` == `tsc && vite build`.
+# Source: ../web -- our fork of Sipeed's NanoKVM-Pro/web (GPL-3.0), vendored at
+# upstream 8d0557b (web/FORK.md). Changes are ordinary commits in web/, not
+# patches. Build: `pnpm build` == `tsc && vite build`.
 #
 # Architecture-independent (pure JS/static assets); output = static dist/ served
-# by the Go server (or nginx in the PiKVM layout).
+# by the Go server.
 #
 # pnpm: lockfile is v9.0 (pnpm 9/10). We use pnpm_10 + pnpmConfigHook, which
 # reads v9 locks. The dependency set is fetched by a fixed-output derivation
-# (pnpm.fetchDeps); its hash is pinned below.
+# (pnpm.fetchDeps); its hash is pinned below and must be bumped whenever
+# web/pnpm-lock.yaml changes.
 # ---------------------------------------------------------------------------
 
 let
@@ -21,34 +24,11 @@ let
 in
 pkgs.stdenv.mkDerivation (finalAttrs: {
   pname = "nanokvm-web";
-  # Track the actual upstream pin, so the store path says what was built (#34).
-  version = "unstable-${nanokvm-pro-src.shortRev or "unpinned"}";
+  # The repo release version (./VERSION), so the store path says which
+  # open-nanokvm-pro the bundle belongs to.
+  inherit version;
 
-  src = nanokvm-pro-src;
-  sourceRoot = "source/web";
-
-  # Remove the KVM Admin and AI Assistant panels: their /api/extensions/*
-  # backend routes are deliberately dropped in nanokvm-server.nix (they fetch
-  # closed third-party code; see docs/provenance.md), so the vendor UI surfaces
-  # would 404. Applied against the pinned source; a pin bump that drifts these
-  # files fails the patch loudly rather than silently resurfacing dead panels.
-  #
-  # Add the 720p60 EDID to the mode dropdown. Our clean-room set ships
-  # NanoKVM-720P60.bin (pkgs/edid, installed as /kvmcomm/edid/NanoKVM-720P60.bin)
-  # but upstream's defaultEdidList never listed it, so 720p was reachable only by
-  # a raw POST /api/vm/edid (#62). The matching server-side EDIDMap entry
-  # (0x72 -> "NanoKVM-720P60") is added in pkgs/nanokvm-server.nix.
-  #
-  # Add the h265-direct video mode (#66): "H.265 Direct" in both mode selectors,
-  # an H265Direct screen reusing the direct WebCodecs worker (hvc1.1.6.L153.B0),
-  # support probed with VideoDecoder.isConfigSupported, fallback to H.264 Direct
-  # with a notice where the browser cannot decode HEVC. The server side (streamer
-  # + route) is step 9 in pkgs/nanokvm-server.nix.
-  patches = [
-    ./patches/web-remove-dead-extensions.patch
-    ./patches/web-add-720p-edid.patch
-    ./patches/web-h265-direct.patch
-  ];
+  src = pkgs.lib.cleanSource ../web;
 
   nativeBuildInputs = [
     nodejs
@@ -56,10 +36,11 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   ];
 
   pnpmDeps = pnpm.fetchDeps {
-    inherit (finalAttrs) pname version src sourceRoot;
+    inherit (finalAttrs) pname version src;
     # pnpm lockfile fetcher format (v3 = required on nixpkgs 26.11).
     fetcherVersion = 3;
-    # Pinned from the FOD fetch (2026-07-17); regenerate if the lockfile changes.
+    # Pinned from the FOD fetch (2026-07-17); unchanged by the fork (same
+    # lockfile). Regenerate if web/pnpm-lock.yaml changes.
     hash = "sha256-MqrzcZu5Hqv+r2KHzMUxIVhcoiv0AhAPqRQFaWVd3bE=";
   };
 
@@ -77,7 +58,7 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   '';
 
   meta = {
-    description = "NanoKVM-Pro web UI (React/Vite static bundle)";
+    description = "NanoKVM-Pro web UI (React/Vite static bundle, our fork)";
     license = pkgs.lib.licenses.gpl3Only;
     platforms = pkgs.lib.platforms.all;
   };

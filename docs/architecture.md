@@ -201,9 +201,16 @@ The web consumer is the `h265-direct` stream mode (#66): a second direct streame
 reads `ReadH265`, folds VPS/SPS/PPS into every IDR message so a description-less
 WebCodecs `hvc1` decoder can start at any key frame, and serves
 `GET /api/stream/h265/direct` with the same `[key][ts][Annex-B]` framing as
-H.264; `pkgs/patches/web-h265-direct.patch` adds the mode to the UI, probes
-`VideoDecoder.isConfigSupported` and falls back to `h264-direct` with a notice
-where HEVC cannot be decoded (Firefox).
+H.264; the web UI (`web/src/pages/desktop/screen/h265-direct.tsx`) adds the
+mode, probes `VideoDecoder.isConfigSupported` and falls back to `h264-direct`
+with a notice where HEVC cannot be decoded (Firefox).
+
+The web UI itself is **our fork** of Sipeed's `NanoKVM-Pro/web`, vendored
+in-tree at `web/` (upstream `8d0557b`, GPL-3.0 — `web/FORK.md`). It used to be
+built from the pinned upstream input plus a patch stack in `pkgs/patches/`;
+since 2026-09-05 every UI change is an ordinary commit in `web/` and
+`pkgs/nanokvm-web.nix` builds from `../web`. The `nanokvm-pro-src` flake input
+now feeds only the Go server.
 
 Earlier backends stay buildable as bench alternatives — both need vendor blobs
 that a #54 image no longer carries, so they only run on a device flashed with

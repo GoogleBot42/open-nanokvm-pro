@@ -46,7 +46,7 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `vc8000-vcmd` | `ax630c_venc_vcmd.ko` | our open VC8000E VCMD encode driver (replaces `ax_venc`/`ax_jenc`) |
 | `open-vin-csi2` | `open_vin_csi2.ko` | our open MIPI CSI-2 / D-PHY receiver |
 | `open-vin-capture` | `open_vin_capture.ko` | our open VIN/IFE bypass capture driver → V4L2 `/dev/video0` |
-| `nanokvm-web` | React `dist/` bundle | pnpm-hash pinned |
+| `nanokvm-web` | React `dist/` bundle | built from our in-tree fork `web/`; pnpm-hash pinned |
 | `nanokvm-server` | `NanoKVM-Server` (aarch64) | Go+cgo, links libkvm+libopus; vendorHash pinned |
 | `kernel` | `Image` + `dtbs` + modules + `lt6911_manage.ko` | Linux 4.19.125 |
 | `dtb` / `dtb-sd` | patched board DTB (eMMC / SD-root) | reserved-mem + bootargs patch |
@@ -107,7 +107,7 @@ field to `pkgs.lib.fakeHash`, rebuild, paste the printed hash back):
 | Where | Field | Regenerate when |
 |---|---|---|
 | `pkgs/nanokvm-server.nix` | `vendorHash` | `server/go.mod` / `go.sum` change |
-| `pkgs/nanokvm-web.nix` | `pnpmDeps.hash` | the web `pnpm-lock.yaml` changes |
+| `pkgs/nanokvm-web.nix` | `pnpmDeps.hash` | `web/pnpm-lock.yaml` changes |
 
 The `base-axp` FOD hash changes only if you re-pin a different vendor release
 (`pkgs/base-axp.nix`, `version = "1.0.15"`).

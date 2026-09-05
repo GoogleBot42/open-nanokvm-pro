@@ -335,7 +335,8 @@ TLS won't work — the server uses `https://` and verifies the certificate.)
   routes (`pkgs/nanokvm-server.nix` rewrites `router/extensions.go` to register
   only the Tailscale routes — they fetched closed third-party code from
   `cdn.sipeed.com`, see [provenance.md](provenance.md)), and the web UI panels
-  for them are patched out (`pkgs/patches/web-remove-dead-extensions.patch`).
+  for them are removed in our web fork (`web/`, commit "remove the KVM Admin
+  and AI Assistant panels").
   Unrelated to the web-UI "update" button.
 - **URL is baked in.** `updateBaseUrl` is compiled into the server. Changing where
   you host means a rebuild + re-flash (or a new OTA that carries the new binary).
