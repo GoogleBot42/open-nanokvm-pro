@@ -55,7 +55,7 @@ let
     # ---- U-Boot A/B (p5/p6), from pkgs/boot.nix ----
     "u-boot_signed.bin" = "${boot}/images/u-boot_signed.bin";
     "u-boot_b_signed.bin" = "${boot}/images/u-boot_b_signed.bin";
-    # ---- OP-TEE bl32 A/B (p8/p9), same signed image both slots ----
+    # ---- OP-TEE bl32 A/B (p10/p11; p8/p9 are logo/logo_b), same signed image both slots ----
     "optee_signed.bin" = "${boot}/images/optee_signed.bin";
     "optee_signed.bin.1" = "${boot}/images/optee_signed.bin";
     # ---- rootfs (overlaid: vendor Ubuntu base + our libkvm + kernel modules) ----
