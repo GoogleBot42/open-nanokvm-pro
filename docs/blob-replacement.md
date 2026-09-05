@@ -3645,3 +3645,34 @@ unchanged; the fallback branch was exercised end-to-end in headless Chromium
 (no platform HEVC decoder) against the real device. Not yet exercised: the
 supported branch in a browser with an HEVC decoder (human at a Windows/macOS
 browser). Evidence: `docs/reference/vcenc-open/h265-direct-20260905/`.
+
+### 2026-09-05 (night, later) — #46 DONE: from-scratch rate control, CBR by default, device-proven
+
+`pkgs/vcenc-ewl/vcenc_rc.h` is a frame-level controller written from the measured
+vendor laws (real-content oracle above; E6/H8 before it), not from any model of the
+core: per-frame QP over the fixed-QP register program with the hardware CTB loop
+off. Seed QP from bits-per-pixel (32 at ≥ 8 Mbps; 37 H.264 / 35 HEVC at ≤ 3 Mbps),
+first P = IDR+3, the r-band step law with the −1 throttle, floor IDR−11, ceiling
+51 then 46, IDR −2 per GOP under target and mean-P−4 in band, a 1 s budget window
+with the due IDRs reserved, 2 s CPB, retarget at the next frame with no IDR and no
+QP jump; VBR is a 0.8 × cap target with +2/−1 steps. HEVC's vendor no-target
+defect below 7000 kbps is deliberately not reproduced. Host check `open-venc-rc`
+replays 53 vendor trajectories one step ahead (CBR mean |ΔQP| 0.29 over 35 scored
+runs, VBR 0.09) and runs closed-loop plants fitted from the desktop measurements.
+
+`kvm_venc_open.c` now honours the app's bitrate, fps, gop and rc-mode for both
+codecs; a same-codec bitrate change retargets the running channel in place
+(`kvm_venc_set_bitrate`, libkvm no longer tears the channel down). **CBR is the
+default whenever the app supplies a bitrate** (it always does); `OPENKVM_VENC_RC=
+legacy|fixqp` keep the pinned-QP programs, `OPENKVM_VENC_QP` pins the QP there,
+`OPENKVM_VENC_RC_LOG=1` logs one line per frame.
+
+Device-proven (`docs/reference/vcenc-open/open-rc-20260905/`): prover 12 runs /
+2340 frames, both codecs, 0 ffmpeg errors, bitstream slice QP equals the controller
+QP on every frame (the `pic_init_qp = seed`, `frame QP ≠ seed` split works through
+our builder); live wss on the real 1080p59 desktop with the new libkvm in both app
+trees, five in-place retargets through `POST /api/stream/quality`, 0 FAIL in 10,587
+frames, RSS flat. Achieved rates on the static desktop are content-limited (~1.7 Mbps
+at an 8000 target vs the vendor's 2.6 Mbps, whose in-frame CTB RC pads descent
+frames) — quality headroom for a v2 with CTB RC, not a stability issue. Fixed QP32
+is no longer what ships; on a static desktop P frames now sit at the QP 21 floor.
