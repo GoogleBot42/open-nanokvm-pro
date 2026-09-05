@@ -3625,3 +3625,23 @@ The from-scratch controller (#46, `pkgs/vcenc-ewl/vcenc_rc.h`) is validated agai
 these CSVs by the `open-venc-rc` check. Bench note: USB HID to the host was down
 again during the session (the #42 pattern; physical link), so no real host motion
 was possible.
+
+### 2026-09-05 (night) — h265-direct: the HEVC web consumer, device-proven (#66, closes the #64 loop)
+
+The server and web UI now consume the blob-free H.265 channel. `service/stream/
+direct/h265.go` (installed by `pkgs/nanokvm-server.nix`, route `GET /api/stream/
+h265/direct`) is a second direct streamer with the H.264 framing; the one design
+difference is that libkvm's VPS+SPS (both typed `IMG_H265_TYPE_SPS`) and PPS are
+folded into the IDR message they precede, so every key message is self-contained
+and a WebCodecs decoder configured for Annex-B starts at any IDR. The web UI
+(`pkgs/patches/web-h265-direct.patch`) adds "H.265 Direct" to both mode selectors,
+probes `VideoDecoder.isConfigSupported` for `hvc1.1.6.L153.B0`, and falls back to
+H.264 Direct with a notice where the browser cannot decode HEVC.
+
+Device-proven on the alpha.4 image with the hot-patched libkvm: 150 messages over
+the WebSocket, every key message exactly VPS/SPS/PPS/IDR, ffprobe `hevc` Main
+1920x1080 level 4.1, 150/150 frames decode with zero errors; the H.264 path is
+unchanged; the fallback branch was exercised end-to-end in headless Chromium
+(no platform HEVC decoder) against the real device. Not yet exercised: the
+supported branch in a browser with an HEVC decoder (human at a Windows/macOS
+browser). Evidence: `docs/reference/vcenc-open/h265-direct-20260905/`.
