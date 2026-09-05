@@ -38,9 +38,16 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   # but upstream's defaultEdidList never listed it, so 720p was reachable only by
   # a raw POST /api/vm/edid (#62). The matching server-side EDIDMap entry
   # (0x72 -> "NanoKVM-720P60") is added in pkgs/nanokvm-server.nix.
+  #
+  # Add the h265-direct video mode (#66): "H.265 Direct" in both mode selectors,
+  # an H265Direct screen reusing the direct WebCodecs worker (hvc1.1.6.L153.B0),
+  # support probed with VideoDecoder.isConfigSupported, fallback to H.264 Direct
+  # with a notice where the browser cannot decode HEVC. The server side (streamer
+  # + route) is step 9 in pkgs/nanokvm-server.nix.
   patches = [
     ./patches/web-remove-dead-extensions.patch
     ./patches/web-add-720p-edid.patch
+    ./patches/web-h265-direct.patch
   ];
 
   nativeBuildInputs = [

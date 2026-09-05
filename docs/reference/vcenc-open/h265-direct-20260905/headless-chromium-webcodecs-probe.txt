@@ -1,0 +1,11 @@
+# Headless Chromium 152.0.7977.64 (Linux x86_64, --headless=new --disable-gpu), probe page embedding out.h265; 2026-09-05
+userAgent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36
+VideoDecoder in window: true
+isConfigSupported hvc1.1.6.L153.B0 -> false
+isConfigSupported hvc1.1.6.L123.B0 -> false
+isConfigSupported hev1.1.6.L153.B0 -> false
+isConfigSupported avc1.42E01F -> true
+nals=165 first types=32,33,34,19,1,1
+chunks=150 key=5
+decoder state after configure: configured
+decoded frames=0 of 150 chunks; decoder state=closed; errors=["OperationError: Unsupported configuration. Check isConfigSupported() prior to calling configure().","flush: OperationError: Unsupported configuration. Check isConfigSupported() prior to calling configure()."]

@@ -1,0 +1,16 @@
+# H.264 regression right after the H.265 run: POST /api/stream/mode {"mode":"h264-direct"} -> {"code":0},
+# tools/wsgrab.py /tmp/out.h264 70 40 h264 on the device. Framing unchanged from upstream:
+# SPS (7) and PPS (8) as their own non-key messages, then the IDR (5) flagged key, then P slices (1).
+ws connected (/api/stream/h264/direct): HTTP/1.1 101 Switching Protocols
+msg   1: key=0 ts=24985 len=16 nal_types=[7]
+msg   2: key=0 ts=25303 len=8 nal_types=[8]
+msg   3: key=1 ts=33739 len=30786 nal_types=[5]
+msg   4: key=0 ts=54902 len=17329 nal_types=[1]
+msg   5: key=0 ts=66147 len=3240 nal_types=[1]
+msg   6: key=0 ts=76708 len=2144 nal_types=[1]
+msg   7: key=0 ts=87373 len=1816 nal_types=[1]
+msg  35: key=1 ts=516826 len=30786 nal_types=[5]
+msg  67: key=1 ts=1018053 len=30786 nal_types=[5]
+RESULT: 70 messages, 246429 bytes, 3 keyframe-flagged -> /tmp/out.h264
+# Server log: "[openvenc] up: hwid=0x43421500 H.264 1920x1080 ... rc=legacy QP32 gop=30" -- the libkvm
+# channel switched H.265 -> H.264 cleanly on the first ReadH264.
