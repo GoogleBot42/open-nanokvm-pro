@@ -65,8 +65,8 @@ multi-step campaign, resume the same agent with `SendMessage` (it keeps the tool
   warm watchdog reboot, which is SAFE and recovers (poll & continue, back off to
   last-known-good). This is what makes an on-device replay/PoC reversible; the Stage-1
   encoder PoC ran this way with no reboot.
-- One unit (the ATX unit). USB HID to host is dead (issue #42, hardware) — ignore
-  it, it's unrelated to video/capture/encode.
+- One unit (the ATX unit). (USB HID to the host works again since 2026-09-04;
+  #42 was a physical-link fault — nothing in this envelope touches it.)
 - A bad trace can hang the block → watchdog reboot. That's a warm reset and SAFE
   (hot-patches persist, PHY not reset): poll for return
   (`until tools/kvmssh 'echo up' | grep -q up; do sleep 5; done`) and continue.
@@ -74,6 +74,25 @@ multi-step campaign, resume the same agent with `SendMessage` (it keeps the tool
 - The `tools/kvmssh` wrapper flakes intermittently (cycles IP/password combos);
   the device is usually NOT down — verify via uptime monotonicity and retry.
 - NEVER print or commit device IPs / passwords.
+
+# Vendor stack on a purged device (differential campaigns, 2026-09-04)
+
+The shipped image carries no vendor `.ko`/libs, so a vendor-differential run
+needs the vendor stack put back first. On a hot-patched (never reflashed) unit
+the pieces are still on disk: `cp -a /root/purge54-backup/{soc,opt}/. …` (the
+26 vendor `.ko` + libsns/models/tuning), install
+`/soc/scripts/auto_load_all_drv.sh.vendor` as the loader, install the
+vendor-MPI libkvm (`nix build .#kvm-encoder`, exports `kvm_venc_create`/
+`kvm_sys_init`/`kvm_cap_start`) into BOTH `/kvmapp` and `/dev/shm/kvmapp`
+`server/dl_lib/`, reboot, and verify `lsmod | grep -c '^ax_'` = 21 + web 200
++ an MJPEG frame. Back up the open loader + libkvm first
+(`/root/open-state-<date>`); to return, delete every file listed in the backup
+tree, reinstall the open loader + libkvm, reboot. After the alpha.4 flash this
+path needs a vendor `.axp` reflash instead, and after the mainline move it is
+gone — which is why the 2026-09-04 campaigns were run first. Campaign
+tooling that drives the vendor encoder/receiver through the SDK API from an
+on-device C tool: `docs/reference/vcenc-open/vendor-diff-20260904/tools/` and
+`docs/reference/deblob-scope/regdumps/mipi-20260904/tools/`.
 
 # Content-filter framing (load-bearing)
 

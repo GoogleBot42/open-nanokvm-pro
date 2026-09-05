@@ -62,7 +62,19 @@ for pending/TODO/unverified markers still present in the tree:
   consume-once). Procedure in `docs/flashing-and-recovery.md` "Slot-B kernel
   testing". Issue #10's *deliberate slot-corruption* failover is still not
   the exact thing tested, but the failover mechanism itself is now proven.
-- **Issue #42 (2026-08-17, `needs-human`): USB HID to the host is dead** —
+- **2026-09-04 STATUS.** Jeremy's decisions: WiFi stays, the aic8800 firmware is
+  the ONLY closed content ever permitted (#28 closed); NixOS goes STRAIGHT to
+  mainline (#26 stage 1 skipped; #10 closed obsolete); #17/#25 closed
+  (bookkeeping; only #46 rate control remains as encoder quality work); #42
+  closed (HID works again, physical-link fault). The pre-mainline
+  vendor-differential capture is DONE (encoder + MIPI, see blob-replacement.md
+  stage 2026-09-04 and regdumps/mipi-20260904) — nothing further needs the
+  vendor 4.19 stack. Open human bench items: flash alpha.4, a real 1080p60
+  source (the open stack has never seen 60 Hz), mini-display preview on the V4L2
+  path, #61 EDIDs. Open agent items: fixed-QP/QP-ladder validation on the live
+  web path (`OPENKVM_VENC_RC=fixqp`), capture envelope to 2400 rows, then #46.
+- ~~**Issue #42 (2026-08-17, `needs-human`): USB HID to the host is dead**~~ —
+  **CLOSED 2026-09-04**, HID works again (physical link); history:
   ep0 enumeration failure; every software remedy exhausted (ladder in the
   kvm-device skill), and the 2026-08-17 cold power cycle changed nothing —
   KVM-side PHY exonerated, fault is the physical link. Blocked on Jeremy:
@@ -307,7 +319,8 @@ propose SG2002 work without flagging this gap up front.
   (GoogleBot42/open-nanokvm-pro) hosts releases and runs the tag-triggered
   release workflow. v2.0.0 published, verified, and APPLIED on the device
   (2026-08-16) — the full-firmware OTA path incl. partition writes +
-  reboot is hardware-proven. A/B *failover* is still unexercised (#10).
+  reboot is hardware-proven. A/B *failover* was never exercised (#10 closed
+  2026-09-04 as obsolete: NixOS generations + automatic rollback replace it, #26).
   Releases are cut via the `cut-release` workflow in the Gitea web UI
   (dry-run-tested; `tools/release` = fallback). Never propose
   pushing/tagging on GitHub directly; see `docs/updates.md`.

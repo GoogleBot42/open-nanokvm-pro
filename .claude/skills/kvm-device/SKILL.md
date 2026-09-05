@@ -29,6 +29,13 @@ public:
   fails silently, and a following `cat /root/new > /opt/scripts/wifi.sh` still
   TRUNCATES the target to 0 bytes before `set -e` aborts (2026-09-03). Land the
   file, `sha256sum` it on the device, then install it in a separate command.
+  (Repeated 2026-09-04 — the `root@…:` prefix mistake again. Read the usage line.)
+- **Pulling a file from the device:** `kvmscp` is push-only. Use
+  `tools/kvmssh 'cat /path/on/device' > local-file` — binary-safe, works for
+  register dumps and `.ko`s alike.
+- **`cp -n` / `cp -an` exits 1 when it skips an existing file** (coreutils ≥ 9.2
+  on the device) and silently aborts a `set -e` script at that line (2026-09-04:
+  a vendor-stack restore stopped half-way). Use plain `cp -a` or drop `set -e`.
 
 Both scripts read credentials from `~/.config/nanokvm/device.env` (chmod
 600). Never inline the IPs or passwords into any tracked file — if you find
