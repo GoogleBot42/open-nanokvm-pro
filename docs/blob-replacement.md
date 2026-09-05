@@ -3539,3 +3539,44 @@ addresses. 108/108 HEVC streams decode in ffmpeg with zero errors.
 through the open stack behind vendor-observed VPS/SPS/PPS (Step 0), then the
 from-source header writer, the HEVC branch of `vcenc_geom.h`, and the
 `PT_H265` dispatch in `kvm_venc_open.c` / `libkvm.c`.
+
+### 2026-09-05 (later) — blob-free HEVC IPPP through the open stack (#64 Steps 0+1)
+
+Same session, right after the campaign was banked. The vendor's HEVC program
+turned out to be the H.264 template plus a fixed overlay, so instead of a
+replay-only proof the open builder gained the overlay directly:
+
+- `pkgs/vcenc-ewl/vcenc_encode.h`: `struct vcenc_frame.codec`
+  (`ENC_CODEC_HEVC`). The overlay re-pins `sw4/36/190/191/193/194/202–207/208/
+  277`, `sw6` (bit21, bit3 = intra), the min-CB laws for `sw5`/`sw261`, the
+  per-CTB-row `sw245/246` (RC modes), `sw114 = 0`, P-frame `sw170/171`,
+  `sw192 = sw198 = 0`, and indexes the QP tables at `q = min(QP,35)` for P
+  frames with the four P-variant entries (and the `sw37` low field at q = 34).
+- `pkgs/vcenc-ewl/vcenc_hevc_header.h` (new): VPS/SPS/PPS from ITU-T H.265
+  §7.3.2 / 7.3.3 / 7.3.7 / E.2.1 with every hardware-dependent field pinned
+  to the observed configuration; **byte-identical to the vendor's 1080p
+  fixed-QP32 VPS/SPS/PPS and to the 1366×768 SPS (conformance window)** —
+  `tests/hevc_header_test.c`, now part of `.#checks.open-venc-geometry`.
+- `tests/vcenc_geom_test.c` `hevc_identity()`: the builder reproduces **34
+  vendor HEVC fixed-QP programs** (the 1080p ladder IDR+P, fixed-QP32 at
+  720p, 1024×768, 1920×1200, 2560×1440, 3840×2160, 3840×2400) with zero
+  non-address differences (same two residuals as the H.264 identity test:
+  `sw9` header slot, P-frame `sw105`). `gen_vectors.py` mines the HEVC
+  programs into the QP tables too — the interpolated F(34) was confirmed
+  exactly by the vendor's P34 program.
+- `ewl_encode.c`: `EWL_CODEC=h265`.
+
+**Device proof (open stack, `ax630c_venc_vcmd.ko`, no vendor module or
+library):** IPPP HEVC at 1920×1080, 1280×720, 1366×768, 3840×2160 and
+3840×2400 (6 frames each, IDR nal 19 + TRAIL_R P frames) and a 12-frame gop-3
+1080p session; **every stream decodes in ffmpeg with zero errors** at the
+right dimensions (Main, level 4.1/5.1/5.2), the slice headers carry
+`poc_lsb` 1,2,3…, RPS `sps[0] {−1 used}`, slice QP 32, and the decoded frames
+show the moving test card tracked across the P frames. 1080p IDR ≈ 2.08 M
+cycles, 4K ≈ 8.3 M — the vendor's numbers. Stream sizes are roughly a third
+of the H.264 ones at equal QP on the test card.
+
+**Remaining for #64:** `kvm_venc_open.c` accepting `PT_H265` + the libkvm
+`_type` 5..8 dispatch and `IMG_H265_*` NAL typing, then a device proof over
+the web path with a bench reader. Rate control for HEVC rides on #46 (the RC
+register set is codec-agnostic, H4).

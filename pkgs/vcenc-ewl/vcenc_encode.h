@@ -95,6 +95,31 @@
 #define ENC_RC_LEGACY     0u   /* shipping program: CBR cluster as captured */
 #define ENC_RC_FIXQP      1u   /* the vendor's AX_VENC_RC_MODE_H264FIXQP set */
 
+/* Codec (fr->codec). ENC_CODEC_HEVC applies the H.265 overlay measured by the
+ * 2026-09-05 vendor HEVC campaign (docs/reference/vcenc-open/
+ * vendor-diff-hevc-20260905/REPORT.md, H1/H2/H3): the same cmdbuf, the same
+ * floorplan and the same RC/QP laws, with 17 registers re-pinned at the IDR
+ * (29 at a P frame) and three geometry laws switched from macroblock to
+ * min-CB/CTB granularity. Fixed-QP HEVC at 1080p reproduces the vendor's
+ * fixed-QP32 IDR and P programs bar the address registers (tests). */
+#define ENC_CODEC_H264    0u
+#define ENC_CODEC_HEVC    1u
+#define ENC_HEVC_SW4      0x21900054u
+#define ENC_HEVC_SW6      0x00200000u  /* bit21: every HEVC program */
+#define ENC_HEVC_SW6_INTRA 0x00000008u /* bit3: intra picture */
+#define ENC_HEVC_SW36     0x1c995f14u
+#define ENC_HEVC_SW191_IDR 0x4c000000u
+#define ENC_HEVC_SW193    0x00100101u  /* no CABAC/8x8/partial-MB bits */
+#define ENC_HEVC_SW194    0x00100100u
+#define ENC_HEVC_SW208    0x79e01ff0u
+#define ENC_HEVC_SW277    0x83000000u
+#define ENC_HEVC_SW170_P  0x00333300u
+#define ENC_HEVC_SW171_P  0x00393e00u
+/* sw202..207: constant HEVC block (write-only per H7; CU/TU cost thresholds) */
+static const uint32_t ENC_HEVC_SW202[6] = {
+	0x00020002u, 0x00020002u, 0x00020002u, 0x000c0003u, 0x0033000cu, 0x00cc0033u,
+};
+
 /* The nine registers the vendor changes when rate control is switched OFF
  * (docs/reference/vcenc-open/vendor-diff-20260904/E1/regdiff_{IDR,P}.md);
  * sw239/sw241 (the RC buffers) additionally go to 0 -- and so, on a P frame,
@@ -134,6 +159,7 @@ struct vcenc_frame {
 	uint32_t frame_num;  /* within the GOP; 0 => IDR */
 	uint32_t qp;         /* frame QP, VCENC_QP_MIN..VCENC_QP_MAX */
 	uint32_t rc_mode;    /* ENC_RC_LEGACY (default) or ENC_RC_FIXQP */
+	uint32_t codec;      /* ENC_CODEC_H264 (default) or ENC_CODEC_HEVC */
 	uint32_t pic_init_qp;/* sw7 high field; 0 => same as qp (our PPS value) */
 	uint32_t p17;        /* sw17 P value (0 => ENC_SW17_P) */
 	int      pinter;     /* 1 => replay ENC_PINTER for P frames */
@@ -168,7 +194,28 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t base,
 	/* ENC_RC_LEGACY keeps the captured program's habit of replaying the
 	 * I-frame block on P frames; ENC_RC_FIXQP uses the vendor's per-type
 	 * tables. */
-	if (vcenc_qp_regs(fr->qp, fr->rc_mode == ENC_RC_FIXQP && !is_idr,
+	if (fr->codec == ENC_CODEC_HEVC) {
+		/* H3: HEVC P frames index the I table at q = min(QP,35) (no -3)
+		 * and carry four P-variant entries (F20 lo, F26 hi, F27 lo, F33 hi). */
+		if (vcenc_qp_regs(fr->qp, 0, &sw7qp, &sw37, blk))
+			return 0;
+		if (!is_idr) {
+			int q = vcenc_qp_index(fr->qp, 0);
+			/* sw37 = L(q) carries F(2q-48).lo16: the P-variant F20 lo
+			 * (0x0810) shows through at q = 34 (H3 I28/P34 run). */
+			if (2 * q - 48 == 20)
+				sw37 = (sw37 & 0xffff0000u) | 0x0810u;
+			for (i = 0; i < 8; i++) {
+				switch (q - 2 * i) {
+				case 20: blk[i] = (blk[i] & 0xffff0000u) | 0x0810u; break;
+				case 26: blk[i] = (blk[i] & 0x0000ffffu) | 0x04840000u; break;
+				case 27: blk[i] = (blk[i] & 0xffff0000u) | 0x1210u; break;
+				case 33: blk[i] = (blk[i] & 0x0000ffffu) | 0x0a200000u; break;
+				default: break;
+				}
+			}
+		}
+	} else if (vcenc_qp_regs(fr->qp, fr->rc_mode == ENC_RC_FIXQP && !is_idr,
 			  &sw7qp, &sw37, blk))
 		return 0;
 	if (init_qp > 51u)
@@ -278,6 +325,38 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t base,
 		if (!is_idr) {
 			sw1[197 - 1] = ENC_FIXQP_SW197_P;
 			sw1[198 - 1] = ENC_FIXQP_SW198_P;
+		}
+	}
+
+	/* H.265 overlay (vendor-diff-hevc-20260905 H1/H2/H3/H6): applied last
+	 * so it wins over the H.264 frame-type constants and geometry laws. */
+	if (fr->codec == ENC_CODEC_HEVC) {
+		uint32_t w8 = (g->w + 7) & ~7u, h8 = (g->h + 7) & ~7u;
+		uint32_t ctbw = (g->w + 63) / 64;
+		sw1[4 - 1]   = ENC_HEVC_SW4;
+		/* sw5: min-CB (8) aligned dims, no +3; type bits as H.264 */
+		sw1[5 - 1]   = ((w8 / 2) << 20) | (h8 << 8) | (is_idr ? 0x02u : 0u);
+		sw1[6 - 1]  |= ENC_HEVC_SW6 | (is_idr ? ENC_HEVC_SW6_INTRA : 0u);
+		sw1[36 - 1]  = ENC_HEVC_SW36;
+		sw1[114 - 1] = 0;                       /* unused in HEVC */
+		sw1[190 - 1] = 0;
+		sw1[191 - 1] = is_idr ? ENC_HEVC_SW191_IDR : ENC_SW191_P;
+		sw1[193 - 1] = ENC_HEVC_SW193;
+		sw1[194 - 1] = ENC_HEVC_SW194;
+		for (i = 0; i < 6; i++)
+			sw1[202 - 1 + i] = ENC_HEVC_SW202[i];
+		sw1[208 - 1] = ENC_HEVC_SW208;
+		sw1[261 - 1] = (w8 << 16) | 0x0400u;    /* coded width = align8 */
+		sw1[277 - 1] = ENC_HEVC_SW277;
+		if (fr->rc_mode != ENC_RC_FIXQP) {      /* per-CTB-row RC coefficients */
+			sw1[245 - 1] = 0x20000000u | (((2 * 0x10000u / ctbw + 1) / 2) * 4);
+			sw1[246 - 1] = (((2 * 0x40000u / ctbw + 1) / 2) << 14) | 0x1010u;
+		}
+		if (!is_idr) {
+			sw1[170 - 1] = ENC_HEVC_SW170_P;
+			sw1[171 - 1] = ENC_HEVC_SW171_P;
+			sw1[192 - 1] = 0;                   /* poc_lsb comes from sw11 */
+			sw1[198 - 1] = 0;
 		}
 	}
 

@@ -5,10 +5,13 @@
 > shipped open image with the vendor stack loaded at runtime from `.#ax-ko-blobs`
 > + `.#axera-libs` + the stock-rootfs `libax_venc.so` — no `.axp` reflash was
 > needed (recipe: `.claude/skills/device-re-subagent/SKILL.md`, "Vendor stack on
-> a purged device"). The H1 gate passed. What remains is the implementation
-> outline at the bottom of this file; its open questions are now answered
-> inline in the campaign REPORT (CTU laws: H2; QP tables: H3; RC set: H4; RPS:
-> H6; write-only set: H7).
+> a purged device"). The H1 gate passed. **Steps 0+1 of the outline are DONE
+> the same day:** the open builder carries the HEVC overlay
+> (`vcenc_encode.h` `ENC_CODEC_HEVC`), `vcenc_hevc_header.h` writes VPS/SPS/PPS
+> byte-identical to the vendor's, 34 vendor HEVC programs are golden vectors,
+> and blob-free IPPP HEVC is device-proven at 1080p…3840×2400
+> (docs/blob-replacement.md, "2026-09-05 (later)"). Open: the `PT_H265` /
+> libkvm dispatch and the web-path proof.
 
 Plan of record for adding H.265/HEVC to the open encoder (Gitea issue filed
 2026-09-05). The silicon supports it (fuse `HEVC=1`, live-read 2026-09-04) and

@@ -64,7 +64,7 @@ static const uint32_t VCENC_F_I[VCENC_F_I_HI - VCENC_F_I_LO + 1] = {
 	0x08081ca0, /* q=31  obs geom-probe/programs/vendor_1920x1200_IDR.txt */
 	0x09042020, /* q=32  obs geom-probe/programs/vendor_1152x864_IDR.txt */
 	0x0a1c2410, /* q=33  obs geom-probe/programs/vendor_1920x1200_IDR.txt */
-	0x0b5c2880, /* q=34  interpolated */
+	0x0b5c2880, /* q=34  obs vendor-diff-hevc-20260905/H3/vendor_fixqp_i28_p34_f001.txt */
 	0x0cc02d70, /* q=35  obs geom-probe/programs/vendor_1920x1200_IDR.txt */
 };
 

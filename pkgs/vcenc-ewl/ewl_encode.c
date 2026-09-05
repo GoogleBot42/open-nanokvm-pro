@@ -25,6 +25,10 @@
  * Env knobs (P-frame experiment fallbacks, see vcenc_encode.h):
  *   EWL_P17=<hex>   override the P-frame swreg17 value
  *   EWL_PINTER=1    replay the captured warmed-up inter-state registers
+ *   EWL_CODEC=h265  H.265/HEVC (#64): the vendor-measured HEVC overlay on the
+ *                   same cmdbuf, VPS/SPS/PPS from vcenc_hevc_header.h, the
+ *                   vendor's fixed-QP register set (ENC_RC_FIXQP); NAL types
+ *                   19 (IDR_W_RADL) / 1 (TRAIL_R)
  *
  * The input format is PACKED YUYV 4:2:2, 2 B/px at sw12 (Stage C,
  * device-proven; sw13-sw12 = 2*W*H exactly, packed modes ignore the
@@ -44,6 +48,7 @@
 #include "vcenc_cmdbuf.h"
 #include "vcenc_encode.h"
 #include "vcenc_header.h"
+#include "vcenc_hevc_header.h"
 
 /* Buffers: one framebuf block from the driver's from-source CMM allocator
  * (HANTRO_IOCH_ALLOC_FRAMEBUF) laid out by the computed vcenc_geom floorplan.
@@ -99,6 +104,7 @@ int main(int argc, char **argv)
 	const char *mode = argc > 4 ? argv[4] : "yuyv";
 	uint32_t p17 = getenv("EWL_P17") ? (uint32_t)strtoul(getenv("EWL_P17"), NULL, 16) : 0;
 	int pinter = getenv("EWL_PINTER") ? atoi(getenv("EWL_PINTER")) : 0;
+	int hevc = getenv("EWL_CODEC") && !strcmp(getenv("EWL_CODEC"), "h265");
 	setvbuf(stdout, NULL, _IONBF, 0);
 
 	if (argc > 5 && sscanf(argv[5], "%ux%u", &EW, &EH) != 2) {
@@ -118,6 +124,9 @@ int main(int argc, char **argv)
 	if (!nframes) nframes = 1;
 	if (p17 || pinter)
 		printf("P-KNOBS: p17=0x%08x pinter=%d\n", p17 ? p17 : ENC_SW17_P, pinter);
+	if (hevc)
+		printf("CODEC: H.265/HEVC (fixed-QP overlay, level_idc %u)\n",
+		       vcenc_hevc_level_idc(EW, EH));
 
 	int fd = open(VCMD_DEV_NODE, O_RDWR);
 	if (fd < 0) { fprintf(stderr, "open(%s): %s\n", VCMD_DEV_NODE, strerror(errno)); return 1; }
@@ -194,6 +203,8 @@ int main(int argc, char **argv)
 
 		struct vcenc_frame fr = {
 			.frame_num = gopn, .qp = ENC_QP, .p17 = p17, .pinter = pinter,
+			.codec = hevc ? ENC_CODEC_HEVC : ENC_CODEC_H264,
+			.rc_mode = hevc ? ENC_RC_FIXQP : ENC_RC_LEGACY,
 		};
 		uint32_t *slot = cmd_pool + (uint32_t)id * (mem.cmd_unit_size / 4);
 		ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, (uint32_t)fbp.bus_addr, &g,
@@ -210,20 +221,27 @@ int main(int argc, char **argv)
 		/* The HW writes the 4-byte start code at the stream base; the
 		 * NAL header follows it. */
 		volatile uint8_t *sb = (volatile uint8_t *)out_map + ENC_STREAM_SUBOFF;
-		int nut = sb[4] & 0x1f;
+		int nut = hevc ? (sb[4] >> 1) & 0x3f : sb[4] & 0x1f;
+		int want_nut = hevc ? (is_idr ? 19 : 1) : (is_idr ? 5 : 1);
 
 		int frame_ok = (wid == CMDBUF_EXE_STATUS_OK) && swreg82 > 0
 			&& swreg9 > 0 && swreg9 <= g.out_limit
-			&& nut == (is_idr ? 5 : 1);
+			&& nut == want_nut;
 		printf("frame %3u: %s wait=%u bytes=%-6u cycles=%-8u nal=%d %s\n",
 		       n, is_idr ? "IDR" : "P  ", wid, swreg9, swreg82, nut,
 		       frame_ok ? "ok" : "FAIL");
 
 		if (frame_ok && f) {
 			if (is_idr) {
-				uint8_t hdr[128];
-				uint32_t hlen = vcenc_write_sps(hdr, EW, EH);
-				hlen += vcenc_write_pps(hdr + hlen, ENC_QP);
+				uint8_t hdr[256];
+				uint32_t hlen;
+				if (hevc)
+					hlen = vcenc_write_hevc_headers(hdr, EW, EH, ENC_QP,
+								       vcenc_hevc_level_idc(EW, EH));
+				else {
+					hlen = vcenc_write_sps(hdr, EW, EH);
+					hlen += vcenc_write_pps(hdr + hlen, ENC_QP);
+				}
 				fwrite(hdr, 1, hlen, f);
 				total_bytes += hlen;
 			}

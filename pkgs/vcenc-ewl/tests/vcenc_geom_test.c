@@ -28,6 +28,7 @@
 #include "../vcenc_encode.h"
 #include "vcenc_geom_vectors.h"
 #include "vcenc_fixqp_vectors.h"
+#include "vcenc_hevc_vectors.h"
 
 static int fails;
 
@@ -212,6 +213,67 @@ static void fixqp_identity(void)
            (unsigned)(sizeof VFQ / sizeof VFQ[0]), total);
 }
 
+/*
+ * 4. HEVC IDENTITY (#64): with codec = ENC_CODEC_HEVC and ENC_RC_FIXQP the
+ *    builder must reproduce the VENDOR's H.265 fixed-QP programs -- the 1080p
+ *    ladder and fixed-QP32 at six more geometries up to 3840x2400 -- bar the
+ *    address registers and the same two residuals as fixqp_identity()
+ *    (sw9: our fixed header slot vs the vendor's VPS+SPS+PPS length; P-frame
+ *    sw105: per-frame RC state).
+ */
+static void hevc_identity(void)
+{
+    static uint32_t buf[ENC_CMDBUF_WORDS];
+    static uint32_t want[ENC_BULK_NREGS + 1];
+    int total = 0;
+
+    for (unsigned v = 0; v < sizeof VHQ / sizeof VHQ[0]; v++) {
+        vcenc_geom g;
+        if (vcenc_geom_build(&g, VHQ[v].w, VHQ[v].h)) {
+            printf("FAIL %s: %dx%d rejected\n", VHQ[v].tag, VHQ[v].w, VHQ[v].h);
+            fails++;
+            continue;
+        }
+        struct vcenc_frame fr = {
+            .frame_num   = VHQ[v].is_p ? 1u : 0u,
+            .qp          = VHQ[v].qp,
+            .rc_mode     = ENC_RC_FIXQP,
+            .codec       = ENC_CODEC_HEVC,
+            .pic_init_qp = VHQ[v].pic_init_qp,
+        };
+        if (vcenc_build_encode_cmdbuf(buf, 0x70000000u, &g, 0, &fr)
+            != ENC_CMDBUF_BYTES) {
+            printf("FAIL %s: builder rejected qp %u\n", VHQ[v].tag, VHQ[v].qp);
+            fails++;
+            continue;
+        }
+        memset(want, 0, sizeof want);
+        for (unsigned k = 0; k < VHQ[v].n; k++)
+            want[VHQ[v].regs[k].reg] = VHQ[v].regs[k].val;
+
+        const uint32_t *sw1 = buf + 5;
+        int diffs = 0;
+        if ((sw1[5 - 1] | 1u) != want[5]) {
+            printf("FAIL %s swreg5 want=0x%08x got=0x%08x\n",
+                   VHQ[v].tag, want[5], sw1[5 - 1] | 1u);
+            fails++;
+        }
+        for (int r = 1; r <= ENC_BULK_NREGS; r++) {
+            if (r == 5 || is_addr_reg(r) || fixqp_residual(r, VHQ[v].is_p))
+                continue;
+            if (sw1[r - 1] != want[r]) {
+                printf("FAIL %s swreg%d want=0x%08x got=0x%08x\n",
+                       VHQ[v].tag, r, want[r], sw1[r - 1]);
+                fails++;
+                diffs++;
+            }
+        }
+        total += diffs;
+    }
+    printf("hevc identity: %u vendor programs, %d non-address diffs\n",
+           (unsigned)(sizeof VHQ / sizeof VHQ[0]), total);
+}
+
 /* The QP block must saturate exactly where the vendor's does. */
 static void qp_clamp(void)
 {
@@ -245,6 +307,7 @@ int main(void)
     golden();
     template_identity();
     fixqp_identity();
+    hevc_identity();
     qp_clamp();
     envelope();
     if (fails) {
