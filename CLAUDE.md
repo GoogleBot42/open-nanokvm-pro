@@ -71,6 +71,13 @@ Pro reverse-engineering; current Pro truth is `docs/` and git history, not that 
   (`dma_supported` = 0), so `dma_coerce_mask_and_coherent()` FAILS silently and the
   coherent mask stays 0 (WARN at every `dma_alloc_attrs`). Set `dev.coherent_dma_mask`
   / `dev.dma_mask` directly when the device only uses a declared carveout (#63).
+- The vendor encoder stack can be put back on the shipped open image **at
+  runtime, from the Nix inputs** (`.#ax-ko-blobs` + `.#axera-libs` + the stock-
+  rootfs `libax_venc.so`), no reflash — proven by the 2026-09-05 HEVC campaign.
+  Three traps: `ax_jenc.ko` is required for `AX_VENC_Init`; the SDK-snapshot
+  `libax_venc.so` is NOT the rootfs one (rejects pixel-unit strides); reboot
+  before the swap if `ax630c_venc_vcmd` shows a phantom refcount, else the vendor
+  `ax_venc.ko` loads inert. Recipe: device-re-subagent skill.
 - Deleting from the vendor ext4 with `debugfs`: `ls -p` also lists **ghost (deleted)
   directory entries with inode 0** — filter `$2 != "0"` in every enumeration and
   post-purge count, or the "still present" assertion trips on entries that are not

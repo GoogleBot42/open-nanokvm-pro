@@ -1,0 +1,226 @@
+# vdrive tag=traj8000 codec=h265 1920x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=1 nframes=90
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f6000 virt=0xffff9f91c000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=17538 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:17446
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=13522 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13522
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=7431 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7431
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=10638 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10638
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=6956 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6956
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=9530 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9530
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 6: send=0x0 get=0x0 len=7947 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7947
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 7: send=0x0 get=0x0 len=13404 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13404
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 8: send=0x0 get=0x0 len=6148 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6148
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 9: send=0x0 get=0x0 len=13770 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13770
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 10: send=0x0 get=0x0 len=6204 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6204
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 11: send=0x0 get=0x0 len=17540 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17540
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 12: send=0x0 get=0x0 len=7961 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7961
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 13: send=0x0 get=0x0 len=16589 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16589
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 14: send=0x0 get=0x0 len=6225 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6225
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 15: send=0x0 get=0x0 len=18517 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18517
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 16: send=0x0 get=0x0 len=5572 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5572
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 17: send=0x0 get=0x0 len=12053 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12053
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 18: send=0x0 get=0x0 len=8928 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8928
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 19: send=0x0 get=0x0 len=12751 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12751
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 20: send=0x0 get=0x0 len=7578 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7578
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 21: send=0x0 get=0x0 len=12335 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12335
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 22: send=0x0 get=0x0 len=9543 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9543
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 23: send=0x0 get=0x0 len=12626 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12626
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 24: send=0x0 get=0x0 len=2577 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2577
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 25: send=0x0 get=0x0 len=9759 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9759
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 26: send=0x0 get=0x0 len=9614 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9614
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 27: send=0x0 get=0x0 len=11885 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11885
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 28: send=0x0 get=0x0 len=7700 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7700
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 29: send=0x0 get=0x0 len=11861 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11861
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 30: send=0x0 get=0x0 len=19704 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:19612
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 31: send=0x0 get=0x0 len=12360 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12360
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 32: send=0x0 get=0x0 len=6077 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6077
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 33: send=0x0 get=0x0 len=8377 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8377
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 34: send=0x0 get=0x0 len=8142 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8142
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 35: send=0x0 get=0x0 len=10971 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10971
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 36: send=0x0 get=0x0 len=10719 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10719
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 37: send=0x0 get=0x0 len=13750 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13750
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 38: send=0x0 get=0x0 len=9830 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9830
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 39: send=0x0 get=0x0 len=16987 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16987
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 40: send=0x0 get=0x0 len=8299 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8299
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 41: send=0x0 get=0x0 len=15187 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:15187
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 42: send=0x0 get=0x0 len=9891 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9891
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 43: send=0x0 get=0x0 len=19756 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19756
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 44: send=0x0 get=0x0 len=9718 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9718
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 45: send=0x0 get=0x0 len=13777 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13777
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 46: send=0x0 get=0x0 len=10880 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10880
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 47: send=0x0 get=0x0 len=11884 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11884
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 48: send=0x0 get=0x0 len=3277 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3277
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 49: send=0x0 get=0x0 len=9880 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9880
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 50: send=0x0 get=0x0 len=10494 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10494
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 51: send=0x0 get=0x0 len=11949 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11949
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 52: send=0x0 get=0x0 len=7574 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7574
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 53: send=0x0 get=0x0 len=11319 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11319
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 54: send=0x0 get=0x0 len=11795 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11795
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 55: send=0x0 get=0x0 len=11233 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11233
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 56: send=0x0 get=0x0 len=2672 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2672
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 57: send=0x0 get=0x0 len=9440 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9440
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 58: send=0x0 get=0x0 len=10417 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10417
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 59: send=0x0 get=0x0 len=12132 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12132
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 60: send=0x0 get=0x0 len=22264 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:22172
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 61: send=0x0 get=0x0 len=14208 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14208
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 62: send=0x0 get=0x0 len=6624 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6624
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 63: send=0x0 get=0x0 len=12732 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12732
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 64: send=0x0 get=0x0 len=7860 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7860
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 65: send=0x0 get=0x0 len=14114 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14114
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 66: send=0x0 get=0x0 len=6140 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6140
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 67: send=0x0 get=0x0 len=18756 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18756
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 68: send=0x0 get=0x0 len=6219 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6219
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 69: send=0x0 get=0x0 len=19948 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19948
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 70: send=0x0 get=0x0 len=7374 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7374
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 71: send=0x0 get=0x0 len=18658 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18658
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 72: send=0x0 get=0x0 len=6971 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6971
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 73: send=0x0 get=0x0 len=14606 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14606
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 74: send=0x0 get=0x0 len=8452 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8452
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 75: send=0x0 get=0x0 len=14531 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14531
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 76: send=0x0 get=0x0 len=7633 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7633
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 77: send=0x0 get=0x0 len=12717 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12717
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 78: send=0x0 get=0x0 len=9412 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9412
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 79: send=0x0 get=0x0 len=11914 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11914
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 80: send=0x0 get=0x0 len=2856 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2856
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 81: send=0x0 get=0x0 len=10004 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10004
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 82: send=0x0 get=0x0 len=9634 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9634
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 83: send=0x0 get=0x0 len=12117 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12117
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 84: send=0x0 get=0x0 len=8049 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8049
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 85: send=0x0 get=0x0 len=11678 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11678
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 86: send=0x0 get=0x0 len=10644 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10644
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 87: send=0x0 get=0x0 len=11554 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11554
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 88: send=0x0 get=0x0 len=2820 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2820
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 89: send=0x0 get=0x0 len=9706 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9706
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h265    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      1350000      82           NONE         0            742f6000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   60.00   8000      10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   82        82        82        0         0         0         0         82        82        16.67     1522.44   0         0         0         -1        6020    6024    1       82        82        0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done traj8000

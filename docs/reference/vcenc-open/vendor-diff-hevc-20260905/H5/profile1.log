@@ -1,0 +1,54 @@
+# vdrive tag=profile1 codec=h265 1920x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=1 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f6000 virt=0xffff7f9cc000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1158 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:52 n34:12 n19:1067
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x80070222 (no stream)
+frame 2: send=0x0 get=0x0 len=1434 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1434
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x80070222 (no stream)
+frame 4: send=0x0 get=0x0 len=2157 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2157
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x80070222 (no stream)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h265    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      83333        6            NONE         0            742f6000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   60.00   8000      10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   6         6         3         0         0         3         0         3         3         0.33      0.00      0         0         0         -1        5546    5550    1       6         6         0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done profile1

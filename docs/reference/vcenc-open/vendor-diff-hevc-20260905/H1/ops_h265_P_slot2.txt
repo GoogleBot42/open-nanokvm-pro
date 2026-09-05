@@ -1,0 +1,45 @@
+   0 op16   len=1   0x0068  raw=b0010068 
+   1 op0e   len=898 0x106c  raw=7382106c 
+   2 op00   len=0   0x0000  raw=00000000 
+   3 op00   len=0   0x0000  raw=00000000 
+   4 WREG   len=511 0x1004  (swreg1..swreg511)
+ 516 WREG   len=1   0x2800  = 00000044
+ 518 WREG   len=1   0x2014  = 00000000
+ 520 WREG   len=1   0x2034  = 00000000
+ 522 WREG   len=1   0x2054  = 00000000
+ 524 WREG   len=1   0x2074  = 00000000
+ 526 WREG   len=1   0x2094  = 00000000
+ 528 WREG   len=1   0x20b4  = 00000000
+ 530 WREG   len=1   0x20d4  = 00000000
+ 532 WREG   len=1   0x20f4  = 00000000
+ 534 WREG   len=1   0x2114  = 00000000
+ 536 WREG   len=1   0x2134  = 00000000
+ 538 WREG   len=1   0x2154  = 00000000
+ 540 WREG   len=1   0x2174  = 00000000
+ 542 WREG   len=1   0x2194  = 00000000
+ 544 WREG   len=1   0x21b4  = 00000000
+ 546 WREG   len=1   0x21d4  = 00000000
+ 548 WREG   len=1   0x21f4  = 00000000
+ 550 WREG   len=1   0x1014  (swreg5..swreg5)
+ 552 op09   len=0   0x0001  raw=48000001 
+ 553 op00   len=0   0x0000  raw=00000000 
+ 554 op16   len=512 0x1000  raw=b2001000 
+ 555 op0e   len=897 0x5800  raw=73815800 
+ 556 op00   len=0   0x0000  raw=00000000 
+ 557 op00   len=0   0x0000  raw=00000000 
+ 558 op1a   len=0   0x1014  raw=d0001014 
+ 559 op1f   len=1023 0xfffe  raw=fffffffe 
+ 560 op1a   len=0   0x1004  raw=d0001004 
+ 561 op1f   len=1023 0xffff  raw=ffffffff 
+ 562 op16   len=27  0x0000  raw=b01b0000 
+ 563 op0e   len=898 0x1000  raw=73821000 
+ 564 op00   len=0   0x0000  raw=00000000 
+ 565 op00   len=0   0x0000  raw=00000000 
+ 566 op19   len=0   0x0000  raw=c8000000 
+ 567 op00   len=0   0x0000  raw=00000000 
+ 568 op00   len=0   0x0000  raw=00000000 
+ 569 op00   len=0   0x0000  raw=00000000 
+ 570 RREG   len=561 0x1dc6  raw=beb5ea5f 4a56c0ff
+ 573 op0e   len=646 0x51d4  raw=728651d4 
+ 574 END    len=362 0x8f2f  raw=116a8f2f 
+last opcode word 574, last nonzero word 2047 (2048 words used)

@@ -1,0 +1,224 @@
+== H5 HEVC single-knob sweep (1080p CBR8000 fps60 gop30 Main 5.1 baseline). Per run: create rc, NAL sizes, header deltas vs base, regs moved vs base ==
+BASE VPS: 23 VPS(32) lid=0 tid=1 id=0 layers=1 sublayers=1 tid_nesting=1 profile=1 tier=0 level=5.1 space=0 prog=1 int=0 nonpack=0 frameonly=0 dpb=2/0/0 max_layer_id=0 layer_sets=1
+BASE SPS: 49 SPS(33) lid=0 tid=1 id=0 vps=0 sublayers=1 tid_nesting=1 profile=1 tier=0 level=5.1 space=0 prog=1 int=0 nonpack=0 frameonly=0 chroma_idc=1 1920x1080 depth=8/8 poc_lsb_bits=16 dpb=2/0/0 ctb=64 mincb=8 tb=4..16 ctbs=30x17(510) tdepth=4/2 scaling=0/0 amp=1 sao=1 pcm=0 tmvp=0 sis=0 nstrps=2 rps0{neg=[-1u] pos=[]} rps1{neg=[-1u] pos=[]} lt=0(0) vui=1 vui{vidfmt=5 fullrange=1 colour=5/1/5 timing=1/60(60.000fps) bsrestrict(minseg=0 maxbytes=0 maxbits=0 mvlen=10/8)}
+BASE PPS: 8 PPS(34) lid=0 tid=1 id=0 sps=0 dep_slices=0 output_flag=0 extra_bits=0 sdh=0 cabac_init=1 nref=1/1 init_qp=32 cip=0 tskip=0 cuqp=1(depth=0) cbcr_qp_off=0/0 slice_chroma_off=0 wp=0 wbp=0 tqbypass=0 tiles=0 wpp=0 lf_across_slices=1 dbf_ctrl=1(override=0 disabled=0 beta=0 tc=0) scaling=0 lists_mod=0 par_merge_lvl=2 sh_ext=0
+BASE slices: 1063 IDR_W_RADL(19) lid=0 tid=1 slice first=1 type=I(2) NumPicTotalCurr=0 sao=1/1 qp=32(delta=+0) lf_across=1 ; 824 TRAIL_R(1) lid=0 tid=1 slice first=1 type=P(1) poc_lsb=1 rps=sps[0] {neg=[-1u] pos=[]} NumPicTotalCurr=1 sao=1/1 nref=1 cabac_init=0 merge_cand=3 qp=35(delta=+3) lf_across=1
+-- base                                              rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- base_rep                                          rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- profile1     profile=1                            rc=0 
+   sizes: f0:I1158 f2:I1434 f4:I2157
+   header deltas: VPS: profile=3 dpb=1/0/0 | SPS: 48 profile=3 dpb=1/0/0 rps0{neg=[] rps1{neg=[] | slice1: 1430 type=I(2) {neg=[] NumPicTotalCurr=0 qp=27(delta=-5)
+   IDR moved: sw9 0x4047a4->0x4047a5
+   P   moved: (no P frame in run)
+-- profile2     profile=2                            rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: VPS: profile=2 | SPS: profile=2
+   IDR moved: none
+   P   moved: none
+-- profile3     profile=3                            CREATE rc=80070280  (no program)
+-- tier1        tier=1                               rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: VPS: tier=1 | SPS: tier=1
+   IDR moved: none
+   P   moved: none
+-- level120     level=120                            rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: VPS: level=4.0 | SPS: level=4.0
+   IDR moved: none
+   P   moved: none
+-- level150     level=150                            rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: VPS: level=5.0 | SPS: level=5.0
+   IDR moved: none
+   P   moved: none
+-- level180     level=180                            rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: VPS: level=6.0 | SPS: level=6.0
+   IDR moved: none
+   P   moved: none
+-- level93      level=93                             rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: VPS: level=3.1 | SPS: level=3.1
+   IDR moved: none
+   P   moved: none
+-- gop1         gop=1                                rc=0 
+   sizes: f0:I1159 f1:I1524 f2:I2247 f3:I4388 f4:I2117 f5:I2124
+   header deltas: slice1: 1428 IDR_W_RADL(19) type=I(2) NumPicTotalCurr=0 qp=27(delta=-5)
+   IDR moved: sw105 0x1adb00->0x208d5, sw106 0x1adb00->0x208d5, sw107 0x1adb00->0x208d5
+   P   moved: (no P frame in run)
+-- gop8         gop=8                                rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: sw105 0x1adb00->0xea9c0, sw106 0x1adb00->0xea9c0, sw107 0x1adb00->0xea9c0
+   P   moved: sw105 0x22256->0x25363, sw106 0x20704->0x2359e, sw107 0x23da7->0x27127
+-- gop60        gop=60                               rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: sw105 0x22256->0x2110c, sw106 0x20704->0x1f698, sw107 0x23da7->0x22b7f
+-- gop120       gop=120                              rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: sw105 0x1adb00->0x1d4c00, sw106 0x1adb00->0x1d4c00, sw107 0x1adb00->0x1d4c00
+   P   moved: sw105 0x22256->0x20ce7, sw106 0x20704->0x1f2a8, sw107 0x23da7->0x22725
+-- fps30        fps=30                               rc=0 
+   sizes: f0:I1159 f1:P829 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: SPS: timing=1/30(30.000fps) | PPS: 7 init_qp=26 | slice0: 1064 qp=32(delta=+6) | slice1: 825 qp=35(delta=+9)
+   IDR moved: sw7 0x80002000->0x68002000, sw9 0x4047a4->0x4047a5, sw105 0x1adb00->0x2bf200, sw106 0x1adb00->0x2bf200, sw107 0x1adb00->0x2bf200
+   P   moved: sw7 0x80002300->0x68002300, sw105 0x22256->0x43456, sw106 0x20704->0x3fe84, sw107 0x23da7->0x46a27
+-- fps60d30     fps=60 dfps=30                       rc=0 
+   sizes: f1:I1159 f3:P829 f5:P1465
+   header deltas: SPS: timing=1/30(30.000fps) | PPS: 7 init_qp=26 | slice0: 1064 qp=32(delta=+6) | slice1: 825 qp=35(delta=+9)
+   IDR moved: sw7 0x80002000->0x68002000, sw9 0x4047a4->0x4047a5, sw105 0x1adb00->0x2bf200, sw106 0x1adb00->0x2bf200, sw107 0x1adb00->0x2bf200
+   P   moved: sw7 0x80002300->0x68002300, sw105 0x22256->0x43456, sw106 0x20704->0x3fe84, sw107 0x23da7->0x46a27
+-- br2000       br=2000                              rc=0 
+   sizes: f0:I1087 f1:P692 f2:P607 f3:P698 f4:P720 f5:P746
+   header deltas: PPS: init_qp=36 | slice0: 991 qp=35(delta=-1) | slice1: 688 qp=38(delta=+2)
+   IDR moved: sw7 0x80002000->0x90002300, sw37 0xf00510->0x1e40a20, sw105 0x1adb00->0x0, sw106 0x1adb00->0x0, sw107 0x1adb00->0x0, sw125 0x9042020->0xcc02d70, sw126 0x7281980->0xa1c2410, sw127 0x5ac1440->0x8081ca0, sw128 0x4801010->0x66016b0, sw129 0x3940cc0->0x5101200, sw130 0x2d80a20->0x4040e50, sw131 0x2400800->0x3300b60, sw132 0x1c80660->0x2880900
+   P   moved: sw7 0x80002300->0x90002600, sw105 0x22256->0x0, sw106 0x20704->0x0, sw107 0x23da7->0x0, sw243 0x400800->0x407000, sw247 0x18942->0x1dd82
+-- br16000      br=16000                             rc=0 
+   sizes: f0:I1159 f1:P829 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   header deltas: PPS: 7 init_qp=26 | slice0: 1064 qp=32(delta=+6) | slice1: 825 qp=35(delta=+9)
+   IDR moved: sw7 0x80002000->0x68002000, sw9 0x4047a4->0x4047a5, sw105 0x1adb00->0x35b600, sw106 0x1adb00->0x35b600, sw107 0x1adb00->0x35b600
+   P   moved: sw7 0x80002300->0x68002300, sw105 0x22256->0x44695, sw106 0x20704->0x40fda, sw107 0x23da7->0x47d4f
+-- qp20_40      minqp=20 maxqp=40 miniqp=20 maxiqp=40 rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: sw172 0x14f->0x28f, sw173 0x662->0x502
+   P   moved: sw172 0x14f->0x28f, sw173 0x66a->0x50a
+-- qp30_30      minqp=30 maxqp=30 miniqp=30 maxiqp=30 rc=0 
+   sizes: f0:I1166 f1:P717 f2:P637 f3:P601 f4:P609 f5:P607
+   header deltas: slice0: 1070 qp=30(delta=-2) | slice1: 713 qp=30(delta=-2)
+   IDR moved: sw7 0x80002000->0x80001e00, sw37 0xf00510->0x980330, sw125 0x9042020->0x7281980, sw126 0x7281980->0x5ac1440, sw127 0x5ac1440->0x4801010, sw128 0x4801010->0x3940cc0, sw129 0x3940cc0->0x2d80a20, sw130 0x2d80a20->0x2400800, sw131 0x2400800->0x1c80660, sw132 0x1c80660->0x16c0510, sw172 0x14f->0x3cf, sw173 0x662->0x3c2
+   P   moved: sw7 0x80002300->0x80001e00, sw37 0x1e40a20->0x980330, sw105 0x22256->0x22253, sw106 0x20704->0x20702, sw107 0x23da7->0x23da3, sw125 0xcc02d70->0x7281980, sw126 0xa202410->0x5ac1440, sw127 0x8081ca0->0x4841010, sw128 0x66016b0->0x3940cc0, sw129 0x5101210->0x2d80a20, sw130 0x4040e50->0x2400810, sw131 0x3300b60->0x1c80660, sw132 0x2880900->0x16c0510, sw172 0x14f->0x3cf, sw173 0x66a->0x3ca, sw247 0x18942->0x18442
+-- iqd_m5       iqd=-5                               rc=0 
+   sizes: f0:I1170 f1:P1463 f2:P946 f3:P1405 f4:P1249 f5:P2138
+   header deltas: slice0: 1074 qp=30(delta=-2) | slice1: 1459 qp=33(delta=+1)
+   IDR moved: sw7 0x80002000->0x80001e00, sw37 0xf00510->0x980330, sw105 0x1adb00->0x1d4c00, sw106 0x1adb00->0x1d4c00, sw107 0x1adb00->0x1d4c00, sw125 0x9042020->0x7281980, sw126 0x7281980->0x5ac1440, sw127 0x5ac1440->0x4801010, sw128 0x4801010->0x3940cc0, sw129 0x3940cc0->0x2d80a20, sw130 0x2d80a20->0x2400800, sw131 0x2400800->0x1c80660, sw132 0x1c80660->0x16c0510
+   P   moved: sw7 0x80002300->0x80002100, sw37 0x1e40a20->0x1300660, sw105 0x22256->0x22252, sw106 0x20704->0x20701, sw107 0x23da7->0x23da2, sw125 0xcc02d70->0xa202410, sw126 0xa202410->0x8081ca0, sw127 0x8081ca0->0x66016b0, sw128 0x66016b0->0x5101210, sw129 0x5101210->0x4040e50, sw130 0x4040e50->0x3300b60, sw131 0x3300b60->0x2880900, sw132 0x2880900->0x2040720, sw243 0x400800->0x65a000, sw247 0x18942->0x145c2
+-- iqd_p5       iqd=5                                rc=0 
+   sizes: f0:I986 f1:P912 f2:P805 f3:P776 f4:P1179 f5:P957
+   header deltas: slice0: 890 qp=40(delta=+8) | slice1: 908 qp=39(delta=+7)
+   IDR moved: sw7 0x80002000->0x80002800, sw37 0xf00510->0x1e40a20, sw105 0x1adb00->0x124f80, sw106 0x1adb00->0x124f80, sw107 0x1adb00->0x124f80, sw125 0x9042020->0xcc02d70, sw126 0x7281980->0xa1c2410, sw127 0x5ac1440->0x8081ca0, sw128 0x4801010->0x66016b0, sw129 0x3940cc0->0x5101200, sw130 0x2d80a20->0x4040e50, sw131 0x2400800->0x3300b60, sw132 0x1c80660->0x2880900
+   P   moved: sw7 0x80002300->0x80002700, sw105 0x22256->0x2229f, sw106 0x20704->0x2074a, sw107 0x23da7->0x23df3, sw244 0x400->0x0, sw247 0x18942->0x30602
+-- firstqp30    firstqp=30                           rc=0 
+   sizes: f0:I1533 f1:P1204 f2:P1353 f3:P1403 f4:P1595 f5:P1928
+   header deltas: PPS: init_qp=30 | slice0: 1437 qp=27(delta=-3) | slice1: 1200 qp=30(delta=+0)
+   IDR moved: sw7 0x80002000->0x78001b00, sw37 0xf00510->0x4c0190, sw125 0x9042020->0x5101200, sw126 0x7281980->0x4040e50, sw127 0x5ac1440->0x3300b60, sw128 0x4801010->0x2880900, sw129 0x3940cc0->0x2000720, sw130 0x2d80a20->0x19805b0, sw131 0x2400800->0x1440480, sw132 0x1c80660->0x1000390
+   P   moved: sw7 0x80002300->0x78001e00, sw37 0x1e40a20->0x980330, sw105 0x22256->0x221b9, sw106 0x20704->0x2066f, sw107 0x23da7->0x23d02, sw125 0xcc02d70->0x7281980, sw126 0xa202410->0x5ac1440, sw127 0x8081ca0->0x4841010, sw128 0x66016b0->0x3940cc0, sw129 0x5101210->0x2d80a20, sw130 0x4040e50->0x2400810, sw131 0x3300b60->0x1c80660, sw132 0x2880900->0x16c0510, sw243 0x400800->0x8fc000, sw244 0x400->0x0, sw247 0x18942->0xa802
+-- idrrange8    idrrange=8                           rc=0 
+   sizes: f0:I2458 f1:P1384 f2:P1294 f3:P1516 f4:P1714 f5:P2790
+   header deltas: slice0: 2362 | slice1: 1380 qp=31(delta=-1)
+   IDR moved: sw173 0x662->0x668
+   P   moved: sw7 0x80002300->0x80001f00, sw37 0x1e40a20->0xc00400, sw105 0x22256->0x22033, sw106 0x20704->0x204fd, sw107 0x23da7->0x23b68, sw125 0xcc02d70->0x8081ca0, sw126 0xa202410->0x66016b0, sw127 0x8081ca0->0x5101210, sw128 0x66016b0->0x4040e50, sw129 0x5101210->0x3300b60, sw130 0x4040e50->0x2880900, sw131 0x3300b60->0x2040720, sw132 0x2880900->0x19805b0, sw243 0x400800->0x1001800, sw244 0x400->0x0, sw247 0x18942->0xb4c2
+-- slice8       slice=8                              rc=0 SetSliceSplit(8) rc=0x0
+   sizes: f0:I2132 f1:P1313 f2:P1535 f3:P1341 f4:P1548 f5:P1399
+   header deltas: slice0: 740 | slice1: 731 IDR_W_RADL(19) first=0 addr=240 type=I(2) NumPicTotalCurr=0 qp=32(delta=+0)
+   IDR moved: sw1 0x9fd->0x209fd, sw6 0x20000b->0x1020000b
+   P   moved: sw1 0x9fd->0x209fd, sw6 0x200003->0x10200003, sw105 0x22256->0x220bd, sw106 0x20704->0x20580, sw107 0x23da7->0x23bf9, sw243 0x400800->0x405000, sw244 0x400->0x2ac00, sw247 0x18942->0x1ac82
+-- slice1       slice=1                              rc=0 SetSliceSplit(1) rc=0x0
+   sizes: f0:I8876 f1:P4612 f2:P3524 f3:P2743 f4:P3607 f5:P3798
+   header deltas: slice0: 519 | slice1: 514 IDR_W_RADL(19) first=0 addr=30 type=I(2) NumPicTotalCurr=0 qp=32(delta=+0)
+   IDR moved: sw1 0x9fd->0x209fd, sw6 0x20000b->0x220000b
+   P   moved: sw1 0x9fd->0x209fd, sw6 0x200003->0x2200003, sw105 0x22256->0x215a5, sw106 0x20704->0x1faf6, sw107 0x23da7->0x23053, sw243 0x400800->0x199b800, sw244 0x400->0x800, sw247 0x18942->0x29e02
+-- ir5row       ir=5 irmode=0                        rc=0 SetIntraRefresh(5,mode 0) rc=0x0
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- ir5col       ir=5 irmode=1                        rc=0 SetIntraRefresh(5,mode 1) rc=0x0
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- refring      refring=1                            rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: sw56 0x0->0x23a000, sw57 0x0->0x11d000, sw73 0x0->0x23a00, sw83 0x0->0x73ca5000, sw195 0xfff0->0xfff2
+   P   moved: sw56 0x0->0x23a000, sw57 0x0->0x11d000, sw73 0x0->0x23a00, sw83 0x0->0x73ca5000, sw195 0xfff0->0xfff2
+-- share        share=1                              rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- debreath     debreath=1                           rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- setrc_same   setrc=1                              rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- scd1         setrc=1 scd=1                        rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- rowqpd3      setrc=1 rowqpd=3                     rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- stattime3    stattime=3                           rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- iprop20_80   miniprop=20 maxiprop=80              rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: sw105 0x1adb00->0x222e00, sw106 0x1adb00->0x222e00, sw107 0x1adb00->0x222e00
+   P   moved: none
+-- dbqd5        dbqd=5                               rc=0 
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- vui0         vui=0                                rc=0 SetVuiParam(0) rc=0x0
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- vui1         vui=1                                rc=0 SetVuiParam(1) rc=0x0
+   sizes: f0:I1159 f1:P828 f2:P1465 f3:P1152 f4:P1381 f5:P1136
+   IDR moved: none
+   P   moved: none
+-- oneltr       gopmode=oneltr ltrint=4              rc=0 
+   sizes: f0:I1160 f1:P824 f2:P1086 f3:P1082 f4:P1484 f5:P1174
+   header deltas: VPS: dpb=3/0/0 | SPS: 50 dpb=3/0/0 nstrps=4 rps1{neg=[] rps2{neg=[] rps3{neg=[-1u] lt=1(0) | PPS: lists_mod=1 | slice1: 820 lt=0+0(used=0)
+   IDR moved: sw6 0x20000b->0x400013, sw9 0x4047a4->0x4047a3, sw91 0x0->0x10, sw104 0x0->0x80000000, sw198 0x0->0x1000
+   P   moved: sw6 0x200003->0x400003, sw37 0x1e40a20->0x1300650, sw91 0x0->0x10, sw104 0x0->0x80000000, sw125 0xcc02d70->0xa1423f0, sw126 0xa202410->0x8001c80, sw127 0x8081ca0->0x65816a0, sw128 0x66016b0->0x50c11f0, sw129 0x5101210->0x4000e40, sw130 0x4040e50->0x32c0b50, sw131 0x3300b60->0x2840900, sw132 0x2880900->0x2000720, sw170 0x333300->0x200000, sw171 0x393e00->0x2d4100
+-- svct         gopmode=svct                         CREATE rc=80070280  (no program)
+-- moving       move=1                               rc=0 
+   sizes: f0:I17538 f1:P13522 f2:P7431 f3:P10638 f4:P6956 f5:P9530
+   header deltas: slice0: 17442 | slice1: 13518
+   IDR moved: none
+   P   moved: sw105 0x22256->0x20766, sw106 0x20704->0x1ed6d, sw107 0x23da7->0x2215e, sw243 0x400800->0x224d800, sw244 0x400->0x1000, sw247 0x18942->0x41b42
+
+== which knob moves swregN ==
+sw1   : slice8(I), slice8(P), slice1(I), slice1(P)
+sw6   : slice8(I), slice8(P), slice1(I), slice1(P), oneltr(I), oneltr(P)
+sw7   : fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), firstqp30(I), firstqp30(P), idrrange8(P)
+sw9   : profile1(I), fps30(I), fps60d30(I), br16000(I), oneltr(I)
+sw37  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw56  : refring(I), refring(P)
+sw57  : refring(I), refring(P)
+sw73  : refring(I), refring(P)
+sw83  : refring(I), refring(P)
+sw91  : oneltr(I), oneltr(P)
+sw104 : oneltr(I), oneltr(P)
+sw105 : gop1(I), gop8(I), gop8(P), gop60(P), gop120(I), gop120(P), fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), firstqp30(P), idrrange8(P), slice8(P), slice1(P), iprop20_80(I), moving(P)
+sw106 : gop1(I), gop8(I), gop8(P), gop60(P), gop120(I), gop120(P), fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), firstqp30(P), idrrange8(P), slice8(P), slice1(P), iprop20_80(I), moving(P)
+sw107 : gop1(I), gop8(I), gop8(P), gop60(P), gop120(I), gop120(P), fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), firstqp30(P), idrrange8(P), slice8(P), slice1(P), iprop20_80(I), moving(P)
+sw125 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw126 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw127 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw128 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw129 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw130 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw131 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw132 : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P), oneltr(P)
+sw170 : oneltr(P)
+sw171 : oneltr(P)
+sw172 : qp20_40(I), qp20_40(P), qp30_30(I), qp30_30(P)
+sw173 : qp20_40(I), qp20_40(P), qp30_30(I), qp30_30(P), idrrange8(I)
+sw195 : refring(I), refring(P)
+sw198 : oneltr(I)
+sw243 : br2000(P), iqd_m5(P), firstqp30(P), idrrange8(P), slice8(P), slice1(P), moving(P)
+sw244 : iqd_p5(P), firstqp30(P), idrrange8(P), slice8(P), slice1(P), moving(P)
+sw247 : br2000(P), qp30_30(P), iqd_m5(P), iqd_p5(P), firstqp30(P), idrrange8(P), slice8(P), slice1(P), moving(P)
+
+registers NEVER moved by any knob (excluding 20 addr regs): 460 of 511
+secondary-bank base pokes (slot1 words 516..551): ['0x8012800', '0x44', '0x8012014', '0x0', '0x8012034', '0x0', '0x8012054', '0x0', '0x8012074', '0x0', '0x8012094', '0x0', '0x80120b4', '0x0', '0x80120d4', '0x0', '0x80120f4', '0x0', '0x8012114', '0x0', '0x8012134', '0x0', '0x8012154', '0x0', '0x8012174', '0x0', '0x8012194', '0x0', '0x80121b4', '0x0', '0x80121d4', '0x0', '0x80121f4', '0x0', '0x8011014', '0x3c043803']

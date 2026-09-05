@@ -1,5 +1,15 @@
 # HEVC on the open VC8000E encoder — capture plan + implementation outline
 
+> **Status 2026-09-05: the capture campaign (H0–H9) is DONE and banked in
+> `vendor-diff-hevc-20260905/` (`REPORT.md` is authoritative).** It ran on the
+> shipped open image with the vendor stack loaded at runtime from `.#ax-ko-blobs`
+> + `.#axera-libs` + the stock-rootfs `libax_venc.so` — no `.axp` reflash was
+> needed (recipe: `.claude/skills/device-re-subagent/SKILL.md`, "Vendor stack on
+> a purged device"). The H1 gate passed. What remains is the implementation
+> outline at the bottom of this file; its open questions are now answered
+> inline in the campaign REPORT (CTU laws: H2; QP tables: H3; RC set: H4; RPS:
+> H6; write-only set: H7).
+
 Plan of record for adding H.265/HEVC to the open encoder (Gitea issue filed
 2026-09-05). The silicon supports it (fuse `HEVC=1`, live-read 2026-09-04) and
 the VCMD engine, cmdbuf structure, EWL/CMM/DPB machinery and geometry framework
@@ -12,14 +22,13 @@ through its **public MPI**, decode the cmdbuf programs from our own `/dev/mem`
 reads, write the open implementation from that observation and the public
 ITU-T H.265 spec. No vendor binary is read (clean-room rule, CLAUDE.md).
 
-**Sequencing.** The capture step needs the vendor stack, which since the #54/
-alpha.4 flash means a vendor `.axp` reflash (Jeremy's hands), and it disappears
-entirely at the mainline move (#26). So the differential is time-sensitive: run
-it at the next vendor reflash window, bank the evidence, and do the from-source
-implementation any time after. The rest of this file is the ready-to-run
-campaign brief for a **Fable** device subagent (the session runs on Opus; deep
-device RE is delegated up per `.claude/skills/device-re-subagent`) and the
-implementation outline that follows once the evidence is banked.
+**Sequencing.** The capture step needs the vendor stack. It was assumed to need
+a vendor `.axp` reflash after the #54/alpha.4 flash; in practice the vendor
+modules and libraries are Nix inputs of this repo and can be loaded on the
+running open image for one session (done 2026-09-05). The vendor stack still
+disappears entirely at the mainline move (#26), so the evidence was banked
+first. The rest of this file is the campaign brief as run and the
+implementation outline that follows now that the evidence is banked.
 
 ## Facts that shaped the plan
 

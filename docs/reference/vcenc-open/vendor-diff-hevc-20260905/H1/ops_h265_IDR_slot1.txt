@@ -1,0 +1,57 @@
+   0 op16   len=1   0x0068  raw=b0010068 
+   1 op0e   len=898 0x106c  raw=7382106c 
+   2 op00   len=0   0x0000  raw=00000000 
+   3 op00   len=0   0x0000  raw=00000000 
+   4 WREG   len=511 0x1004  (swreg1..swreg511)
+ 516 WREG   len=1   0x2800  = 00000044
+ 518 WREG   len=1   0x2014  = 00000000
+ 520 WREG   len=1   0x2034  = 00000000
+ 522 WREG   len=1   0x2054  = 00000000
+ 524 WREG   len=1   0x2074  = 00000000
+ 526 WREG   len=1   0x2094  = 00000000
+ 528 WREG   len=1   0x20b4  = 00000000
+ 530 WREG   len=1   0x20d4  = 00000000
+ 532 WREG   len=1   0x20f4  = 00000000
+ 534 WREG   len=1   0x2114  = 00000000
+ 536 WREG   len=1   0x2134  = 00000000
+ 538 WREG   len=1   0x2154  = 00000000
+ 540 WREG   len=1   0x2174  = 00000000
+ 542 WREG   len=1   0x2194  = 00000000
+ 544 WREG   len=1   0x21b4  = 00000000
+ 546 WREG   len=1   0x21d4  = 00000000
+ 548 WREG   len=1   0x21f4  = 00000000
+ 550 WREG   len=1   0x1014  (swreg5..swreg5)
+ 552 op09   len=0   0x0001  raw=48000001 
+ 553 op00   len=0   0x0000  raw=00000000 
+ 554 op16   len=512 0x1000  raw=b2001000 
+ 555 op0e   len=897 0x3800  raw=73813800 
+ 556 op00   len=0   0x0000  raw=00000000 
+ 557 op00   len=0   0x0000  raw=00000000 
+ 558 op1a   len=0   0x1014  raw=d0001014 
+ 559 op1f   len=1023 0xfffe  raw=fffffffe 
+ 560 op1a   len=0   0x1004  raw=d0001004 
+ 561 op1f   len=1023 0xffff  raw=ffffffff 
+ 562 op16   len=27  0x0000  raw=b01b0000 
+ 563 op0e   len=898 0x1000  raw=73821000 
+ 564 op00   len=0   0x0000  raw=00000000 
+ 565 op00   len=0   0x0000  raw=00000000 
+ 566 op19   len=0   0x0000  raw=c8000000 
+ 567 op00   len=0   0x0000  raw=00000000 
+ 568 op00   len=0   0x0000  raw=00000000 
+ 569 op00   len=0   0x0000  raw=00000000 
+ 570 op08   len=800 0xec01  raw=4720ec01 
+ 571 op0e   len=686 0x1533  raw=76ae1533 
+ 572 op0e   len=27  0x338b  raw=701b338b 
+ 573 op1f   len=961 0xf710  raw=fbc1f710 
+ 574 JMP    len=686 0xd36d  raw=2eaed36d 
+ 575 op13   len=98  0xab92  raw=9c62ab92 
+ 576 op1d   len=718 0x6d16  raw=eece6d16 
+ 577 op17   len=577 0xe436  raw=ba41e436 
+ 578 op0e   len=626 0xec5b  raw=7672ec5b 
+ 579 RREG   len=407 0xca6d  raw=e7ad9b21 e76b7dd7
+ 582 JMP    len=227 0x3f90  raw=2ce33f90 
+ 583 op1c   len=28  0x2697  raw=e01c2697 
+ 584 WREG   len=87  0x2427  = dc4b030a b0613db9 d21d36f3 02d25da2 e749e9e2 b0aefc4b df5cfeb1 b2876c70 cd477e2d 5f327e9b 42dd6d33 bc6173ba 797b3830 48ffb95a 4c0555d6 b1ceb1dd 04072626 658f4d54 7ec2640d 2a1d99d2 90130bf4 2f35bf59 e19370a3 53e5ed4f ddd428f6 99416fb1 a6ada329 5ec0abbd 81187642 aabdd7ee 48a5ec29 711f0a21 d2e5510c a880f7c4 7851f577 b0d7f1ae eeab6bb3 aa2b60c2 d0973ed1 879dad51 64c3fb6b dda9544c 2d6d901f bc4dd47f 02173a1f b153f5e2 eb5552c5 5c091b89 da242e19 b482686d cb2bd956 063101e7 d5961689 a31ecc99 278dac07 bd453757 a5434e8a 09bfb4e9 26006015 dd96d3a3 2a3f68d9 2b9d692f 85440dde d05e5b59 23cacd96 54a4456a 3b801b87 cb969674 004930dc b3b6dfeb bb8b11e4 28e9a409 d5a82363 a24ae1af 322ec6e4 680f993d f54bee5f 01ad646c 80ee6171 de279a98 a0c30557 5ed93be7 f2250964 94e45d01 9e738a6c f2abf443 e2348ef2
+ 672 op19   len=556 0xa574  raw=ce2ca574 
+ 673 END    len=274 0x377f  raw=1512377f 
+last opcode word 673, last nonzero word 2047 (2048 words used)

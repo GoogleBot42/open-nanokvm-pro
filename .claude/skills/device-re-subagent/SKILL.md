@@ -75,24 +75,48 @@ multi-step campaign, resume the same agent with `SendMessage` (it keeps the tool
   the device is usually NOT down — verify via uptime monotonicity and retry.
 - NEVER print or commit device IPs / passwords.
 
-# Vendor stack on a purged device (differential campaigns, 2026-09-04)
+# Vendor stack on a purged device (differential campaigns)
 
-The shipped image carries no vendor `.ko`/libs, so a vendor-differential run
-needs the vendor stack put back first. On a hot-patched (never reflashed) unit
-the pieces are still on disk: `cp -a /root/purge54-backup/{soc,opt}/. …` (the
-26 vendor `.ko` + libsns/models/tuning), install
-`/soc/scripts/auto_load_all_drv.sh.vendor` as the loader, install the
-vendor-MPI libkvm (`nix build .#kvm-encoder`, exports `kvm_venc_create`/
-`kvm_sys_init`/`kvm_cap_start`) into BOTH `/kvmapp` and `/dev/shm/kvmapp`
-`server/dl_lib/`, reboot, and verify `lsmod | grep -c '^ax_'` = 21 + web 200
-+ an MJPEG frame. Back up the open loader + libkvm first
-(`/root/open-state-<date>`); to return, delete every file listed in the backup
-tree, reinstall the open loader + libkvm, reboot. After the alpha.4 flash this
-path needs a vendor `.axp` reflash instead, and after the mainline move it is
-gone — which is why the 2026-09-04 campaigns were run first. Campaign
-tooling that drives the vendor encoder/receiver through the SDK API from an
-on-device C tool: `docs/reference/vcenc-open/vendor-diff-20260904/tools/` and
-`docs/reference/deblob-scope/regdumps/mipi-20260904/tools/`.
+The shipped image carries no vendor `.ko`/libs, but **no reflash is needed**:
+the vendor modules are `.#ax-ko-blobs` and the libax closure is `.#axera-libs`,
+so the vendor encoder can be loaded on the running open image for one session
+and discarded by a warm reboot (proven 2026-09-05, #64 HEVC campaign; scripts
+in `docs/reference/vcenc-open/vendor-diff-hevc-20260905/tools/`):
+
+1. Stage on eMMC (`/root/<campaign>/{ko,lib,bin}`): `ax_{sys,cmm,pool,base,venc,
+   jenc}.ko` (**`ax_jenc` is required** — `AX_VENC_Init` returns
+   `0x80070210` SYS_NOTREADY without it), `libax_{sys,ivps,proton,engine,
+   interpreter}.so` from `.#axera-libs`, and **`libax_venc.so` from the stock
+   rootfs** (`unzip` the `.#base-axp`, `simg2img`, `debugfs -R "dump /opt/lib/
+   libax_venc.so"`): the SDK snapshot's `libax_venc.so` is a different build
+   that rejects pixel-unit strides (`SendFrame` → `0x8007020a`, `MissMatch`
+   in `/proc/ax_proc/venc`). Cross-build the driver tool with `nix develop -c
+   aarch64-unknown-linux-gnu-gcc -std=gnu17 …` then `patchelf --set-interpreter
+   /lib/ld-linux-aarch64.so.1 --force-rpath --set-rpath '$ORIGIN/../lib:/opt/lib'`.
+2. **Reboot first if the open encoder module cannot be unloaded**: after a
+   session with mode-change recovery `ax630c_venc_vcmd` sits at refcnt 2 with
+   no process holding `/dev/es_venc` (a leaked reference), `rmmod` says "in
+   use", and the vendor `ax_venc.ko` then loads *inert* (no `/dev/ax_venc`, no
+   `/proc/ax_proc/venc`, no dmesg). A fresh boot with `nanokvm` stopped shows
+   refcnt 0.
+3. `systemctl stop nanokvm nanokvm-display`; `/soc/scripts/auto_load_all_drv.sh
+   -r` (unloads the three open modules); insmod the vendor set with the
+   vendor's own `cmmpool=anonymous,0,<pool base>,<MB>M` (on the 1G board
+   `0x73800000,200M`; derive it from `/proc/cmdline mem=` as the vendor loader
+   does). Run the campaign with `LD_LIBRARY_PATH`/rpath at the staged libs.
+4. Return: `reboot` — the on-disk loader is the open one, so any reboot (also a
+   watchdog reboot mid-campaign) lands on the open stack. Rmmod-ing the vendor
+   set in place only works with the exact module list in dependency order;
+   after a partial rmmod the open `insmod` fails EPERM (IRQ/MMIO still owned).
+   Verify: `nanokvm` active, web 200, an MJPEG frame, `lsmod` = the three open
+   modules.
+
+The older on-disk recipe (2026-09-04, `/root/purge54-backup` + vendor loader +
+vendor-MPI libkvm + reboot) is gone with the alpha.4 flash. Campaign tooling
+that drives the vendor encoder/receiver through the SDK API:
+`docs/reference/vcenc-open/vendor-diff-20260904/tools/`,
+`docs/reference/vcenc-open/vendor-diff-hevc-20260905/tools/` (H.264 + HEVC,
+`codec=`), `docs/reference/deblob-scope/regdumps/mipi-20260904/tools/`.
 
 # Content-filter framing (load-bearing)
 

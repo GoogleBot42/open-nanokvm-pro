@@ -1,0 +1,5 @@
+# vdrive tag=svct codec=h265 1920x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=svct ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x80070280
+REFUSED create rc=0x80070280

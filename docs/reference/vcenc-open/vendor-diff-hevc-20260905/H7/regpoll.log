@@ -1,0 +1,4 @@
+first read sw80=deadbeef vcmd[0..3]=deadbeef deadbeef deadbeef deadbeef
+LIVE after 276447 polls: sw0=90101010 sw80=88da4280 sw214=48500800 sw226=00a19200 sw287=00000000 sw82=00000000 sw9=00404800 sw191=04000000
+polls=56353651 got=1 samples=32
+regpoll rc=0

@@ -109,11 +109,21 @@ for #46. See its `README.md` and `REPORT.md`.
 
 ## hevc-plan.md — HEVC capture brief + implementation outline (2026-09-05)
 
-Plan of record for adding H.265/HEVC to the open encoder (Gitea #64). The ready-
-to-run vendor HEVC differential campaign brief (H0–H9, mirroring the 2026-09-04
-H.264 method, for a future Fable device subagent) plus the from-source
-implementation outline. The campaign needs the vendor `.axp` flashed and is
-time-sensitive before the mainline move (#26).
+Plan of record for adding H.265/HEVC to the open encoder (Gitea #64): the vendor
+HEVC differential campaign brief (H0–H9, mirroring the 2026-09-04 H.264 method)
+plus the from-source implementation outline. The campaign RAN on 2026-09-05
+(below); the outline is what remains.
+
+## vendor-diff-hevc-20260905/ — the vendor HEVC campaign (2026-09-05, #64)
+
+H0–H9 executed against the vendor `AX_VENC` driving `PT_H265`, on the shipped
+open image with the vendor stack put back **at runtime from the Nix inputs**
+(no reflash, no on-disk change). The HEVC gate passed; 19 registers separate
+the HEVC IDR program from the H.264 one; every H.264 geometry law but four
+(`sw5`, `sw261`, `sw245/246`, `sw114`) carries over unchanged; the QP tables are
+the H.264 ones with P frames using `q = min(QP,35)` instead of `−3`; the RC
+register set is codec-agnostic; 108/108 streams decode in ffmpeg. See its
+`README.md` and `REPORT.md`.
 
 ## tools/
 

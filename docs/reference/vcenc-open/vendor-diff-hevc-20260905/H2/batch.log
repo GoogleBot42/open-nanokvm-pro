@@ -1,0 +1,1287 @@
+=== 1920x1080: w=1920 h=1080
+# vdrive tag=1920x1080 codec=h265 1920x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f6000 virt=0xffff8a0dc000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1159 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1067
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=828 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:828
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1465 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1465
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1152 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1152
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1381 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1381
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1136 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1136
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1920x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_1920x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x004047a4 sw5=0x3c043803)
+wrote /tmp/axwork/H2/vendor_1920x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x00404800 sw5=0x3c043801)
+=== 3840x2160: w=3840 h=2160
+# vdrive tag=3840x2160 codec=h265 3840x2160 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7619d000 virt=0xffffb7edc000
+frame: modid=0x11 stride=3840 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2783 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:2691
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=2699 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2699
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1427 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1427
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=2164 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2164
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=2206 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2206
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=2010 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2010
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 3840x2160
+rc=0
+wrote /tmp/axwork/H2/vendor_3840x2160_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x00fe1fa4 sw5=0x78087003)
+wrote /tmp/axwork/H2/vendor_3840x2160_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x00fe2000 sw5=0x78087001)
+=== 2560x1440: w=2560 h=1440
+# vdrive tag=2560x1440 codec=h265 2560x1440 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74b11000 virt=0xffff8f794000
+frame: modid=0x11 stride=2560 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1480 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:1387
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1124 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1124
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=824 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:824
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1030 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1030
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1315 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1315
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1116 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1116
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 2560x1440
+rc=0
+wrote /tmp/axwork/H2/vendor_2560x1440_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x00717fa3 sw5=0x5005a003)
+wrote /tmp/axwork/H2/vendor_2560x1440_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x00718000 sw5=0x5005a001)
+=== 3440x1440: w=3440 h=1440
+# vdrive tag=3440x1440 codec=h265 3440x1440 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x75172000 virt=0xffff81d53000
+frame: modid=0x11 stride=3440 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1939 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:1846
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1668 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1668
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1059 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1059
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1435 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1435
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1284 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1284
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1333 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1333
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 3440x1440
+rc=0
+wrote /tmp/axwork/H2/vendor_3440x1440_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x00982ba3 sw5=0x6b85a003)
+wrote /tmp/axwork/H2/vendor_3440x1440_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x00982c00 sw5=0x6b85a001)
+=== 2560x1080: w=2560 h=1080
+# vdrive tag=2560x1080 codec=h265 2560x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7465d000 virt=0xffff874c6000
+frame: modid=0x11 stride=2560 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1412 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:1319
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=973 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:973
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=630 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:630
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=797 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:797
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1030 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1030
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=884 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:884
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 2560x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_2560x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x88002300 sw9=0x00555fa3 sw5=0x50043803)
+wrote /tmp/axwork/H2/vendor_2560x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x88002600 sw9=0x00556000 sw5=0x50043801)
+=== 3840x2400: w=3840 h=2400
+# vdrive tag=3840x2400 codec=h265 3840x2400 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x76653000 virt=0xffff8e9f4000
+frame: modid=0x11 stride=3840 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2963 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:2871
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=2904 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2904
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1576 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1576
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=2373 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2373
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=2423 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2423
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=2202 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2202
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 3840x2400
+rc=0
+wrote /tmp/axwork/H2/vendor_3840x2400_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x011a3fa4 sw5=0x78096003)
+wrote /tmp/axwork/H2/vendor_3840x2400_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x011a4000 sw5=0x78096001)
+=== 1920x1440: w=1920 h=1440
+# vdrive tag=1920x1440 codec=h265 1920x1440 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7467f000 virt=0xffffb1d36000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1187 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1095
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=798 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:798
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=766 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:766
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=848 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:848
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=893 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:893
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=892 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:892
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1920x1440
+rc=0
+wrote /tmp/axwork/H2/vendor_1920x1440_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x88002300 sw9=0x00555fa4 sw5=0x3c05a003)
+wrote /tmp/axwork/H2/vendor_1920x1440_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x88002600 sw9=0x00556000 sw5=0x3c05a001)
+=== 2048x1080: w=2048 h=1080
+# vdrive tag=2048x1080 codec=h265 2048x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x743a3000 virt=0xffff96f2c000
+frame: modid=0x11 stride=2048 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1201 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:1108
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=895 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:895
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=961 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:961
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=989 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:989
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1721 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1721
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1393 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1393
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 2048x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_2048x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x00447fa3 sw5=0x40043803)
+wrote /tmp/axwork/H2/vendor_2048x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x00448000 sw5=0x40043801)
+=== 3200x1800: w=3200 h=1800
+# vdrive tag=3200x1800 codec=h265 3200x1800 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7558a000 virt=0xffff80234000
+frame: modid=0x11 stride=3200 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2212 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:2119
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1850 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1850
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1547 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1547
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=2037 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2037
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1732 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1732
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1676 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1676
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 3200x1800
+rc=0
+wrote /tmp/axwork/H2/vendor_3200x1800_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x00b0c7a3 sw5=0x64070803)
+wrote /tmp/axwork/H2/vendor_3200x1800_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x00b0c800 sw5=0x64070801)
+=== 1024x768: w=1024 h=768
+# vdrive tag=1024x768 codec=h265 1024x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73c97000 virt=0xffffb75e8000
+frame: modid=0x11 stride=1024 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1545 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:1454
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=676 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:676
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=497 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:497
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1513 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1513
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1429 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1429
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=367 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:367
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1024x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1024x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68001600 sw9=0x0018ffa5 sw5=0x20030003)
+wrote /tmp/axwork/H2/vendor_1024x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68001900 sw9=0x00190000 sw5=0x20030001)
+=== 1152x864: w=1152 h=864
+# vdrive tag=1152x864 codec=h265 1152x864 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dbb000 virt=0xffff8bb20000
+frame: modid=0x11 stride=1152 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=678 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:587
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=419 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:419
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=734 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:734
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=457 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:457
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=715 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:715
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=686 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:686
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1152x864
+rc=0
+wrote /tmp/axwork/H2/vendor_1152x864_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x001f5fa5 sw5=0x24036003)
+wrote /tmp/axwork/H2/vendor_1152x864_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x001f6000 sw5=0x24036001)
+=== 1280x720: w=1280 h=720
+# vdrive tag=1280x720 codec=h265 1280x720 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73d71000 virt=0xffff7f47e000
+frame: modid=0x11 stride=1280 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1571 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:1480
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1068 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1068
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=714 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:714
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1211 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1211
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1113 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1113
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=647 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:647
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1280x720
+rc=0
+wrote /tmp/axwork/H2/vendor_1280x720_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68001600 sw9=0x001d1fa5 sw5=0x2802d003)
+wrote /tmp/axwork/H2/vendor_1280x720_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68001900 sw9=0x001d2000 sw5=0x2802d001)
+=== 1360x768: w=1360 h=768
+# vdrive tag=1360x768 codec=h265 1360x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73df9000 virt=0xffffb9afa000
+frame: modid=0x11 stride=1360 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=716 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:625
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=462 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:462
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=386 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:386
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=538 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:538
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=598 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:598
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=638 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:638
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1360x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1360x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x0020dfa5 sw5=0x2a830003)
+wrote /tmp/axwork/H2/vendor_1360x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x0020e000 sw5=0x2a830001)
+=== 1362x768: w=1362 h=768
+# vdrive tag=1362x768 codec=h265 1362x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dfa000 virt=0xffffac8d8000
+frame: modid=0x11 stride=1362 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=779 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:11 n19:687
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=472 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:472
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=645 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:645
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=617 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:617
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=943 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:943
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=864 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:864
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1362x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1362x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x0020eba4 sw5=0x2ac30003)
+wrote /tmp/axwork/H2/vendor_1362x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x0020ec00 sw5=0x2ac30001)
+=== 1364x768: w=1364 h=768
+# vdrive tag=1364x768 codec=h265 1364x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dfb000 virt=0xffff7fcb6000
+frame: modid=0x11 stride=1364 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=763 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:672
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=495 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:495
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=810 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:810
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=628 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:628
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=776 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:776
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=769 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:769
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1364x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1364x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x0020f7a5 sw5=0x2ac30003)
+wrote /tmp/axwork/H2/vendor_1364x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x0020f800 sw5=0x2ac30001)
+=== 1366x768: w=1366 h=768
+# vdrive tag=1366x768 codec=h265 1366x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dfc000 virt=0xffff98b64000
+frame: modid=0x11 stride=1366 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=771 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:680
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=474 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:474
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=921 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:921
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=975 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:975
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=778 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:778
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=836 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:836
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1366x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1366x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x002103a5 sw5=0x2ac30003)
+wrote /tmp/axwork/H2/vendor_1366x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x00210400 sw5=0x2ac30001)
+=== 1368x768: w=1368 h=768
+# vdrive tag=1368x768 codec=h265 1368x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dfc000 virt=0xffff80884000
+frame: modid=0x11 stride=1368 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=765 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:674
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=484 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:484
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=881 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:881
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=755 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:755
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=695 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:695
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=653 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:653
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1368x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1368x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x00210fa5 sw5=0x2ac30003)
+wrote /tmp/axwork/H2/vendor_1368x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x00211000 sw5=0x2ac30001)
+=== 1370x768: w=1370 h=768
+# vdrive tag=1370x768 codec=h265 1370x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dfd000 virt=0xffffb1ef2000
+frame: modid=0x11 stride=1370 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=744 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:11 n19:652
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=467 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:467
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=699 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:699
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=495 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:495
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=751 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:751
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=623 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:623
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1370x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1370x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x00211ba4 sw5=0x2b030003)
+wrote /tmp/axwork/H2/vendor_1370x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x00211c00 sw5=0x2b030001)
+=== 1372x768: w=1372 h=768
+# vdrive tag=1372x768 codec=h265 1372x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dfe000 virt=0xffffabc50000
+frame: modid=0x11 stride=1372 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=745 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:654
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=460 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:460
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=934 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:934
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=558 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:558
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=785 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:785
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=763 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:763
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1372x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1372x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x002127a5 sw5=0x2b030003)
+wrote /tmp/axwork/H2/vendor_1372x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x00212800 sw5=0x2b030001)
+=== 1374x768: w=1374 h=768
+# vdrive tag=1374x768 codec=h265 1374x768 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73dff000 virt=0xffffb0f0e000
+frame: modid=0x11 stride=1374 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=750 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:659
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=477 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:477
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1026 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1026
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=692 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:692
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=591 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:591
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=540 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:540
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1374x768
+rc=0
+wrote /tmp/axwork/H2/vendor_1374x768_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68002000 sw9=0x002133a5 sw5=0x2b030003)
+wrote /tmp/axwork/H2/vendor_1374x768_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68002300 sw9=0x00213400 sw5=0x2b030001)
+=== 1440x900: w=1440 h=900
+# vdrive tag=1440x900 codec=h265 1440x900 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73f74000 virt=0xffff95946000
+frame: modid=0x11 stride=1440 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=877 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:786
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=585 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:585
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=880 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:880
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=779 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:779
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=816 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:816
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=943 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:943
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1440x900
+rc=0
+wrote /tmp/axwork/H2/vendor_1440x900_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x70002000 sw9=0x00288ca5 sw5=0x2d038803)
+wrote /tmp/axwork/H2/vendor_1440x900_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x70002300 sw9=0x00288d00 sw5=0x2d038801)
+=== 1600x900: w=1600 h=900
+# vdrive tag=1600x900 codec=h265 1600x900 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7401b000 virt=0xffffb386a000
+frame: modid=0x11 stride=1600 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=928 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:837
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=621 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:621
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=559 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:559
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=643 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:643
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=878 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:878
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=750 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:750
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1600x900
+rc=0
+wrote /tmp/axwork/H2/vendor_1600x900_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x74002000 sw9=0x002cf1a5 sw5=0x32038803)
+wrote /tmp/axwork/H2/vendor_1600x900_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x74002300 sw9=0x002cf200 sw5=0x32038801)
+=== 1920x1200: w=1920 h=1200
+# vdrive tag=1920x1200 codec=h265 1920x1200 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74422000 virt=0xffff825d0000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1095 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1003
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=724 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:724
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=663 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:663
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=751 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:751
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=778 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:778
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=791 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:791
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1920x1200
+rc=0
+wrote /tmp/axwork/H2/vendor_1920x1200_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x84002300 sw9=0x00474fa4 sw5=0x3c04b003)
+wrote /tmp/axwork/H2/vendor_1920x1200_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x84002600 sw9=0x00475000 sw5=0x3c04b001)
+=== 800x600: w=800 h=600
+# vdrive tag=800x600 codec=h265 800x600 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73b42000 virt=0xffffa2d42000
+frame: modid=0x11 stride=800 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1632 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:52 n34:11 n19:1542
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=982 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:982
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=363 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:363
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=295 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:295
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=196 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:196
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=185 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:185
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 800x600
+rc=0
+wrote /tmp/axwork/H2/vendor_800x600_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68001300 sw9=0x000fa5a6 sw5=0x19025803)
+wrote /tmp/axwork/H2/vendor_800x600_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68001600 sw9=0x000fa600 sw5=0x19025801)
+=== 640x480: w=640 h=480
+# vdrive tag=640x480 codec=h265 640x480 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73a4d000 virt=0xffff85eea000
+frame: modid=0x11 stride=640 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1057 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:966
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=610 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:610
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=378 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:378
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=283 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:283
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=212 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:212
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=194 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:194
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 640x480
+rc=0
+wrote /tmp/axwork/H2/vendor_640x480_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x68001300 sw9=0x000a5fa5 sw5=0x1401e003)
+wrote /tmp/axwork/H2/vendor_640x480_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x68001600 sw9=0x000a6000 sw5=0x1401e001)
+=== 136x136: w=136 h=136
+# vdrive tag=136x136 codec=h265 136x136 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x8007020a
+REFUSED create rc=0x8007020a
+rc=3
+!! no IDR program for 136x136
+!! no P program for 136x136
+=== 200x136: w=200 h=136
+# vdrive tag=200x136 codec=h265 200x136 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x8007020a
+REFUSED create rc=0x8007020a
+rc=3
+!! no IDR program for 200x136
+!! no P program for 200x136
+=== 1920x1088: w=1920 h=1088
+# vdrive tag=1920x1088 codec=h265 1920x1088 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742fd000 virt=0xffffb22be000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1095 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1003
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=754 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:754
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1400 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1400
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1075 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1075
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1310 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1310
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1070 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1070
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1920x1088
+rc=0
+wrote /tmp/axwork/H2/vendor_1920x1088_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x0040bfa4 sw5=0x3c044003)
+wrote /tmp/axwork/H2/vendor_1920x1088_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x0040c000 sw5=0x3c044001)
+=== 1984x1080: w=1984 h=1080
+# vdrive tag=1984x1080 codec=h265 1984x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7434e000 virt=0xffffaeca2000
+frame: modid=0x11 stride=1984 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1214 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1122
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=861 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:861
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1269 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1269
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1106 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1106
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1669 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1669
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1327 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1327
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1984x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_1984x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x004263a4 sw5=0x3e043803)
+wrote /tmp/axwork/H2/vendor_1984x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x00426400 sw5=0x3e043801)
+=== 2000x1080: w=2000 h=1080
+# vdrive tag=2000x1080 codec=h265 2000x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x7438a000 virt=0xffffa95be000
+frame: modid=0x11 stride=2000 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1231 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1139
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=886 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:886
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1656 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1656
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1559 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1559
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1461 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1461
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1367 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1367
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 2000x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_2000x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x0042eaa4 sw5=0x3e843803)
+wrote /tmp/axwork/H2/vendor_2000x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x0042eb00 sw5=0x3e843801)
+=== 1928x1080: w=1928 h=1080
+# vdrive tag=1928x1080 codec=h265 1928x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74330000 virt=0xffff87dde000
+frame: modid=0x11 stride=1928 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1195 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1103
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=867 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:867
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1250 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1250
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1337 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1337
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1432 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1432
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1452 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1452
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1928x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_1928x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x00408b24 sw5=0x3c443803)
+wrote /tmp/axwork/H2/vendor_1928x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x00408b80 sw5=0x3c443801)
+=== 1920x1152: w=1920 h=1152
+# vdrive tag=1920x1152 codec=h265 1920x1152 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74397000 virt=0xffffae208000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1125 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1033
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=784 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:784
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1496 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1496
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1131 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1131
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1378 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1378
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1122 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1122
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1920x1152
+rc=0
+wrote /tmp/axwork/H2/vendor_1920x1152_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x00447fa4 sw5=0x3c048003)
+wrote /tmp/axwork/H2/vendor_1920x1152_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x00448000 sw5=0x3c048001)
+=== 1920x1096: w=1920 h=1096
+# vdrive tag=1920x1096 codec=h265 1920x1096 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74363000 virt=0xffff8d4b0000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1144 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1052
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=800 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:800
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1453 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1453
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1120 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1120
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1361 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1361
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1119 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1119
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1920x1096
+rc=0
+wrote /tmp/axwork/H2/vendor_1920x1096_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x80002000 sw9=0x004137a4 sw5=0x3c044803)
+wrote /tmp/axwork/H2/vendor_1920x1096_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x80002300 sw9=0x00413800 sw5=0x3c044801)
+=== 3840x2176: w=3840 h=2176
+# vdrive tag=3840x2176 codec=h265 3840x2176 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x761bb000 virt=0xffffafdd0000
+frame: modid=0x11 stride=3840 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2766 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:2674
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=2658 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2658
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1434 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1434
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=2159 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2159
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=2206 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2206
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=2006 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2006
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 3840x2176
+rc=0
+wrote /tmp/axwork/H2/vendor_3840x2176_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x00ffffa4 sw5=0x78088003)
+wrote /tmp/axwork/H2/vendor_3840x2176_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x01000000 sw5=0x78088001)
+=== 2560x1600: w=2560 h=1600
+# vdrive tag=2560x1600 codec=h265 2560x1600 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74cd5000 virt=0xffff8773a000
+frame: modid=0x11 stride=2560 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1566 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:1473
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1218 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1218
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=908 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:908
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1127 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1127
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1437 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1437
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1219 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1219
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 2560x1600
+rc=0
+wrote /tmp/axwork/H2/vendor_2560x1600_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x007dffa3 sw5=0x50064003)
+wrote /tmp/axwork/H2/vendor_2560x1600_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x007e0000 sw5=0x50064001)
+=== 1280x1024: w=1280 h=1024
+# vdrive tag=1280x1024 codec=h265 1280x1024 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x73f2b000 virt=0xffff861b8000
+frame: modid=0x11 stride=1280 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=766 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:11 n19:675
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=496 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:496
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=451 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:451
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=664 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:664
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=728 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:728
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=652 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:652
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 1280x1024
+rc=0
+wrote /tmp/axwork/H2/vendor_1280x1024_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x70002000 sw9=0x0028ffa5 sw5=0x28040003)
+wrote /tmp/axwork/H2/vendor_1280x1024_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x70002300 sw9=0x00290000 sw5=0x28040001)
+=== 64x64: w=64 h=64
+# vdrive tag=64x64 codec=h265 64x64 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x8007020a
+REFUSED create rc=0x8007020a
+rc=3
+!! no IDR program for 64x64
+!! no P program for 64x64
+=== 3840x1080: w=3840 h=1080
+# vdrive tag=3840x1080 codec=h265 3840x1080 rc=cbr br=8000 fps=60/60 gop=30 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x74d2c000 virt=0xffffa359a000
+frame: modid=0x11 stride=3840 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2131 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:54 n34:12 n19:2038
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot IDR: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1605 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1605
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot P: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=769 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:769
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 3: send=0x0 get=0x0 len=1166 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1166
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 4: send=0x0 get=0x0 len=1196 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1196
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+frame 5: send=0x0 get=0x0 len=1096 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1096
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done 3840x1080
+rc=0
+wrote /tmp/axwork/H2/vendor_3840x1080_IDR.txt (slot 1, 511 regs, sw191=0x4c000000 sw7=0x90002300 sw9=0x007f8fa3 sw5=0x78043803)
+wrote /tmp/axwork/H2/vendor_3840x1080_P.txt (slot 2, 511 regs, sw191=0x04000000 sw7=0x90002600 sw9=0x007f9000 sw5=0x78043801)

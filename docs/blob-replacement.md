@@ -3485,3 +3485,57 @@ keeps `ENC_RC_LEGACY`/QP32 as the default; `OPENKVM_VENC_RC=fixqp` and
 `OPENKVM_VENC_QP=<16..51>` select the new mode. **Still pending:** the fixed-QP
 mode and QP ladder on the live web path, and raising the capture-side envelope
 to 2400 rows (the encoder no longer limits 4K 16:10, #61).
+
+### 2026-09-05 — Vendor HEVC differential campaign (#64): the gate passed, evidence banked
+
+**Why now.** HEVC roughly halves the KVM bitrate at equal quality and the silicon
+has it (`sw80` fuse HEVC=1, E5). Asking the vendor encoder how it programs HEVC
+was assumed to need a vendor `.axp` reflash after the alpha.4 flash wiped the
+on-device backups. It did not: the vendor `.ko` set is `.#ax-ko-blobs` and the
+libax closure is `.#axera-libs` (+ the stock-rootfs `libax_venc.so`, extracted
+from `.#base-axp` — the SDK snapshot's copy differs and rejects the pixel-unit
+stride `vdrive` uses), so the vendor encoder was loaded on the running open image
+for one session and discarded by a warm reboot. Recipe + traps:
+`.claude/skills/device-re-subagent/SKILL.md`.
+
+**Method.** `docs/reference/vcenc-open/vendor-diff-hevc-20260905/` — nine
+experiments mirroring the 2026-09-04 H.264 campaign, `vdrive codec=h265` through
+the public MPI, cmdbuf slots decoded from our own `/dev/mem` reads, headers parsed
+with our own `h265parse.py` (ITU-T H.265 §7.3, validated against ffmpeg).
+Control: the H.264 run reproduces the 2026-09-04 base in all 511 registers bar
+addresses. 108/108 HEVC streams decode in ffmpeg with zero errors.
+
+**Findings that shape the open implementation** (`REPORT.md` has every number):
+
+- **`PT_H265` is accepted** (Main, Main tier, L5.1; Main10 header-only; MainRExt
+  and SVC-T refused). Vendor HEVC config: CTB 64 / min CB 8 / TB 4..16, AMP on,
+  SAO on, TMVP off, PCM off, `init_qp 32`, `cu_qp_delta` on, one short-term
+  reference, `log2_max_poc_lsb 16`, no weighted prediction, no tiles/WPP.
+- **The cmdbuf is the H.264 cmdbuf**: identical 570-word opcode structure,
+  identical secondary-bank pokes, identical RREG/kick/tail. 19 non-address
+  registers separate the HEVC IDR program from the H.264 one at 1080p: `sw4`,
+  `sw5` (8-aligned dims, no `+3`), `sw6` (bit21 always, bit3 = intra), `sw9`
+  (header length 92), `sw36`, `sw190 = 0`, `sw191 = 0x4c000000` (IDR), `sw193/194`
+  (CABAC/8×8 bits clear), the new constant block `sw202–207` (write-only),
+  `sw208`, `sw245/246` (per-CTB-row), `sw277`.
+- **Geometry**: every H.264 law holds for HEVC at 35 geometries except `sw5`
+  and `sw261` (`align8` instead of `align16`), `sw245/246` (`ctbw = ceil(W/64)`
+  replaces `mbw`, low field `0x1010`), and **`sw114 = 0`** (one buffer fewer).
+  The recon floorplan is still the MB-padded H.264 one. Refused: 136×136,
+  200×136, 64×64; smallest accepted 640×480.
+- **QP**: `sw7`, `sw37` and `sw125–132` are the E2 laws and tables; HEVC P frames
+  index the table at `q = min(QP,35)` (no `−3`) and carry four P-variant entries.
+- **RC**: fixed-QP vs CBR is exactly the E1 RC-enable set; CBR≡CVBR, VBR≡AVBR;
+  QVBR/QPMAP refused. RC is codec-agnostic — #46's controller will serve both.
+- **RPS/DPB**: IPPP needs only `sw11` counting (= `poc_lsb`), `sw192 = 0`, and
+  the H.264 ping-pong. The long-term-reference mode (`ONELTR`) exposes the RPS
+  descriptor cluster (`sw17` POC distances, `sw190[30]`, `sw91`, `sw104`, `sw198`)
+  — recorded, not needed for IPPP.
+- **Fixed-QP32 golden vectors** at 1080p, 720p, 1024×768, 1920×1200, 2560×1440,
+  3840×2160 and 3840×2400 (`H3/`, `H3x/`) — the inputs for the open HEVC
+  generator and its golden-vector test.
+
+**Next (hevc-plan.md outline):** replay the 1080p fixed-QP32 HEVC IDR/P programs
+through the open stack behind vendor-observed VPS/SPS/PPS (Step 0), then the
+from-source header writer, the HEVC branch of `vcenc_geom.h`, and the
+`PT_H265` dispatch in `kvm_venc_open.c` / `libkvm.c`.

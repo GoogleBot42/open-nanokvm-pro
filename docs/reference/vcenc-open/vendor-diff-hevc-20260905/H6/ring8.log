@@ -1,0 +1,78 @@
+# vdrive tag=ring8 codec=h265 1920x1080 rc=cbr br=8000 fps=60/60 gop=8 gopmode=normalp ltrint=0 ltrqpo=0 iqp=32 pqp=32 profile=0 level=153 tier=0 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 vui=-1 move=0 nframes=20
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f6000 virt=0xffffb7f1c000
+frame: modid=0x11 stride=1920 fmt=0xd
+  snapshot pre: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1159 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1067
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f000: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=828 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:828
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f001: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1465 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1465
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f002: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=1152 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1152
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f003: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=1381 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1381
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f004: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=1136 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1136
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f005: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 6: send=0x0 get=0x0 len=1616 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1616
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f006: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 7: send=0x0 get=0x0 len=1748 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1748
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f007: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 8: send=0x0 get=0x0 len=1177 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:1085
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f008: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 9: send=0x0 get=0x0 len=1485 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1485
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f009: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 10: send=0x0 get=0x0 len=1375 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1375
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f010: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 11: send=0x0 get=0x0 len=1267 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1267
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f011: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 12: send=0x0 get=0x0 len=2335 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2335
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f012: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 13: send=0x0 get=0x0 len=2413 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2413
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f013: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 14: send=0x0 get=0x0 len=2797 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2797
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f014: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 15: send=0x0 get=0x0 len=2533 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2533
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f015: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 16: send=0x0 get=0x0 len=2383 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=4 n32:27 n33:53 n34:12 n19:2291
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f016: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 17: send=0x0 get=0x0 len=1679 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1679
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f017: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 18: send=0x0 get=0x0 len=1170 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1170
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f018: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+frame 19: send=0x0 get=0x0 len=2621 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2621
+  cu: inter64=0 inter32=0 inter16=0 inter8=0 intra32=0 intra16=0 intra8=0 intra4=0 reftype=0
+  snapshot f019: 3 venc_ko blocks (pool0 0x73801000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done ring8
