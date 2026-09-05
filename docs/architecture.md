@@ -185,9 +185,11 @@ links **zero** `libax_*` — only `-ljpeg -lopus -lasound` — and nothing in th
 path touches a vendor kernel module. The source format is `V4L2_PIX_FMT_YUYV`,
 byte-identical to what the vendor pool used to hand back; the geometry envelope
 is 64×64…3840×2160 (even dimensions), 30 fps sustained at both 4K and 1080p.
-Since **#52** (2026-09-03) the **encoder** carries the same 3840×2160 envelope —
+Since **#52** (2026-09-03) the **encoder** carries at least the same envelope —
 H.264 is blob-free at native 4K (Main L5.1, device-proven live over
-`h264-direct`), with rate control still fixed QP32 (#46).
+`h264-direct`), with rate control still fixed QP32 (#46). Since 2026-09-04 the
+encoder's own ceiling is 3840×2400 (vendor-validated geometry laws, prover-proven
+on device); the capture path is what still caps the pipeline at 2160 rows.
 
 Earlier backends stay buildable as bench alternatives — both need vendor blobs
 that a #54 image no longer carries, so they only run on a device flashed with

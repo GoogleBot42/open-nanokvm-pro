@@ -3467,3 +3467,21 @@ are QP30 then QP28 at *both* 8000 and 16000 kbps (whose P QPs were 26/19 and
   (entropy / 8×8), sw195 (ring buffer), sw247 (RC state). So "opaque" now mostly
   means "constant on this SoC" — the 2026-08-29 stage's item (d) is answered by
   measurement rather than by cracking bitfields.
+
+**Generator update, same day (commit 2d5d256).** `vcenc_geom.h`: `s114sz =
+align4k(w4·mbhp/2)`, TARGETPICSIZE a constant 1760000 anchor, envelope
+3840×2400. New `vcenc_qp.h` / `vcenc_qp_tables.h` carry the exact I and P
+tables for QP 16…51 (auto-generated from the vendor programs by
+`tests/gen_vectors.py`; unobserved entries are marked interpolated and none lie
+on the ladder). `vcenc_encode.h` gains `rc_mode`: `ENC_RC_LEGACY` (the shipping
+program, bit-identical at QP32) and `ENC_RC_FIXQP` (the vendor's RC-off set,
+incl. sw197/198 on P frames). The golden-vector test now pins 25 geometries plus
+all 22 vendor fixed-QP programs with **zero non-address diffs** (the two
+structural exceptions: sw9, our fixed header slot, and sw105 on P frames, which
+the HW rewrites). Device-proven on the open stack with the standalone prover
+(20 frames, GOP 8): PASS at 1920×1080, 3840×2160 and **3840×2400** — the first
+encode above 2160 rows on this hardware — all decoding clean in ffmpeg. libkvm
+keeps `ENC_RC_LEGACY`/QP32 as the default; `OPENKVM_VENC_RC=fixqp` and
+`OPENKVM_VENC_QP=<16..51>` select the new mode. **Still pending:** the fixed-QP
+mode and QP ladder on the live web path, and raising the capture-side envelope
+to 2400 rows (the encoder no longer limits 4K 16:10, #61).
