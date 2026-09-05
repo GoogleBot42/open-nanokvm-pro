@@ -233,9 +233,45 @@ diff -urN a/src/pages/desktop/menu/settings/screen/video-mode.tsx b/src/pages/de
    );
  };
 diff -urN a/src/pages/desktop/screen/direct.worker.ts b/src/pages/desktop/screen/direct.worker.ts
---- a/src/pages/desktop/screen/direct.worker.ts	2026-09-05 10:37:35.155445462 -0600
-+++ b/src/pages/desktop/screen/direct.worker.ts	2026-09-05 10:41:04.480642830 -0600
-@@ -20,6 +20,17 @@
+--- a/src/pages/desktop/screen/direct.worker.ts	2026-09-05 12:46:52.980727475 -0600
++++ b/src/pages/desktop/screen/direct.worker.ts	2026-09-05 12:56:49.774274319 -0600
+@@ -8,6 +8,35 @@
+ 
+ const frameQueue = new Queue<VideoFrame>();
+ 
++// parameter-set messages received before the first key message (see handleWsMessage)
++let pendingParams: Uint8Array[] = [];
++
++// Annex-B NAL is a parameter set: SPS/PPS for H.264, VPS/SPS/PPS for H.265
++function isParameterSet(data: Uint8Array): boolean {
++  const header = data[2] === 1 ? 3 : 4;
++  if (!config || data.length <= header) {
++    return false;
++  }
++
++  if (config.codec.startsWith('hvc1')) {
++    const type = (data[header] >> 1) & 0x3f;
++    return type >= 32 && type <= 34;
++  }
++
++  const type = data[header] & 0x1f;
++  return type === 7 || type === 8;
++}
++
++function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
++  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
++  let offset = 0;
++  for (const p of parts) {
++    out.set(p, offset);
++    offset += p.length;
++  }
++  return out;
++}
++
+ self.onmessage = (event: MessageEvent) => {
+   const { type, data, canvas: offscreenCanvas } = event.data;
+ 
+@@ -20,6 +49,17 @@
          optimizeForLatency: true
        };
        break;
@@ -253,6 +289,38 @@ diff -urN a/src/pages/desktop/screen/direct.worker.ts b/src/pages/desktop/screen
      case 'ws_message':
        handleWsMessage(data);
        break;
+@@ -39,7 +79,22 @@
+     const view = new DataView(message);
+     const isKeyFrame = view.getUint8(0) === 1;
+     const timestamp = Number(view.getBigUint64(1, true));
+-    const data = new Uint8Array(message, 9);
++    let data = new Uint8Array(message, 9);
++
++    // A server that sends SPS/PPS (VPS/SPS/PPS) as their own non-key messages
++    // ahead of each IDR: hold them and prepend them to that key message, so
++    // every key chunk carries its parameter sets -- Chromium's H.264 decoder
++    // fails on one that does not. Current servers fold them in already, so
++    // this stays empty.
++    if (!isKeyFrame && isParameterSet(data)) {
++      pendingParams.push(data.slice());
++      return;
++    }
++
++    if (isKeyFrame && pendingParams.length > 0) {
++      data = concat([...pendingParams, data]);
++      pendingParams = [];
++    }
+ 
+     if (!decoder && isKeyFrame) {
+       initializeDecoder();
+@@ -144,6 +199,7 @@
+ 
+   decoder = null;
+   rendering = false;
++  pendingParams = [];
+ 
+   Array.from(frameQueue.drain()).forEach((frame) => frame.close());
+ }
 diff -urN a/src/pages/desktop/screen/h264-direct.tsx b/src/pages/desktop/screen/h264-direct.tsx
 --- a/src/pages/desktop/screen/h264-direct.tsx	2026-09-05 10:37:35.155445462 -0600
 +++ b/src/pages/desktop/screen/h264-direct.tsx	2026-09-05 10:39:52.696327223 -0600
