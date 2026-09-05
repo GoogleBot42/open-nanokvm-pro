@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Switch } from 'antd';
 import { useAtom } from 'jotai';
 import {
-  BotMessageSquare,
   DiscIcon,
   FileJsonIcon,
   MaximizeIcon,
@@ -30,7 +29,6 @@ export const MenuIcons = () => {
     { key: 'microphone', icon: <MicIcon size={16} /> },
     { key: 'image', icon: <DiscIcon size={16} /> },
     { key: 'script', icon: <FileJsonIcon size={16} /> },
-    { key: 'assistant', icon: <BotMessageSquare size={16} /> },
     { key: 'terminal', icon: <TerminalSquareIcon size={16} /> },
     { key: 'wol', icon: <NetworkIcon size={16} /> },
     { key: 'power', icon: <PowerIcon size={16} /> },

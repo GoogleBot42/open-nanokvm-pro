@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 
 import * as api from '@/api/auth.ts';
 
-import { Kvmadmin } from './kvmadmin.tsx';
 import { Logout } from './logout.tsx';
 
 export const Account = () => {
@@ -44,10 +43,6 @@ export const Account = () => {
           </Button>
         </div>
       </div>
-
-      <Divider className="opacity-50" style={{ margin: '40px 0' }} />
-
-      <Kvmadmin />
 
       <Divider className="opacity-50" style={{ margin: '40px 0' }} />
 

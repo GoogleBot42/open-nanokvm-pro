@@ -11,7 +11,6 @@ import { menuDisabledItemsAtom } from '@/jotai/settings.ts';
 import { useMenuBounds } from '@/hooks/useMenuBounds.ts';
 import { useMenuVisibility } from '@/hooks/useMenuVisibility.ts';
 
-import { AIAssistant } from './assistant';
 import { Fullscreen } from './fullscreen';
 import { Image } from './image';
 import { Keyboard } from './keyboard';
@@ -115,11 +114,10 @@ export const Menu = () => {
 
             {isEnabled('image') && <Image />}
             {isEnabled('script') && <Script />}
-            {isEnabled('assistant') && <AIAssistant />}
             {isEnabled('terminal') && <Terminal />}
             {isEnabled('wol') && <Wol />}
 
-            {['image', 'script', 'assistant', 'terminal', 'wol'].some(isEnabled) && (
+            {['image', 'script', 'terminal', 'wol'].some(isEnabled) && (
               <Divider type="vertical" />
             )}
 
