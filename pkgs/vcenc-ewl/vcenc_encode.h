@@ -31,9 +31,27 @@
  *    img_qp32 and the IDR encodes fine that way; `pinter` optionally
  *    replays the captured values of the last cluster as a fallback knob.
  *
- * QP: the register program is QP32-specific (sw7 + embedded cost tables),
- * so qp must be 32 until per-QP programs are derived (#46 seam: qp is
- * already a per-frame input here; gen_qp28..48.regs hold the evidence).
+ * QP and rate control. The captured program is a QP32 CBR program; the two
+ * knobs that ride on it are now explicit per frame:
+ *
+ *  - fr->qp (16..51) programs the QP block (sw7 low field, sw37, sw125..132)
+ *    from the vendor-mined tables in vcenc_qp.h.
+ *  - fr->rc_mode picks WHICH register set carries it:
+ *      ENC_RC_LEGACY  the shipping, device-proven program. The CBR cluster
+ *                     (sw6[0], sw22, sw105..107 target, sw172/173, sw245/246,
+ *                     the sw239/241 RC buffers) stays exactly as captured, and
+ *                     the QP block is programmed from the I-frame table for
+ *                     BOTH frame types -- which is what the captured IDR
+ *                     program does when it is replayed on a P frame. At qp 32
+ *                     the output is bit-identical to the pre-#46 builder.
+ *      ENC_RC_FIXQP   the VENDOR's true fixed-QP program (E1 regdiff,
+ *                     AX_VENC_RC_MODE_H264FIXQP): RC off in nine registers,
+ *                     the RC buffers unallocated, and the QP block programmed
+ *                     from the per-frame-type tables. tests/vcenc_geom_test.c
+ *                     diffs this against the vendor's own 1080p ladder
+ *                     programs at QP 16..51; only sw9 (our fixed 40-byte
+ *                     header slot) and the P frame's sw105 (per-frame RC bit
+ *                     state the HW rewrites) differ.
  *
  * Cmdbuf layout (word indices), driver LINK-patch sites per vcenc_cmdbuf.h:
  *   0        RREG(1,0x68)                 head; driver patches [1],[2]
@@ -57,6 +75,7 @@
 #include "vcmd_abi.h"
 #include "vcenc_cmdbuf.h"
 #include "vcenc_geom.h"
+#include "vcenc_qp.h"
 #include "img_qp32_payload.h"
 
 #define ENC_CMDBUF_WORDS   570
@@ -71,6 +90,27 @@
 #define ENC_S10_SUBOFF    0x008u       /* sw10 side-buffer write pointer     */
 #define ENC_S27_SUBOFF    0x300u       /* sw27 (captured; content-zero OK)   */
 #define ENC_QP_FIXED      32u          /* the img_qp32 program's sw7 QP */
+
+/* Rate-control mode (fr->rc_mode). */
+#define ENC_RC_LEGACY     0u   /* shipping program: CBR cluster as captured */
+#define ENC_RC_FIXQP      1u   /* the vendor's AX_VENC_RC_MODE_H264FIXQP set */
+
+/* The nine registers the vendor changes when rate control is switched OFF
+ * (docs/reference/vcenc-open/vendor-diff-20260904/E1/regdiff_{IDR,P}.md);
+ * sw239/sw241 (the RC buffers) additionally go to 0 -- and so, on a P frame,
+ * do sw243/sw247, which this builder never sets. */
+#define ENC_FIXQP_SW6_MASK  (~1u)      /* sw6 bit0 = RC enable */
+#define ENC_FIXQP_SW22      0x00000000u
+#define ENC_FIXQP_SW105     15000u     /* 0x3a98, constant at every geometry */
+#define ENC_FIXQP_SW172     0x0000000fu /* minQp field cleared */
+#define ENC_FIXQP_SW173     0x0000066au /* bit3 set */
+#define ENC_FIXQP_SW245     0x00000000u
+#define ENC_FIXQP_SW246     0x00001000u
+/* P-frame inter state the vendor programs in EVERY P program of the ladder
+ * (constant across QP 16..51). ENC_RC_LEGACY leaves these 0 because the
+ * shipping, device-proven program does. */
+#define ENC_FIXQP_SW197_P   0xffc00000u
+#define ENC_FIXQP_SW198_P   0x00000e00u
 
 /* Frame-type register values (captured; see header comment). swreg5 itself
  * is geometry-dependent (vcenc_geom.sw5) with type bits |0x02 IDR / |0 P. */
@@ -92,7 +132,9 @@ static const struct { int reg; uint32_t val; } ENC_PINTER[] = {
 
 struct vcenc_frame {
 	uint32_t frame_num;  /* within the GOP; 0 => IDR */
-	uint32_t qp;         /* per-frame QP seam (#46); must be 32 for now */
+	uint32_t qp;         /* frame QP, VCENC_QP_MIN..VCENC_QP_MAX */
+	uint32_t rc_mode;    /* ENC_RC_LEGACY (default) or ENC_RC_FIXQP */
+	uint32_t pic_init_qp;/* sw7 high field; 0 => same as qp (our PPS value) */
 	uint32_t p17;        /* sw17 P value (0 => ENC_SW17_P) */
 	int      pinter;     /* 1 => replay ENC_PINTER for P frames */
 	uint32_t input_phys; /* 0 => the floorplan's own input region; else an
@@ -121,7 +163,15 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t base,
 	uint32_t *sw1;                          /* sw1[k-1] == swreg k */
 	int i, w = 0;
 
-	if (fr->qp != 32)
+	uint32_t sw7qp, sw37, blk[8];
+	uint32_t init_qp = fr->pic_init_qp ? fr->pic_init_qp : fr->qp;
+	/* ENC_RC_LEGACY keeps the captured program's habit of replaying the
+	 * I-frame block on P frames; ENC_RC_FIXQP uses the vendor's per-type
+	 * tables. */
+	if (vcenc_qp_regs(fr->qp, fr->rc_mode == ENC_RC_FIXQP && !is_idr,
+			  &sw7qp, &sw37, blk))
+		return 0;
+	if (init_qp > 51u)
 		return 0;
 
 	memset(buf, 0, ENC_CMDBUF_BYTES);
@@ -153,6 +203,12 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t base,
 	sw1[245 - 1] = g->sw245;
 	sw1[246 - 1] = g->sw246;
 	sw1[261 - 1] = g->sw261;
+
+	/* QP block (vcenc_qp.h): sw7 = (pic_init_qp << 26) | (frame_qp << 8) */
+	sw1[7 - 1] = ((init_qp & 0x3fu) << 26) | sw7qp;
+	sw1[37 - 1] = sw37;
+	for (i = 0; i < 8; i++)
+		sw1[125 - 1 + i] = blk[i];
 
 	/* frame_num / POC (slice-header inputs; u(16) in our SPS) */
 	sw1[11 - 1]  = fr->frame_num & 0xffffu;
@@ -202,6 +258,27 @@ static inline uint16_t vcenc_build_encode_cmdbuf(uint32_t *buf, uint32_t base,
 		sw1[12 - 1] = in;
 		sw1[13 - 1] = in + 2u * g->w * g->h;
 		sw1[14 - 1] = in + 3u * g->w * g->h;
+	}
+
+	/* Rate control OFF: the vendor's fixed-QP register set. Applied last so
+	 * it overrides the geometry laws (sw105..107, sw245/246) and the
+	 * floorplan's RC buffer addresses (sw239/241). */
+	if (fr->rc_mode == ENC_RC_FIXQP) {
+		sw1[6 - 1]  &= ENC_FIXQP_SW6_MASK;
+		sw1[22 - 1]  = ENC_FIXQP_SW22;
+		sw1[105 - 1] = ENC_FIXQP_SW105;
+		sw1[106 - 1] = 0;
+		sw1[107 - 1] = 0;
+		sw1[172 - 1] = ENC_FIXQP_SW172;
+		sw1[173 - 1] = ENC_FIXQP_SW173;
+		sw1[239 - 1] = 0;
+		sw1[241 - 1] = 0;
+		sw1[245 - 1] = ENC_FIXQP_SW245;
+		sw1[246 - 1] = ENC_FIXQP_SW246;
+		if (!is_idr) {
+			sw1[197 - 1] = ENC_FIXQP_SW197_P;
+			sw1[198 - 1] = ENC_FIXQP_SW198_P;
+		}
 	}
 
 	/* secondary bank @0x2800 = 0x44 (undecoded; replayed) */

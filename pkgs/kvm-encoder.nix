@@ -25,7 +25,8 @@
 #           instead of ax_venc.ko/ax_jenc.ko on the device. MJPEG is a
 #           from-source SOFTWARE JPEG (#51): libjpeg-turbo raw-4:2:2 encode
 #           of the mapped YUYV capture frame, no hardware. H.264 geometry is
-#           parametric (#17/#52: vcenc_geom laws, 64x64..3840x2160 even dims).
+#           parametric (#17/#52: vcenc_geom laws, 64x64..3840x2400 even dims;
+#           the open capture pipe still caps at 3840x2160).
 #           v1 limit: fixed QP (bitrate knobs accepted+ignored; gop honored).
 
 # ---------------------------------------------------------------------------

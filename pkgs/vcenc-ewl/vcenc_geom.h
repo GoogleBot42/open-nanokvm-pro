@@ -6,10 +6,12 @@
  * Every geometry-dependent register in it obeys a closed-form law in (W,H),
  * derived by differential observation of the VENDOR encoder driven at 17
  * distinct geometries on the real device (2026-08-31; the probe harness and
- * per-register fits live in docs/reference/vcenc-open/geom-probe/). At
- * 1920x1080 every law below reproduces the device-proven template value
+ * per-register fits live in docs/reference/vcenc-open/geom-probe/) and
+ * re-checked at 9 more, all but one of them above 1920 wide, by the
+ * 2026-09-04 campaign (docs/reference/vcenc-open/vendor-diff-20260904/E3/).
+ * At 1920x1080 every law below reproduces the device-proven template value
  * EXACTLY, so the builder applies them unconditionally -- no 1080p special
- * case. vcenc_geom_test.c pins all 17 probed geometries as golden vectors.
+ * case. vcenc_geom_test.c pins all 25 probed geometries as golden vectors.
  *
  * The captured-layout relocation (one block mirroring the vendor's 1080p
  * buffer addresses) is replaced by a COMPUTED floorplan: every DMA buffer the
@@ -21,7 +23,17 @@
  *
  * Field semantics worth naming (all device-derived, no vendor code):
  *   sw5   [31:20] align16(W)/2, [19:8] align16(H)+3, [1:0] frame-type bits
- *   sw9   output byte limit = 2*W*H + 0xffd8
+ *   sw9   output byte limit. The VENDOR law is 2*W*H + 0x10000 - (SPS+PPS
+ *         bytes) at an IDR and 2*W*H + 0x10000 at a P frame: it hands the core
+ *         the tail of a 64 KB-padded buffer whose head already holds the
+ *         parameter sets, so the limit moves with the header length (E3/E4:
+ *         a 33-byte 4K SPS gives 0xffd6, a 43-byte 2560x1080 pair 0xffd5).
+ *         We emit our own headers into a separate pack buffer
+ *         (vcenc_header.h) and reserve a FIXED 40-byte slot at the head of
+ *         the output page (ENC_STREAM_SUBOFF), so ours is
+ *         2*W*H + 0x10000 - 0x28 = 2*W*H + 0xffd8 at every geometry and both
+ *         frame types -- internally consistent, and identical to the vendor
+ *         at 1080p/QP32 where SPS+PPS is exactly 40 bytes.
  *   sw38  0x20000000 | (W*64 + ((16-W%16)%8)*8 + ((16-H%16)%8)*2)
  *   sw134 0x0a000000 | floor(2^28 / (Wp*Hp))            (padded recon dims)
  *   sw193 template | 0x40 if align16(W)-W >= 8 | 0x10 if align16(H)-H >= 8
@@ -35,6 +47,13 @@
  *   luma pitch = Wp*Hp + align4k(WpHp/256*16)  (16 B per padded MB tail)
  *   chroma pitch = align4k(Wp*Hp/2)
  *   sw62 = sw60 + align64(Wp/16*Hp/16/2); sw239 pitch = align4k(padded MBs)
+ *   sw114 bank spacing = align4k(w4*mbhp/2) -- the same half-MB-per-padded-MB
+ *         quantity as sw62, page-rounded. (The earlier align4k(mbhp*64) bound
+ *         was a coincidence of the 17 probed widths, all <= 1920; it
+ *         UNDER-allocates from 3200 wide up -- 0x2000 against the vendor's
+ *         0x3000 at 3200x1800. E3, 2026-09-04.)
+ * sw239/sw241 are rate-control buffers: the vendor programs them only when RC
+ * is on and leaves BOTH 0 in true fixed-QP, which is what ENC_RC_FIXQP does.
  */
 #ifndef VCENC_GEOM_H
 #define VCENC_GEOM_H
@@ -44,7 +63,7 @@
 #define VCENC_GEOM_MIN_W 64
 #define VCENC_GEOM_MIN_H 64
 #define VCENC_GEOM_MAX_W 3840
-#define VCENC_GEOM_MAX_H 2160
+#define VCENC_GEOM_MAX_H 2400
 
 typedef struct {
 	uint32_t w, h;          /* true source size (even, envelope-checked) */
@@ -58,7 +77,7 @@ typedef struct {
 	 * sw193 given per frame type) */
 	uint32_t sw5, sw9, sw38, sw134, sw193_idr, sw193_p;
 	uint32_t sw210, sw212, sw213, sw237, sw245, sw246, sw261;
-	uint32_t targetpicsize; /* sw105..107: QP32 anchor scaled by pixels */
+	uint32_t targetpicsize; /* sw105..107 RC target (see the law below) */
 
 	/* computed floorplan: byte offsets from the framebuf block base.
 	 * Sub-page offsets that the device-proven program carries (sw8 +0x28,
@@ -83,14 +102,16 @@ static inline uint32_t vcg_align(uint32_t v, uint32_t a)
 	return (v + a - 1) / a * a;
 }
 
-/* 0 if the open encoder can drive (w,h); -1 with *why otherwise. */
+/* 0 if the open encoder can drive (w,h); -1 with *why otherwise. The height
+ * ceiling is 2400, not 2160: the vendor encoder accepts 3840x2400 and every
+ * geometry law holds there (E3), and the 4K 16:10 EDID exists (#61). */
 static inline int vcenc_geom_check(int w, int h, const char **why)
 {
 	const char *r = 0;
 	if (w < VCENC_GEOM_MIN_W || h < VCENC_GEOM_MIN_H)
 		r = "below 64x64 minimum";
 	else if (w > VCENC_GEOM_MAX_W || h > VCENC_GEOM_MAX_H)
-		r = "above 3840x2160 envelope";
+		r = "above 3840x2400 envelope";
 	else if ((w | h) & 1)
 		r = "odd width/height (YUYV macropixel)";
 	if (why)
@@ -137,9 +158,16 @@ static inline int vcenc_geom_build_ex(vcenc_geom *g, int w, int h,
 	g->sw245 = 0x20000000u | (((2 * 0x10000u / mbw + 1) / 2) * 4);
 	g->sw246 = (((2 * 0x40000u / mbw + 1) / 2) << 14) | 0x1028;
 	g->sw261 = ((mbw * 16) << 16) | 0x0400;
-	/* QP32/8Mbps TARGETPICSIZE anchor (1760000 at 1080p), pixel-scaled */
-	g->targetpicsize =
-	    (uint32_t)(1760000ull * W * H / (1920ull * 1080ull));
+	/* sw105..107 TARGETPICSIZE. NOT pixel-scaled: the vendor programs
+	 * 1760000 at every geometry from 1920x1080 to 3840x2400 (E3). The
+	 * value is bitrate/fps/gop-derived only -- 1760000 is the 8000 kbps,
+	 * fps 60, gop 30 point (E4: br2000 -> 440000, br16000 -> 3520000,
+	 * fps30 -> 2880000, gop8 -> 960960, gop120 -> 1920000, gop1 ->
+	 * 133333 = exactly bitrate*1000/fps). Wiring the real (bitrate, fps,
+	 * gop) through to it is the CBR seam (#46); until then this is the
+	 * shipping anchor, and it only matters in ENC_RC_LEGACY -- ENC_RC_FIXQP
+	 * overwrites sw105..107 with the vendor's fixed-QP constants. */
+	g->targetpicsize = 1760000u;
 
 	/* floorplan (page-aligned; sizes are vendor allocation laws, or a
 	 * proven upper bound where noted) */
@@ -147,7 +175,7 @@ static inline int vcenc_geom_build_ex(vcenc_geom *g, int w, int h,
 	uint32_t chpitch = vcg_align(wp * hp / 2, 4096);
 	uint32_t s60sz   = vcg_align(w4 * mbhp * 4, 4096);  /* bound: >= vendor */
 	uint32_t s239sz  = vcg_align(w4 * mbhp, 4096);
-	uint32_t s114sz  = vcg_align(mbhp * 64, 4096);
+	uint32_t s114sz  = vcg_align(w4 * mbhp / 2, 4096); /* vendor spacing */
 	uint32_t s10sz   = vcg_align(W * H / 8, 4096);      /* bound: >= vendor */
 	uint32_t o = 0;
 	g->off_out = o;       o += vcg_align(g->out_limit + 0x1000, 4096);

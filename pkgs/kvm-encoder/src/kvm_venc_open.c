@@ -32,11 +32,19 @@
  * v1 LIMITS (fixed-QP stage; the #46 seams -- per-frame QP input and
  * per-frame emitted-size readback -- are already in the builder API):
  *  - H.264 geometry: parametric (#17) over the capture envelope
- *    (64x64..3840x2160, even dims; #52 lifted the 1920 ceiling) via the vcenc_geom register laws +
+ *    (64x64..3840x2400, even dims; #52 lifted the 1920 ceiling and E3 the
+ *    2160 one) via the vcenc_geom register laws +
  *    computed floorplan (derived from a 17-geometry vendor differential,
  *    docs/reference/vcenc-open/geom-probe/).
- *  - Rate control: fixed QP32. fps/bitrate/rc-mode knobs are accepted and
- *    ignored (quality-priority mode); gop is honored (IDR period).
+ *  - Rate control: fixed QP32 (ENC_RC_LEGACY -- the device-proven shipping
+ *    program, whose CBR register cluster is present but whose QP block is
+ *    pinned). fps/bitrate/rc-mode knobs from the app are accepted and ignored
+ *    (quality-priority mode); gop is honored (IDR period). Two ENV overrides
+ *    exist for bench validation of the #46 work, both off by default:
+ *      OPENKVM_VENC_RC=fixqp   program the vendor's true fixed-QP register set
+ *                              (RC off; register-identical to the vendor's own
+ *                              AX_VENC_RC_MODE_H264FIXQP program)
+ *      OPENKVM_VENC_QP=<16..51> frame QP (also the PPS pic_init_qp)
  *
  * The vendor AX_VENC_STREAM_T/NALU structs are used purely as the internal
  * hand-off shape libkvm.c already speaks (SDK headers, no vendor code).
@@ -77,6 +85,8 @@ static struct {
     uint64_t fb_bus;             /* framebuf block (computed floorplan) */
     uint8_t  *fb_map;
     vcenc_geom g;                /* session geometry (#17) */
+    uint32_t qp;                 /* frame QP (also the PPS pic_init_qp) */
+    uint32_t rc_mode;            /* ENC_RC_LEGACY | ENC_RC_FIXQP */
     uint32_t gop;                /* IDR period; 0 = IDR only at start */
     uint32_t n;                  /* session frame counter */
     int      stride_warned;
@@ -295,15 +305,38 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     V.pack = malloc(V.g.out_limit + 256);   /* SPS+PPS headroom over the HW limit */
     if (!V.pack) goto fail;
 
+    /* bench overrides (#46 seam); default = the shipping fixed-QP32 program */
+    V.qp = ENC_QP_FIXED;
+    V.rc_mode = ENC_RC_LEGACY;
+    {
+        const char *e = getenv("OPENKVM_VENC_QP");
+        if (e) {
+            uint32_t q = (uint32_t)strtoul(e, NULL, 0);
+            if (vcenc_qp_valid(q))
+                V.qp = q;
+            else
+                fprintf(stderr, "[openvenc] ignoring OPENKVM_VENC_QP=%s "
+                                "(range %u..%u)\n", e, VCENC_QP_MIN,
+                        VCENC_QP_MAX);
+        }
+        e = getenv("OPENKVM_VENC_RC");
+        if (e && !strcmp(e, "fixqp"))
+            V.rc_mode = ENC_RC_FIXQP;
+        else if (e && strcmp(e, "legacy"))
+            fprintf(stderr, "[openvenc] ignoring OPENKVM_VENC_RC=%s "
+                            "(legacy|fixqp)\n", e);
+    }
     V.gop = (gop > 0 && gop <= 1024) ? (uint32_t)gop : 30;
     V.n = 0;
     V.chn = chn;
     V.pack_ready = 0;
     V.stride_warned = 0;
     fprintf(stderr, "[openvenc] up: hwid=0x%08x %ux%u framebuf 0x%llx+0x%x "
-                    "fixed-QP%u gop=%u qlty-req=%d (ignored)\n",
+                    "rc=%s QP%u gop=%u qlty-req=%d (ignored)\n",
             cfg.vcmd_hw_version_id, V.g.w, V.g.h,
-            (unsigned long long)V.fb_bus, V.g.span, ENC_QP_FIXED, V.gop, qlty);
+            (unsigned long long)V.fb_bus, V.g.span,
+            V.rc_mode == ENC_RC_FIXQP ? "fixqp" : "legacy",
+            V.qp, V.gop, qlty);
     return 0;
 fail:
     fprintf(stderr, "[openvenc][FAIL] session bring-up: %s\n", strerror(errno));
@@ -351,7 +384,8 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
 
     struct vcenc_frame fr = {
         .frame_num  = gopn,
-        .qp         = ENC_QP_FIXED,
+        .qp         = V.qp,
+        .rc_mode    = V.rc_mode,
         .input_phys = (uint32_t)vf->u64PhyAddr[0],
     };
     uint32_t *slot = V.cmd_pool + (uint32_t)id * (V.mem.cmd_unit_size / 4);
@@ -361,6 +395,11 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
 
     int rc = -1;
     uint16_t wid = id;
+    if (!ex.cmdbuf_size) {
+        fprintf(stderr, "[openvenc][FAIL] cmdbuf build rejected qp=%u rc=%u\n",
+                fr.qp, fr.rc_mode);
+        goto out;
+    }
     if (ioctl(V.fd, HANTRO_IOCH_LINK_RUN_CMDBUF, &ex) < 0) goto out;
     if (ioctl(V.fd, HANTRO_IOCH_WAIT_CMDBUF, &wid) < 0) goto out;
 
@@ -380,7 +419,9 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     V.nalu_num = 0;
     if (is_idr) {
         uint32_t sps = vcenc_write_sps(V.pack, V.g.w, V.g.h);
-        uint32_t pps = vcenc_write_pps(V.pack + sps, ENC_QP_FIXED);
+        /* slice_qp_delta is 0 in the HW's slice header, so the PPS
+         * pic_init_qp MUST equal the register program's frame QP. */
+        uint32_t pps = vcenc_write_pps(V.pack + sps, V.qp);
         V.nalu[0] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = 0, .u32NaluLength = sps };
         V.nalu[0].unNaluType.enH264EType = AX_H264E_NALU_SPS;
         V.nalu[1] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = sps, .u32NaluLength = pps };
