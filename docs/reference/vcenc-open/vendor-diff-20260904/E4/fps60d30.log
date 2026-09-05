@@ -1,0 +1,51 @@
+# vdrive tag=fps60d30 1920x1080 rc=cbr br=8000 fps=60/30 gop=30 iqp=32 pqp=32 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742fc000 virt=0xffffadb7c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x80070222 (no stream)
+frame 1: send=0x0 get=0x0 len=2213 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:33 n8:8 n5:2172
+  snapshot IDR: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x80070222 (no stream)
+frame 3: send=0x0 get=0x0 len=1174 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1174
+  snapshot P: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x80070222 (no stream)
+frame 5: send=0x0 get=0x0 len=1541 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1541
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h264    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      66666        5            NONE         0            742fc000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   30.00   8000      10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   5         5         2         0         0         0         0         2         2         0.33      0.00      0         0         0         -1        8830    8834    1       5         5         0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done fps60d30

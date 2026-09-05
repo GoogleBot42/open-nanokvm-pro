@@ -1,0 +1,5 @@
+# vdrive tag=rc_qpmap 1920x1080 rc=qpmap br=8000 fps=60/60 gop=30 iqp=32 pqp=32 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x8007020a
+REFUSED create rc=0x8007020a

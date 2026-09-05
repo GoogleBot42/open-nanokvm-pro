@@ -1,0 +1,411 @@
+=== traj2000: br=2000 nframes=90 move=1
+# vdrive tag=traj2000 1920x1080 rc=cbr br=2000 fps=60/60 gop=30 iqp=32 pqp=32 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=1 nframes=90
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742fc000 virt=0xffffa714c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=8319 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:8278
+  snapshot IDR: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=4372 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4372
+  snapshot P: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=9367 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9367
+frame 3: send=0x0 get=0x0 len=5059 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5059
+frame 4: send=0x0 get=0x0 len=9602 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9602
+frame 5: send=0x0 get=0x0 len=4984 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4984
+frame 6: send=0x0 get=0x0 len=9659 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9659
+frame 7: send=0x0 get=0x0 len=4815 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4815
+frame 8: send=0x0 get=0x0 len=10101 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10101
+frame 9: send=0x0 get=0x0 len=3752 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3752
+frame 10: send=0x0 get=0x0 len=8839 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8839
+frame 11: send=0x0 get=0x0 len=4522 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4522
+frame 12: send=0x0 get=0x0 len=9683 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9683
+frame 13: send=0x0 get=0x0 len=2143 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2143
+frame 14: send=0x0 get=0x0 len=9325 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9325
+frame 15: send=0x0 get=0x0 len=2366 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2366
+frame 16: send=0x0 get=0x0 len=10127 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10127
+frame 17: send=0x0 get=0x0 len=2217 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2217
+frame 18: send=0x0 get=0x0 len=9387 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9387
+frame 19: send=0x0 get=0x0 len=2430 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2430
+frame 20: send=0x0 get=0x0 len=10094 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10094
+frame 21: send=0x0 get=0x0 len=2240 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2240
+frame 22: send=0x0 get=0x0 len=9465 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9465
+frame 23: send=0x0 get=0x0 len=2548 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2548
+frame 24: send=0x0 get=0x0 len=10305 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10305
+frame 25: send=0x0 get=0x0 len=2202 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2202
+frame 26: send=0x0 get=0x0 len=9449 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9449
+frame 27: send=0x0 get=0x0 len=2361 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2361
+frame 28: send=0x0 get=0x0 len=10137 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10137
+frame 29: send=0x0 get=0x0 len=2214 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2214
+frame 30: send=0x0 get=0x0 len=11214 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:11173
+frame 31: send=0x0 get=0x0 len=3987 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3987
+frame 32: send=0x0 get=0x0 len=9475 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9475
+frame 33: send=0x0 get=0x0 len=3803 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3803
+frame 34: send=0x0 get=0x0 len=9183 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9183
+frame 35: send=0x0 get=0x0 len=4523 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4523
+frame 36: send=0x0 get=0x0 len=9809 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9809
+frame 37: send=0x0 get=0x0 len=3721 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3721
+frame 38: send=0x0 get=0x0 len=9324 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9324
+frame 39: send=0x0 get=0x0 len=4976 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4976
+frame 40: send=0x0 get=0x0 len=10185 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10185
+frame 41: send=0x0 get=0x0 len=3788 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3788
+frame 42: send=0x0 get=0x0 len=9320 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9320
+frame 43: send=0x0 get=0x0 len=4755 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4755
+frame 44: send=0x0 get=0x0 len=10032 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10032
+frame 45: send=0x0 get=0x0 len=3726 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3726
+frame 46: send=0x0 get=0x0 len=9421 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9421
+frame 47: send=0x0 get=0x0 len=4849 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4849
+frame 48: send=0x0 get=0x0 len=9911 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9911
+frame 49: send=0x0 get=0x0 len=3986 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3986
+frame 50: send=0x0 get=0x0 len=9418 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9418
+frame 51: send=0x0 get=0x0 len=4990 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4990
+frame 52: send=0x0 get=0x0 len=10023 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10023
+frame 53: send=0x0 get=0x0 len=3738 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3738
+frame 54: send=0x0 get=0x0 len=9351 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9351
+frame 55: send=0x0 get=0x0 len=4881 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4881
+frame 56: send=0x0 get=0x0 len=10136 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10136
+frame 57: send=0x0 get=0x0 len=3792 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3792
+frame 58: send=0x0 get=0x0 len=9326 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9326
+frame 59: send=0x0 get=0x0 len=4935 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4935
+frame 60: send=0x0 get=0x0 len=8405 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:8364
+frame 61: send=0x0 get=0x0 len=5377 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5377
+frame 62: send=0x0 get=0x0 len=9477 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9477
+frame 63: send=0x0 get=0x0 len=4074 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4074
+frame 64: send=0x0 get=0x0 len=9673 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9673
+frame 65: send=0x0 get=0x0 len=3910 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3910
+frame 66: send=0x0 get=0x0 len=9384 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9384
+frame 67: send=0x0 get=0x0 len=5036 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5036
+frame 68: send=0x0 get=0x0 len=10039 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10039
+frame 69: send=0x0 get=0x0 len=3755 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3755
+frame 70: send=0x0 get=0x0 len=9231 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9231
+frame 71: send=0x0 get=0x0 len=4845 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4845
+frame 72: send=0x0 get=0x0 len=10160 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10160
+frame 73: send=0x0 get=0x0 len=3711 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3711
+frame 74: send=0x0 get=0x0 len=9309 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9309
+frame 75: send=0x0 get=0x0 len=4862 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4862
+frame 76: send=0x0 get=0x0 len=10053 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10053
+frame 77: send=0x0 get=0x0 len=3819 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3819
+frame 78: send=0x0 get=0x0 len=9431 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9431
+frame 79: send=0x0 get=0x0 len=4846 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4846
+frame 80: send=0x0 get=0x0 len=9992 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9992
+frame 81: send=0x0 get=0x0 len=4024 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4024
+frame 82: send=0x0 get=0x0 len=9390 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9390
+frame 83: send=0x0 get=0x0 len=4925 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4925
+frame 84: send=0x0 get=0x0 len=10040 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10040
+frame 85: send=0x0 get=0x0 len=3668 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3668
+frame 86: send=0x0 get=0x0 len=9310 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9310
+frame 87: send=0x0 get=0x0 len=4960 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:4960
+frame 88: send=0x0 get=0x0 len=10146 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10146
+frame 89: send=0x0 get=0x0 len=3788 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3788
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h264    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      1150000      70           NONE         0            742fc000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   60.00   2000      10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   70        70        70        0         0         0         0         70        70        25.00     1343.10   0         0         0         -1        9046    9050    1       70        70        0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done traj2000
+rc=0
+=== traj8000: br=8000 nframes=90 move=1
+# vdrive tag=traj8000 1920x1080 rc=cbr br=8000 fps=60/60 gop=30 iqp=32 pqp=32 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=1 nframes=90
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742fc000 virt=0xffff950bc000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=9677 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:9637
+  snapshot IDR: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=6181 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6181
+  snapshot P: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=14747 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14747
+frame 3: send=0x0 get=0x0 len=11594 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11594
+frame 4: send=0x0 get=0x0 len=17453 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17453
+frame 5: send=0x0 get=0x0 len=6133 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6133
+frame 6: send=0x0 get=0x0 len=17371 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17371
+frame 7: send=0x0 get=0x0 len=10969 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10969
+frame 8: send=0x0 get=0x0 len=18495 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18495
+frame 9: send=0x0 get=0x0 len=5633 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:5633
+frame 10: send=0x0 get=0x0 len=17651 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17651
+frame 11: send=0x0 get=0x0 len=11542 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11542
+frame 12: send=0x0 get=0x0 len=19184 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19184
+frame 13: send=0x0 get=0x0 len=6097 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6097
+frame 14: send=0x0 get=0x0 len=17771 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17771
+frame 15: send=0x0 get=0x0 len=12262 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12262
+frame 16: send=0x0 get=0x0 len=22047 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22047
+frame 17: send=0x0 get=0x0 len=6854 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6854
+frame 18: send=0x0 get=0x0 len=19718 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19718
+frame 19: send=0x0 get=0x0 len=11861 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11861
+frame 20: send=0x0 get=0x0 len=21471 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21471
+frame 21: send=0x0 get=0x0 len=6092 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6092
+frame 22: send=0x0 get=0x0 len=19951 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19951
+frame 23: send=0x0 get=0x0 len=13953 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13953
+frame 24: send=0x0 get=0x0 len=21273 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21273
+frame 25: send=0x0 get=0x0 len=6916 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6916
+frame 26: send=0x0 get=0x0 len=19400 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19400
+frame 27: send=0x0 get=0x0 len=16165 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16165
+frame 28: send=0x0 get=0x0 len=24066 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:24066
+frame 29: send=0x0 get=0x0 len=9755 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9755
+frame 30: send=0x0 get=0x0 len=12322 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:12282
+frame 31: send=0x0 get=0x0 len=9446 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9446
+frame 32: send=0x0 get=0x0 len=15524 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:15524
+frame 33: send=0x0 get=0x0 len=6930 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6930
+frame 34: send=0x0 get=0x0 len=17036 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17036
+frame 35: send=0x0 get=0x0 len=11795 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11795
+frame 36: send=0x0 get=0x0 len=19256 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19256
+frame 37: send=0x0 get=0x0 len=9585 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9585
+frame 38: send=0x0 get=0x0 len=19917 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19917
+frame 39: send=0x0 get=0x0 len=17398 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17398
+frame 40: send=0x0 get=0x0 len=24745 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:24745
+frame 41: send=0x0 get=0x0 len=11069 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11069
+frame 42: send=0x0 get=0x0 len=20031 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20031
+frame 43: send=0x0 get=0x0 len=17524 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17524
+frame 44: send=0x0 get=0x0 len=22915 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22915
+frame 45: send=0x0 get=0x0 len=12572 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12572
+frame 46: send=0x0 get=0x0 len=23563 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23563
+frame 47: send=0x0 get=0x0 len=16896 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16896
+frame 48: send=0x0 get=0x0 len=23630 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23630
+frame 49: send=0x0 get=0x0 len=13789 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13789
+frame 50: send=0x0 get=0x0 len=19911 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19911
+frame 51: send=0x0 get=0x0 len=14595 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14595
+frame 52: send=0x0 get=0x0 len=21958 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21958
+frame 53: send=0x0 get=0x0 len=12487 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12487
+frame 54: send=0x0 get=0x0 len=21621 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21621
+frame 55: send=0x0 get=0x0 len=14635 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14635
+frame 56: send=0x0 get=0x0 len=21610 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21610
+frame 57: send=0x0 get=0x0 len=12715 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12715
+frame 58: send=0x0 get=0x0 len=23209 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23209
+frame 59: send=0x0 get=0x0 len=12891 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12891
+frame 60: send=0x0 get=0x0 len=12692 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:12652
+frame 61: send=0x0 get=0x0 len=8932 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8932
+frame 62: send=0x0 get=0x0 len=16535 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16535
+frame 63: send=0x0 get=0x0 len=13651 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13651
+frame 64: send=0x0 get=0x0 len=18923 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18923
+frame 65: send=0x0 get=0x0 len=8031 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8031
+frame 66: send=0x0 get=0x0 len=20146 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20146
+frame 67: send=0x0 get=0x0 len=11811 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11811
+frame 68: send=0x0 get=0x0 len=21870 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21870
+frame 69: send=0x0 get=0x0 len=6196 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6196
+frame 70: send=0x0 get=0x0 len=19882 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19882
+frame 71: send=0x0 get=0x0 len=11510 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11510
+frame 72: send=0x0 get=0x0 len=21293 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21293
+frame 73: send=0x0 get=0x0 len=6081 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6081
+frame 74: send=0x0 get=0x0 len=19857 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19857
+frame 75: send=0x0 get=0x0 len=11583 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11583
+frame 76: send=0x0 get=0x0 len=21477 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21477
+frame 77: send=0x0 get=0x0 len=6081 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6081
+frame 78: send=0x0 get=0x0 len=19771 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19771
+frame 79: send=0x0 get=0x0 len=13706 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13706
+frame 80: send=0x0 get=0x0 len=21028 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21028
+frame 81: send=0x0 get=0x0 len=6993 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6993
+frame 82: send=0x0 get=0x0 len=19362 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19362
+frame 83: send=0x0 get=0x0 len=16185 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16185
+frame 84: send=0x0 get=0x0 len=23687 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23687
+frame 85: send=0x0 get=0x0 len=9638 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9638
+frame 86: send=0x0 get=0x0 len=20281 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20281
+frame 87: send=0x0 get=0x0 len=13268 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13268
+frame 88: send=0x0 get=0x0 len=22362 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22362
+frame 89: send=0x0 get=0x0 len=8928 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8928
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h264    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      1166666      71           NONE         0            742fc000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   60.00   8000      10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   71        71        71        0         0         0         0         71        71        24.76     3108.93   0         0         0         -1        9060    9064    1       71        71        0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done traj8000
+rc=0
+=== traj16000: br=16000 nframes=90 move=1
+# vdrive tag=traj16000 1920x1080 rc=cbr br=16000 fps=60/60 gop=30 iqp=32 pqp=32 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=1 nframes=90
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742fc000 virt=0xffffa908c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=9678 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:9638
+  snapshot IDR: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=6181 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6181
+  snapshot P: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=14752 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14752
+frame 3: send=0x0 get=0x0 len=11610 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11610
+frame 4: send=0x0 get=0x0 len=17500 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17500
+frame 5: send=0x0 get=0x0 len=7165 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:7165
+frame 6: send=0x0 get=0x0 len=17694 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17694
+frame 7: send=0x0 get=0x0 len=13651 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13651
+frame 8: send=0x0 get=0x0 len=22149 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22149
+frame 9: send=0x0 get=0x0 len=11877 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11877
+frame 10: send=0x0 get=0x0 len=20862 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20862
+frame 11: send=0x0 get=0x0 len=17135 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17135
+frame 12: send=0x0 get=0x0 len=23166 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23166
+frame 13: send=0x0 get=0x0 len=14004 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14004
+frame 14: send=0x0 get=0x0 len=25544 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25544
+frame 15: send=0x0 get=0x0 len=18038 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18038
+frame 16: send=0x0 get=0x0 len=23228 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23228
+frame 17: send=0x0 get=0x0 len=11930 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11930
+frame 18: send=0x0 get=0x0 len=22378 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22378
+frame 19: send=0x0 get=0x0 len=15241 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:15241
+frame 20: send=0x0 get=0x0 len=22593 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22593
+frame 21: send=0x0 get=0x0 len=11045 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11045
+frame 22: send=0x0 get=0x0 len=22451 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22451
+frame 23: send=0x0 get=0x0 len=14726 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14726
+frame 24: send=0x0 get=0x0 len=22168 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22168
+frame 25: send=0x0 get=0x0 len=11933 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11933
+frame 26: send=0x0 get=0x0 len=20431 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20431
+frame 27: send=0x0 get=0x0 len=14612 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14612
+frame 28: send=0x0 get=0x0 len=22223 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22223
+frame 29: send=0x0 get=0x0 len=10396 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10396
+frame 30: send=0x0 get=0x0 len=12323 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:12283
+frame 31: send=0x0 get=0x0 len=9446 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9446
+frame 32: send=0x0 get=0x0 len=15901 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:15901
+frame 33: send=0x0 get=0x0 len=6524 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:6524
+frame 34: send=0x0 get=0x0 len=17092 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:17092
+frame 35: send=0x0 get=0x0 len=11675 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11675
+frame 36: send=0x0 get=0x0 len=19145 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19145
+frame 37: send=0x0 get=0x0 len=9406 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:9406
+frame 38: send=0x0 get=0x0 len=20630 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20630
+frame 39: send=0x0 get=0x0 len=18894 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18894
+frame 40: send=0x0 get=0x0 len=23959 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23959
+frame 41: send=0x0 get=0x0 len=13869 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13869
+frame 42: send=0x0 get=0x0 len=25565 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25565
+frame 43: send=0x0 get=0x0 len=20533 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:20533
+frame 44: send=0x0 get=0x0 len=26275 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:26275
+frame 45: send=0x0 get=0x0 len=13855 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13855
+frame 46: send=0x0 get=0x0 len=25844 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25844
+frame 47: send=0x0 get=0x0 len=12574 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12574
+frame 48: send=0x0 get=0x0 len=22668 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22668
+frame 49: send=0x0 get=0x0 len=12978 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12978
+frame 50: send=0x0 get=0x0 len=25054 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25054
+frame 51: send=0x0 get=0x0 len=11841 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11841
+frame 52: send=0x0 get=0x0 len=21842 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21842
+frame 53: send=0x0 get=0x0 len=11858 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11858
+frame 54: send=0x0 get=0x0 len=25213 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25213
+frame 55: send=0x0 get=0x0 len=11631 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11631
+frame 56: send=0x0 get=0x0 len=22078 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22078
+frame 57: send=0x0 get=0x0 len=12395 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12395
+frame 58: send=0x0 get=0x0 len=25151 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25151
+frame 59: send=0x0 get=0x0 len=12220 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12220
+frame 60: send=0x0 get=0x0 len=12692 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:12652
+frame 61: send=0x0 get=0x0 len=8932 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:8932
+frame 62: send=0x0 get=0x0 len=16535 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:16535
+frame 63: send=0x0 get=0x0 len=13644 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13644
+frame 64: send=0x0 get=0x0 len=18900 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:18900
+frame 65: send=0x0 get=0x0 len=10079 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:10079
+frame 66: send=0x0 get=0x0 len=19754 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19754
+frame 67: send=0x0 get=0x0 len=19032 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:19032
+frame 68: send=0x0 get=0x0 len=23654 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23654
+frame 69: send=0x0 get=0x0 len=13436 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13436
+frame 70: send=0x0 get=0x0 len=22968 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22968
+frame 71: send=0x0 get=0x0 len=21975 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21975
+frame 72: send=0x0 get=0x0 len=25116 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:25116
+frame 73: send=0x0 get=0x0 len=14628 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:14628
+frame 74: send=0x0 get=0x0 len=23655 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23655
+frame 75: send=0x0 get=0x0 len=13682 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:13682
+frame 76: send=0x0 get=0x0 len=22360 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22360
+frame 77: send=0x0 get=0x0 len=12364 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12364
+frame 78: send=0x0 get=0x0 len=23276 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23276
+frame 79: send=0x0 get=0x0 len=11960 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11960
+frame 80: send=0x0 get=0x0 len=22275 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22275
+frame 81: send=0x0 get=0x0 len=12719 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12719
+frame 82: send=0x0 get=0x0 len=22963 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22963
+frame 83: send=0x0 get=0x0 len=12569 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12569
+frame 84: send=0x0 get=0x0 len=21629 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:21629
+frame 85: send=0x0 get=0x0 len=11796 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:11796
+frame 86: send=0x0 get=0x0 len=23040 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:23040
+frame 87: send=0x0 get=0x0 len=12035 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12035
+frame 88: send=0x0 get=0x0 len=22003 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:22003
+frame 89: send=0x0 get=0x0 len=12343 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:12343
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+-------- VENC CHN ATTR 1 ------------------------
+ID    Type    wSrc    hSrc    Strd0   Strd1   maxW    maxH    PixFmt  link  InFifoDep    OutFifoDep   InDbgFifoLen InDbgFifoDep StrmBufSize(KB)
+7     h264    1920    1080    3840    0       1920    1080    YUYV422 N     2            2            0            4            4114      
+-------- VENC CHN ATTR 2 ------------------------
+ID    [CropEn StartX  StartY  CropW   CropH]  Rotation  EncW    EncH    FrmSize      PTS          SeqNum       CompMode     CompLevel    PhyAddr0     PhyAddr1     PhyAddr2     
+7     N       0       0       0       0       0         1920    1080    4147200      1183333      72           NONE         0            742fc000     0            0            
+-------- VENC RC ATTR 1 ------------------------
+ID    RcMode    SrcFr   DstFr   Br(kbps)  MinQp   MaxQp   MinIQp  MaxIQp  IQpDelta  IpropMax   IpropMin   StartQp    QpDltRng   DeBrQpDlt  SvcEn   ChgPos  StillPercent MaxStillQp 
+7     CBR       60.00   60.00   16000     10      51      10      51      0         40         10         -1         2          0          False   -       -            -          
+-------- VENC RC ATTR 2  -----------------------
+ID    QMapQpType  QMapUnit    QMapBlkType IQp   PQp   MinQpDelta MaxQpDelta MaxBitRate shtStaTime ltStaTime  ltMinBr  ltMaxBr  Br_ST(kbps)    Br_LT(kbps)    
+7     N/A         64x64       N/A         -     -     -          -          -          -          -          -        -        -              -              
+-------- VENC GOP ATTR  ------------------------
+ID    GopMode   Gop   GopVI 
+7     NormalP   30    0     
+-------- VENC STATUS 1 -------------------------
+ID    RJEn         RJThr(bps)   RJMode       RJEncGaps    SupFrmEn     SupPri       SupThrI      SupThrP      SplitEn      SliceNum     Range(In)    Range(out)   
+7     N            0            Normal       0            N            0            500000       500000       N            0            Full         Full         
+-------- VENC STATUS 2 -------------------------
+ID    ChnStat   FrmRecv   FrmRls    FrmEnc    FrmDrop   FrmDup    EncFail   MissMatch StrmGet   StrmRls   OutFps    RealBr    ReEncCnt  DropCnt   BlkFail   GrpID     PID     TID     ThNum   RefInc    RefDec    Fail1   Fail2   Fail3   Fail4   
+7     STARTED   72        72        72        0         0         0         0         72        72        25.00     3432.83   0         0         0         -1        9093    9097    1       72        72        0       0       0       0       
+-------- VENC HW STATUS  ------------------------
+ID    OverFlow     TimeOut      
+7     0            0            
+-------- VENC ROI INFO  ------------------------
+ID    Index        bEnable      bAbsQp       RoiQP        Width        Height       StartX       StartY       
+done traj16000
+rc=0

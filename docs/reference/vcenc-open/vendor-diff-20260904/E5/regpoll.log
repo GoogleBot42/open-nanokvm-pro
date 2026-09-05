@@ -1,0 +1,4 @@
+VCMD engine +0x00..0x1c: deadbeef deadbeef deadbeef deadbeef deadbeef deadbeef deadbeef deadbeef
+live after 277852 polls: sw0=90101010 sw80=88da4280 sw214=? (beyond window) 
+polls=66863431 got=1
+regpoll rc=0

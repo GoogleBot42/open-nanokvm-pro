@@ -1,0 +1,210 @@
+== E4 single-knob sweep (1080p CBR8000 fps60 gop30 main 5.1 baseline). Per run: create rc, NAL sizes, SPS/PPS facts, regs moved vs base (* = generator 'opaque') ==
+-- base                                                  rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- base_rep                                              rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- profile9     profile=9                                rc=0 
+   sizes: f0:I7581 f1:P5684 f2:P6970 f3:P5222 f4:P5902 f5:P5123 | SPS profile=66 cs=0xe0 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CAVLC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw193 0x10011d->0x10011c*
+   P   moved: sw105 0x2209b->0x217c6, sw106 0x20560->0x1fcfc, sw107 0x23bd5->0x2328f, sw193 0x200119->0x200118*, sw243 0xaaa800->0x2553000
+-- profile11    profile=11                               rc=0 
+   sizes: f0:I4359 f1:P2421 f2:P2339 f3:P1474 f4:P1380 f5:P1622 | SPS profile=100 cs=0x00 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw9 0x4047d8->0x4047d6, sw193 0x10011d->0x10011f*
+   P   moved: sw105 0x2209b->0x21d13, sw106 0x20560->0x20205, sw107 0x23bd5->0x23820, sw193 0x200119->0x20011b*, sw243 0xaaa800->0xf63800, sw244 0x0->0x138400, sw247 0x1acbc2->0x1e67c2*
+-- gop1         gop=1                                    rc=0 
+   sizes: f0:I2211 f1:I3694 f2:I3877 f3:I6912 f4:I2386 f5:I2387 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=I frame_num=0 qp=27 dbk_idc=0; type=I frame_num=0 qp=22 dbk_idc=0
+   IDR moved: sw105 0x1adb00->0x208d5, sw106 0x1adb00->0x208d5, sw107 0x1adb00->0x208d5
+   P   moved: (no P frame in run)
+-- gop8         gop=8                                    rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw105 0x1adb00->0xea9c0, sw106 0x1adb00->0xea9c0, sw107 0x1adb00->0xea9c0
+   P   moved: sw105 0x2209b->0x24e54, sw106 0x20560->0x230cf, sw107 0x23bd5->0x26bd8
+-- gop60        gop=60                                   rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: sw105 0x2209b->0x2107d, sw106 0x20560->0x1f610, sw107 0x23bd5->0x22ae9
+-- gop120       gop=120                                  rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw105 0x1adb00->0x1d4c00, sw106 0x1adb00->0x1d4c00, sw107 0x1adb00->0x1d4c00
+   P   moved: sw105 0x2209b->0x20ca1, sw106 0x20560->0x1f265, sw107 0x23bd5->0x226dc
+-- fps30        fps=30                                   rc=0 
+   sizes: f0:I2213 f1:P1174 f2:P1541 f3:P1018 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=26 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x68002000, sw9 0x4047d8->0x4047d7, sw105 0x1adb00->0x2bf200, sw106 0x1adb00->0x2bf200, sw107 0x1adb00->0x2bf200
+   P   moved: sw7 0x80002300->0x68002300, sw105 0x2209b->0x43333, sw106 0x20560->0x3fd70, sw107 0x23bd5->0x468f5
+-- fps60d30     fps=60 dfps=30                           rc=0 
+   sizes: f1:I2213 f3:P1174 f5:P1541 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=26 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x68002000, sw9 0x4047d8->0x4047d7, sw105 0x1adb00->0x2bf200, sw106 0x1adb00->0x2bf200, sw107 0x1adb00->0x2bf200
+   P   moved: sw7 0x80002300->0x68002300, sw105 0x2209b->0x43333, sw106 0x20560->0x3fd70, sw107 0x23bd5->0x468f5
+-- br2000       br=2000                                  rc=0 
+   sizes: f0:I2328 f1:P531 f2:P1087 f3:P1628 f4:P1482 f5:P1830 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=36 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=37 dbk_idc=0; type=P frame_num=1 qp=40 dbk_idc=0; type=P frame_num=2 qp=38 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x90002500, sw9 0x4047d8->0x4047d7, sw37 0xf00510->0x1e40a20, sw105 0x1adb00->0x6b6c0, sw106 0x1adb00->0x6b6c0, sw107 0x1adb00->0x6b6c0, sw125 0x9042020->0xcc02d70, sw126 0x7281980->0xa1c2410, sw127 0x5ac1440->0x8081ca0, sw128 0x4801010->0x66016b0, sw129 0x3940cc0->0x5101200, sw130 0x2d80a20->0x4040e50, sw131 0x2400800->0x3300b60, sw132 0x1c80660->0x2880900
+   P   moved: sw7 0x80002300->0x90002800, sw105 0x2209b->0x853b, sw106 0x20560->0x7e91, sw107 0x23bd5->0x8be4, sw243 0xaaa800->0xd4c800, sw244 0x0->0x1400, sw247 0x1acbc2->0x2558c2*
+-- br16000      br=16000                                 rc=0 
+   sizes: f0:I2212 f1:P1174 f2:P1541 f3:P1018 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=26 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x68002000, sw105 0x1adb00->0x35b600, sw106 0x1adb00->0x35b600, sw107 0x1adb00->0x35b600
+   P   moved: sw7 0x80002300->0x68002300, sw105 0x2209b->0x444da, sw106 0x20560->0x40e35, sw107 0x23bd5->0x47b7e
+-- qp20_40      minqp=20 maxqp=40 miniqp=20 maxiqp=40    rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw172 0x14f->0x28f*, sw173 0x662->0x502*
+   P   moved: sw172 0x14f->0x28f*, sw173 0x66a->0x50a*
+-- qp30_30      minqp=30 maxqp=30 miniqp=30 maxiqp=30    rc=0 
+   sizes: f0:I1964 f1:P71 f2:P71 f3:P71 f4:P71 f5:P71 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=30 dbk_idc=0; type=P frame_num=1 qp=30 dbk_idc=0; type=P frame_num=2 qp=30 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x80001e00, sw37 0xf00510->0x980330, sw125 0x9042020->0x7281980, sw126 0x7281980->0x5ac1440, sw127 0x5ac1440->0x4801010, sw128 0x4801010->0x3940cc0, sw129 0x3940cc0->0x2d80a20, sw130 0x2d80a20->0x2400800, sw131 0x2400800->0x1c80660, sw132 0x1c80660->0x16c0510, sw172 0x14f->0x3cf*, sw173 0x662->0x3c2*
+   P   moved: sw7 0x80002300->0x80001e00, sw37 0xf00510->0x4c0190, sw105 0x2209b->0x22103, sw106 0x20560->0x205c2, sw107 0x23bd5->0x23c43, sw125 0x9042020->0x5101200, sw126 0x7281980->0x4040e50, sw127 0x5ac1440->0x3300b60, sw128 0x4801010->0x2880900, sw129 0x3940cc0->0x2040720, sw130 0x2d80a20->0x19805b0, sw131 0x2400810->0x1440480, sw132 0x1c80660->0x1000390, sw172 0x14f->0x3cf*, sw173 0x66a->0x3ca*, sw247 0x1acbc2->0x1aa6c2*
+-- iqd_m5       iqd=-5                                   rc=0 
+   sizes: f0:I2288 f1:P1158 f2:P1188 f3:P1818 f4:P1462 f5:P1810 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=30 dbk_idc=0; type=P frame_num=1 qp=33 dbk_idc=0; type=P frame_num=2 qp=32 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x80001e00, sw37 0xf00510->0x980330, sw105 0x1adb00->0x1d4c00, sw106 0x1adb00->0x1d4c00, sw107 0x1adb00->0x1d4c00, sw125 0x9042020->0x7281980, sw126 0x7281980->0x5ac1440, sw127 0x5ac1440->0x4801010, sw128 0x4801010->0x3940cc0, sw129 0x3940cc0->0x2d80a20, sw130 0x2d80a20->0x2400800, sw131 0x2400800->0x1c80660, sw132 0x1c80660->0x16c0510
+   P   moved: sw7 0x80002300->0x80002100, sw37 0xf00510->0x980330, sw105 0x2209b->0x2207b, sw106 0x20560->0x20541, sw107 0x23bd5->0x23bb4, sw125 0x9042020->0x7281980, sw126 0x7281980->0x5ac1440, sw127 0x5ac1440->0x4801010, sw128 0x4801010->0x3940cc0, sw129 0x3940cc0->0x2d80a20, sw130 0x2d80a20->0x2400810, sw131 0x2400810->0x1c80660, sw132 0x1c80660->0x16c0510, sw243 0xaaa800->0x877000, sw244 0x0->0x400, sw247 0x1acbc2->0x1ba582*
+-- iqd_p5       iqd=5                                    rc=0 
+   sizes: f0:I2202 f1:P3744 f2:P896 f3:P1199 f4:P1459 f5:P1685 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=40 dbk_idc=0; type=P frame_num=1 qp=39 dbk_idc=0; type=P frame_num=2 qp=37 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x80002800, sw37 0xf00510->0x1e40a20, sw105 0x1adb00->0x124f80, sw106 0x1adb00->0x124f80, sw107 0x1adb00->0x124f80, sw125 0x9042020->0xcc02d70, sw126 0x7281980->0xa1c2410, sw127 0x5ac1440->0x8081ca0, sw128 0x4801010->0x66016b0, sw129 0x3940cc0->0x5101200, sw130 0x2d80a20->0x4040e50, sw131 0x2400800->0x3300b60, sw132 0x1c80660->0x2880900
+   P   moved: sw7 0x80002300->0x80002700, sw105 0x2209b->0x2209f, sw106 0x20560->0x20563, sw107 0x23bd5->0x23bda, sw243 0xaaa800->0xe55000, sw244 0x0->0x800, sw247 0x1acbc2->0x2d0302*
+-- level40      level=40                                 rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=40 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- level42      level=42                                 rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=42 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- level31      level=31                                 rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=31 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- ir5row       ir=5 irmode=0                            rc=0 SetIntraRefresh(5,mode 0) rc=0x0
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- ir5col       ir=5 irmode=1                            rc=0 SetIntraRefresh(5,mode 1) rc=0x0
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- slice8       slice=8                                  rc=0 SetSliceSplit(8) rc=0x0
+   sizes: f0:I3815 f1:P2262 f2:P2675 f3:P1973 f4:P2365 f5:P2047 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; slice first_mb=960 type=I frame_num=0 qp=32 dbk_idc=0; slice first_mb=1920 type=I frame_num=0 qp=32 dbk_idc=0
+   IDR moved: sw1 0x9fd->0x209fd*, sw6 0x3->0x10000003*
+   P   moved: sw1 0x9fd->0x209fd*, sw6 0x3->0x10000003*, sw105 0x2209b->0x21df8, sw106 0x20560->0x202de, sw107 0x23bd5->0x23911, sw243 0xaaa800->0xf0a800, sw247 0x1acbc2->0x2529c2*
+-- slice1       slice=1                                  rc=0 SetSliceSplit(1) rc=0x0
+   sizes: f0:I12269 f1:P4106 f2:P6144 f3:P3414 f4:P1787 f5:P2139 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; slice first_mb=120 type=I frame_num=0 qp=32 dbk_idc=0; slice first_mb=240 type=I frame_num=0 qp=32 dbk_idc=0
+   IDR moved: sw1 0x9fd->0x209fd*, sw6 0x3->0x2000003*
+   P   moved: sw1 0x9fd->0x209fd*, sw6 0x3->0x2000003*, sw105 0x2209b->0x21010, sw106 0x20560->0x1f5a8, sw107 0x23bd5->0x22a77, sw243 0xaaa800->0xd89800, sw247 0x1acbc2->0x65ef02*
+-- debreath     debreath=1                               rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- setrc_same   setrc=1                                  rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- scd1         setrc=1 scd=1                            rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- rowqpd3      setrc=1 rowqpd=3                         rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- firstqp30    firstqp=30                               rc=0 
+   sizes: f0:I3694 f1:P3895 f2:P1682 f3:P2314 f4:P3508 f5:P1657 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=30 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=27 dbk_idc=0; type=P frame_num=1 qp=30 dbk_idc=0; type=P frame_num=2 qp=29 dbk_idc=0
+   IDR moved: sw7 0x80002000->0x78001b00, sw37 0xf00510->0x4c0190, sw125 0x9042020->0x5101200, sw126 0x7281980->0x4040e50, sw127 0x5ac1440->0x3300b60, sw128 0x4801010->0x2880900, sw129 0x3940cc0->0x2000720, sw130 0x2d80a20->0x19805b0, sw131 0x2400800->0x1440480, sw132 0x1c80660->0x1000390
+   P   moved: sw7 0x80002300->0x78001e00, sw37 0xf00510->0x4c0190, sw105 0x2209b->0x21e2b, sw106 0x20560->0x2030f, sw107 0x23bd5->0x23946, sw125 0x9042020->0x5101200, sw126 0x7281980->0x4040e50, sw127 0x5ac1440->0x3300b60, sw128 0x4801010->0x2880900, sw129 0x3940cc0->0x2040720, sw130 0x2d80a20->0x19805b0, sw131 0x2400810->0x1440480, sw132 0x1c80660->0x1000390, sw243 0xaaa800->0xbf9000, sw244 0x0->0x400, sw247 0x1acbc2->0x1544c2*
+-- stattime3    stattime=3                               rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- iprop20_80   miniprop=20 maxiprop=80                  rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw105 0x1adb00->0x222e00, sw106 0x1adb00->0x222e00, sw107 0x1adb00->0x222e00
+   P   moved: none
+-- idrrange8    idrrange=8                               rc=0 
+   sizes: f0:I4056 f1:P2466 f2:P1011 f3:P1189 f4:P1343 f5:P4107 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=31 dbk_idc=0; type=P frame_num=2 qp=30 dbk_idc=0
+   IDR moved: sw173 0x662->0x668*
+   P   moved: sw7 0x80002300->0x80001f00, sw37 0xf00510->0x600200, sw105 0x2209b->0x21d93, sw106 0x20560->0x2027e, sw107 0x23bd5->0x238a7, sw125 0x9042020->0x5ac1440, sw126 0x7281980->0x4801010, sw127 0x5ac1440->0x3940cc0, sw128 0x4801010->0x2d80a20, sw129 0x3940cc0->0x2400810, sw130 0x2d80a20->0x1c80660, sw131 0x2400810->0x16c0510, sw132 0x1c80660->0x1200400, sw243 0xaaa800->0xe38800, sw247 0x1acbc2->0x146002*
+-- share        share=1                                  rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- refring      refring=1                                rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: sw56 0x0->0x23a000, sw57 0x0->0x11d000, sw73 0x0->0x23a00, sw83 0x0->0x73ca5000, sw195 0xfff0->0xfff2*
+   P   moved: sw56 0x0->0x23a000, sw57 0x0->0x11d000, sw73 0x0->0x23a00, sw83 0x0->0x73ca5000, sw195 0xfff0->0xfff2*
+-- dbqd5        dbqd=5                                   rc=0 
+   sizes: f0:I2211 f1:P1174 f2:P1541 f3:P1017 f4:P1633 f5:P978 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: none
+-- moving       move=1                                   rc=0 
+   sizes: f0:I9677 f1:P6181 f2:P14747 f3:P11594 f4:P17453 f5:P6133 | SPS profile=77 cs=0x40 level=51 nref=1 poc_type=0 log2fn=16 direct8x8=1 crop=1 | PPS entropy=CABAC init_qp=32 qs=26 deblock_ctrl_present=1 constrained_intra=0 redundant=0 wpred=0/0 nref_l0=1
+   slices: type=I frame_num=0 qp=32 dbk_idc=0; type=P frame_num=1 qp=35 dbk_idc=0; type=P frame_num=2 qp=33 dbk_idc=0
+   IDR moved: none
+   P   moved: sw105 0x2209b->0x21454, sw106 0x20560->0x1f9b6, sw107 0x23bd5->0x22ef1, sw243 0xaaa800->0x11f3000, sw244 0x0->0x3000, sw247 0x1acbc2->0x449842*
+
+== which knob moves swregN (every register that moved in ANY run; * = generator 'opaque') ==
+sw1   *: slice8(I), slice8(P), slice1(I), slice1(P)
+sw6   *: slice8(I), slice8(P), slice1(I), slice1(P)
+sw7    : fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), firstqp30(I), firstqp30(P), idrrange8(P)
+sw9    : profile11(I), fps30(I), fps60d30(I), br2000(I)
+sw37   : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw56   : refring(I), refring(P)
+sw57   : refring(I), refring(P)
+sw73   : refring(I), refring(P)
+sw83   : refring(I), refring(P)
+sw105  : profile9(P), profile11(P), gop1(I), gop8(I), gop8(P), gop60(P), gop120(I), gop120(P), fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), slice8(P), slice1(P), firstqp30(P), iprop20_80(I), idrrange8(P), moving(P)
+sw106  : profile9(P), profile11(P), gop1(I), gop8(I), gop8(P), gop60(P), gop120(I), gop120(P), fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), slice8(P), slice1(P), firstqp30(P), iprop20_80(I), idrrange8(P), moving(P)
+sw107  : profile9(P), profile11(P), gop1(I), gop8(I), gop8(P), gop60(P), gop120(I), gop120(P), fps30(I), fps30(P), fps60d30(I), fps60d30(P), br2000(I), br2000(P), br16000(I), br16000(P), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), iqd_p5(P), slice8(P), slice1(P), firstqp30(P), iprop20_80(I), idrrange8(P), moving(P)
+sw125  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw126  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw127  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw128  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw129  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw130  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw131  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw132  : br2000(I), qp30_30(I), qp30_30(P), iqd_m5(I), iqd_m5(P), iqd_p5(I), firstqp30(I), firstqp30(P), idrrange8(P)
+sw172 *: qp20_40(I), qp20_40(P), qp30_30(I), qp30_30(P)
+sw173 *: qp20_40(I), qp20_40(P), qp30_30(I), qp30_30(P), idrrange8(I)
+sw193 *: profile9(I), profile9(P), profile11(I), profile11(P)
+sw195 *: refring(I), refring(P)
+sw243  : profile9(P), profile11(P), br2000(P), iqd_m5(P), iqd_p5(P), slice8(P), slice1(P), firstqp30(P), idrrange8(P), moving(P)
+sw244  : profile11(P), br2000(P), iqd_m5(P), iqd_p5(P), firstqp30(P), moving(P)
+sw247 *: profile11(P), br2000(P), qp30_30(P), iqd_m5(P), iqd_p5(P), slice8(P), slice1(P), firstqp30(P), idrrange8(P), moving(P)
+
+registers NEVER moved by any knob (excluding 20 addr regs): 464 of 511 -> sw2 sw3 sw4 sw5 sw11 sw17 sw20 sw21 sw22 sw23 sw24 sw25 sw26 sw28 sw29 sw30 sw31 sw32 sw33 sw34 sw35 sw36 sw38 sw39 sw40 sw41 sw42 sw43 sw44 sw45 sw47 sw48 sw49 sw50 sw51 sw52 sw53 sw54 sw55 sw58 sw59 sw61 sw63 sw65 sw67 sw68 sw69 sw70 sw71 sw75 sw76 sw77 sw78 sw79 sw80 sw81 sw82 sw84 sw85 sw86 sw87 sw88 sw89 sw90 sw91 sw92 sw93 sw94 sw95 sw96 sw97 sw98 sw99 sw100 sw101 sw102 sw103 sw104 sw108 sw109 sw110 sw111 sw112 sw113 sw115 sw116 sw117 sw118 sw119 sw120 sw121 sw122 sw123 sw124 sw133 sw134 sw135 sw136 sw137 sw138 sw139 sw140 sw141 sw142 sw143 sw144 sw145 sw146 sw147 sw148 sw149 sw150 sw151 sw152 sw153 sw154 sw155 sw156 sw157 sw158 sw159 sw160 sw161 sw162 sw163 sw164 sw165 sw166 sw167 sw168 sw169 sw170 sw171 sw174 sw175 sw176 sw177 sw178 sw179 sw180 sw181 sw182 sw183 sw184 sw185 sw186 sw187 sw188 sw189 sw190 sw191 sw192 sw194 sw196 sw197 sw198 sw199 sw200 sw201 sw202 sw203 sw204 sw205 sw206 sw207 sw208 sw209 sw210 sw211 sw212 sw213 sw214 sw215 sw216 sw217 sw218 sw219 sw220 sw221 sw222 sw223 sw224 sw225 sw226 sw227 sw228 sw229 sw230 sw231 sw232 sw233 sw234 sw235 sw236 sw237 sw238 sw240 sw242 sw245 sw246 sw248 sw249 sw250 sw251 sw252 sw253 sw254 sw255 sw256 sw257 sw258 sw259 sw260 sw261 sw262 sw263 sw264 sw265 sw266 sw267 sw268 sw269 sw270 sw271 sw272 sw273 sw274 sw275 sw276 sw277 sw278 sw279 sw280 sw281 sw282 sw283 sw284 sw285 sw286 sw287 sw288 sw289 sw290 sw291 sw292 sw293 sw294 sw295 sw296 sw297 sw298 sw299 sw300 sw301 sw302 sw303 sw304 sw305 sw306 sw307 sw308 sw309 sw310 sw311 sw312 sw313 sw314 sw315 sw316 sw317 sw318 sw319 sw320 sw321 sw322 sw323 sw324 sw325 sw326 sw327 sw328 sw329 sw330 sw331 sw332 sw333 sw334 sw335 sw336 sw337 sw338 sw339 sw340 sw341 sw342 sw343 sw344 sw345 sw346 sw347 sw348 sw349 sw350 sw351 sw352 sw353 sw354 sw355 sw356 sw357 sw358 sw359 sw360 sw361 sw362 sw363 sw364 sw365 sw366 sw367 sw368 sw369 sw370 sw371 sw372 sw373 sw374 sw375 sw376 sw377 sw378 sw379 sw380 sw381 sw382 sw383 sw384 sw385 sw386 sw387 sw388 sw389 sw390 sw391 sw392 sw393 sw394 sw395 sw396 sw397 sw398 sw399 sw400 sw401 sw402 sw403 sw404 sw405 sw406 sw407 sw408 sw409 sw410 sw411 sw412 sw413 sw414 sw415 sw416 sw417 sw418 sw419 sw420 sw421 sw422 sw423 sw424 sw425 sw426 sw427 sw428 sw429 sw430 sw431 sw432 sw433 sw434 sw435 sw436 sw437 sw438 sw439 sw440 sw441 sw442 sw443 sw444 sw445 sw446 sw447 sw448 sw449 sw450 sw451 sw452 sw453 sw454 sw455 sw456 sw457 sw458 sw459 sw460 sw461 sw462 sw463 sw464 sw465 sw466 sw467 sw468 sw469 sw470 sw471 sw472 sw473 sw474 sw475 sw476 sw477 sw478 sw479 sw480 sw481 sw482 sw483 sw484 sw485 sw486 sw487 sw488 sw489 sw490 sw491 sw492 sw493 sw494 sw495 sw496 sw497 sw498 sw499 sw500 sw501 sw502 sw503 sw504 sw505 sw506 sw507 sw508 sw509 sw510 sw511
+opaque regs never moved: sw3 sw4 sw22 sw26 sw35 sw36 sw38 sw39 sw40 sw41 sw45 sw81 sw134 sw136 sw170 sw171 sw182 sw194 sw196 sw201 sw203 sw224 sw225 sw245 sw246 sw248 sw249 sw250 sw251 sw252 sw253 sw254 sw255 sw256 sw257 sw258 sw259 sw272 sw277 sw281 sw288 sw289 sw307 sw319 sw320 sw349 sw430
+opaque regs moved: sw1 sw6 sw172 sw173 sw193 sw195 sw247
+secondary-bank base pokes (slot1 words 516..551): ['0x8012800', '0x44', '0x8012014', '0x0', '0x8012034', '0x0', '0x8012054', '0x0', '0x8012074', '0x0', '0x8012094', '0x0', '0x80120b4', '0x0', '0x80120d4', '0x0', '0x80120f4', '0x0', '0x8012114', '0x0', '0x8012134', '0x0', '0x8012154', '0x0', '0x8012174', '0x0', '0x8012194', '0x0', '0x80121b4', '0x0', '0x80121d4', '0x0', '0x80121f4', '0x0', '0x8011014', '0x3c044303']

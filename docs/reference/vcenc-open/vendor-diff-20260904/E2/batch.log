@@ -1,0 +1,407 @@
+=== fixqp16: rc=fixqp iqp=16 pqp=16 snapall=1
+# vdrive tag=fixqp16 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=16 pqp=16 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffffb5bac000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=6350 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:6309
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=3775 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3775
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1872 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1872
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=626 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:626
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=626 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:626
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=626 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:626
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp16
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp16_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x40001000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp16_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x40001000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp16_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x40001000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp16_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x40001000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp16_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x40001000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp16_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x40001000 sw9=0x004047d7)
+=== fixqp20: rc=fixqp iqp=20 pqp=20 snapall=1
+# vdrive tag=fixqp20 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=20 pqp=20 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff95b9c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=3871 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:3831
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=3548 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:3548
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=1111 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1111
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=537 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:537
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=537 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:537
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=537 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:537
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp20
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp20_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x50001400 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp20_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x50001400 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp20_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x50001400 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp20_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x50001400 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp20_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x50001400 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp20_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x50001400 sw9=0x004047d8)
+=== fixqp24: rc=fixqp iqp=24 pqp=24 snapall=1
+# vdrive tag=fixqp24 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=24 pqp=24 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffffb53cc000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=3997 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:3957
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=1250 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:1250
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:527
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:527
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:527
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=527 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:527
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp24
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp24_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x60001800 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp24_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x60001800 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp24_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x60001800 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp24_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x60001800 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp24_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x60001800 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp24_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x60001800 sw9=0x004047d8)
+=== fixqp28: rc=fixqp iqp=28 pqp=28 snapall=1
+# vdrive tag=fixqp28 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=28 pqp=28 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffffb8d2c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2182 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:2142
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=626 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:626
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=609 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:609
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=609 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:609
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=609 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:609
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=609 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:609
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp28
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp28_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x70001c00 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp28_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x70001c00 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp28_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x70001c00 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp28_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x70001c00 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp28_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x70001c00 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp28_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x70001c00 sw9=0x004047d8)
+=== fixqp32: rc=fixqp iqp=32 pqp=32 snapall=1
+# vdrive tag=fixqp32 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=32 pqp=32 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff9834c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2010 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:8 n5:1970
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=77 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:77
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp32
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp32_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x80002000 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp32_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x80002000 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp32_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x80002000 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp32_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x80002000 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp32_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x80002000 sw9=0x004047d8)
+wrote /tmp/axwork/E2/vendor_fixqp32_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x80002000 sw9=0x004047d8)
+=== fixqp36: rc=fixqp iqp=36 pqp=36 snapall=1
+# vdrive tag=fixqp36 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=36 pqp=36 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffffa8c0c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1723 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:1682
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp36
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp36_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x90002400 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp36_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x90002400 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp36_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x90002400 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp36_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x90002400 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp36_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x90002400 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp36_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x90002400 sw9=0x004047d7)
+=== fixqp40: rc=fixqp iqp=40 pqp=40 snapall=1
+# vdrive tag=fixqp40 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=40 pqp=40 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff8902c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1745 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:1704
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=2397 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:2397
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=640 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:640
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=506 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:506
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=462 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:462
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=499 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:499
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp40
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp40_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xa0002800 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp40_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xa0002800 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp40_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xa0002800 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp40_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xa0002800 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp40_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xa0002800 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp40_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xa0002800 sw9=0x004047d7)
+=== fixqp44: rc=fixqp iqp=44 pqp=44 snapall=1
+# vdrive tag=fixqp44 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=44 pqp=44 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff8d1fc000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1625 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:1584
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=596 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:596
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=71 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:71
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=69 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:69
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=69 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:69
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=69 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:69
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp44
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp44_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xb0002c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp44_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xb0002c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp44_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xb0002c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp44_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xb0002c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp44_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xb0002c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp44_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xb0002c00 sw9=0x004047d7)
+=== fixqp48: rc=fixqp iqp=48 pqp=48 snapall=1
+# vdrive tag=fixqp48 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=48 pqp=48 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff9d42c000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1527 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:1486
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=214 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:214
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=258 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:258
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=233 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:233
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=320 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:320
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=179 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:179
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp48
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp48_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xc0003000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp48_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xc0003000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp48_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xc0003000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp48_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xc0003000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp48_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xc0003000 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp48_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xc0003000 sw9=0x004047d7)
+=== fixqp51: rc=fixqp iqp=51 pqp=51 snapall=1
+# vdrive tag=fixqp51 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=51 pqp=51 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff8d3ec000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1539 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:1498
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=175 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:175
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=132 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:132
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=84 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:84
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=72 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:72
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=73 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:73
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp51
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp51_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xcc003300 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp51_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xcc003300 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp51_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xcc003300 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp51_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xcc003300 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp51_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xcc003300 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp51_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0xcc003300 sw9=0x004047d7)
+=== fixqp_i28_p34: rc=fixqp iqp=28 pqp=34 snapall=1
+# vdrive tag=fixqp_i28_p34 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=28 pqp=34 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff8abfc000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=2184 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:2143
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=70 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:70
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp_i28_p34
+rc=0
+wrote /tmp/axwork/E2/vendor_fixqp_i28_p34_f000.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x88001c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp_i28_p34_f001.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x88001c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp_i28_p34_f002.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x88001c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp_i28_p34_f003.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x88001c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp_i28_p34_f004.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x88001c00 sw9=0x004047d7)
+wrote /tmp/axwork/E2/vendor_fixqp_i28_p34_f005.txt (slot 1, 511 regs, sw191=0x14000000 sw7=0x88001c00 sw9=0x004047d7)

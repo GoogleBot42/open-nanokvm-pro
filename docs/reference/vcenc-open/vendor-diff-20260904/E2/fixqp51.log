@@ -1,0 +1,29 @@
+# vdrive tag=fixqp51 1920x1080 rc=fixqp br=8000 fps=60/60 gop=30 iqp=51 pqp=51 profile=10 level=51 qp[10..51] iqp[10..51] iqd=0 firstqp=-1 iprop[10..40] idrrange=2 stattime=1 vq=0 ir=0/0 slice=0 debreath=0 scd=-1 rowqpd=-1 move=0 nframes=6
+AX_SYS_Init rc=0x0
+AX_VENC_Init rc=0x0
+AX_VENC_CreateChn(7) rc=0x0
+StartRecvFrame rc=0x0
+AX_POOL_CreatePool id=0x0
+blk=0x5e000000 phys=0x742f4000 virt=0xffff8d3ec000
+  snapshot pre: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 0: send=0x0 get=0x0 len=1539 coding=0 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=3 n7:32 n8:9 n5:1498
+  snapshot f000: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 1: send=0x0 get=0x0 len=175 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:175
+  snapshot f001: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 2: send=0x0 get=0x0 len=132 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:132
+  snapshot f002: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 3: send=0x0 get=0x0 len=84 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:84
+  snapshot f003: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 4: send=0x0 get=0x0 len=72 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:72
+  snapshot f004: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+frame 5: send=0x0 get=0x0 len=73 coding=1 startqp=0 meanqp=0 picbytes=0 pskip=0 nalus=1 n1:73
+  snapshot f005: 3 venc_ko blocks (pool0 0x7382c000 len 0x10000)
+---- /proc/ax_proc/venc ----
+-------- VENC VERSION ------------------------
+[Axera version]: ax_venc V3.0.0_20250319114413 Mar 19 2025 11:58:34 JK
+
+-------- MODULE PARAM ------------------------
+MaxChnNum   MaxRoiNum   MaxProcNum  
+16          8           16          
+
+done fixqp51
