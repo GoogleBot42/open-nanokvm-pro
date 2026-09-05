@@ -1,0 +1,100 @@
+<!doctype html>
+<html><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<pre id="log"></pre>
+<script>
+// Emulates the NanoKVM direct worker feeding WebCodecs, two ways:
+//   mode=worker  : one message per NAL as the H.264 direct server sends them
+//                  (SPS, PPS as separate delta messages; IDR key; P delta),
+//                  decoder created on the FIRST KEY message (upstream worker).
+//   mode=folded  : SPS+PPS folded into the IDR chunk (what h265-direct does).
+// ?file=<x>.h264&codec=avc1.42E01F&mode=worker|folded
+const q = new URLSearchParams(location.search);
+const file = q.get('file'); const codecStr = q.get('codec') || 'avc1.42E01F'; const mode = q.get('mode') || 'worker';
+const out = []; const pre = document.getElementById('log');
+const log = (s) => { out.push(s); pre.textContent = out.join("\n"); console.log("LOG " + s); };
+let frames = 0, errors = [], chunksFed = 0, resets = 0, decoder = null;
+const ctx = document.getElementById('c').getContext('2d');
+const summary = () => JSON.stringify({ mode, codec: codecStr, chunksFed, frames, resets, errors, state: decoder ? decoder.state : null });
+setTimeout(() => log('WATCHDOG ' + summary()), 9000);
+
+function splitNals(u) {
+  const idx = [];
+  for (let i = 0; i + 3 < u.length; i++) if (u[i] === 0 && u[i+1] === 0 && u[i+2] === 1) { idx.push(i); i += 2; }
+  const nals = [];
+  for (let k = 0; k < idx.length; k++) {
+    const s = idx[k]; let e = k + 1 < idx.length ? idx[k+1] : u.length;
+    const start = (s > 0 && u[s-1] === 0) ? s - 1 : s;
+    if (k + 1 < idx.length && u[e-1] === 0) e -= 1;
+    nals.push(u.subarray(start, e));
+  }
+  return nals;
+}
+const nalType = (n) => n[n[2] === 1 ? 3 : 4] & 0x1f;
+const concat = (arr) => { const len = arr.reduce((a, n) => a + n.length, 0); const d = new Uint8Array(len); let o = 0; for (const n of arr) { d.set(n, o); o += n.length; } return d; };
+
+function initDecoder() {
+  decoder = new VideoDecoder({
+    output: (f) => { frames++; if (frames === 1) ctx.drawImage(f, 0, 0); f.close(); },
+    error: (e) => { errors.push('cb:' + e.message); resets++; decoder = null; },
+  });
+  decoder.configure({ codec: codecStr, optimizeForLatency: true });
+}
+function feed(isKey, ts, data) {
+  // upstream worker semantics
+  if (!decoder && isKey) initDecoder();
+  if (decoder && decoder.state === 'configured') {
+    try { decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: ts, data })); chunksFed++; }
+    catch (err) { errors.push('throw:' + err.name + ':' + err.message); if (err.name === 'TypeError' || String(err.message).includes('configured')) { decoder = null; resets++; } }
+  }
+}
+
+(async () => {
+  try {
+    const sup = await VideoDecoder.isConfigSupported({ codec: codecStr });
+    log('isConfigSupported ' + codecStr + ': ' + sup.supported);
+    const u = new Uint8Array(await (await fetch(file)).arrayBuffer());
+    if (mode === 'framed') {
+      // raw WebSocket messages as the server sent them: [u32 LE len][key:1][ts_us:8 LE][payload]
+      let off = 0, msgs = 0, keyMsgs = 0;
+      const dv = new DataView(u.buffer);
+      while (off + 4 <= u.length) {
+        const len = dv.getUint32(off, true); off += 4;
+        const key = u[off] === 1; const ts = Number(dv.getBigUint64(off + 1, true));
+        const payload = u.subarray(off + 9, off + len); off += len;
+        if (key) { keyMsgs++; if (msgs === 0) log('first key message NAL types ' + JSON.stringify(splitNals(payload).map(nalType))); }
+        feed(key, ts, payload); msgs++;
+      }
+      log('bytes ' + u.length + ' messages ' + msgs + ' key ' + keyMsgs);
+      if (decoder && decoder.state === 'configured') await decoder.flush().catch((e) => errors.push('flush:' + e.message));
+      log('RESULT ' + summary());
+      return;
+    }
+    const nals = splitNals(u); log('bytes ' + u.length + ' nals ' + nals.length);
+    let ts = 0; let params = [];
+    for (const n of nals) {
+      const t = nalType(n);
+      if (mode === 'folded') {
+        if (t === 7 || t === 8) { params.push(n); continue; }
+        if (t === 5) { feed(true, ts, concat([...params, n])); params = []; }
+        else feed(false, ts, n);
+      } else if (mode === 'buffered') {
+        // old server framing (one NAL per message) + the patched worker: before the
+        // first key, parameter-set messages are kept and prepended to that key message
+        if (!decoder && t !== 5) { if (t === 7 || t === 8) params.push(n); continue; }
+        if (!decoder && t === 5 && params.length) { feed(true, ts, concat([...params, n])); params = []; }
+        else feed(t === 5, ts, n);
+      } else {
+        feed(t === 5, ts, n);   // SPS/PPS arrive as their own delta messages
+      }
+      ts += 16667; if ((ts/16667) % 10 === 0) console.log("LOG progress nal=" + (ts/16667) + " fed=" + chunksFed + " frames=" + frames + " errs=" + errors.length + " state=" + (decoder?decoder.state:null));
+      // let the decoder breathe every 30 chunks
+      // no timer awaits: headless --timeout freezes virtual time
+    }
+    if (decoder && decoder.state === 'configured') await decoder.flush().catch((e) => errors.push('flush:' + e.message));
+    // flush() above is resolved by the real decoder
+    log('RESULT ' + summary());
+  } catch (e) { log('FATAL ' + e); }
+})();
+</script>
+</body></html>

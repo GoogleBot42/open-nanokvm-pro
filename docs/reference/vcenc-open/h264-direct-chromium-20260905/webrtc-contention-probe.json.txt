@@ -1,0 +1,578 @@
+page navigate at 13:11:40
+--- t=8s wall=13:11:48
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "pcs": [
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "m=video 47646 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 35 36 37 38 102 103 104 107 108 109 114 115 116 117 39 40 41 42 43 44 45 46 47 48 118 119 120 49",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=fmtp:35 profile-id=1",
+    "a=fmtp:36 apt=35",
+    "a=fmtp:37 profile-id=3",
+    "a=fmtp:38 apt=37",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=rtpmap:41 H264/90000",
+    "a=fmtp:41 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+    "a=fmtp:42 apt=41",
+    "a=rtpmap:43 H264/90000",
+    "a=fmtp:43 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f",
+    "a=fmtp:44 apt=43",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45",
+    "a=fmtp:47 level-idx=5;profile=1;tier=0",
+    "a=fmtp:48 apt=47",
+    "a=fmtp:119 apt=118",
+    "a=fmtp:49 repair-window=10000000"
+   ],
+   "remoteH264": [
+    "m=video 60325 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 102 103 104 107 108 109 114 115 116 117 39 40 45 46",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45"
+   ],
+   "remoteHasVideo": true,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 1317948
+   },
+   "inbound": {
+    "packetsReceived": 1185,
+    "bytesReceived": 1281373,
+    "framesReceived": 487,
+    "framesDecoded": 487,
+    "keyFramesDecoded": 10,
+    "framesDropped": 0,
+    "pliCount": 0,
+    "firCount": 0,
+    "nackCount": 0,
+    "frameWidth": 1920,
+    "frameHeight": 1080,
+    "freezeCount": 0,
+    "totalDecodeTime": 0.7835409999999999,
+    "codec": {
+     "payloadType": 102,
+     "mimeType": "video/H264",
+     "sdpFmtpLine": "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
+    }
+   }
+  },
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1",
+    "a=fmtp:63 111/111"
+   ],
+   "remoteH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1"
+   ],
+   "remoteHasVideo": false,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 1394
+   }
+  }
+ ],
+ "video": {
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "readyState": 4,
+  "paused": false,
+  "currentTime": 8.068466,
+  "hasSrc": true,
+  "opacity": "1",
+  "className": "opacity-100"
+ },
+ "h264Caps": [
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f"
+ ]
+}
+--- t=16s wall=13:11:56
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "pcs": [
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "m=video 47646 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 35 36 37 38 102 103 104 107 108 109 114 115 116 117 39 40 41 42 43 44 45 46 47 48 118 119 120 49",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=fmtp:35 profile-id=1",
+    "a=fmtp:36 apt=35",
+    "a=fmtp:37 profile-id=3",
+    "a=fmtp:38 apt=37",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=rtpmap:41 H264/90000",
+    "a=fmtp:41 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+    "a=fmtp:42 apt=41",
+    "a=rtpmap:43 H264/90000",
+    "a=fmtp:43 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f",
+    "a=fmtp:44 apt=43",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45",
+    "a=fmtp:47 level-idx=5;profile=1;tier=0",
+    "a=fmtp:48 apt=47",
+    "a=fmtp:119 apt=118",
+    "a=fmtp:49 repair-window=10000000"
+   ],
+   "remoteH264": [
+    "m=video 60325 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 102 103 104 107 108 109 114 115 116 117 39 40 45 46",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45"
+   ],
+   "remoteHasVideo": true,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 2481150
+   },
+   "inbound": {
+    "packetsReceived": 2206,
+    "bytesReceived": 2413651,
+    "framesReceived": 950,
+    "framesDecoded": 950,
+    "keyFramesDecoded": 19,
+    "framesDropped": 0,
+    "pliCount": 0,
+    "firCount": 0,
+    "nackCount": 0,
+    "frameWidth": 1920,
+    "frameHeight": 1080,
+    "freezeCount": 0,
+    "totalDecodeTime": 1.485669,
+    "codec": {
+     "payloadType": 102,
+     "mimeType": "video/H264",
+     "sdpFmtpLine": "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
+    }
+   }
+  },
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1",
+    "a=fmtp:63 111/111"
+   ],
+   "remoteH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1"
+   ],
+   "remoteHasVideo": false,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 2010
+   }
+  }
+ ],
+ "video": {
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "readyState": 4,
+  "paused": false,
+  "currentTime": 15.784331,
+  "hasSrc": true,
+  "opacity": "1",
+  "className": "opacity-100"
+ },
+ "h264Caps": [
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f"
+ ]
+}
+--- t=40s wall=13:12:20
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "pcs": [
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "m=video 47646 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 35 36 37 38 102 103 104 107 108 109 114 115 116 117 39 40 41 42 43 44 45 46 47 48 118 119 120 49",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=fmtp:35 profile-id=1",
+    "a=fmtp:36 apt=35",
+    "a=fmtp:37 profile-id=3",
+    "a=fmtp:38 apt=37",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=rtpmap:41 H264/90000",
+    "a=fmtp:41 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+    "a=fmtp:42 apt=41",
+    "a=rtpmap:43 H264/90000",
+    "a=fmtp:43 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f",
+    "a=fmtp:44 apt=43",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45",
+    "a=fmtp:47 level-idx=5;profile=1;tier=0",
+    "a=fmtp:48 apt=47",
+    "a=fmtp:119 apt=118",
+    "a=fmtp:49 repair-window=10000000"
+   ],
+   "remoteH264": [
+    "m=video 60325 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 102 103 104 107 108 109 114 115 116 117 39 40 45 46",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45"
+   ],
+   "remoteHasVideo": true,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 5379055
+   },
+   "inbound": {
+    "packetsReceived": 4747,
+    "bytesReceived": 5234276,
+    "framesReceived": 2065,
+    "framesDecoded": 2065,
+    "keyFramesDecoded": 42,
+    "framesDropped": 0,
+    "pliCount": 1,
+    "firCount": 0,
+    "nackCount": 0,
+    "frameWidth": 1920,
+    "frameHeight": 1080,
+    "freezeCount": 0,
+    "totalDecodeTime": 3.265859,
+    "codec": {
+     "payloadType": 102,
+     "mimeType": "video/H264",
+     "sdpFmtpLine": "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
+    }
+   }
+  },
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1",
+    "a=fmtp:63 111/111"
+   ],
+   "remoteH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1"
+   ],
+   "remoteHasVideo": false,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 4210
+   }
+  }
+ ],
+ "video": {
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "readyState": 4,
+  "paused": false,
+  "currentTime": 34.368798,
+  "hasSrc": true,
+  "opacity": "0",
+  "className": "opacity-0"
+ },
+ "h264Caps": [
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f"
+ ]
+}
+--- t=60s wall=13:12:40
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "pcs": [
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "m=video 47646 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 35 36 37 38 102 103 104 107 108 109 114 115 116 117 39 40 41 42 43 44 45 46 47 48 118 119 120 49",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=fmtp:35 profile-id=1",
+    "a=fmtp:36 apt=35",
+    "a=fmtp:37 profile-id=3",
+    "a=fmtp:38 apt=37",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=rtpmap:41 H264/90000",
+    "a=fmtp:41 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+    "a=fmtp:42 apt=41",
+    "a=rtpmap:43 H264/90000",
+    "a=fmtp:43 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f",
+    "a=fmtp:44 apt=43",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45",
+    "a=fmtp:47 level-idx=5;profile=1;tier=0",
+    "a=fmtp:48 apt=47",
+    "a=fmtp:119 apt=118",
+    "a=fmtp:49 repair-window=10000000"
+   ],
+   "remoteH264": [
+    "m=video 60325 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 102 103 104 107 108 109 114 115 116 117 39 40 45 46",
+    "a=fmtp:97 apt=96",
+    "a=fmtp:98 profile-id=0",
+    "a=fmtp:99 apt=98",
+    "a=fmtp:100 profile-id=2",
+    "a=fmtp:101 apt=100",
+    "a=rtpmap:102 H264/90000",
+    "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+    "a=fmtp:103 apt=102",
+    "a=rtpmap:104 H264/90000",
+    "a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+    "a=fmtp:107 apt=104",
+    "a=rtpmap:108 H264/90000",
+    "a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    "a=fmtp:109 apt=108",
+    "a=rtpmap:114 H264/90000",
+    "a=fmtp:114 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+    "a=fmtp:115 apt=114",
+    "a=rtpmap:116 H264/90000",
+    "a=fmtp:116 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+    "a=fmtp:117 apt=116",
+    "a=rtpmap:39 H264/90000",
+    "a=fmtp:39 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+    "a=fmtp:40 apt=39",
+    "a=fmtp:45 level-idx=5;profile=0;tier=0",
+    "a=fmtp:46 apt=45"
+   ],
+   "remoteHasVideo": true,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 5379853
+   },
+   "inbound": {
+    "packetsReceived": 4747,
+    "bytesReceived": 5234276,
+    "framesReceived": 2065,
+    "framesDecoded": 2065,
+    "keyFramesDecoded": 42,
+    "framesDropped": 0,
+    "pliCount": 1,
+    "firCount": 0,
+    "nackCount": 0,
+    "frameWidth": 1920,
+    "frameHeight": 1080,
+    "freezeCount": 0,
+    "totalDecodeTime": 3.265859,
+    "codec": {
+     "payloadType": 102,
+     "mimeType": "video/H264",
+     "sdpFmtpLine": "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
+    }
+   }
+  },
+  {
+   "signalingState": "stable",
+   "connectionState": "connected",
+   "iceConnectionState": "connected",
+   "localH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1",
+    "a=fmtp:63 111/111"
+   ],
+   "remoteH264": [
+    "a=fmtp:111 minptime=10;useinbandfec=1"
+   ],
+   "remoteHasVideo": false,
+   "pair": {
+    "state": "succeeded",
+    "bytesReceived": 5882
+   }
+  }
+ ],
+ "video": {
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "readyState": 4,
+  "paused": false,
+  "currentTime": 34.368798,
+  "hasSrc": true,
+  "opacity": "0",
+  "className": "opacity-0"
+ },
+ "h264Caps": [
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f4001f",
+  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=f4001f"
+ ]
+}
+--- console (dedup)

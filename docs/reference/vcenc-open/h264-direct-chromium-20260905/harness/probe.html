@@ -1,0 +1,28 @@
+<!doctype html>
+<html><body style="background:#fff;color:#000;font:28px monospace">
+<pre id="log">probing...</pre>
+<script>
+const codecs = ['hvc1.1.6.L153.B0','hvc1.1.6.L123.B0','hvc1.1.6.L93.B0','hev1.1.6.L123.B0','hvc1.2.4.L123.B0','avc1.42E01F','avc1.4D002A'];
+const accel = ['no-preference','prefer-hardware','prefer-software'];
+const lines = [navigator.userAgent, 'VideoDecoder: ' + (typeof VideoDecoder)];
+(async () => {
+  if (typeof VideoDecoder !== 'undefined') {
+    for (const c of codecs) for (const a of accel) {
+      try { const r = await VideoDecoder.isConfigSupported({ codec: c, hardwareAcceleration: a, optimizeForLatency: true }); lines.push(`${c} ${a}: ${r.supported}`); }
+      catch (e) { lines.push(`${c} ${a}: THROW ${e.name}: ${e.message}`); }
+    }
+  }
+  const v = document.createElement('video');
+  for (const t of ['video/mp4; codecs="hvc1.1.6.L153.B0"','video/mp4; codecs="hev1.1.6.L123.B0"','video/mp4; codecs="avc1.42E01F"'])
+    lines.push(`canPlayType ${t}: '${v.canPlayType(t)}'`);
+  if (navigator.mediaCapabilities) {
+    for (const c of ['hvc1.1.6.L153.B0','hev1.1.6.L123.B0']) {
+      try { const r = await navigator.mediaCapabilities.decodingInfo({ type: 'file', video: { contentType: `video/mp4; codecs="${c}"`, width: 1920, height: 1080, bitrate: 8000000, framerate: 60 } }); lines.push(`mediaCapabilities ${c}: supported=${r.supported} smooth=${r.smooth} powerEfficient=${r.powerEfficient}`); }
+      catch (e) { lines.push(`mediaCapabilities ${c}: THROW ${e.message}`); }
+    }
+  }
+  lines.push('DONE');
+  document.getElementById('log').textContent = lines.join('\n');
+  document.title = 'DONE';
+})();
+</script></body></html>
