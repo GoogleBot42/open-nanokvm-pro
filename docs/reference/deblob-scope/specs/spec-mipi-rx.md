@@ -387,6 +387,11 @@ Sequencing: userspace must issue `set_lanecombo`(8) and `set_attr`(2) **before**
 7. **[common_glb sharing]** With proton/VIN running, snapshot `0x02340000+0x28`,
    `+0x408`, `+0x1ec/+0x1f8` before/after a mipi `start`/`stop` to see whether proton
    depends on bits this driver toggles (the coordination hazard, §7).
+   **RESOLVED 2026-09-04 from `regdumps/frontend/`:** all four words read 0 in every
+   observed state — vendor idle, vendor streaming 4K, vendor with the service stopped,
+   and the open receiver — so nothing on the KVM path ever sets them. No hazard.
+   (Item 5, partial: vendor streaming `+0x40` = `0x1f` = table[4-lane] `0xf | 0x10`,
+   matching the open driver's write; the 1/2/3-lane entries stay inferred.)
 8. **[0x02303000 block]** Identify the `ax_dvp_bt_soc_init` target — likely a DVP/BT656
    bridge unrelated to the MIPI path; can probably be omitted for the pure-MIPI open
    driver, but confirm it is not gating a shared clock.
