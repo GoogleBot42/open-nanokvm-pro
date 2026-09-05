@@ -67,6 +67,11 @@ int  kvm_venc_get(int chn, AX_VENC_STREAM_T *st, int timeout_ms);
 void kvm_venc_release(int chn, AX_VENC_STREAM_T *st);
 int  kvm_venc_set_fps(int chn, AX_PAYLOAD_TYPE_E type, int fps);
 int  kvm_venc_set_gop(int chn, int gop);
+/* Retarget a running H.264/H.265 channel to a new bitrate (kbps) without
+ * rebuilding it. Returns 0 when the backend applied it (the open encoder's
+ * controller picks it up at the next frame, #46), -1 when the caller must
+ * fall back to destroy + create. */
+int  kvm_venc_set_bitrate(int chn, int kbps);
 
 /* Poll /proc/lt6911_info. Returns 0 on success, fills w/h/fps and
  * whether the HDMI RX is locked ("access"). status buf optional. */

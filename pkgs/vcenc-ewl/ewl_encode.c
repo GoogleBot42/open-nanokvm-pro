@@ -29,6 +29,12 @@
  *                   same cmdbuf, VPS/SPS/PPS from vcenc_hevc_header.h, the
  *                   vendor's fixed-QP register set (ENC_RC_FIXQP); NAL types
  *                   19 (IDR_W_RADL) / 1 (TRAIL_R)
+ *   EWL_RC=cbr|vbr  rate control (#46): per-frame QP from vcenc_rc.h over the
+ *                   fixed-QP register set; EWL_KBPS=<kbps> (default 8000),
+ *                   EWL_FPS=<n> (default 60), EWL_KBPS2=<kbps> retargets at
+ *                   frame nframes/2 (dynamic bitrate). Each frame line then
+ *                   carries the QP, and the summary the achieved kbps.
+ *   EWL_QP=<16..51> pinned QP without rate control (default 32)
  *
  * The input format is PACKED YUYV 4:2:2, 2 B/px at sw12 (Stage C,
  * device-proven; sw13-sw12 = 2*W*H exactly, packed modes ignore the
@@ -49,12 +55,12 @@
 #include "vcenc_encode.h"
 #include "vcenc_header.h"
 #include "vcenc_hevc_header.h"
+#include "vcenc_rc.h"
 
 /* Buffers: one framebuf block from the driver's from-source CMM allocator
  * (HANTRO_IOCH_ALLOC_FRAMEBUF) laid out by the computed vcenc_geom floorplan.
  * Userspace touches only the INPUT (fill) and OUTPUT (read) regions inside
  * the driver's writecombine mmap; recon/aux are DMA'd by the encoder. */
-#define ENC_QP      ENC_QP_FIXED
 
 static uint32_t EW = 1920, EH = 1080;   /* runtime geometry (argv 5) */
 
@@ -105,7 +111,16 @@ int main(int argc, char **argv)
 	uint32_t p17 = getenv("EWL_P17") ? (uint32_t)strtoul(getenv("EWL_P17"), NULL, 16) : 0;
 	int pinter = getenv("EWL_PINTER") ? atoi(getenv("EWL_PINTER")) : 0;
 	int hevc = getenv("EWL_CODEC") && !strcmp(getenv("EWL_CODEC"), "h265");
+	/* rate control (#46) */
+	const char *rcs = getenv("EWL_RC");
+	int rc_on = rcs && (!strcmp(rcs, "cbr") || !strcmp(rcs, "vbr"));
+	uint32_t kbps = getenv("EWL_KBPS") ? (uint32_t)strtoul(getenv("EWL_KBPS"), NULL, 0) : 8000;
+	uint32_t kbps2 = getenv("EWL_KBPS2") ? (uint32_t)strtoul(getenv("EWL_KBPS2"), NULL, 0) : 0;
+	uint32_t fps = getenv("EWL_FPS") ? (uint32_t)strtoul(getenv("EWL_FPS"), NULL, 0) : 60;
+	uint32_t pin_qp = getenv("EWL_QP") ? (uint32_t)strtoul(getenv("EWL_QP"), NULL, 0) : ENC_QP_FIXED;
+	struct vcenc_rc rc;
 	setvbuf(stdout, NULL, _IONBF, 0);
+	if (!vcenc_qp_valid(pin_qp)) { fprintf(stderr, "EWL_QP out of range\n"); return 1; }
 
 	if (argc > 5 && sscanf(argv[5], "%ux%u", &EW, &EH) != 2) {
 		fprintf(stderr, "bad geometry '%s' (want WxH)\n", argv[5]);
@@ -127,6 +142,14 @@ int main(int argc, char **argv)
 	if (hevc)
 		printf("CODEC: H.265/HEVC (fixed-QP overlay, level_idc %u)\n",
 		       vcenc_hevc_level_idc(EW, EH));
+	if (rc_on) {
+		vcenc_rc_init(&rc, hevc ? ENC_CODEC_HEVC : ENC_CODEC_H264, EW, EH, fps,
+			      kbps * 1000.0, gop,
+			      !strcmp(rcs, "vbr") ? VCENC_RC_VBR : VCENC_RC_CBR);
+		pin_qp = rc.qp_seed;          /* PPS pic_init_qp for the session */
+		printf("RC: %s %u kbps @ %u fps gop %u, seed QP %u%s\n", rcs, kbps, fps, gop,
+		       rc.qp_seed, kbps2 ? " (retarget at half-way)" : "");
+	}
 
 	int fd = open(VCMD_DEV_NODE, O_RDWR);
 	if (fd < 0) { fprintf(stderr, "open(%s): %s\n", VCMD_DEV_NODE, strerror(errno)); return 1; }
@@ -201,10 +224,14 @@ int main(int argc, char **argv)
 		uint64_t core_dst = mem.status_hw_addr + (uint64_t)id * 0x2000 + (SUBMODULE_MAIN_ADDR / 2);
 		memset(status_pool + STATUS_SLOT_REG_OFF(id, 0), 0, 512 * 4);
 
+		if (rc_on && kbps2 && n == nframes / 2)
+			vcenc_rc_set_target(&rc, kbps2 * 1000.0, fps);
+		uint32_t qp = rc_on ? vcenc_rc_pick_qp(&rc, is_idr) : pin_qp;
 		struct vcenc_frame fr = {
-			.frame_num = gopn, .qp = ENC_QP, .p17 = p17, .pinter = pinter,
+			.frame_num = gopn, .qp = qp, .p17 = p17, .pinter = pinter,
+			.pic_init_qp = rc_on ? pin_qp : 0,
 			.codec = hevc ? ENC_CODEC_HEVC : ENC_CODEC_H264,
-			.rc_mode = hevc ? ENC_RC_FIXQP : ENC_RC_LEGACY,
+			.rc_mode = (hevc || rc_on) ? ENC_RC_FIXQP : ENC_RC_LEGACY,
 		};
 		uint32_t *slot = cmd_pool + (uint32_t)id * (mem.cmd_unit_size / 4);
 		ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, (uint32_t)fbp.bus_addr, &g,
@@ -227,20 +254,22 @@ int main(int argc, char **argv)
 		int frame_ok = (wid == CMDBUF_EXE_STATUS_OK) && swreg82 > 0
 			&& swreg9 > 0 && swreg9 <= g.out_limit
 			&& nut == want_nut;
-		printf("frame %3u: %s wait=%u bytes=%-6u cycles=%-8u nal=%d %s\n",
-		       n, is_idr ? "IDR" : "P  ", wid, swreg9, swreg82, nut,
+		printf("frame %3u: %s qp=%-2u wait=%u bytes=%-6u cycles=%-8u nal=%d %s\n",
+		       n, is_idr ? "IDR" : "P  ", qp, wid, swreg9, swreg82, nut,
 		       frame_ok ? "ok" : "FAIL");
+		if (rc_on && frame_ok)
+			vcenc_rc_update(&rc, 8.0 * swreg9, qp);
 
 		if (frame_ok && f) {
 			if (is_idr) {
 				uint8_t hdr[256];
 				uint32_t hlen;
 				if (hevc)
-					hlen = vcenc_write_hevc_headers(hdr, EW, EH, ENC_QP,
+					hlen = vcenc_write_hevc_headers(hdr, EW, EH, pin_qp,
 								       vcenc_hevc_level_idc(EW, EH));
 				else {
 					hlen = vcenc_write_sps(hdr, EW, EH);
-					hlen += vcenc_write_pps(hdr + hlen, ENC_QP);
+					hlen += vcenc_write_pps(hdr + hlen, pin_qp);
 				}
 				fwrite(hdr, 1, hlen, f);
 				total_bytes += hlen;
@@ -269,6 +298,10 @@ int main(int argc, char **argv)
 	       outfile && ok ? ", written" : "");
 	if (p_n)
 		printf("; avg P = %u bytes", p_bytes / p_n);
+	if (rc_on && rc.frames)
+		printf("; RC achieved %.0f kbps over %u frames (target %u%s)",
+		       rc.total_bits / rc.frames * fps / 1000.0, rc.frames,
+		       kbps2 ? kbps2 : kbps, kbps2 ? " after retarget" : "");
 	printf(")\n");
 	return ok ? 0 : 2;
 }

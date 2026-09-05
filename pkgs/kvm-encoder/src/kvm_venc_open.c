@@ -29,22 +29,30 @@
  * scaling, any geometry). The VCMD hardware is not involved; the whole JPEG
  * is served as one pack, which is what libkvm.c expects for MJPEG.
  *
- * v1 LIMITS (fixed-QP stage; the #46 seams -- per-frame QP input and
- * per-frame emitted-size readback -- are already in the builder API):
- *  - H.264 geometry: parametric (#17) over the capture envelope
- *    (64x64..3840x2400, even dims; #52 lifted the 1920 ceiling and E3 the
- *    2160 one) via the vcenc_geom register laws +
- *    computed floorplan (derived from a 17-geometry vendor differential,
- *    docs/reference/vcenc-open/geom-probe/).
- *  - Rate control: fixed QP32 (ENC_RC_LEGACY -- the device-proven shipping
- *    program, whose CBR register cluster is present but whose QP block is
- *    pinned). fps/bitrate/rc-mode knobs from the app are accepted and ignored
- *    (quality-priority mode); gop is honored (IDR period). Two ENV overrides
- *    exist for bench validation of the #46 work, both off by default:
- *      OPENKVM_VENC_RC=fixqp   program the vendor's true fixed-QP register set
- *                              (RC off; register-identical to the vendor's own
- *                              AX_VENC_RC_MODE_H264FIXQP program)
- *      OPENKVM_VENC_QP=<16..51> frame QP (also the PPS pic_init_qp)
+ * GEOMETRY: parametric (#17) over the capture envelope (64x64..3840x2400,
+ * even dims; #52 lifted the 1920 ceiling and E3 the 2160 one) via the
+ * vcenc_geom register laws + computed floorplan (derived from a 17-geometry
+ * vendor differential, docs/reference/vcenc-open/geom-probe/).
+ *
+ * RATE CONTROL (#46). The app's bitrate (qlty, kbps), fps, gop and rc_mode
+ * knobs drive the from-scratch frame-level controller in vcenc_rc.h for
+ * BOTH codecs: every frame gets its QP from the controller, the register
+ * program is the vendor's true fixed-QP set (ENC_RC_FIXQP, hardware RC
+ * off), the PPS pic_init_qp is the session's seed QP and the hardware
+ * writes slice_qp_delta. A bitrate change from the app (kvm_venc_set_bitrate,
+ * reached from libkvm's per-read quality argument) or an fps change is
+ * applied at the next frame -- no IDR, no channel rebuild. Default when the
+ * app supplies a bitrate: CBR (rc_mode 0) or capped VBR (rc_mode 1).
+ * Without a bitrate the pre-#46 fixed programs are used. ENV overrides:
+ *      OPENKVM_VENC_RC=cbr|vbr    force a controller mode
+ *      OPENKVM_VENC_RC=fixqp      the vendor's fixed-QP register set at a
+ *                                 pinned QP (RC off)
+ *      OPENKVM_VENC_RC=legacy     the pre-#46 shipping program (CBR register
+ *                                 cluster as captured, QP block pinned) --
+ *                                 byte-identical to what shipped at QP 32
+ *      OPENKVM_VENC_QP=<16..51>   the pinned QP for fixqp/legacy
+ *      OPENKVM_VENC_RC_LOG=1      one stderr line per frame (type, QP, bytes,
+ *                                 running kbps) for bench validation
  *
  * The vendor AX_VENC_STREAM_T/NALU structs are used purely as the internal
  * hand-off shape libkvm.c already speaks (SDK headers, no vendor code).
@@ -75,8 +83,14 @@
 #include "vcenc_encode.h"
 #include "vcenc_header.h"
 #include "vcenc_hevc_header.h"
+#include "vcenc_rc.h"
 
-/* ---------------- session state (one H.264 session) ---------------- */
+/* controller selection (V.ctrl) */
+#define CTRL_NONE 0u   /* pinned QP: ENC_RC_LEGACY or ENC_RC_FIXQP program */
+#define CTRL_CBR  1u
+#define CTRL_VBR  2u
+
+/* ---------------- session state (one H.264/H.265 session) ---------------- */
 static struct {
     int      fd;                 /* /dev/es_venc; -1 when down */
     int      chn;                /* the kvm channel id we were created as */
@@ -86,8 +100,12 @@ static struct {
     uint64_t fb_bus;             /* framebuf block (computed floorplan) */
     uint8_t  *fb_map;
     vcenc_geom g;                /* session geometry (#17) */
-    uint32_t qp;                 /* frame QP (also the PPS pic_init_qp) */
-    uint32_t rc_mode;            /* ENC_RC_LEGACY | ENC_RC_FIXQP */
+    uint32_t qp;                 /* pinned frame QP (CTRL_NONE) / PPS pic_init_qp */
+    uint32_t rc_mode;            /* builder program: ENC_RC_LEGACY | ENC_RC_FIXQP */
+    uint32_t ctrl;               /* CTRL_NONE | CTRL_CBR | CTRL_VBR (#46) */
+    struct vcenc_rc rc;          /* the rate controller (CTRL_CBR/VBR) */
+    uint32_t kbps, fps;          /* controller target */
+    int      rc_log;             /* OPENKVM_VENC_RC_LOG */
     uint32_t codec;              /* ENC_CODEC_H264 | ENC_CODEC_HEVC (#64) */
     uint32_t gop;                /* IDR period; 0 = IDR only at start */
     uint32_t n;                  /* session frame counter */
@@ -258,7 +276,6 @@ static void venc_open_down(void)
 int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
                     int fps, int gop, int qlty, int rc_mode)
 {
-    (void)fps; (void)rc_mode;
     if (V.fd >= 0) venc_open_down();
     if (M.active)  mj_down();
     if (type == PT_MJPEG) return mj_create(chn, w, h, qlty);
@@ -308,44 +325,64 @@ int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
     V.pack = malloc(V.g.out_limit + 256);   /* SPS+PPS headroom over the HW limit */
     if (!V.pack) goto fail;
 
-    /* bench overrides (#46 seam); default = the shipping fixed-QP32 program.
-     * HEVC defaults to the vendor's true fixed-QP register set (the program
-     * device-proven for H.265, vendor-diff-hevc-20260905); H.264 keeps the
-     * legacy CBR-cluster program it shipped with. */
+    /* Rate control (#46). With a bitrate from the app the controller runs
+     * over the vendor's fixed-QP register set; the app's rc_mode picks CBR
+     * (0) or capped VBR (1). Without one, the pre-#46 pinned programs:
+     * HEVC the vendor's fixed-QP set (device-proven for H.265), H.264 the
+     * legacy CBR-cluster program it shipped with. ENV overrides on top. */
+    V.gop = (gop > 0 && gop <= 1024) ? (uint32_t)gop : 30;
+    V.fps = (fps > 0 && fps <= 240) ? (uint32_t)fps : 60;
+    V.kbps = qlty > 0 ? (uint32_t)qlty : 0;
     V.qp = ENC_QP_FIXED;
-    V.rc_mode = (V.codec == ENC_CODEC_HEVC) ? ENC_RC_FIXQP : ENC_RC_LEGACY;
+    V.ctrl = V.kbps ? (rc_mode == 1 ? CTRL_VBR : CTRL_CBR) : CTRL_NONE;
+    V.rc_mode = (V.ctrl != CTRL_NONE || V.codec == ENC_CODEC_HEVC)
+              ? ENC_RC_FIXQP : ENC_RC_LEGACY;
     {
-        const char *e = getenv("OPENKVM_VENC_QP");
+        const char *e = getenv("OPENKVM_VENC_RC");
+        if (e && !strcmp(e, "cbr"))         { V.ctrl = CTRL_CBR;  V.rc_mode = ENC_RC_FIXQP; }
+        else if (e && !strcmp(e, "vbr"))    { V.ctrl = CTRL_VBR;  V.rc_mode = ENC_RC_FIXQP; }
+        else if (e && !strcmp(e, "fixqp"))  { V.ctrl = CTRL_NONE; V.rc_mode = ENC_RC_FIXQP; }
+        else if (e && !strcmp(e, "legacy")) { V.ctrl = CTRL_NONE; V.rc_mode = ENC_RC_LEGACY; }
+        else if (e)
+            fprintf(stderr, "[openvenc] ignoring OPENKVM_VENC_RC=%s "
+                            "(cbr|vbr|fixqp|legacy)\n", e);
+        if (V.ctrl != CTRL_NONE && !V.kbps) V.kbps = 8000;
+        e = getenv("OPENKVM_VENC_QP");
         if (e) {
             uint32_t q = (uint32_t)strtoul(e, NULL, 0);
-            if (vcenc_qp_valid(q))
-                V.qp = q;
-            else
+            if (!vcenc_qp_valid(q))
                 fprintf(stderr, "[openvenc] ignoring OPENKVM_VENC_QP=%s "
                                 "(range %u..%u)\n", e, VCENC_QP_MIN,
                         VCENC_QP_MAX);
+            else if (V.ctrl != CTRL_NONE)
+                fprintf(stderr, "[openvenc] OPENKVM_VENC_QP ignored under "
+                                "rate control (the controller owns the QP)\n");
+            else
+                V.qp = q;
         }
-        e = getenv("OPENKVM_VENC_RC");
-        if (e && !strcmp(e, "fixqp"))
-            V.rc_mode = ENC_RC_FIXQP;
-        else if (e && !strcmp(e, "legacy"))
-            V.rc_mode = ENC_RC_LEGACY;
-        else if (e)
-            fprintf(stderr, "[openvenc] ignoring OPENKVM_VENC_RC=%s "
-                            "(legacy|fixqp)\n", e);
+        V.rc_log = getenv("OPENKVM_VENC_RC_LOG") != NULL;
     }
-    V.gop = (gop > 0 && gop <= 1024) ? (uint32_t)gop : 30;
+    if (V.ctrl != CTRL_NONE) {
+        vcenc_rc_init(&V.rc, V.codec, V.g.w, V.g.h, V.fps, V.kbps * 1000.0,
+                      V.gop, V.ctrl == CTRL_VBR ? VCENC_RC_VBR : VCENC_RC_CBR);
+        V.qp = V.rc.qp_seed;          /* PPS pic_init_qp for the session */
+    }
     V.n = 0;
     V.chn = chn;
     V.pack_ready = 0;
     V.stride_warned = 0;
     fprintf(stderr, "[openvenc] up: hwid=0x%08x %s %ux%u framebuf 0x%llx+0x%x "
-                    "rc=%s QP%u gop=%u qlty-req=%d (ignored)\n",
+                    "rc=%s program=%s QP%u gop=%u\n",
             cfg.vcmd_hw_version_id,
             V.codec == ENC_CODEC_HEVC ? "H.265" : "H.264", V.g.w, V.g.h,
             (unsigned long long)V.fb_bus, V.g.span,
+            V.ctrl == CTRL_CBR ? "cbr" : V.ctrl == CTRL_VBR ? "vbr" : "pinned",
             V.rc_mode == ENC_RC_FIXQP ? "fixqp" : "legacy",
-            V.qp, V.gop, qlty);
+            V.qp, V.gop);
+    if (V.ctrl != CTRL_NONE)
+        fprintf(stderr, "[openvenc] rc: %u kbps @ %u fps, seed QP %u (bpp %.4f)\n",
+                V.kbps, V.fps, V.rc.qp_seed,
+                V.kbps * 1000.0 / ((double)V.fps * V.g.w * V.g.h));
     return 0;
 fail:
     fprintf(stderr, "[openvenc][FAIL] session bring-up: %s\n", strerror(errno));
@@ -391,12 +428,17 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
                       + (SUBMODULE_MAIN_ADDR / 2);
     memset(V.status_pool + STATUS_SLOT_REG_OFF(id, 0), 0, 512 * 4);
 
+    /* the frame QP: the controller's decision, or the pinned session QP.
+     * Under rate control the PPS keeps pic_init_qp = seed and the hardware
+     * writes slice_qp_delta (sw7 high field), as the vendor's CBR does. */
+    uint32_t qp = V.ctrl != CTRL_NONE ? vcenc_rc_pick_qp(&V.rc, is_idr) : V.qp;
     struct vcenc_frame fr = {
-        .frame_num  = gopn,
-        .qp         = V.qp,
-        .rc_mode    = V.rc_mode,
-        .codec      = V.codec,
-        .input_phys = (uint32_t)vf->u64PhyAddr[0],
+        .frame_num   = gopn,
+        .qp          = qp,
+        .pic_init_qp = V.ctrl != CTRL_NONE ? V.qp : 0,
+        .rc_mode     = V.rc_mode,
+        .codec       = V.codec,
+        .input_phys  = (uint32_t)vf->u64PhyAddr[0],
     };
     uint32_t *slot = V.cmd_pool + (uint32_t)id * (V.mem.cmd_unit_size / 4);
     ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, (uint32_t)V.fb_bus, &V.g,
@@ -470,6 +512,13 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     V.pack_len = off + bytes;
     V.pack_coding = is_idr ? AX_VENC_INTRA_FRAME : AX_VENC_PREDICTED_FRAME;
     V.pack_ready = 1;
+    if (V.ctrl != CTRL_NONE) {
+        vcenc_rc_update(&V.rc, 8.0 * V.pack_len, qp);   /* wire bytes */
+        if (V.rc_log)
+            fprintf(stderr, "[openvenc][rc] f=%u %s qp=%u bytes=%u avg=%.0f kbps\n",
+                    V.n, is_idr ? "IDR" : "P", qp, V.pack_len,
+                    V.rc.total_bits / V.rc.frames * V.fps / 1000.0);
+    }
     V.n++;
     rc = 0;
 out:
@@ -507,7 +556,23 @@ void kvm_venc_release(int chn, AX_VENC_STREAM_T *st)
 
 int kvm_venc_set_fps(int chn, AX_PAYLOAD_TYPE_E type, int fps)
 {
-    (void)chn; (void)type; (void)fps;   /* fixed-QP: nothing rate-shaped yet */
+    (void)type;
+    if (V.fd < 0 || chn != V.chn) return -1;
+    if (fps <= 0 || fps > 240) return -1;
+    V.fps = (uint32_t)fps;
+    if (V.ctrl != CTRL_NONE)             /* same bits, fewer/more frames */
+        vcenc_rc_set_target(&V.rc, V.kbps * 1000.0, V.fps);
+    return 0;
+}
+
+int kvm_venc_set_bitrate(int chn, int kbps)
+{
+    if (V.fd < 0 || chn != V.chn || V.ctrl == CTRL_NONE) return -1;
+    if (kbps <= 0) return -1;
+    V.kbps = (uint32_t)kbps;
+    vcenc_rc_set_target(&V.rc, V.kbps * 1000.0, V.fps);   /* next frame */
+    if (V.rc_log)
+        fprintf(stderr, "[openvenc][rc] retarget %u kbps @ %u fps\n", V.kbps, V.fps);
     return 0;
 }
 
@@ -515,6 +580,7 @@ int kvm_venc_set_gop(int chn, int gop)
 {
     if (V.fd < 0 || chn != V.chn) return -1;
     V.gop = (gop > 0 && gop <= 1024) ? (uint32_t)gop : V.gop;
+    if (V.ctrl != CTRL_NONE) vcenc_rc_set_gop(&V.rc, V.gop);
     V.n = 0;   /* restart the GOP: next frame is an IDR (cheap keyframe hook) */
     return 0;
 }

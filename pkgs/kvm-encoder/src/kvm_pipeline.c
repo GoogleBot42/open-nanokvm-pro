@@ -382,6 +382,12 @@ int kvm_venc_set_gop(int chn, int gop)
     return AX_VENC_SetRcParam(chn, &rc);
 }
 
+int kvm_venc_set_bitrate(int chn, int kbps)
+{
+    (void)chn; (void)kbps;   /* vendor channel: libkvm rebuilds it, as before */
+    return -1;
+}
+
 #endif /* !KVM_OPEN_VENC (vendor AX_VENC backend) */
 
 /* ---------------- lt6911 source poll ---------------- */

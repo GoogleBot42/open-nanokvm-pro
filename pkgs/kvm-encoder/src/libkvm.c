@@ -149,6 +149,14 @@ static int ensure_chn_locked(int want_type, int w, int h, int qlty)
     int chn = (want_type == 0) ? KVM_VENC_MJPEG_CHN
             : (want_type == 2) ? KVM_VENC_H265_CHN : KVM_VENC_H264_CHN;
     if (s_cur_type == want_type && s_cur_chn == chn && s_qlty == qlty) return 0;
+    /* Same codec, new bitrate: retarget in place when the backend can (the
+     * open encoder's controller applies it at the next frame -- no IDR, no
+     * teardown, #46). The vendor backend declines and is rebuilt as before. */
+    if (s_cur_type == want_type && s_cur_chn == chn && want_type != 0 &&
+        kvm_venc_set_bitrate(chn, qlty) == 0) {
+        s_qlty = qlty;
+        return 0;
+    }
     /* A failing create must not be retried at the caller's 120 Hz read rate. */
     if (kvm_mono_us() < s_chn_fail_until) return -1;
     if (s_cur_chn >= 0) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
