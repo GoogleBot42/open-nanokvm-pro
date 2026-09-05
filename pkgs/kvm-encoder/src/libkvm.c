@@ -59,6 +59,7 @@ static int64_t s_chn_fail_until = 0;  /* VENC-create cooldown: no 120 Hz retry s
  * the tick captures for itself. Both under s_lock. */
 static int64_t s_prev_lease_us = 0;    /* read-path tap active until then */
 static int64_t s_last_enc_cap_us = 0;  /* last kvm_cap_get by the read path */
+static int64_t s_last_geom_us = 0;     /* last live source-geometry poll */
 
 static int64_t kvm_mono_us(void)
 {
@@ -264,6 +265,29 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
 {
     int rc = IMG_NOT_EXIST;
     pthread_mutex_lock(&s_lock);
+
+    /* Absorb a LIVE source mode change (host switched resolution while we are
+     * streaming). init_pipeline_locked reads the source geometry only once, so
+     * without this a 4K->1080p switch keeps the old SIF/WDMA geometry against
+     * the new signal -- one garbage ("pink") frame, then a permanent wedge that
+     * a switch back to the original mode does NOT clear (the read path never
+     * re-reads, so s_w/s_h stay pinned and nothing re-inits). Poll the live
+     * geometry at most ~2 Hz; on a real change, tear down so the block below
+     * re-inits at the new resolution -- the same recovery the resume path gets.
+     * OPENKVM_FORCE_GEOM pins a bench geometry deliberately, so skip then. */
+    if (s_inited) {
+        int64_t now = kvm_mono_us();
+        if (now - s_last_geom_us > 500000 && !getenv("OPENKVM_FORCE_GEOM")) {
+            s_last_geom_us = now;
+            int sw, sh, sf, locked;
+            if (kvm_read_source(&sw, &sh, &sf, &locked) == 0 && locked &&
+                sw > 0 && sh > 0 && (sw != s_w || sh != s_h)) {
+                fprintf(stderr, "OPEN-KVM: source geometry changed %dx%d -> %dx%d; "
+                        "re-initialising capture pipeline\n", s_w, s_h, sw, sh);
+                teardown_locked();
+            }
+        }
+    }
 
     if (!s_inited && init_pipeline_locked(_width, _height) != 0) { pthread_mutex_unlock(&s_lock); return IMG_VENC_ERROR; }
 
