@@ -1,6 +1,6 @@
 diff -urN a/src/api/stream.ts b/src/api/stream.ts
---- a/src/api/stream.ts	2026-09-05 10:37:35.150569935 -0600
-+++ b/src/api/stream.ts	2026-09-05 10:40:39.429532858 -0600
+--- a/src/api/stream.ts	2026-09-05 13:13:20.121220205 -0600
++++ b/src/api/stream.ts	2026-09-05 13:13:46.277469682 -0600
 @@ -43,6 +43,11 @@
    return getWebSocket('/api/stream/h264/direct');
  }
@@ -14,21 +14,23 @@ diff -urN a/src/api/stream.ts b/src/api/stream.ts
    const baseUrl = getBaseUrl('ws');
  
 diff -urN a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
---- a/src/i18n/locales/en.ts	2026-09-05 10:37:35.151576668 -0600
-+++ b/src/i18n/locales/en.ts	2026-09-05 10:41:00.237624215 -0600
-@@ -79,7 +79,8 @@
+--- a/src/i18n/locales/en.ts	2026-09-05 13:13:20.122034857 -0600
++++ b/src/i18n/locales/en.ts	2026-09-05 13:16:47.695300607 -0600
+@@ -79,7 +79,10 @@
            "The device's factory-installed firmware is strictly provisioned without H.265/HEVC video encoding or decoding functionality.\n\n" +
            'Any user-initiated modification of the firmware, manual installation of third-party H.265 modules, or independent development of HEVC features constitutes an assumption of all related risks by the end-user. These risks include, but are not limited to, patent licensing fees, legal liabilities, device compatibility issues, and performance degradation.\n\n' +
            'The manufacturer expressly disclaims all responsibility for the operation, security, or legal compliance of any user-customized H.265 features.',
 -        notSupported: 'The current browser does not support H.265!'
 +        notSupported: 'The current browser does not support H.265!',
-+        fallback: 'This browser cannot decode H.265 video; playing H.264 Direct instead.'
++        webcodecs: 'H.265 Direct is unavailable in this browser',
++        fallback:
++          "This browser's WebCodecs has no working H.265 decoder (its media player may still decode HEVC elsewhere); playing H.264 Direct instead. The probe answers are in the browser console."
        },
        btnOk: 'OK'
      },
 diff -urN a/src/lib/video.ts b/src/lib/video.ts
---- a/src/lib/video.ts	2026-09-05 10:37:35.152346515 -0600
-+++ b/src/lib/video.ts	2026-09-05 10:45:05.363692795 -0600
+--- a/src/lib/video.ts	2026-09-05 13:13:20.122677596 -0600
++++ b/src/lib/video.ts	2026-09-05 13:15:17.952891122 -0600
 @@ -6,6 +6,8 @@
    return 'VideoDecoder' in window;
  }
@@ -38,63 +40,82 @@ diff -urN a/src/lib/video.ts b/src/lib/video.ts
  export function isH265Supported() {
    if ('getCapabilities' in RTCRtpReceiver) {
      const capabilities = RTCRtpReceiver.getCapabilities('video');
-@@ -18,25 +20,75 @@
+@@ -18,27 +20,93 @@
    return false;
  }
  
-+// H.265 over the direct (WebSocket + WebCodecs) path. Main profile, Main tier,
-+// level 5.1 -- the level the device's encoder writes for 4K; the decoder is
-+// configured without a description (Annex-B, parameter sets in-band on every
-+// key frame), for which the level is advisory, so one probe covers every
-+// geometry the device ships.
++// H.265 over the direct (WebSocket + WebCodecs) path.
++export type HardwareAccelerationPreference = 'no-preference' | 'prefer-hardware' | 'prefer-software';
++
++export type H265DecoderConfig = {
++  codec: string;
++  hardwareAcceleration: HardwareAccelerationPreference;
++};
++
++// Main profile, Main tier, level 5.1 -- what the device's encoder writes for
++// 4K. The decoder runs without a description (Annex-B, parameter sets in-band
++// on every key frame), so the worker derives the exact string from the
++// stream's own VPS once it sees it; these are only what we ASK the browser
++// about beforehand, and the last resort if the VPS cannot be read.
 +export const H265_DIRECT_CODEC = 'hvc1.1.6.L153.B0';
++const H265_CODEC_CANDIDATES = ['hvc1.1.6.L153.B0', 'hvc1.1.6.L123.B0', 'hev1.1.6.L123.B0'];
++const H265_ACCELERATION_CANDIDATES: HardwareAccelerationPreference[] = [
++  'no-preference',
++  'prefer-hardware',
++  'prefer-software'
++];
 +
-+let h265DirectSupported: boolean | null = null; // null = probe still pending
-+let h265DirectProbe: Promise<boolean> | null = null;
++let h265DirectProbe: Promise<H265DecoderConfig | null> | null = null;
 +
-+export function probeH265DirectSupport(): Promise<boolean> {
++// Ask WebCodecs which HEVC configuration it accepts and log every answer, so
++// a user can report them. Returns the first accepted configuration, or null.
++// Advisory only: `isConfigSupported` for a codec string is a narrower question
++// than "can this browser decode HEVC", so the H.265 Direct option is never
++// disabled on this answer -- the player tries, and falls back to H.264 Direct
++// only when the decoder actually fails at runtime.
++export function probeH265DirectConfig(): Promise<H265DecoderConfig | null> {
 +  if (h265DirectProbe) return h265DirectProbe;
 +
 +  h265DirectProbe = (async () => {
-+    if (!isDecoderSupported()) return false;
-+
-+    try {
-+      const { supported } = await VideoDecoder.isConfigSupported({
-+        codec: H265_DIRECT_CODEC,
-+        optimizeForLatency: true
-+      });
-+      return !!supported;
-+    } catch {
-+      return false;
++    if (!isDecoderSupported()) {
++      console.log('[h265-direct] no VideoDecoder (WebCodecs) in this browser');
++      return null;
 +    }
-+  })().then((ok) => {
-+    h265DirectSupported = ok;
-+    return ok;
-+  });
++
++    let chosen: H265DecoderConfig | null = null;
++
++    for (const codec of H265_CODEC_CANDIDATES) {
++      for (const hardwareAcceleration of H265_ACCELERATION_CANDIDATES) {
++        let answer: string;
++        try {
++          const { supported } = await VideoDecoder.isConfigSupported({
++            codec,
++            hardwareAcceleration,
++            optimizeForLatency: true
++          });
++          answer = supported ? 'supported' : 'unsupported';
++        } catch (err) {
++          answer = `throws ${err}`;
++        }
++
++        console.log(`[h265-direct] isConfigSupported ${codec} ${hardwareAcceleration}: ${answer}`);
++
++        if (!chosen && answer === 'supported') {
++          chosen = { codec, hardwareAcceleration };
++        }
++      }
++    }
++
++    console.log(
++      chosen
++        ? `[h265-direct] probe accepted ${chosen.codec} (${chosen.hardwareAcceleration})`
++        : `[h265-direct] probe accepted nothing; trying ${H265_DIRECT_CODEC} anyway`
++    );
++
++    return chosen;
++  })();
 +
 +  return h265DirectProbe;
-+}
-+
-+// Synchronous view for the mode selectors: optimistic while the probe (started
-+// at module load, resolves in milliseconds) is pending, then definitive.
-+export function isH265DirectSupported() {
-+  return isDecoderSupported() && h265DirectSupported !== false;
-+}
-+
-+// Whether a STORED mode may be mounted. h265-direct is always admitted on a
-+// WebCodecs browser: the H265Direct screen runs the definitive probe itself and
-+// falls back to H.264 Direct with a visible notice, which a silent drop to the
-+// default mode here would hide.
-+export function isVideoModeUsable(mode: string) {
-+  if (mode === 'h265-direct') {
-+    return isDecoderSupported();
-+  }
-+
-+  return getSupportedVideoModes().includes(mode);
-+}
-+
-+if (typeof window !== 'undefined') {
-+  void probeH265DirectSupport();
 +}
 +
  export function getSupportedVideoModes() {
@@ -114,51 +135,18 @@ diff -urN a/src/lib/video.ts b/src/lib/video.ts
  
    if (decoderSupported) {
      videoModes.push('h264-direct');
- 
+-
 -    if (h265Supported) {
-+    if (isH265DirectSupported()) {
-       videoModes.push('h265-direct');
-     }
+-      videoModes.push('h265-direct');
+-    }
++    videoModes.push('h265-direct');
    }
-diff -urN a/src/pages/desktop/index.tsx b/src/pages/desktop/index.tsx
---- a/src/pages/desktop/index.tsx	2026-09-05 10:37:35.152738893 -0600
-+++ b/src/pages/desktop/index.tsx	2026-09-05 10:44:59.030665337 -0600
-@@ -5,7 +5,7 @@
  
- import { VideoMode } from '@/types';
- import * as storage from '@/lib/localstorage.ts';
--import { getSupportedVideoModes } from '@/lib/video.ts';
-+import { getSupportedVideoModes, isVideoModeUsable } from '@/lib/video.ts';
- import { client } from '@/lib/websocket.ts';
- import { videoModeAtom } from '@/jotai/screen.ts';
- import { Head } from '@/components/head.tsx';
-@@ -39,7 +39,7 @@
-     const supportedModes = getSupportedVideoModes();
- 
-     const cookieVideoMode = storage.getVideoMode();
--    if (cookieVideoMode && supportedModes.includes(cookieVideoMode)) {
-+    if (cookieVideoMode && isVideoModeUsable(cookieVideoMode)) {
-       return cookieVideoMode;
-     }
- 
+   return videoModes;
 diff -urN a/src/pages/desktop/menu/screen/video-mode.tsx b/src/pages/desktop/menu/screen/video-mode.tsx
---- a/src/pages/desktop/menu/screen/video-mode.tsx	2026-09-05 10:37:35.153672749 -0600
-+++ b/src/pages/desktop/menu/screen/video-mode.tsx	2026-09-05 10:40:50.214580224 -0600
-@@ -1,3 +1,4 @@
-+import { useEffect, useState } from 'react';
- import { Divider, Popover } from 'antd';
- import clsx from 'clsx';
- import { useAtomValue } from 'jotai';
-@@ -5,7 +6,7 @@
- import { useTranslation } from 'react-i18next';
- 
- import { setVideoMode as setCookie } from '@/lib/localstorage.ts';
--import { getSupportedVideoModes } from '@/lib/video.ts';
-+import { getSupportedVideoModes, probeH265DirectSupport } from '@/lib/video.ts';
- import { videoModeAtom } from '@/jotai/screen.ts';
- 
- const videoGroups = [
-@@ -18,6 +19,11 @@
+--- a/src/pages/desktop/menu/screen/video-mode.tsx	2026-09-05 13:13:20.123989813 -0600
++++ b/src/pages/desktop/menu/screen/video-mode.tsx	2026-09-05 13:15:48.572031153 -0600
+@@ -18,6 +18,11 @@
      ]
    },
    {
@@ -170,33 +158,10 @@ diff -urN a/src/pages/desktop/menu/screen/video-mode.tsx b/src/pages/desktop/men
      key: 'mjpeg',
      name: 'MJPEG',
      modes: [{ key: 'mjpeg', name: 'MJPEG' }]
-@@ -27,6 +33,12 @@
- export const VideoMode = () => {
-   const { t } = useTranslation();
-   const videoMode = useAtomValue(videoModeAtom);
-+  const [, setProbed] = useState(false);
-+
-+  // re-render once the HEVC decoder probe settles
-+  useEffect(() => {
-+    probeH265DirectSupport().then(() => setProbed(true));
-+  }, []);
- 
-   const supportedVideoModes = getSupportedVideoModes();
- 
 diff -urN a/src/pages/desktop/menu/settings/screen/video-mode.tsx b/src/pages/desktop/menu/settings/screen/video-mode.tsx
---- a/src/pages/desktop/menu/settings/screen/video-mode.tsx	2026-09-05 10:37:35.154734395 -0600
-+++ b/src/pages/desktop/menu/settings/screen/video-mode.tsx	2026-09-05 10:40:11.414409665 -0600
-@@ -1,14 +1,17 @@
-+import { useEffect, useState } from 'react';
- import { Select } from 'antd';
- import { useAtom } from 'jotai';
- import { useTranslation } from 'react-i18next';
- 
- import type { VideoMode as TVideoMode } from '@/types';
- import * as storage from '@/lib/localstorage.ts';
-+import { getSupportedVideoModes, probeH265DirectSupport } from '@/lib/video.ts';
- import { videoModeAtom } from '@/jotai/screen.ts';
- 
+--- a/src/pages/desktop/menu/settings/screen/video-mode.tsx	2026-09-05 13:13:20.125044347 -0600
++++ b/src/pages/desktop/menu/settings/screen/video-mode.tsx	2026-09-05 13:15:54.599058676 -0600
+@@ -9,6 +9,7 @@
  const videoModes = [
    { value: 'h264-webrtc', label: 'H.264 WebRTC' },
    { value: 'h264-direct', label: 'H.264 Direct ' },
@@ -204,58 +169,90 @@ diff -urN a/src/pages/desktop/menu/settings/screen/video-mode.tsx b/src/pages/de
    { value: 'mjpeg', label: 'MJPEG' }
  ];
  
-@@ -16,6 +19,18 @@
-   const { t } = useTranslation();
- 
-   const [videoMode, setVideoMode] = useAtom(videoModeAtom);
-+  const [, setProbed] = useState(false);
-+
-+  // re-render once the HEVC decoder probe settles
-+  useEffect(() => {
-+    probeH265DirectSupport().then(() => setProbed(true));
-+  }, []);
-+
-+  const supportedVideoModes = getSupportedVideoModes();
-+  const options = videoModes.map((mode) => ({
-+    ...mode,
-+    disabled: !supportedVideoModes.includes(mode.value)
-+  }));
- 
-   function update(value: string) {
-     if (value === videoMode) {
-@@ -39,7 +54,7 @@
-         </span>
-       </div>
- 
--      <Select value={videoMode} style={{ width: 240 }} options={videoModes} onSelect={update} />
-+      <Select value={videoMode} style={{ width: 240 }} options={options} onSelect={update} />
-     </div>
-   );
- };
 diff -urN a/src/pages/desktop/screen/direct.worker.ts b/src/pages/desktop/screen/direct.worker.ts
---- a/src/pages/desktop/screen/direct.worker.ts	2026-09-05 12:46:52.980727475 -0600
-+++ b/src/pages/desktop/screen/direct.worker.ts	2026-09-05 12:56:49.774274319 -0600
-@@ -8,6 +8,35 @@
+--- a/src/pages/desktop/screen/direct.worker.ts	2026-09-05 13:13:20.125757087 -0600
++++ b/src/pages/desktop/screen/direct.worker.ts	2026-09-05 13:18:51.162859934 -0600
+@@ -1,13 +1,31 @@
+ import Queue from 'yocto-queue';
+ 
++type DecoderConfig = {
++  codec: string;
++  optimizeForLatency: boolean;
++  hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
++};
++
+ let canvas: OffscreenCanvas | null = null;
+ let ctx: OffscreenCanvasRenderingContext2D | null = null;
+ let rendering: boolean = false;
+ let decoder: VideoDecoder | null = null;
+-let config: { codec: string; optimizeForLatency: boolean } | null = null;
++let config: DecoderConfig | null = null;
++
++// Decoder configurations to try, in order, and how far we got. Filled at the
++// first key message: for H.265 the string derived from the stream's own VPS
++// comes first, then the configuration the page asked for. A decoder that
++// fails before its first frame moves to the next candidate; when none is
++// left the page is told (decoder_error) so it can fall back.
++let configCandidates: DecoderConfig[] = [];
++let candidateIndex = 0;
++let framesDecoded = 0;
  
  const frameQueue = new Queue<VideoFrame>();
  
-+// parameter-set messages received before the first key message (see handleWsMessage)
++// parameter-set messages received before a key message (see handleWsMessage)
 +let pendingParams: Uint8Array[] = [];
++
+ self.onmessage = (event: MessageEvent) => {
+   const { type, data, canvas: offscreenCanvas } = event.data;
+ 
+@@ -20,6 +38,20 @@
+         optimizeForLatency: true
+       };
+       break;
++    case 'init_h265':
++      canvas = offscreenCanvas;
++      ctx = canvas!.getContext('2d') as OffscreenCanvasRenderingContext2D;
++      // No description: Annex-B with in-band VPS/SPS/PPS on every key message.
++      // The codec string is derived from the VPS when the first key message
++      // arrives; this is what the page's probe accepted (or its default) and
++      // serves as the fallback. Keep the default in step with
++      // H265_DIRECT_CODEC in lib/video.ts.
++      config = {
++        codec: event.data.codec || 'hvc1.1.6.L153.B0',
++        hardwareAcceleration: event.data.hardwareAcceleration || 'no-preference',
++        optimizeForLatency: true
++      };
++      break;
+     case 'ws_message':
+       handleWsMessage(data);
+       break;
+@@ -30,6 +62,103 @@
+   }
+ };
+ 
++// offset of the NAL header after a 3- or 4-byte Annex-B start code
++function nalHeaderOffset(data: Uint8Array): number {
++  return data[2] === 1 ? 3 : 4;
++}
 +
 +// Annex-B NAL is a parameter set: SPS/PPS for H.264, VPS/SPS/PPS for H.265
 +function isParameterSet(data: Uint8Array): boolean {
-+  const header = data[2] === 1 ? 3 : 4;
++  const header = nalHeaderOffset(data);
 +  if (!config || data.length <= header) {
 +    return false;
 +  }
 +
-+  if (config.codec.startsWith('hvc1')) {
++  if (isH265()) {
 +    const type = (data[header] >> 1) & 0x3f;
 +    return type >= 32 && type <= 34;
 +  }
 +
 +  const type = data[header] & 0x1f;
 +  return type === 7 || type === 8;
++}
++
++function isH265(): boolean {
++  return !!config && /^(hvc1|hev1)/.test(config.codec);
 +}
 +
 +function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
@@ -268,28 +265,72 @@ diff -urN a/src/pages/desktop/screen/direct.worker.ts b/src/pages/desktop/screen
 +  return out;
 +}
 +
- self.onmessage = (event: MessageEvent) => {
-   const { type, data, canvas: offscreenCanvas } = event.data;
- 
-@@ -20,6 +49,17 @@
-         optimizeForLatency: true
-       };
-       break;
-+    case 'init_h265':
-+      canvas = offscreenCanvas;
-+      ctx = canvas!.getContext('2d') as OffscreenCanvasRenderingContext2D;
-+      // Main profile, Main tier, L5.1; no description, so Annex-B with in-band
-+      // VPS/SPS/PPS (the server folds them into every key message). Keep in
-+      // step with H265_DIRECT_CODEC in lib/video.ts.
-+      config = {
-+        codec: 'hvc1.1.6.L153.B0',
-+        optimizeForLatency: true
-+      };
-+      break;
-     case 'ws_message':
-       handleWsMessage(data);
-       break;
-@@ -39,7 +79,22 @@
++// ISO/IEC 14496-15 Annex E codec string from the VPS that opens an H.265 key
++// message: hvc1.<profile>.<compat flags>.<L|H><level>.<constraint bytes>.
++// The general profile_tier_level sits at a fixed offset in the VPS (no
++// exp-Golomb before it), so this is byte picking once the emulation-prevention
++// bytes (00 00 03 -> 00 00) are stripped. Returns null if the message does not
++// start with a VPS.
++function h265CodecFromVps(data: Uint8Array): string | null {
++  const header = nalHeaderOffset(data);
++  if (data.length <= header || ((data[header] >> 1) & 0x3f) !== 32) {
++    return null;
++  }
++
++  // NAL header (2) + the 32 VPS bits before profile_tier_level (4) + PTL (12)
++  const body: number[] = [];
++  let zeros = 0;
++  for (let i = header; i < data.length && body.length < 18; i++) {
++    const b = data[i];
++    if (zeros >= 2 && b === 3) {
++      zeros = 0;
++      continue;
++    }
++    body.push(b);
++    zeros = b === 0 ? zeros + 1 : 0;
++  }
++  if (body.length < 18) {
++    return null;
++  }
++
++  const ptl = 6;
++  const profileSpace = body[ptl] >> 6;
++  const tier = (body[ptl] >> 5) & 1;
++  const profileIdc = body[ptl] & 0x1f;
++
++  // general_profile_compatibility_flag[j] becomes bit j of the hex value
++  // ("reverse bit order": Main profile with flags 1 and 2 set is "6")
++  let compat = 0;
++  for (let j = 0; j < 32; j++) {
++    const bit = (body[ptl + 1 + (j >> 3)] >> (7 - (j & 7))) & 1;
++    if (bit) compat |= 1 << j;
++  }
++
++  const constraints: string[] = [];
++  for (let k = 0; k < 6; k++) {
++    constraints.push(body[ptl + 5 + k].toString(16).toUpperCase().padStart(2, '0'));
++  }
++  while (constraints.length > 0 && constraints[constraints.length - 1] === '00') {
++    constraints.pop();
++  }
++
++  const levelIdc = body[ptl + 11];
++
++  const space = ['', 'A', 'B', 'C'][profileSpace];
++  const parts = [
++    'hvc1',
++    `${space}${profileIdc}`,
++    (compat >>> 0).toString(16).toUpperCase(),
++    `${tier ? 'H' : 'L'}${levelIdc}`,
++    ...constraints
++  ];
++  return parts.join('.');
++}
++
+ function handleWsMessage(message: ArrayBuffer) {
+   try {
+     if (message.byteLength < 9) {
+@@ -39,10 +168,25 @@
      const view = new DataView(message);
      const isKeyFrame = view.getUint8(0) === 1;
      const timestamp = Number(view.getBigUint64(1, true));
@@ -312,8 +353,88 @@ diff -urN a/src/pages/desktop/screen/direct.worker.ts b/src/pages/desktop/screen
 +    }
  
      if (!decoder && isKeyFrame) {
-       initializeDecoder();
-@@ -144,6 +199,7 @@
+-      initializeDecoder();
++      initializeDecoder(data);
+     }
+ 
+     if (decoder?.state === 'configured') {
+@@ -53,7 +197,7 @@
+   }
+ }
+ 
+-function initializeDecoder() {
++function initializeDecoder(firstKeyData: Uint8Array) {
+   if (!self.VideoDecoder) {
+     console.log('Error: WebCodecs API not supported in this worker.');
+     return;
+@@ -63,8 +207,26 @@
+     return;
+   }
+ 
++  if (configCandidates.length === 0) {
++    configCandidates = [config];
++    if (isH265()) {
++      const derived = h265CodecFromVps(firstKeyData);
++      console.log(`[direct] stream VPS says ${derived}; page asked for ${config.codec}`);
++      if (derived && derived !== config.codec) {
++        configCandidates.unshift({ ...config, codec: derived });
++      }
++    }
++  }
++
++  if (candidateIndex >= configCandidates.length) {
++    return;
++  }
++  const attempt = configCandidates[candidateIndex];
++
+   const init = {
+     output: (frame: VideoFrame) => {
++      framesDecoded++;
++
+       frameQueue.enqueue(frame);
+       if (frameQueue.size >= 10) {
+         frameQueue.dequeue()?.close();
+@@ -75,17 +237,34 @@
+         processFrameQueue();
+       }
+     },
+-    error: () => {
+-      resetDecoder();
++    error: (err: DOMException) => {
++      if (framesDecoded === 0) {
++        decoderFailed(attempt, `${err.name}: ${err.message}`);
++      } else {
++        resetDecoder();
++      }
+     }
+   };
+ 
+   try {
+     decoder = new VideoDecoder(init);
+-    decoder.configure(config);
+-  } catch (err) {
+-    console.log(err);
++    decoder.configure(attempt);
++    console.log(`[direct] decoder configured: ${attempt.codec} (${attempt.hardwareAcceleration ?? 'default'})`);
++  } catch (err: any) {
+     decoder = null;
++    decoderFailed(attempt, `configure threw ${err?.name ?? ''}: ${err?.message ?? err}`);
++  }
++}
++
++// A decoder configuration failed before producing a frame: try the next one
++// at the next key message, or tell the page when none is left.
++function decoderFailed(attempt: DecoderConfig, reason: string) {
++  console.warn(`[direct] decoder ${attempt.codec} failed before the first frame: ${reason}`);
++  resetDecoder();
++  candidateIndex++;
++
++  if (candidateIndex >= configCandidates.length) {
++    self.postMessage({ type: 'decoder_error', reason: `${attempt.codec}: ${reason}` });
+   }
+ }
+ 
+@@ -144,6 +323,7 @@
  
    decoder = null;
    rendering = false;
@@ -322,40 +443,58 @@ diff -urN a/src/pages/desktop/screen/direct.worker.ts b/src/pages/desktop/screen
    Array.from(frameQueue.drain()).forEach((frame) => frame.close());
  }
 diff -urN a/src/pages/desktop/screen/h264-direct.tsx b/src/pages/desktop/screen/h264-direct.tsx
---- a/src/pages/desktop/screen/h264-direct.tsx	2026-09-05 10:37:35.155445462 -0600
-+++ b/src/pages/desktop/screen/h264-direct.tsx	2026-09-05 10:39:52.696327223 -0600
-@@ -8,7 +8,17 @@
+--- a/src/pages/desktop/screen/h264-direct.tsx	2026-09-05 13:13:20.125757087 -0600
++++ b/src/pages/desktop/screen/h264-direct.tsx	2026-09-05 13:15:30.107946753 -0600
+@@ -3,12 +3,28 @@
+ import { useAtomValue } from 'jotai';
+ 
+ import * as api from '@/api/stream.ts';
++import type { H265DecoderConfig } from '@/lib/video.ts';
+ import { mouseStyleAtom } from '@/jotai/mouse';
+ import { videoParametersAtom } from '@/jotai/screen.ts';
  
  import DirectWorker from './direct.worker.ts?worker';
  
 -export const H264Direct = () => {
 +type DirectPlayerProps = {
-+  // worker init message: selects the WebCodecs codec string
++  // worker init message: selects the WebCodecs codec
 +  init: 'init_h264' | 'init_h265';
 +  // opens the matching /api/stream/<codec>/direct WebSocket
 +  connect: () => ReturnType<typeof api.directH264>;
++  // decoder configuration the worker falls back to when the stream's own
++  // parameter sets cannot be read (init_h265)
++  decoderConfig?: H265DecoderConfig;
++  // the worker's decoder failed before producing a single frame
++  onDecoderError?: (reason: string) => void;
 +};
 +
 +// One WebSocket of [key:1][timestamp_us:8 LE][Annex-B] messages, decoded in a
 +// worker and drawn onto an OffscreenCanvas. Codec-agnostic; H264Direct and
-+// H265Direct only differ in the two props.
-+export const DirectPlayer = ({ init, connect }: DirectPlayerProps) => {
++// H265Direct only differ in the props.
++export const DirectPlayer = ({ init, connect, decoderConfig, onDecoderError }: DirectPlayerProps) => {
    const videoParameters = useAtomValue(videoParametersAtom);
    const mouseStyle = useAtomValue(mouseStyleAtom);
  
-@@ -24,9 +34,9 @@
+@@ -23,10 +39,16 @@
+     const worker = new DirectWorker();
      workerRef.current = worker;
  
++    worker.onmessage = (event: MessageEvent) => {
++      if (event.data?.type === 'decoder_error') {
++        onDecoderError?.(String(event.data.reason));
++      }
++    };
++
      const offscreen = canvasRef.current.transferControlToOffscreen();
 -    worker.postMessage({ type: 'init_h264', canvas: offscreen }, [offscreen]);
-+    worker.postMessage({ type: init, canvas: offscreen }, [offscreen]);
++    worker.postMessage({ type: init, canvas: offscreen, ...decoderConfig }, [offscreen]);
  
 -    const ws = api.directH264();
 +    const ws = connect();
      ws.binaryType = 'arraybuffer';
  
      ws.onmessage = (event) => {
-@@ -67,3 +77,5 @@
+@@ -67,3 +89,5 @@
      </div>
    );
  };
@@ -363,48 +502,36 @@ diff -urN a/src/pages/desktop/screen/h264-direct.tsx b/src/pages/desktop/screen/
 +export const H264Direct = () => <DirectPlayer init="init_h264" connect={api.directH264} />;
 diff -urN a/src/pages/desktop/screen/h265-direct.tsx b/src/pages/desktop/screen/h265-direct.tsx
 --- a/src/pages/desktop/screen/h265-direct.tsx	1969-12-31 17:00:00.000000000 -0700
-+++ b/src/pages/desktop/screen/h265-direct.tsx	2026-09-05 10:40:00.468361466 -0600
-@@ -0,0 +1,55 @@
++++ b/src/pages/desktop/screen/h265-direct.tsx	2026-09-05 13:15:38.446984887 -0600
+@@ -0,0 +1,67 @@
 +import { useEffect, useState } from 'react';
 +import { notification } from 'antd';
 +import { useTranslation } from 'react-i18next';
 +
 +import * as api from '@/api/stream.ts';
 +import * as storage from '@/lib/localstorage.ts';
-+import { probeH265DirectSupport } from '@/lib/video.ts';
++import { H265_DIRECT_CODEC, H265DecoderConfig, probeH265DirectConfig } from '@/lib/video.ts';
 +
 +import { DirectPlayer, H264Direct } from './h264-direct.tsx';
 +
 +// H.265 Direct: the H.264 Direct player pointed at /api/stream/h265/direct
-+// with the worker's hvc1 decoder config. The browser is asked first
-+// (VideoDecoder.isConfigSupported); one that cannot decode HEVC -- Firefox,
-+// some Linux Chrome builds -- gets H.264 Direct instead, a notice saying so,
-+// and the stored mode is rewritten so the next load starts on H.264.
++// with an HEVC decoder in the worker. The browser is asked which HEVC
++// configuration it accepts (answers logged to the console) and the player is
++// mounted regardless -- a WebCodecs probe is advisory, not a verdict. Only an
++// actual decoder failure before the first frame falls back to H.264 Direct,
++// with a notice, and rewrites the stored mode so the next load starts there.
 +export const H265Direct = () => {
 +  const { t } = useTranslation();
 +  const [notify, contextHolder] = notification.useNotification();
-+  const [supported, setSupported] = useState<boolean | null>(null);
++  const [config, setConfig] = useState<H265DecoderConfig | null>(null);
++  const [failed, setFailed] = useState(false);
 +
 +  useEffect(() => {
 +    let cancelled = false;
 +
-+    probeH265DirectSupport().then((ok) => {
++    probeH265DirectConfig().then((accepted) => {
 +      if (cancelled) return;
-+
-+      if (!ok) {
-+        storage.setVideoMode('h264-direct');
-+        api.setMode('h264-direct');
-+
-+        notify.warning({
-+          key: 'h265_fallback',
-+          message: t('notification.h265.notSupported'),
-+          description: t('notification.h265.fallback'),
-+          placement: 'topRight',
-+          duration: 10
-+        });
-+      }
-+
-+      setSupported(ok);
++      setConfig(accepted ?? { codec: H265_DIRECT_CODEC, hardwareAcceleration: 'no-preference' });
 +    });
 +
 +    return () => {
@@ -412,17 +539,41 @@ diff -urN a/src/pages/desktop/screen/h265-direct.tsx b/src/pages/desktop/screen/
 +    };
 +  }, []);
 +
++  function onDecoderError(reason: string) {
++    console.error(`[h265-direct] decoder failed before the first frame: ${reason}`);
++
++    storage.setVideoMode('h264-direct');
++    api.setMode('h264-direct');
++
++    notify.warning({
++      key: 'h265_fallback',
++      message: t('notification.h265.webcodecs'),
++      description: t('notification.h265.fallback'),
++      placement: 'topRight',
++      duration: 10
++    });
++
++    setFailed(true);
++  }
++
 +  return (
 +    <>
 +      {contextHolder}
-+      {supported === true && <DirectPlayer init="init_h265" connect={api.directH265} />}
-+      {supported === false && <H264Direct />}
++      {failed && <H264Direct />}
++      {!failed && config && (
++        <DirectPlayer
++          init="init_h265"
++          connect={api.directH265}
++          decoderConfig={config}
++          onDecoderError={onDecoderError}
++        />
++      )}
 +    </>
 +  );
 +};
 diff -urN a/src/pages/desktop/screen/index.tsx b/src/pages/desktop/screen/index.tsx
---- a/src/pages/desktop/screen/index.tsx	2026-09-05 10:37:35.155445462 -0600
-+++ b/src/pages/desktop/screen/index.tsx	2026-09-05 10:40:03.653375495 -0600
+--- a/src/pages/desktop/screen/index.tsx	2026-09-05 13:13:20.125757087 -0600
++++ b/src/pages/desktop/screen/index.tsx	2026-09-05 13:13:46.279806829 -0600
 @@ -4,6 +4,7 @@
  
  import { H264Direct } from './h264-direct.tsx';
