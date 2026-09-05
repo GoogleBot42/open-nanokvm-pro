@@ -341,3 +341,10 @@ propose SG2002 work without flagging this gap up front.
   written; release NOT cut. Open on #64: cold-boot proof once an image ships.
   **Nothing left needs the 4.19 vendor stack** -- the pre-mainline wishlist is consumed.
   Bench: USB HID to the host DOWN again since 2026-09-05 (#42 pattern, physical link).
+  **Later 2026-09-05:** **#68 FIXED** (Chromium white screen in H.264 Direct = upstream
+  sent SPS/PPS as separate non-key messages; now folded into the IDR, device-proven,
+  headless-Chromium 150/150 frames); H.265 Direct always selectable (probe advisory,
+  fallback only on real decoder failure); **Firefox exposes NO HEVC via WebCodecs**
+  although its media pipeline decodes HEVC -- real H.265 in Firefox needs an MSE remux
+  player (design note on #66, Jeremy's call). **#69 filed** (WebRTC white screen =
+  another consumer flips the global stream type, page goes transparent, no hand-back).
