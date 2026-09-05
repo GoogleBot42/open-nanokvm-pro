@@ -201,9 +201,35 @@ The web consumer is the `h265-direct` stream mode (#66): a second direct streame
 reads `ReadH265`, folds VPS/SPS/PPS into every IDR message so a description-less
 WebCodecs `hvc1` decoder can start at any key frame, and serves
 `GET /api/stream/h265/direct` with the same `[key][ts][Annex-B]` framing as
-H.264; the web UI (`web/src/pages/desktop/screen/h265-direct.tsx`) adds the
-mode, probes `VideoDecoder.isConfigSupported` and falls back to `h264-direct`
-with a notice where HEVC cannot be decoded (Firefox).
+H.264. The web UI has two players for these streams:
+
+- **WebCodecs direct** (`direct.worker.ts`, upstream's design): `VideoDecoder`
+  in a worker draws onto an `OffscreenCanvas`. Lowest latency, but on Linux
+  both Firefox and Chrome reject every HEVC configuration in
+  `isConfigSupported` even though their `<video>` element plays HEVC.
+- **MSE** (`mse-player.tsx` + `mse.worker.ts` + `web/src/lib/mp4/`, ours,
+  2026-09-05): the worker remuxes each message into fragmented MP4 (a
+  hand-written ftyp/moov with `avcC`/`hvcC` built from the stream's own SPS/PPS
+  (+VPS), one `moof`+`mdat` per frame, parameter sets stripped from samples) and
+  the page appends it to a `SourceBuffer` in `sequence` mode on a `<video>`.
+  The browser's media pipeline decodes, so HEVC plays wherever `<video>` can. A
+  new init segment goes out when the parameter sets change (resolution change;
+  `changeType` if the codec string moves). Latency policy: jump to the live
+  edge when more than 250 ms behind, 1.1× playback above 100 ms, history
+  trimmed, `QuotaExceededError` handled; the WebSocket reconnects with backoff
+  (0.5 s → 5 s). Measured in headless Firefox 154 against the device: 1080p60
+  HEVC at ~60 fps, 50–90 ms behind the last appended frame, first frame ~300 ms
+  after connect; a `nanokvm` restart mid-stream is recovered without a reload.
+
+Mode selection (`h265-direct.tsx`, `lib/video.ts`): **H.265 Direct** picks
+WebCodecs when `isConfigSupported` accepts an HEVC configuration, otherwise MSE
+when `MediaSource.isTypeSupported` does, otherwise tries WebCodecs anyway and
+falls back to `h264-direct` with a notice when the decoder fails (every probe
+answer and the choice are logged). **H.264 Direct (MSE)** / **H.265 Direct
+(MSE)** (`h264-mse` / `h265-mse`, client-side modes mapped to the direct server
+modes by `serverStreamMode`) force the MSE player. Headless Chromium 152 on the
+build host has no HEVC by any path (WebCodecs and MSE both say no) and takes the
+H.264 fallback; Firefox 154 takes MSE.
 
 The web UI itself is **our fork** of Sipeed's `NanoKVM-Pro/web`, vendored
 in-tree at `web/` (upstream `8d0557b`, GPL-3.0 — `web/FORK.md`). It used to be

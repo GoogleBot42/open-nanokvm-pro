@@ -1,0 +1,117 @@
+--- browser firefox 154.0.1
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h265-mse"}
+--- probe t=6s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 5.741271,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    0,
+    5.796
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 348,
+   "droppedVideoFrames": 1
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/ea80b802-dd90-4519-8fec-23c2bff1a58e",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=45s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 37.088811,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    29.13,
+    37.164
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 2230,
+   "droppedVideoFrames": 2
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/ea80b802-dd90-4519-8fec-23c2bff1a58e",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot <scratch>/harness/ff_h265_mse_reconnect.png (189788 bytes)
+--- console
+  info[log]: [mse] isTypeSupported avc1.4D002A: true
+  info[log]: [mse] isTypeSupported avc1.42E01F: true
+  info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  info[log]: [mse:h265] MediaSource open
+  info[log]: [mse:h265] WebSocket open
+  info[log]: [mse:h265] init segment: 1920x1080 hvc1.1.2.L123.80 (741 B)
+  info[log]: [mse:h265] stream says hvc1.1.2.L123.80; isTypeSupported: true
+  info[log]: [mse:h265] loadedmetadata 1920x1080
+  info[log]: [mse:h265] 288 segments, 284 frames shown (1 dropped), 1920x1080, lag 0.081s, rate 1, first segment after 257 ms
+  info[log]: [mse:h265] 588 segments, 584 frames shown (1 dropped), 1920x1080, lag 0.086s, rate 1, first segment after 257 ms
+  info[log]: [mse:h265] 888 segments, 884 frames shown (1 dropped), 1920x1080, lag 0.067s, rate 1, first segment after 257 ms
+  info[log]: [mse:h265] 1189 segments, 1185 frames shown (1 dropped), 1920x1080, lag 0.069s, rate 1, first segment after 257 ms
+  info[log]: [mse:h265] 1489 segments, 1485 frames shown (1 dropped), 1920x1080, lag 0.047s, rate 1, first segment after 257 ms
+  info[log]: [mse:h265] 1789 segments, 1785 frames shown (2 dropped), 1920x1080, lag 0.070s, rate 1, first segment after 257 ms
+  warn[warn]: [mse:h265] WebSocket closed; reconnecting in 500 ms
+  info[log]: [WebSocket] Reconnecting... (attempt 1)
+  error[javascript]: Firefox can’t establish a connection to the server at wss://127.0.0.1:8443/api/stream/h265/direct.
+  warn[warn]: [mse:h265] WebSocket error
+  warn[warn]: [mse:h265] WebSocket closed; reconnecting in 1000 ms
+  warn[warn]: [mse:h265] WebSocket closed; reconnecting in 2000 ms
+  error[javascript]: Firefox can’t establish a connection to the server at wss://127.0.0.1:8443/api/ws.
+  error[error]: [WebSocket] Error: object
+  error[error]: [WebSocket] Max reconnect attempts reached
+  warn[warn]: [mse:h265] WebSocket closed; reconnecting in 4000 ms
+  info[log]: Error: Network Error
+  info[log]: [mse:h265] new init segment (same codec hvc1.1.2.L123.80)
+  info[log]: [mse:h265] 1859 segments, 1857 frames shown (2 dropped), 1920x1080, lag 0.007s, rate 1, first segment after 257 ms
+  info[log]: [mse:h265] 2159 segments, 2157 frames shown (2 dropped), 1920x1080, lag 0.030s, rate 1, first segment after 257 ms

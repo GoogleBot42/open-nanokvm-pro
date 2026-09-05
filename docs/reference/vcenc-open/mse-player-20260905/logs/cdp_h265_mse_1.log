@@ -1,0 +1,78 @@
+--- probe t=6s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 5.778033,
+  "readyState": 4,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "duration": "Infinity",
+  "buffered": [],
+  "quality": {
+   "totalVideoFrames": 350,
+   "droppedVideoFrames": 12
+  },
+  "srcObject": true,
+  "src": "",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=10s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 9.715071,
+  "readyState": 4,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "duration": "Infinity",
+  "buffered": [],
+  "quality": {
+   "totalVideoFrames": 586,
+   "droppedVideoFrames": 17
+  },
+  "srcObject": true,
+  "src": "",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot <scratch>/harness/cdp_h265_mse_1.png (203930 bytes)
+--- console
+  log: [mse] isTypeSupported avc1.4D002A: true
+  log: [mse] isTypeSupported avc1.42E01F: true
+  log: [mse] isTypeSupported hvc1.1.2.L123.80: false
+  log: [mse] isTypeSupported hvc1.1.2.L153.80: false
+  log: [mse] isTypeSupported hev1.1.2.L123.80: false
+  log: [mse] isTypeSupported hev1.1.2.L153.80: false

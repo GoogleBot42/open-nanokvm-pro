@@ -1,0 +1,101 @@
+--- browser firefox 154.0.1
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h264-mse"}
+--- probe t=6s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 5.743943,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    0,
+    5.805
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 347,
+   "droppedVideoFrames": 0
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/fe8837d3-1f9f-471f-b503-e23226374337",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=20s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 19.766694,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    12.472,
+    19.839
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 1189,
+   "droppedVideoFrames": 0
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/fe8837d3-1f9f-471f-b503-e23226374337",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot <scratch>/harness/ff_h264_mse.png (195619 bytes)
+--- console
+  info[log]: [mse] isTypeSupported avc1.4D002A: true
+  info[log]: [mse] isTypeSupported avc1.42E01F: true
+  info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  info[log]: [mse:h264] MediaSource open
+  info[log]: [mse:h264] WebSocket open
+  info[log]: [mse:h264] init segment: 1920x1080 avc1.4D002A (650 B)
+  info[log]: [mse:h264] stream says avc1.4D002A; isTypeSupported: true
+  info[log]: [mse:h264] loadedmetadata 1920x1080
+  info[log]: [mse:h264] 285 segments, 282 frames shown (0 dropped), 1920x1080, lag 0.049s, rate 1, first segment after 286 ms
+  info[log]: [mse:h264] 585 segments, 582 frames shown (0 dropped), 1920x1080, lag 0.051s, rate 1, first segment after 286 ms
+  info[log]: [mse:h264] 885 segments, 882 frames shown (0 dropped), 1920x1080, lag 0.049s, rate 1, first segment after 286 ms
+  info[log]: [mse:h264] 1185 segments, 1182 frames shown (0 dropped), 1920x1080, lag 0.059s, rate 1, first segment after 286 ms

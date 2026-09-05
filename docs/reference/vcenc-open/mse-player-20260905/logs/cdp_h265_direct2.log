@@ -1,0 +1,74 @@
+--- probe t=6s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": {
+  "el": "#screen",
+  "width": 1920,
+  "height": 1080,
+  "clientWidth": 1920,
+  "clientHeight": 1080
+ },
+ "video": null,
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok",
+  "H.265 Direct is unavailable in this browser This browser's WebCodecs has no working H.265 decoder (its media player may still decode HEVC elsewhere); playing H.264 Direct instead. The probe answers are in the browser console."
+ ]
+}
+--- probe t=12s
+{
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": {
+  "el": "#screen",
+  "width": 1920,
+  "height": 1080,
+  "clientWidth": 1920,
+  "clientHeight": 1080
+ },
+ "video": null,
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot <scratch>/harness/cdp_h265_direct2.png (210035 bytes)
+--- console
+  log: [mse] isTypeSupported avc1.4D002A: true
+  log: [mse] isTypeSupported avc1.42E01F: true
+  log: [mse] isTypeSupported hvc1.1.2.L123.80: false
+  log: [mse] isTypeSupported hvc1.1.2.L153.80: false
+  log: [mse] isTypeSupported hev1.1.2.L123.80: false
+  log: [mse] isTypeSupported hev1.1.2.L153.80: false
+  log: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 no-preference: unsupported
+  log: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-hardware: unsupported
+  log: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-software: unsupported
+  log: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 no-preference: unsupported
+  log: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-hardware: unsupported
+  log: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-software: unsupported
+  log: [h265-direct] isConfigSupported hev1.1.6.L123.B0 no-preference: unsupported
+  log: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-hardware: unsupported
+  log: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-software: unsupported
+  log: [h265-direct] probe accepted nothing; trying hvc1.1.6.L153.B0 anyway
+  log: [h265-direct] player: WebCodecs, trying hvc1.1.6.L153.B0 despite the probe
+  info[worker]: [direct] stream VPS says hvc1.1.2.L123.80; page asked for hvc1.1.6.L153.B0
+  info[worker]: [direct] decoder configured: hvc1.1.2.L123.80 (no-preference)
+  warning[worker]: [direct] decoder hvc1.1.2.L123.80 failed before the first frame: OperationError: Unsupported configuration. Check isConfigSupported() prior to calling configure().
+  info[worker]: [direct] decoder configured: hvc1.1.6.L153.B0 (no-preference)
+  warning[worker]: [direct] decoder hvc1.1.6.L153.B0 failed before the first frame: OperationError: Unsupported configuration. Check isConfigSupported() prior to calling configure().
+  error: [h265-direct] WebCodecs decoder failed before the first frame: hvc1.1.6.L153.B0: OperationError: Unsupported configuration. Check isConfigSupported() prior to calling configure().
+  error: [h265-direct] WebCodecs decoder failed and MSE has no HEVC; falling back to H.264 Direct
+  info[worker]: [direct] decoder configured: avc1.42E01F (default)

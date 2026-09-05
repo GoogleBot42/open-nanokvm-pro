@@ -82,7 +82,7 @@ const en = {
         notSupported: 'The current browser does not support H.265!',
         webcodecs: 'H.265 Direct is unavailable in this browser',
         fallback:
-          "This browser's WebCodecs has no working H.265 decoder (its media player may still decode HEVC elsewhere); playing H.264 Direct instead. The probe answers are in the browser console."
+          'This browser cannot decode H.265: neither WebCodecs nor its media player (MSE) accepts the stream. Playing H.264 Direct instead. The probe answers are in the browser console.'
       },
       btnOk: 'OK'
     },
