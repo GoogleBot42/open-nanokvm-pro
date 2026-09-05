@@ -331,6 +331,13 @@ propose SG2002 work without flagging this gap up front.
   Code: `vcenc_encode.h` HEVC overlay, `vcenc_hevc_header.h` (byte-identical to vendor
   VPS/SPS/PPS), 34-program golden test, `kvm_venc_open.c` `PT_H265`, libkvm `IMG_H265_*`
   channel -- device-proven via prover (1080p..3840x2400) and via `kvmv_read_img` on real
-  HDMI capture (ffmpeg 0 errors). Open on #64: web consumer (`ReadH265` -> streamer +
-  `hvc1`/pion H.265 client; separate issue), HEVC RC via #46, CHANGELOG line at the next
-  cut, cold-boot proof once the libkvm ships in an image (currently hot-patched).
+  HDMI capture (ffmpeg 0 errors). **2026-09-05 (night) four-agent sweep, all on main:**
+  **#66 DONE** (h265-direct web consumer, device-proven; supported-browser live check is
+  a human step), **#46 DONE** (from-scratch CBR/VBR controller, CBR now the DEFAULT for
+  both codecs, device-proven; `open-venc-rc` check), real-content vendor RC oracle
+  banked (`vendor-diff-rc-20260905/`), `docs/mainline-port.md` (#26 inventory, 14
+  proposed child issues NOT yet filed), **#67 filed** (direct players do not reconnect
+  after a ws close -- upstream behaviour). Draft `CHANGELOG.md` v2.1.0-alpha.5 section
+  written; release NOT cut. Open on #64: cold-boot proof once an image ships.
+  **Nothing left needs the 4.19 vendor stack** -- the pre-mainline wishlist is consumed.
+  Bench: USB HID to the host DOWN again since 2026-09-05 (#42 pattern, physical link).

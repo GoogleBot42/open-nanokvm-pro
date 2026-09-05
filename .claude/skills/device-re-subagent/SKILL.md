@@ -39,7 +39,13 @@ multi-step campaign, resume the same agent with `SendMessage` (it keeps the tool
 5. **The content-filter framing** (below).
 6. **Report back structured, do NOT edit docs or commit** — the main session
    verifies and records. Ask for exact on-device + scratchpad paths of every
-   artifact so you can check its work.
+   artifact so you can check its work. Exception, used 2026-09-05: when the
+   agent runs with `isolation: "worktree"`, let it commit its evidence
+   directory (README + REPORT + CSVs + tooling, never pixels/bitstreams) and
+   tooling on its OWN branch and push that branch — the coordinator verifies
+   (re-derive a number from a raw CSV, check `git ls-tree` for binary
+   payloads) and merges; `docs/blob-replacement.md`, CLAUDE.md and `main`
+   stay the coordinator's.
 
 # Safety envelope (paste into every brief)
 
@@ -110,6 +116,15 @@ in `docs/reference/vcenc-open/vendor-diff-hevc-20260905/tools/`):
    after a partial rmmod the open `insmod` fails EPERM (IRQ/MMIO still owned).
    Verify: `nanokvm` active, web 200, an MJPEG frame, `lsmod` = the three open
    modules.
+
+**Real content into the vendor encoder** (2026-09-05 RC oracle, #46): the vendor
+capture modules stay purged. Record raw YUYV frames from the OPEN stack first
+(`/dev/video0`, service stopped; `vendor-diff-rc-20260905/tools/v4lrec.c`), keep
+them on eMMC, then re-blob and feed them to `AX_VENC_SendFrame` in a loop
+(`tools/vdrive.c`: `src=`, `motion=scroll|jump`, `chg=` for mid-stream
+retargets). A static HDMI desktop is byte-identical frame to frame, so a 30-frame
+clip is enough; label any software motion as such. Delete the clips before the
+return reboot. Staging dirs left on eMMC for reuse: `/root/hevc64`, `/root/rc65`.
 
 The older on-disk recipe (2026-09-04, `/root/purge54-backup` + vendor loader +
 vendor-MPI libkvm + reboot) is gone with the alpha.4 flash. Campaign tooling
