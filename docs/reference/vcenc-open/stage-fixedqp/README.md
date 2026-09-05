@@ -42,7 +42,14 @@ Proven: a from-scratch open register program drives this silicon to a correct, d
 QP-controllable 1080p H.264 IDR. NAL size is monotonic in QP; swreg82 varies per program.
 
 Not yet: ~40 `opaque` template registers have role-known/bitfield-undecoded values copied
-from our 1080p observation (cracking them needs the public eswin VCEnc reference cross-walk
-— a follow-up, not a blocker for fixed-QP 1080p KVM). The QP anchor is empirical (two
-captures), P-frames are not attempted here, and the true fixed-QP path should disable RC
-rather than drive TARGETPICSIZE (RC-enable bit not yet located). See the doc stage.
+from our 1080p observation, and P-frames are not attempted here.
+
+**Superseded 2026-09-04** (`../vendor-diff-20260904/`, and the matching stage in
+`docs/blob-replacement.md`): the RC-enable set *is* located — `sw6[0]`, `sw22[3:2]`,
+`sw245/246`, `sw172/173` and `sw105–107`, with `sw239/241` left unallocated — so the true
+fixed-QP path can disable RC instead of driving TARGETPICSIZE. The QP anchor is no longer
+empirical-from-two-captures either: the QP ladder gives exact laws
+(`sw7 = pic_init_qp<<26 | frame_qp<<8`; `sw125–132 = F(q−2k)` from a measured LUT clamping at
+QP 35 for I and 32 for P; `sw37` a lambda pair), and `gen_idr.py`'s `2^(dQP/8)` scaling and
+`0x140`-per-QP `sw7` interpolation are both wrong. All but seven of the `opaque` registers
+are constant across every knob, RC mode, QP and geometry the vendor exposes.

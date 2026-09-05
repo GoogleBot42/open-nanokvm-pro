@@ -2540,8 +2540,12 @@ rather than replaying a blob (spot-read).
 fixed-QP encoder — is proven on hardware. Confidence HIGH. Remaining for a *shipped* blobless
 encoder: (a) blob-free submission (the #44 open driver + #45 open EWL, replacing the Path B
 hijack), (b) integrate the generator into the open libkvm backend, (c) locate the RC-enable bit
-so fixed-QP can disable RC instead of driving TARGETPICSIZE, (d) crack the ~40 opaque template
-regs for full from-source (or accept them as a documented 1080p init constant). P-frames (Stage
+so fixed-QP can disable RC instead of driving TARGETPICSIZE — *→ resolved 2026-09-04, see that
+stage (E1: the RC-enable cluster is sw6[0] + sw22[3:2] + sw245/246 + sw172/173 + sw105–107, with
+sw239/241 unallocated)* —, (d) crack the ~40 opaque template
+regs for full from-source (or accept them as a documented 1080p init constant) — *→ resolved
+2026-09-04, see that stage (E4: all but seven of them are constant across every knob, RC mode, QP
+and geometry the vendor exposes)*. P-frames (Stage
 2) not attempted; DPB regs pinned (Stage 0), no new blocker. Tickets #25/#46/#47.
 
 ### 2026-08-29 — #25 finish-line probe: blob-free SUBMISSION is walled on BOTH paths (encoder-core stays done) (ATX .221)
@@ -3271,8 +3275,195 @@ framebuf 0x73800000+0x3b35000 fixed-QP32 gop=30`, 0 libax maps, ffmpeg decoding
 capture, MJPEG, H.264 — is blob-free at 4K**, and `OPENKVM_FORCE_GEOM` is now
 only a bench downscale hook.
 
-4K caveats worth knowing: there is **no vendor golden vector at 4K** (the
-17-geometry differential tops out at 1920×1200 — the laws extrapolate and the
-device run is the proof), `vcenc_level_idc` falls through to **51** (correct for
+4K caveats worth knowing: at the time there was **no vendor golden vector at 4K**
+(the 17-geometry differential topped out at 1920×1200 — the laws extrapolated and
+the device run was the proof). **Superseded 2026-09-04**: nine vendor programs
+above 1920 wide now exist, up to 3840×2400, and every geometry law holds exactly
+at all of them — except `sw9`, `sw105–107` and the `sw114` bank spacing, which
+the extrapolation got wrong (see the 2026-09-04 stage; the `sw114` bound
+under-allocates from 3200 wide up). `vcenc_level_idc` falls through to **51** (correct for
 4K30), `out_limit` is 16.65 MB so libkvm's pack copy is ~16 MB/frame at 4K (an
 fps cost, not a failure), and rate control is still fixed QP32 (**#46**).
+
+### 2026-09-04 — Vendor encoder differential campaign (pre-mainline evidence capture)
+
+**Why now.** The mainline move retires the 4.19 vendor stack, and with it the
+only way to ask the vendor encoder a question. Everything the open encoder still
+guesses at — the QP→register laws behind #46, whether the geometry laws hold
+above 1920 wide, what the ~40 `opaque` registers do — was measurable today and
+unmeasurable after. The device was temporarily restored to the full vendor stack
+(open state backed up to `/root/open-state-20260904`) for one session and
+returned to the open stack afterwards.
+
+Method (same clean-room posture as the rest of `vcenc-open/`): an on-device C
+tool drives the vendor `AX_VENC` through its **public MPI only**, on a synthetic
+YUYV card in a real `AX_POOL` block; the resulting cmdbuf slot is dumped over
+`/dev/mem` read-only and decoded to a 511-register program. No vendor binary was
+read. A 1080p CBR control run reproduces the committed #17 vendor program in all
+511 registers bar the 16 per-run addresses. Evidence + index:
+`docs/reference/vcenc-open/vendor-diff-20260904/` (`REPORT.md` is authoritative).
+
+**E3 — vendor golden vectors above 1920 wide.** Nine geometries accepted, six of
+them beyond the #17 sweep: 3840×2160, 3840×2400, 3440×1440, 3200×1800, 2560×1440,
+2560×1080, 2048×1080, 1920×1440, plus 1920×1080 as control. Every `vcenc_geom.h`
+law (sw5, sw38, sw134, sw193, sw210, sw212/213, sw237, sw245/246, sw261, the
+recon pitches, `sw62−sw60`, the sw239 bank size) is **exact at all nine**. Three
+generator corrections fall out:
+
+1. `sw9 = 2WH + 0x10000 − (SPS+PPS bytes)`, not `2WH + 0xffd8`. `0xffd8` is
+   `0x10000 − 40`, and 40 is the *1080p* header size; the vendor's 4K headers are
+   42 B (`0x00fe1fd6` at 3840×2160), 2560×1080's are 43 B (`0x00555fd5`), and E4
+   confirms causality — profile/fps/bitrate changes move sw9 by exactly the
+   SPS/PPS length delta. The open generator emits its headers separately and
+   reserves a fixed 40-byte slot (`sw8 = out + 0x28`, `sw9 = 2WH + 0xffd8`),
+   which is internally consistent — no change needed, but sw9 is an allocation
+   choice, not a vendor law, and the golden-vector test must treat it as such.
+2. **TARGETPICSIZE (sw105–107) is not pixel-scaled.** The vendor programs
+   `0x1adb00` = 1760000 at *every* geometry from 1920×1080 to 3840×2400 at 8 Mbps
+   / 60 fps / GOP 30. `vcenc_geom.h`'s `1760000·WH/(1920·1080)` is wrong above
+   1080p. It is bitrate/fps/GOP-derived: br2000 → 440000, br16000 → 3520000,
+   fps30 → 2880000, gop8 → 960960, gop120 → 1920000, gop1 → 133333 (= exactly
+   `bitrate·1000/fps`), minIprop/maxIprop 20/80 → 0x222e00. Shape is "I-frame
+   budget = bits-per-frame × k(GOP)" with k(1)=1.0, k(8)=7.2, k(30)=13.2,
+   k(120)=14.4; no closed-form fit attempted.
+3. **`sw114` bank spacing is `align4k(w4·mbhp/2)`,** and the generator's
+   `align4k(mbhp·64)` bound is *smaller* than the vendor's spacing from 3200 wide
+   up: 0x2000 vs 0x3000 at 3200×1800 and 3440×1440, 0x3000 vs **0x4000** at
+   3840×2160, 0x3000 vs 0x5000 at 3840×2400. The #17 fit was a coincidence of
+   1920-wide widths (`60·mbhp ≈ 64·mbhp`). This is a live under-allocation in the
+   shipped 4K path. `sw60`'s bound stays above the vendor spacing everywhere
+   (0x14000 vs bound 0x20000 at 4K).
+
+CBR's *chosen* initial QP moves with geometry at 8 Mbps (QP32 up to 2048×1080,
+QP34 at 1920×1440 / 2560×1080, QP36 from 2560×1440 up) — rate control, not
+geometry, but a >1080p golden-vector test must not expect the 1080p QP block.
+P-frame `sw243/244/247` are per-frame RC bit-budget state (zero in fixed-QP), not
+geometry laws — the generator's "leave 0" policy is correct.
+
+**E2 — the QP ladder (Q16…Q51 + I28/P34, fixed-QP at 1080p).** The two laws #46
+needs, exact over the whole ladder:
+
+- **`sw7 = (pic_init_qp << 26) | (frame_qp << 8)`.** Proven by the split I28/P34
+  run: IDR `0x88001c00` (init 34 from the shared PPS, frame 28), P `0x88002200`.
+  `gen_idr.py`'s "0x140 per QP" interpolation of the low field is wrong; the CBR
+  captures' `0x2300`/`0x2500`/`0x2800` were simply frame QPs 35/37/40.
+- **`sw125–132 = F(q − 2k)`, k = 0..7**, a lambda-type LUT indexed by
+  `q = min(QP, 35)` for I frames and `q = min(QP, 35) − 3` for P frames — so the
+  block **clamps at QP 35 for I and 32 for P** (Q36…Q51 programs are identical
+  here). `F(q)` as hi16/lo16, from the ladder: F1 `0040/00e0` F3 `0050/0120`
+  F5 `0064/0170` F7 `0080/01d0` F9 `00a0/0240` F11 `00cc/02d0` F13 `0100/0390`
+  F15 `0144/0480` F16 `016c/0510` F17 `0198/05b0` F18 `01c8/0660` F19 `0200/0720`
+  F20 `0240/0800` F21 `0288/0900` F22 `02d8/0a20` F23 `0330/0b60` F24 `0394/0cc0`
+  F25 `0404/0e50` F26 `0480/1010` F27 `0510/1200` F28 `05ac/1440` F29 `0660/16b0`
+  F30 `0728/1980` F31 `0808/1ca0` F32 `0904/2020` F33 `0a1c/2410` F35 `0cc0/2d70`.
+  Growth ≈ `2^((q−32)/6)`, not the `2^(dQP/8)` `gen_idr.py` assumed. Two entries
+  differ between the I and P instantiations of the table — F19 hi `0200` (I) vs
+  `0204` (P), F20 lo `0800` (I) vs `0810` (P) — so a generator should carry both
+  columns rather than one shared table.
+- **`sw37` is a (hi,lo) lambda pair**: I at Q16 `0x00040020`, Q20 `0x000c0050`,
+  Q24 `0x002400c0`, Q28 `0x00600200`, Q32 `0x00f00510`, Q≥36 `0x01e40a20`
+  (clamped); P takes the I value at QP−3 (Q32 → `0x00780280`, Q34 → `0x00c00400`).
+  ≈ ×2.52 per +4 QP, i.e. λ ∝ 2^(QP/3).
+- In fixed-QP, `sw105` is a constant 15000 (`0x3a98`) at the IDR and ~14900–15100
+  on P frames; `sw106 = sw107 = 0`.
+- Per-frame mirrors give `sw9` = actual slice bytes and `sw82` = HW cycles
+  (IDR ≈ 2.15 M, P ≈ 2.04 M at 1080p, content-independent to ±0.5 %). The
+  bitstream slice QP equals the requested QP in every run; the SDK never
+  populates `u32StartQp/u32MeanQp`, so the bitstream is the QP truth.
+
+**E1 — RC-mode differential (1080p, 8000 kbps).** CBR, VBR, AVBR, CVBR and FIXQP
+are accepted; **QVBR and QPMAP are refused at `CreateChn` with `0x8007020a`**
+(ILLEGAL_PARAM) under header-minimal attrs. **CBR ≡ CVBR bit-for-bit; VBR ≡ AVBR
+bit-for-bit** — the "custom Axera modes" are aliases at the register level. VBR
+differs from CBR only in sw105–107 (no fixed target, only a cap) and the QP block.
+
+Fixed-QP vs CBR at the IDR differs in exactly these non-address registers —
+**this is the RC-enable set the 2026-08-29 stage went looking for**:
+
+| swreg | CBR | fixed-QP |
+|---|---|---|
+| sw6 (bit0) | `0x00000003` | `0x00000002` |
+| sw22 (bits 3:2) | `0x0000000c` | `0x00000000` |
+| sw105 | `0x001adb00` | `0x00003a98` |
+| sw106 / sw107 | `0x001adb00` | `0` |
+| sw172 | `0x0000014f` | `0x0000000f` |
+| sw173 | `0x00000662` | `0x0000066a` |
+| sw245 | `0x20000888` | `0` |
+| sw246 | `0x02225028` | `0x00001000` |
+
+Additionally `sw239`/`sw241` are **0** in fixed-QP: those are RC buffer base
+addresses and the vendor does not allocate them at all when RC is off. P adds the
+QP block (QP32 vs CBR's QP35) and `sw243/sw247 → 0`. Reading: the RC-enable
+cluster is `sw6[0]` + `sw22[3:2]` + `sw245/246` (the per-MB-row rate
+coefficients, geometry-dependent *only because RC is on*) + the `sw172/173` QP
+range + the `sw105–107` target, with `sw239/241` as its scratch. `sw172 =
+minQp<<5 | 0xf`, `sw173 = maxQp<<5 | flags` (E4: qp20_40 → `0x28f`/`0x502`,
+qp30_30 → `0x3cf`/`0x3c2`).
+
+**E4 — 33-run single-knob sweep from the 1080p CBR/8000/fps60/gop30/Main/L5.1
+baseline.** `base` vs `base_rep` are identical in all 511 registers — zero
+run-to-run noise on a static card. Highlights of the knob→register map:
+
+- `sw193[0] = CABAC enable` (Baseline/CAVLC clears it), `sw193[1] = 8×8 transform`
+  (High sets it). There is no separate entropy knob; entropy follows profile.
+- `sw6[31:16] = MB rows per slice, encoded rows<<9` (slice-8 → `0x10000003`,
+  slice-1 → `0x02000003`), with `sw1 0x9fd → 0x209fd` alongside.
+- `sw172/173` carry the QP range; `sw173` bit3 is `idrQpDeltaRange`.
+- `bRefRingbuf` is the only knob touching `sw56/57/73/83` + `sw195[1]`.
+- **Level, intra-refresh (row and column), deBreath, deBreathQpDelta,
+  sceneChangeDetect, rowQpDelta, statTime, bRcnRefShareBuf and re-applying
+  RcParam move nothing at all** in the register program. minIprop/maxIprop moves
+  only the IDR target. Moving content moves only P-frame RC state.
+- There is no H.264 deblocking knob in this SDK; every run emits
+  `deblocking_filter_control_present=1` / `disable_deblocking_filter_idc=0`.
+- **464 of 511 registers never move under any knob**, and the 34-word
+  secondary-bank poke block (`WREG 0x2800 = 0x44` then 16× `WREG 0x2014+i·0x20 =
+  0`) is **byte-identical across all 214 programs of the campaign** — every
+  geometry, RC mode, QP and knob.
+
+**E5 — the live core register window, read from MMIO.** Polling
+`0x04010000 + 0x1000` read-only while a vendor encode ran returned
+`sw80 = 0x88da4280`, `sw214 = 0x48500800`, `sw226 = 0x00a19200`, `sw287 = 0`
+— **identical to the DRAM-mirror values of §8.5**, which closes that stage's
+"strict proof would be a live read of `VCMD_base+0x1000+0x140`" caveat. H264=1,
+HEVC=1, JPEG=0, ctbRcVersion=1 stand; the `maxEncodedWidth` unit stays ambiguous.
+Idle, the whole window reads `0xdeadbeef` (clock-gated), confirmed twice. Two
+classifications fall out of the live-vs-program diff (462/511 identical):
+registers that are **write-only** (read back 0: sw39–41, 125–132, 201, 203, 236,
+237, 250/251, 272, 281, 289, 307, 349) and registers the **HW updates per frame**
+(sw215–223 lambda LUTs, sw243/244/247, sw105–107, sw111–113, sw183–185, sw78/79)
+— for those the program value is an input the hardware overwrites. Bonus:
+`sw509/510/511` = `0x2114` / `0x9b83c` / **`0x20230307`**, a date-coded HW build
+ID.
+
+**E6 — CBR trajectories on a moving card** (90 frames, GOP 30, 1080p60). At
+8000 kbps the IDR is QP32 and P QP descends 35→25 across the first GOP (7337 kbps
+achieved); at 16000 kbps QP descends to 21 and holds (only 8196 kbps achieved —
+content-limited); at 2000 kbps QP climbs 37→51 inside the first GOP and pins at
+49–51, settling at 46 in later GOPs, and still overshoots to 3266 kbps — the
+moving card is not encodable at 2 Mbps. QP steps at most ±1–2 per frame. **The
+I-frame QP is not derived from the running P QP**: the IDRs at frames 30 and 60
+are QP30 then QP28 at *both* 8000 and 16000 kbps (whose P QPs were 26/19 and
+21/19), and QP37 throughout at 2000 kbps.
+
+**What this changes.**
+
+- **#46 no longer needs the vendor.** The QP→register laws (sw7, the F LUT,
+  sw37), the exact RC-off register set, and three measured CBR trajectories to
+  validate a controller against are all captured. Rate control is now a pure
+  software exercise against committed vectors.
+- **Generator fixes to make** in `pkgs/vcenc-ewl/`: `s114sz =
+  align4k(w4·mbhp/2)` (a real under-allocation at ≥3200 wide, i.e. in the
+  shipped 4K path — highest priority); TARGETPICSIZE/the fixed-QP register set
+  (drop the pixel scaling; when RC is off, program the E1 fixed-QP column rather
+  than driving a target); the exact I/P QP tables in place of the 2^(dQP/8)
+  scaling law; and 3840×2400 into the envelope (the vendor accepts it).
+- **The ~40 `opaque` registers are now classified.** Never moved by any knob, RC
+  mode, QP or geometry: sw3, sw4, sw22†, sw26, sw35, sw36, sw38‡, sw39–41, sw45,
+  sw81, sw134‡, sw136, sw170, sw171, sw182, sw194, sw196, sw201, sw203, sw224,
+  sw225, sw245†, sw246†, sw248–259, sw272, sw277, sw281, sw288, sw289, sw307,
+  sw319, sw320, sw349, sw430 († moves with RC mode only, ‡ is a geometry law).
+  The ones that do move: sw1 and sw6 (slice split), sw172/173 (QP range), sw193
+  (entropy / 8×8), sw195 (ring buffer), sw247 (RC state). So "opaque" now mostly
+  means "constant on this SoC" — the 2026-08-29 stage's item (d) is answered by
+  measurement rather than by cracking bitfields.

@@ -98,6 +98,15 @@ the encoder to a decodable, quality-controllable 1080p IDR on hardware. Write-up
 - tools: `tools/stage1hook.c` (the LINK-time hijack hook; copy/qp/edit/asm/dump modes),
   `tools/stage1_hijack_drive.py` (libkvm encode under the hook).
 
+## vendor-diff-20260904/ — the final vendor measurement campaign (2026-09-04)
+
+Six experiments against the vendor `AX_VENC` through its public MPI, taken while
+the 4.19 vendor stack was still runnable: golden vectors at nine geometries up to
+3840×2400, the fixed-QP QP ladder (the QP→register laws), the RC-mode
+differential (the RC-enable register set), a 33-knob sweep classifying the
+`opaque` registers, a live MMIO read of the core fuse words, and CBR trajectories
+for #46. See its `README.md` and `REPORT.md`.
+
 ## tools/
 
 Our own capture/decode tooling (libc-only C or python via device libkvm ctypes):
