@@ -1,0 +1,18 @@
+# NAL units in out.h265 (Annex-B), 165 total; columns: type name size_bytes
+# counts: {'VPS': 5, 'SPS': 5, 'PPS': 5, 'IDR_W_RADL': 5, 'TRAIL_R': 145}
+32 VPS 27
+33 SPS 53
+34 PPS 12
+19 IDR_W_RADL 31919
+1 TRAIL_R 677
+1 TRAIL_R 439
+1 TRAIL_R 353
+1 TRAIL_R 285
+1 TRAIL_R 281
+1 TRAIL_R 226
+1 TRAIL_R 213
+1 TRAIL_R 205
+...
+1 TRAIL_R 178
+1 TRAIL_R 182
+1 TRAIL_R 180

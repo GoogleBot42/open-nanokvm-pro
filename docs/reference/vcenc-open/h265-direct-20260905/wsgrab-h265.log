@@ -1,0 +1,21 @@
+# tools/wsgrab.py /tmp/out.h265 150 40 h265 -- run ON the device (loopback auth bypass), 2026-09-05,
+# after POST /api/stream/mode {"mode":"h265-direct"} -> {"code":0}. Source 1920x1080 (lt6911_info).
+# Per message: key flag, server timestamp (us), payload bytes, HEVC NAL unit types found in the payload.
+# 32=VPS 33=SPS 34=PPS 19=IDR_W_RADL 1=TRAIL_R. First 8 messages, then every key message, then the summary.
+ws connected (/api/stream/h265/direct): HTTP/1.1 101 Switching Protocols
+msg   1: key=1 ts=76168 len=32011 nal_types=[32, 33, 34, 19]
+msg   2: key=0 ts=94390 len=677 nal_types=[1]
+msg   3: key=0 ts=104863 len=439 nal_types=[1]
+msg   4: key=0 ts=115333 len=353 nal_types=[1]
+msg   5: key=0 ts=125865 len=285 nal_types=[1]
+msg   6: key=0 ts=137328 len=281 nal_types=[1]
+msg   7: key=0 ts=153985 len=226 nal_types=[1]
+msg   8: key=0 ts=170683 len=213 nal_types=[1]
+msg  31: key=1 ts=575655 len=32011 nal_types=[32, 33, 34, 19]
+msg  61: key=1 ts=1075821 len=32011 nal_types=[32, 33, 34, 19]
+msg  91: key=1 ts=1575633 len=32011 nal_types=[32, 33, 34, 19]
+msg 121: key=1 ts=2075678 len=32011 nal_types=[32, 33, 34, 19]
+RESULT: 150 messages, 193235 bytes, 5 keyframe-flagged -> /tmp/out.h265
+# Every non-key message carried exactly one TRAIL_R NAL; inter-message ts delta ~16.67 ms (60 fps), GOP 30.
+# Server log during the run: "[openvenc] up: hwid=0x43421500 H.265 1920x1080 framebuf 0x73800000+0xef8000
+# rc=fixqp QP32 gop=30"; zero "failed to read H.265" lines in the log.
