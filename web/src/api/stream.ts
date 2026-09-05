@@ -43,6 +43,11 @@ export function directH264() {
   return getWebSocket('/api/stream/h264/direct');
 }
 
+// direct H.265 connection (blob-free HEVC, same framing as H.264 direct)
+export function directH265() {
+  return getWebSocket('/api/stream/h265/direct');
+}
+
 function getWebSocket(url: string) {
   const baseUrl = getBaseUrl('ws');
 

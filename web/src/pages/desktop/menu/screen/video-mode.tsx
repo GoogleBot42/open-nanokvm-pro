@@ -18,6 +18,11 @@ const videoGroups = [
     ]
   },
   {
+    key: 'h265',
+    name: 'H.265',
+    modes: [{ key: 'h265-direct', name: 'H.265 Direct' }]
+  },
+  {
     key: 'mjpeg',
     name: 'MJPEG',
     modes: [{ key: 'mjpeg', name: 'MJPEG' }]

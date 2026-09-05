@@ -4,6 +4,7 @@ import { videoModeAtom } from '@/jotai/screen.ts';
 
 import { H264Direct } from './h264-direct.tsx';
 import { H264Webrtc } from './h264-webrtc.tsx';
+import { H265Direct } from './h265-direct.tsx';
 import { Mjpeg } from './mjpeg.tsx';
 
 export const Screen = () => {
@@ -15,6 +16,10 @@ export const Screen = () => {
 
   if (videoMode === 'h264-direct') {
     return <H264Direct />;
+  }
+
+  if (videoMode === 'h265-direct') {
+    return <H265Direct />;
   }
 
   return <H264Webrtc />;

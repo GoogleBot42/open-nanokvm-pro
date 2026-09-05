@@ -79,7 +79,10 @@ const en = {
           "The device's factory-installed firmware is strictly provisioned without H.265/HEVC video encoding or decoding functionality.\n\n" +
           'Any user-initiated modification of the firmware, manual installation of third-party H.265 modules, or independent development of HEVC features constitutes an assumption of all related risks by the end-user. These risks include, but are not limited to, patent licensing fees, legal liabilities, device compatibility issues, and performance degradation.\n\n' +
           'The manufacturer expressly disclaims all responsibility for the operation, security, or legal compliance of any user-customized H.265 features.',
-        notSupported: 'The current browser does not support H.265!'
+        notSupported: 'The current browser does not support H.265!',
+        webcodecs: 'H.265 Direct is unavailable in this browser',
+        fallback:
+          "This browser's WebCodecs has no working H.265 decoder (its media player may still decode HEVC elsewhere); playing H.264 Direct instead. The probe answers are in the browser console."
       },
       btnOk: 'OK'
     },

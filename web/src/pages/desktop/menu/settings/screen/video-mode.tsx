@@ -9,6 +9,7 @@ import { videoModeAtom } from '@/jotai/screen.ts';
 const videoModes = [
   { value: 'h264-webrtc', label: 'H.264 WebRTC' },
   { value: 'h264-direct', label: 'H.264 Direct ' },
+  { value: 'h265-direct', label: 'H.265 Direct' },
   { value: 'mjpeg', label: 'MJPEG' }
 ];
 
