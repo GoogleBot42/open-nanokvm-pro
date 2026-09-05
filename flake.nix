@@ -235,6 +235,9 @@
         # Host-side geometry-law proof for the open ENCODER (#17): 17 golden
         # vendor vectors + 1080p template identity. See pkgs/vcenc-geom-test.nix.
         vcenc-geom-test = callPkg ./pkgs/vcenc-geom-test.nix { };
+        # Host-side proof of the from-scratch rate controller (#46): vendor
+        # trajectory replay + closed-loop simulation. See pkgs/vcenc-rc-test.nix.
+        vcenc-rc-test = callPkg ./pkgs/vcenc-rc-test.nix { };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { };
 
@@ -319,7 +322,7 @@
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
-            vcenc-geom-test
+            vcenc-geom-test vcenc-rc-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-rootfs firmware-image sd-image
@@ -333,6 +336,7 @@
         checks = {
           open-capture-geometry = kvm-encoder-geom-test;
           open-venc-geometry = vcenc-geom-test;
+          open-venc-rc = vcenc-rc-test;
         };
 
         # `nix run .#axdl -- --file result/*.axp --wait-for-device`

@@ -138,7 +138,7 @@ crossPkgs.stdenv.mkDerivation {
     # so the Go server fails to load libkvm.so ("GLIBC_2.38 not found"). gnu17
     # drops the only >2.35 symbol; the rest are <= 2.34 and load fine on 2.35.
     echo "capture backend: ${if v4l2Capture then "OPEN V4L2 DRIVER (kvm_capture_v4l2.c)" else if openCapture then "BLOB-FREE (kvm_capture_open.c)" else "vendor MPI (kvm_pipeline.c)"}"
-    echo "encode  backend: ${if openVenc then "BLOB-FREE (kvm_venc_open.c, fixed-QP32)" else "vendor AX_VENC (kvm_pipeline.c)"}"
+    echo "encode  backend: ${if openVenc then "BLOB-FREE (kvm_venc_open.c, software CBR/VBR over fixed-QP)" else "vendor AX_VENC (kvm_pipeline.c)"}"
     ${cc} -shared -fPIC -O2 -Wall -std=gnu17 ${captureDef} ${vencDef} \
       -I. -I${axera-libs}/include \
       -Wl,-soname,libkvm.so.0 \
@@ -146,6 +146,7 @@ crossPkgs.stdenv.mkDerivation {
       -L${axera-libs}/lib \
       ${captureLibs} \
       -lopus -lasound \
+      ${pkgs.lib.optionalString openVenc "-lm"} \
       -ldl -lpthread \
       -Wl,-rpath,${axera-libs}/lib \
       -o libkvm.so

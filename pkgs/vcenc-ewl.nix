@@ -47,7 +47,7 @@ pkgs.stdenv.mkDerivation {
       ewl_probe.c -o ewl_probe
     # Multi-frame fixed-QP session driver: parametric-geometry IDR + P frames (#17), GOP loop.
     ${prefix}cc -static -O2 -Wall -std=gnu11 -I. \
-      ewl_encode.c -o ewl_encode
+      ewl_encode.c -lm -o ewl_encode
     runHook postBuild
   '';
 
