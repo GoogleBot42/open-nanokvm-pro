@@ -282,6 +282,41 @@ EOF
       --replace-fail 'api.GET("/stream/h264/direct", direct.Connect) // h264 stream (direct)' \
 'api.GET("/stream/h264/direct", direct.Connect) // h264 stream (direct)
 	api.GET("/stream/h265/direct", direct.ConnectH265) // h265 stream (direct, blob-free HEVC)'
+
+    # 10. H.264 direct: fold SPS+PPS into the IDR message they precede (#68).
+    #     Upstream sends each NAL as its own WebSocket message and flags only
+    #     the IDR as key, so SPS and PPS travel as two non-key messages ahead
+    #     of it. The upstream worker (direct.worker.ts) creates its
+    #     VideoDecoder on the first KEY message and drops everything before
+    #     that, so the first key chunk it decodes has no parameter sets.
+    #     Chromium's H.264 decoder fails on that ("Decoding error.", zero
+    #     frames, repeating every GOP -- a white screen); Firefox tolerates
+    #     it. Same treatment as the H.265 streamer (step 9): hold the
+    #     parameter sets and prepend them to their IDR, so every key message
+    #     is self-contained and a decoder can start at any IDR. Anchors on
+    #     the step-7 `failStreak := 0` line.
+    substituteInPlace service/stream/direct/streamer.go \
+      --replace-fail 'failStreak := 0' \
+'failStreak := 0
+
+	// SPS+PPS waiting for their IDR (see nanokvm-server.nix step 10)
+	var params []byte' \
+      --replace-fail 'isKeyFrame := byte(0)
+		if result == 3 {
+			isKeyFrame = byte(1)
+		}' \
+'isKeyFrame := byte(0)
+		switch uint8(result) {
+		case common.IMG_H264_TYPE_SPS, common.IMG_H264_TYPE_PPS:
+			params = append(params, data...)
+			continue
+		case common.IMG_H264_TYPE_IF:
+			isKeyFrame = byte(1)
+			if len(params) > 0 {
+				data = append(params, data...)
+				params = nil
+			}
+		}'
   '';
 
   # cgo on for the kvm_vision + opus bindings.
