@@ -160,6 +160,15 @@ those:
   fps=0 rebuild fix by replaying the exact web-UI call sequence. Restart
   nanokvm afterwards.
 - LT6911 live source truth: `/proc/lt6911_info/{width,height,fps}`.
+- **Phantom refcount on the open encoder module (2026-09-05):** after a
+  session with capture re-inits, `/sys/module/ax630c_venc_vcmd/refcnt` can
+  read 2 with `nanokvm` stopped and no process holding `/dev/es_venc`, so
+  `rmmod` says "in use" and `/soc/scripts/auto_load_all_drv.sh -r` cannot
+  unload the open stack. Only a reboot clears it (refcnt 0 afterwards). Check
+  it BEFORE any module-swap experiment, not after the swap half-fails.
+- On-device tools: `gcc`, `python3` (3.13) are present; `ffmpeg`/`ffprobe`
+  are NOT — pull bitstreams to the host (`tools/kvmssh 'cat f' > f`, a
+  75 MB tar pulled fine) and decode with `nix shell nixpkgs#ffmpeg-full`.
 
 # Gotchas
 

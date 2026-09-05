@@ -324,3 +324,13 @@ propose SG2002 work without flagging this gap up front.
   Releases are cut via the `cut-release` workflow in the Gitea web UI
   (dry-run-tested; `tools/release` = fallback). Never propose
   pushing/tagging on GitHub directly; see `docs/updates.md`.
+- **#64 HEVC (2026-09-05): capture campaign DONE + blob-free H.265 IMPLEMENTED** the same
+  night, without the assumed vendor `.axp` reflash (vendor stack loaded at runtime from
+  `.#ax-ko-blobs` + `.#axera-libs` + the stock-rootfs `libax_venc.so`; recipe in the
+  device-re-subagent skill). Evidence: `docs/reference/vcenc-open/vendor-diff-hevc-20260905/`.
+  Code: `vcenc_encode.h` HEVC overlay, `vcenc_hevc_header.h` (byte-identical to vendor
+  VPS/SPS/PPS), 34-program golden test, `kvm_venc_open.c` `PT_H265`, libkvm `IMG_H265_*`
+  channel -- device-proven via prover (1080p..3840x2400) and via `kvmv_read_img` on real
+  HDMI capture (ffmpeg 0 errors). Open on #64: web consumer (`ReadH265` -> streamer +
+  `hvc1`/pion H.265 client; separate issue), HEVC RC via #46, CHANGELOG line at the next
+  cut, cold-boot proof once the libkvm ships in an image (currently hot-patched).
