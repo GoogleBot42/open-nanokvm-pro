@@ -5,13 +5,14 @@
 # vcenc_rc.h is the from-scratch frame-level CBR/VBR controller that feeds
 # per-frame QPs to the fixed-QP register program. This derivation compiles it
 # NATIVELY (it is SDK-free by construction, libm only) with a test that
-# (1) replays every vendor CBR trajectory committed under
-# docs/reference/vcenc-open/ (E6 H.264, H8 HEVC, and any *_trajectory.csv
-# with a vdrive .log sibling added later -- the real-HDMI captures land there
-# without touching this file) and compares the controller's QP decisions to
-# the vendor's, and (2) runs closed-loop simulations against size models
-# fitted from the E2/H3 QP ladders at 2/8/16 Mbps for both codecs, plus a
-# mid-stream retarget, a complexity burst and a VBR run.
+# (1) replays every vendor trajectory committed under
+# docs/reference/vcenc-open/ (the 47 real-desktop CBR/VBR/retarget runs of
+# vendor-diff-rc-20260905, the synthetic E6/H8 runs, and any *_trajectory.csv
+# with a vdrive .log sibling added later -- no change here needed) and
+# compares the controller's QP decisions to the vendor's, and (2) runs
+# closed-loop simulations against size models measured on the real desktop
+# at 2/8/16 Mbps for both codecs, plus a mid-stream retarget, a complexity
+# burst and VBR.
 #
 #   nix build .#checks.x86_64-linux.open-venc-rc -L
 #
@@ -23,8 +24,7 @@ let
   vectors = lib.fileset.toSource {
     root = ../docs/reference/vcenc-open;
     fileset = lib.fileset.fileFilter
-      (f: lib.hasSuffix "_trajectory.csv" f.name
-          || (lib.hasPrefix "traj" f.name && lib.hasSuffix ".log" f.name))
+      (f: lib.hasSuffix "_trajectory.csv" f.name || lib.hasSuffix ".log" f.name)
       ../docs/reference/vcenc-open;
   };
 in
