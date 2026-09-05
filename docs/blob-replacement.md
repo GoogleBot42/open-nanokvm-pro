@@ -3708,3 +3708,29 @@ Baseline fmtp for the Main 4.2 stream and decoded 3594 frames in 60 s). Any othe
 stream consumer flips the server's global stream type, the WebRTC page gets
 `video-status -4` and goes transparent, and nothing hands the stream back — #69
 records the repro and fix options.
+
+### 2026-09-05 (night, web) — the web UI is a fork; MSE player carries H.265 without WebCodecs (#72)
+
+Jeremy's call: fork the web UI officially. Sipeed's `NanoKVM-Pro/web` (GPL-3.0, rev
+`8d0557b`, tag `nanokvm@1.2.15`) now lives in `web/` at the repo root, byte-identical to
+upstream at the fork commit, with the three former nix-time patches replayed as ordinary
+commits and `pkgs/patches/` gone; `pkgs/nanokvm-web.nix` builds from the in-tree source
+and the bundle came out byte-identical to the patched-upstream build. Provenance in
+`web/FORK.md`. The Go server is still upstream + nix-time patches.
+
+Measured the same day in nixpkgs Firefox 154 and confirmed in Jeremy's Firefox and
+Chrome: Linux browsers decode HEVC for `<video>` but expose none of it through WebCodecs,
+so the WebCodecs "direct" player can never show H.265 there. The answer is a MediaSource
+player (`web/src/pages/desktop/screen/mse-player.tsx`, `mse.worker.ts`, `web/src/lib/
+mp4/`): the existing direct WebSocket stream is remuxed in a worker from Annex-B into
+fragmented MP4 (hand-written `ftyp`/`moov` with `hvcC`/`avcC` built from the stream's
+own parameter sets, one `moof`+`mdat` per frame, new init segment on a parameter-set
+change) and appended to a `SourceBuffer` in sequence mode; live-edge policy keeps it
+within ~100 ms; it reconnects with backoff. "H.265 Direct" now picks WebCodecs when the
+browser accepts the stream's codec string, else MSE, else the H.264 fallback with a
+notice; `h264-mse`/`h265-mse` force the MSE path. Device-proven through the loopback
+tunnel: Firefox headless plays 1080p HEVC via MSE (1485 frames / 25 s, 50–90 ms behind
+live, survives a `nanokvm` restart without reload); Chromium headless plays H.264 via MSE
+(1201 frames, 44 ms lag); ffmpeg decodes the remuxed fMP4 with zero errors. Evidence:
+`docs/reference/vcenc-open/mse-player-20260905/`. Unverified: a browser with hardware
+HEVC in WebCodecs, 4K HEVC via MSE, a mid-stream resolution change.
