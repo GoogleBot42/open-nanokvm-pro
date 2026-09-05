@@ -10,6 +10,20 @@ not started, blocked on packaging a T-Head C906 GCC. Its frozen research log is
 `docs/plan-sg2002-research.md` (last substantive entry 2026-07-18 — also covers early
 Pro reverse-engineering; current Pro truth is `docs/` and git history, not that log).
 
+## Web UI is a fork (2026-09-05)
+
+Sipeed's web UI lives in-tree at `web/` (GPL-3.0 fork of `NanoKVM-Pro/web` at
+`8d0557b`; provenance in `web/FORK.md`). Edit it as ordinary source — there is no
+patch stack any more; `pkgs/nanokvm-web.nix` builds `web/`. The Go server is still
+upstream + nix-time patches in `pkgs/nanokvm-server.nix`. Browser facts measured
+2026-09-05: Linux Firefox and Chrome decode HEVC for `<video>` but expose none through
+WebCodecs, so H.265 reaches them only via the MediaSource player (`mse-player.tsx`).
+**Never assert browser codec support without measuring it** (`web/`'s probes log every
+answer to the console; the Firefox/Chromium headless harnesses under
+`docs/reference/vcenc-open/{h264-direct-chromium,mse-player}-20260905/harness/` run the
+real UI through an SSH loopback tunnel). The device serves `index.html` without cache
+headers (#71): test with a fresh profile or cache disabled.
+
 ## Git
 
 - The source of truth is Gitea: `gitea@git.neet.dev:zuckerberg/open-nanokvm-pro.git`.

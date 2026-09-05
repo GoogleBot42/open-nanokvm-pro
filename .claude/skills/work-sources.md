@@ -346,5 +346,11 @@ propose SG2002 work without flagging this gap up front.
   headless-Chromium 150/150 frames); H.265 Direct always selectable (probe advisory,
   fallback only on real decoder failure); **Firefox exposes NO HEVC via WebCodecs**
   although its media pipeline decodes HEVC -- real H.265 in Firefox needs an MSE remux
-  player (design note on #66, Jeremy's call). **#69 filed** (WebRTC white screen =
-  another consumer flips the global stream type, page goes transparent, no hand-back).
+  player (design note on #66, Jeremy's call). **#69 filed** (WebRTC white screen; the
+  stream-type takeover is real but does NOT explain Jeremy's case -- his Chromium decodes
+  at 59 fps in software, play() ok, picture blank; GPU compositing suspect, awaiting a
+  `--disable-gpu-compositing` test). **Even later:** **web UI FORKED into `web/`**
+  (Jeremy's decision; `pkgs/patches/` gone), **#72 DONE** (MSE player: H.265 and H.264
+  through `<video>` without WebCodecs, Firefox/Chromium headless device-proven; "H.265
+  Direct" auto-picks WebCodecs > MSE > H.264 fallback), **#70 filed** (mode change
+  reloads the page), **#71 filed** (no cache headers on index.html -> stale bundles).

@@ -6,6 +6,36 @@ to cut a version whose section is missing, and the GitHub release workflow
 lifts the section verbatim into the release description. Write the section
 before cutting. Older releases (through v2.1.0-alpha.3) predate this file.
 
+## v2.1.0-alpha.5
+
+DRAFT, not yet cut. Blob-free H.265, real rate control on both codecs, and the
+web UI becomes our own.
+
+- **H.265 (#64, #66).** The open encoder emits HEVC from source (VPS/SPS/PPS
+  byte-identical to the vendor's, device-proven 1080p to 3840x2400) and the web UI
+  gains "H.265 Direct" over a new `wss /api/stream/h265/direct`; every key
+  message carries VPS/SPS/PPS so a decoder can start at any IDR.
+- **H.265 in Firefox and Chrome on Linux (#72).** Those browsers decode HEVC for
+  video elements but not through WebCodecs, so a MediaSource player remuxes the
+  direct stream into fragmented MP4 for the browser's own decoder. "H.265 Direct"
+  picks WebCodecs where it works and MSE otherwise; "H.264/H.265 Direct (MSE)"
+  force it. The MSE player reconnects by itself after a service restart.
+- **Rate control (#46).** A from-scratch CBR/VBR controller replaces fixed QP32
+  for H.264 and H.265, written from measured vendor behaviour on real desktop
+  content. The UI bitrate setting takes effect and changes apply in place without
+  a stream restart. `OPENKVM_VENC_RC=legacy|fixqp` pin the old fixed-QP programs.
+- **Web UI forked (`web/`).** Sipeed's web UI is now in-tree source (GPL-3.0 fork
+  at `nanokvm@1.2.15`), no longer a patch stack over the upstream fetch.
+- **Chromium fix (#68).** H.264 Direct no longer shows a white screen in
+  Chromium: SPS/PPS ride in every key message. The H.265 option is never greyed
+  out by a probe; fallback to H.264 happens only on a real decoder failure.
+- **Fixes.** libkvm self-heals capture starvation and live geometry changes
+  (#65).
+- Known: the WebCodecs direct players still need a page refresh after a service
+  restart (#67); a WebRTC white screen in one Chromium setup is under
+  investigation (#69); changing the video mode reloads the page (#70); the UI is
+  served without cache headers, so hard-refresh after an update (#71).
+
 ## v2.1.0-alpha.4
 
 The video path is blob-free at 4K, and the image ships no closed kernel
