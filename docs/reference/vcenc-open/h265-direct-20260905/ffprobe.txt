@@ -1,0 +1,18 @@
+# ffprobe of out.h265 = 150 consecutive /api/stream/h265/direct payloads (9-byte framing stripped), device 2026-09-05
+codec_name=hevc
+codec_long_name=H.265 / HEVC (High Efficiency Video Coding)
+profile=Main
+width=1920
+height=1080
+pix_fmt=yuvj420p
+level=123
+color_range=pc
+r_frame_rate=60/1
+format_name=hevc
+size=193235
+# frames by key_frame,pict_type (ffprobe -show_frames):
+    145 0,P
+      5 1,I
+nb_read_frames=150
+ffmpeg_decode_error_lines=0
+sha256=2c4efb4de7fa41fe68645979c9eec8a28b27cf01db433c561abda8b06a25f747 size_bytes=193235

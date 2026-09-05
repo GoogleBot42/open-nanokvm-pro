@@ -1,0 +1,37 @@
+# Shipped web bundle (assets/index-X3sNjxxb.js) driven in headless Chromium 152 (Linux, no platform
+# HEVC decoder) over CDP (--remote-debugging-pipe) through an SSH loopback tunnel to the device
+# (https://localhost:8443 -> device 127.0.0.1:443; the server's CheckToken bypasses auth for loopback
+# clients, and the router's ProtectedRoute only checks that the token cookie EXISTS).
+# Procedure: load /, set localStorage nano-kvm-vide-mode=<mode>, reload, wait, inspect.
+
+=== mode=h265-direct (wait 5 s)
+step1 location: https://localhost:8443/#/auth/login
+step1 stored mode: h265-direct
+step2 location: https://localhost:8443/
+step2 websockets opened: ["wss://localhost:8443/api/ws", "wss://localhost:8443/api/stream/h264/direct"]
+step2 notification text: "The current browser does not support H.265! | This browser cannot decode H.265 video; playing H.264 Direct instead. || Change Password | For the security of your device, please change the password! | Ok"
+step2 canvas#screen present: True
+step2 stored mode after: h264-direct
+step2 hevc probe in page: False
+step2 page exceptions: []
+
+=== mode=h265-direct (wait 14 s) -- same result; the fallback notice had auto-closed (duration 10 s)
+step2 websockets opened: ["wss://localhost:8443/api/ws", "wss://localhost:8443/api/stream/h264/direct"]
+step2 notification text: "Change Password | For the security of your device, please change the password! | Ok"
+step2 canvas#screen present: True
+step2 stored mode after: h264-direct
+
+=== mode=h264-direct (control, wait 10 s)
+step1 stored mode: h264-direct
+step2 location: https://localhost:8443/
+step2 websockets opened: ["wss://localhost:8443/api/ws", "wss://localhost:8443/api/stream/h264/direct"]
+step2 notification text: "Change Password | For the security of your device, please change the password! | Ok"
+step2 canvas#screen present: True
+step2 stored mode after: h264-direct
+step2 hevc probe in page: False
+step2 page exceptions: []
+
+# Result: a browser without an HEVC decoder that has h265-direct stored falls back to H.264 Direct,
+# shows the notice, and rewrites the stored mode. The "Change Password" notice is upstream's default-
+# password reminder, unrelated. The SUPPORTED branch (hvc1 decode in the worker) could not be
+# exercised here: no available browser on this host decodes HEVC (see headless-chromium-webcodecs-probe.txt).

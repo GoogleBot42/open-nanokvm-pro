@@ -3590,3 +3590,58 @@ paths are unchanged (web 200, MJPEG streaming, H.264 bench 84 frames).
 client — separate issue), rate control for HEVC rides on #46 (the RC
 register set is codec-agnostic, H4), and shipping the new libkvm in the next
 image.
+
+### 2026-09-05 (later still) — vendor rate controller on real HDMI content (#46 oracle)
+
+The last cheap vendor question before the mainline move: what the vendor CBR/VBR
+controller does on a real KVM desktop, not a synthetic card. Vendor stack loaded at
+runtime (device-re-subagent recipe), frames recorded from the OPEN V4L2 driver
+(static 1080p60 desktop, 30 byte-identical frames) and fed to the vendor encoder as
+recorded or with labelled software motion (4 px/frame scroll, half-screen jumps).
+51 runs, 11,400 frames, per-frame CSVs with slice QP, bytes and the RC registers:
+`docs/reference/vcenc-open/vendor-diff-rc-20260905/` (README, REPORT, aggregate,
+fits, tools; no desktop pixels or bitstreams committed).
+
+- **Operating point.** A static or scrolling 1080p desktop cannot absorb 8 Mbps at
+  any QP ≥ 10; at 8000/16000 the vendor runs an identical open-loop descent to the
+  QP floor. The in-band regime is ~2000 kbps or heavy motion. A static P frame costs
+  a constant 1890 B at QP 21.
+- **Laws** (both codecs, frame-for-frame identical when a target exists): CBR IDR QP
+  37 at ≤ 3000 kbps / 32 at 8000+ (HEVC 35 / 32); first P = IDR+3 on every GOP; P
+  steps from r = bits/target of the previous frame — dead band ±5 %, +1 (at times
+  +2) above, −1 below, −2 under 0.85, throttled to −1/frame in deep undershoot;
+  |ΔQP| ≤ 2; floor IDR−11; ceiling 51 in GOP 0 then 46; IDR −2 per GOP under
+  target, mean-P(prev GOP)−4 in band, never above the initial QP over target.
+  Budget window = StatTime 1 s = 2 GOPs; first IDR target 0.22 × bitrate.
+- **Mid-stream change** lands in the next frame's target; QP descends −1/frame,
+  rises only when bits exceed the new target; the first IDR after a change
+  restarts at the new bitrate's initial QP (CBR) or 32 (VBR).
+- **VBR:** no IDR target, first P = IDR, up-steps +2, lands at 0.90 × cap.
+- **Vendor defect, not to be copied:** HEVC CBR ≤ 7000 kbps at 1080p60 programs no
+  target at all (`sw105–107 = 0`) and ramps QP open-loop to 46 — H8's undershoot
+  explained.
+
+The from-scratch controller (#46, `pkgs/vcenc-ewl/vcenc_rc.h`) is validated against
+these CSVs by the `open-venc-rc` check. Bench note: USB HID to the host was down
+again during the session (the #42 pattern; physical link), so no real host motion
+was possible.
+
+### 2026-09-05 (night) — h265-direct: the HEVC web consumer, device-proven (#66, closes the #64 loop)
+
+The server and web UI now consume the blob-free H.265 channel. `service/stream/
+direct/h265.go` (installed by `pkgs/nanokvm-server.nix`, route `GET /api/stream/
+h265/direct`) is a second direct streamer with the H.264 framing; the one design
+difference is that libkvm's VPS+SPS (both typed `IMG_H265_TYPE_SPS`) and PPS are
+folded into the IDR message they precede, so every key message is self-contained
+and a WebCodecs decoder configured for Annex-B starts at any IDR. The web UI
+(`pkgs/patches/web-h265-direct.patch`) adds "H.265 Direct" to both mode selectors,
+probes `VideoDecoder.isConfigSupported` for `hvc1.1.6.L153.B0`, and falls back to
+H.264 Direct with a notice where the browser cannot decode HEVC.
+
+Device-proven on the alpha.4 image with the hot-patched libkvm: 150 messages over
+the WebSocket, every key message exactly VPS/SPS/PPS/IDR, ffprobe `hevc` Main
+1920x1080 level 4.1, 150/150 frames decode with zero errors; the H.264 path is
+unchanged; the fallback branch was exercised end-to-end in headless Chromium
+(no platform HEVC decoder) against the real device. Not yet exercised: the
+supported branch in a browser with an HEVC decoder (human at a Windows/macOS
+browser). Evidence: `docs/reference/vcenc-open/h265-direct-20260905/`.

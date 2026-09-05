@@ -196,8 +196,14 @@ QP32, IPPP; VPS/SPS/PPS from `vcenc_hevc_header.h`): `kvmv_read_img` with an
 `IMG_H265_*` type opens a third channel (`KVM_VENC_H265_CHN`) and serves VPS+SPS
 as the "SPS", the PPS, then IDR/P NALs — decodable end to end from a real HDMI
 capture (bench reader + ffmpeg), roughly a third of the H.264 bytes at equal QP.
-The Go server and web client still speak H.264 only; wiring `ReadH265` into a
-streamer is a separate issue.
+The web consumer is the `h265-direct` stream mode (#66): a second direct streamer
+(`service/stream/direct/h265.go`, from `pkgs/nanokvm-server/direct-h265.go.in`)
+reads `ReadH265`, folds VPS/SPS/PPS into every IDR message so a description-less
+WebCodecs `hvc1` decoder can start at any key frame, and serves
+`GET /api/stream/h265/direct` with the same `[key][ts][Annex-B]` framing as
+H.264; `pkgs/patches/web-h265-direct.patch` adds the mode to the UI, probes
+`VideoDecoder.isConfigSupported` and falls back to `h264-direct` with a notice
+where HEVC cannot be decoded (Firefox).
 
 Earlier backends stay buildable as bench alternatives — both need vendor blobs
 that a #54 image no longer carries, so they only run on a device flashed with

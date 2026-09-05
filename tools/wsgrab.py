@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Minimal stdlib WebSocket client for the NanoKVM direct H.264 stream.
+"""Minimal stdlib WebSocket client for the NanoKVM direct H.264/H.265 streams.
 
-Connects to ws://127.0.0.1/api/stream/h264/direct (localhost bypasses auth),
-collects N binary messages (server framing: 1-byte keyframe flag + 8-byte LE
-microsecond timestamp + one Annex-B NAL), writes the concatenated NALs to the
-output file, and prints a per-message summary line.
+Connects to wss://127.0.0.1/api/stream/<codec>/direct (localhost bypasses
+auth), collects N binary messages (server framing: 1-byte keyframe flag +
+8-byte LE microsecond timestamp + Annex-B payload -- one NAL for H.264, one
+NAL or VPS+SPS+PPS+IDR for H.265 key messages), writes the concatenated
+payloads to the output file, and prints a per-message summary line listing
+every NAL type found in the message.
 
-Usage: wsgrab.py <out.h264> <nmsgs> [timeout_s]
+Usage: wsgrab.py <out.h26x> <nmsgs> [timeout_s] [h264|h265]
 """
 import base64
 import os
@@ -18,7 +20,6 @@ import time
 
 HOST = "127.0.0.1"
 PORT = 443
-PATH = "/api/stream/h264/direct"
 
 
 def read_exact(sock, n):
@@ -31,17 +32,44 @@ def read_exact(sock, n):
     return buf
 
 
+def nal_types(data, codec):
+    """NAL unit types of every Annex-B NAL (00 00 01 / 00 00 00 01) in data."""
+    types = []
+    i = 0
+    n = len(data)
+    while i + 3 <= n:
+        if data[i] == 0 and data[i + 1] == 0:
+            if data[i + 2] == 1:
+                hdr = i + 3
+            elif i + 3 < n and data[i + 2] == 0 and data[i + 3] == 1:
+                hdr = i + 4
+            else:
+                i += 1
+                continue
+            if hdr < n:
+                if codec == "h265":
+                    types.append((data[hdr] >> 1) & 0x3F)
+                else:
+                    types.append(data[hdr] & 0x1F)
+            i = hdr + 1
+        else:
+            i += 1
+    return types
+
+
 def main():
     out_path = sys.argv[1]
     want = int(sys.argv[2])
     deadline = time.time() + (float(sys.argv[3]) if len(sys.argv) > 3 else 30.0)
+    codec = sys.argv[4] if len(sys.argv) > 4 else "h264"
+    path = f"/api/stream/{codec}/direct"
 
     raw = socket.create_connection((HOST, PORT), timeout=10)
     ctx = ssl._create_unverified_context()
     sock = ctx.wrap_socket(raw, server_hostname=HOST)
     key = base64.b64encode(os.urandom(16)).decode()
     req = (
-        f"GET {PATH} HTTP/1.1\r\n"
+        f"GET {path} HTTP/1.1\r\n"
         f"Host: {HOST}\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
@@ -63,7 +91,7 @@ def main():
         print(f"HANDSHAKE FAILED: {status}")
         print(head.decode(errors="replace"))
         sys.exit(1)
-    print(f"ws connected: {status}")
+    print(f"ws connected ({path}): {status}")
 
     buf = rest
     msgs = []
@@ -96,9 +124,9 @@ def main():
             flag = payload[0]
             (ts,) = struct.unpack("<q", payload[1:9])
             nal = payload[9:]
-            nut = nal[4] & 0x1F if len(nal) > 4 else -1
             msgs.append((flag, ts, nal))
-            print(f"msg {len(msgs):3d}: key={flag} ts={ts} len={len(nal)} nal_type={nut}")
+            print(f"msg {len(msgs):3d}: key={flag} ts={ts} len={len(nal)} "
+                  f"nal_types={nal_types(nal, codec)}")
         elif opcode == 8:
             print("server close frame")
             break

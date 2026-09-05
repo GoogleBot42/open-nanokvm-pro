@@ -113,6 +113,7 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 | Open-encoder driver bring-up / #49 resolution (CMA = blob ABI break; no-flash coherent carveout) | `docs/vcmd-cma-unblock.md` |
 | Slot-B kernel boot-testing (proven A/B harness) | `docs/flashing-and-recovery.md` |
 | Pure-Nix / NixOS rootfs (feasibility + scaffold, #26) | `docs/nixos-rootfs.md` |
+| Mainline port (#26): driver inventory, boot/rollback contract, proposed child issues | `docs/mainline-port.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
 
 ## Working with Jeremy
