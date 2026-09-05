@@ -24,9 +24,10 @@
  * declared pool; the buffer's dma_addr is exactly the physical DDR address
  * the WDMA needs ("writel(dma_addr >> 3, ...)", spec §3 -- THE GATE).
  *
- * FIRST DRAFT: compiles and is structurally faithful to the specs; not yet
- * hardware-validated. Every value the spec could not pin carries a
- * TODO(bringup) with the spec's best guess.
+ * Hardware-proven and shipping since #55 M3 (2026-09-02): 4K30 and every
+ * sub-4K crop byte-identical to the vendor's frames, cold-boot clean. The
+ * remaining TODO(bringup) comments mark values the spec could not pin that
+ * still carry a best guess (each states how to confirm it).
  */
 
 #include <linux/module.h>
@@ -821,9 +822,10 @@ static void ovc_sif_start(struct ovc_dev *ovc)
 	/*
 	 * §1.4 note: START is asserted BEFORE the vbus is enabled at node
 	 * level, so the vbus enable comes last.
-	 * TODO(bringup): which VBUS_CTRL[n] instance + 5-bit mux value
-	 * route SIF dev0 to the IFE is [speculative]; best guess n=0,
-	 * mux=0, shift=0. Capture VBUS_CTRL live (spec §1.1) and fix.
+	 * Golden (vendor streaming, regdumps/regfile-vendor-live.bin and
+	 * geom/regfile-vendor-fake1080p.bin, offset 0x640c..0x6418):
+	 * VBUS_CTRL[0] = 0x00000001 (enable, mux 0, shift 0), VBUS_CTRL[1..3]
+	 * = 0 -- exactly this write. Resolved 2026-09-04.
 	 */
 	ovc_rmw(ovc, OVC_SIF_VBUS_CTRL(0), OVC_SIF_VBUS_KEEP, BIT(0));
 }

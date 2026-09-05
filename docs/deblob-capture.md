@@ -215,8 +215,11 @@ Three findings from the specs materially change the plan below:
    and reported `link locked (deskew status 0x0000000f)` — bits[1:0]==3, all
    lanes deskewed — with no crash. The D-PHY analog-timing `TODO(bringup)` (§6b,
    flagged as the likely first-lock blocker) locked on reset-default timing; a
-   live MIPI source was present. M1's milestone is met. Remaining M1 polish
-   (error-counter readout, the other TODOs) is non-blocking.
+   live MIPI source was present. M1's milestone is met. Error counters,
+   link-lock controls and `.log_status` are implemented; the remaining M1
+   polish is the CRC-error bit position (needs a live error dump) and the
+   spec §9 checks that need the vendor receiver (DataRate invariance, lane
+   table, the `0x02303000` block) — non-blocking.
 3. **The gate RE (spec work, parallel to M1): DONE 2026-08-30.** Behavioral
    specs of (a) the ax_base CDMA format (`spec-cdma.md`) and (b) the proton
    bypass/IFE-WDMA register programming (`spec-proton-bypass.md`) delivered and
