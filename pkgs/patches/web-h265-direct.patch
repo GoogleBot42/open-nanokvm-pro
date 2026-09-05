@@ -28,7 +28,7 @@ diff -urN a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
      },
 diff -urN a/src/lib/video.ts b/src/lib/video.ts
 --- a/src/lib/video.ts	2026-09-05 10:37:35.152346515 -0600
-+++ b/src/lib/video.ts	2026-09-05 10:39:41.906279651 -0600
++++ b/src/lib/video.ts	2026-09-05 10:45:05.363692795 -0600
 @@ -6,6 +6,8 @@
    return 'VideoDecoder' in window;
  }
@@ -38,7 +38,7 @@ diff -urN a/src/lib/video.ts b/src/lib/video.ts
  export function isH265Supported() {
    if ('getCapabilities' in RTCRtpReceiver) {
      const capabilities = RTCRtpReceiver.getCapabilities('video');
-@@ -18,25 +20,65 @@
+@@ -18,25 +20,75 @@
    return false;
  }
  
@@ -75,12 +75,22 @@ diff -urN a/src/lib/video.ts b/src/lib/video.ts
 +  return h265DirectProbe;
 +}
 +
-+// Synchronous view for the mode lists. Optimistic while the probe (started at
-+// module load, resolves in milliseconds) is pending, so a stored h265-direct
-+// survives the Desktop mount check; the H265Direct screen re-checks and falls
-+// back to h264-direct with a notice when the browser cannot decode HEVC.
++// Synchronous view for the mode selectors: optimistic while the probe (started
++// at module load, resolves in milliseconds) is pending, then definitive.
 +export function isH265DirectSupported() {
 +  return isDecoderSupported() && h265DirectSupported !== false;
++}
++
++// Whether a STORED mode may be mounted. h265-direct is always admitted on a
++// WebCodecs browser: the H265Direct screen runs the definitive probe itself and
++// falls back to H.264 Direct with a visible notice, which a silent drop to the
++// default mode here would hide.
++export function isVideoModeUsable(mode: string) {
++  if (mode === 'h265-direct') {
++    return isDecoderSupported();
++  }
++
++  return getSupportedVideoModes().includes(mode);
 +}
 +
 +if (typeof window !== 'undefined') {
@@ -110,6 +120,27 @@ diff -urN a/src/lib/video.ts b/src/lib/video.ts
        videoModes.push('h265-direct');
      }
    }
+diff -urN a/src/pages/desktop/index.tsx b/src/pages/desktop/index.tsx
+--- a/src/pages/desktop/index.tsx	2026-09-05 10:37:35.152738893 -0600
++++ b/src/pages/desktop/index.tsx	2026-09-05 10:44:59.030665337 -0600
+@@ -5,7 +5,7 @@
+ 
+ import { VideoMode } from '@/types';
+ import * as storage from '@/lib/localstorage.ts';
+-import { getSupportedVideoModes } from '@/lib/video.ts';
++import { getSupportedVideoModes, isVideoModeUsable } from '@/lib/video.ts';
+ import { client } from '@/lib/websocket.ts';
+ import { videoModeAtom } from '@/jotai/screen.ts';
+ import { Head } from '@/components/head.tsx';
+@@ -39,7 +39,7 @@
+     const supportedModes = getSupportedVideoModes();
+ 
+     const cookieVideoMode = storage.getVideoMode();
+-    if (cookieVideoMode && supportedModes.includes(cookieVideoMode)) {
++    if (cookieVideoMode && isVideoModeUsable(cookieVideoMode)) {
+       return cookieVideoMode;
+     }
+ 
 diff -urN a/src/pages/desktop/menu/screen/video-mode.tsx b/src/pages/desktop/menu/screen/video-mode.tsx
 --- a/src/pages/desktop/menu/screen/video-mode.tsx	2026-09-05 10:37:35.153672749 -0600
 +++ b/src/pages/desktop/menu/screen/video-mode.tsx	2026-09-05 10:40:50.214580224 -0600
