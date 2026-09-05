@@ -268,6 +268,20 @@ EOF
     substituteInPlace service/vm/edid.go \
       --replace-fail '	0x3f: "E63-Ultrawide",' '	0x3f: "E63-Ultrawide",
 	0x72: "NanoKVM-720P60",'
+
+    # 9. H.265 direct stream (#64 web consumer, #66). Upstream already ships
+    #    the pieces that cost nothing: common.ReadH265 (kvmv_read_img with
+    #    IMG_H265_TYPE_SPS), STREAM_TYPE_H265_DIRECT and the "h265-direct"
+    #    key in StreamTypeMap, so POST /api/stream/mode accepts the mode --
+    #    but no streamer reads the channel and no route serves it. Add both:
+    #    our own streamer file (parameter sets folded into each IDR message,
+    #    see the file comment) and the WebSocket route next to the H.264 one.
+    #    The H.264 streamer stays byte-identical.
+    cp ${./nanokvm-server/direct-h265.go.in} service/stream/direct/h265.go
+    substituteInPlace router/stream.go \
+      --replace-fail 'api.GET("/stream/h264/direct", direct.Connect) // h264 stream (direct)' \
+'api.GET("/stream/h264/direct", direct.Connect) // h264 stream (direct)
+	api.GET("/stream/h265/direct", direct.ConnectH265) // h265 stream (direct, blob-free HEVC)'
   '';
 
   # cgo on for the kvm_vision + opus bindings.

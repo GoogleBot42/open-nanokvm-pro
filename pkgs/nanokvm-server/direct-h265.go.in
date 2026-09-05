@@ -1,0 +1,220 @@
+package direct
+
+// H.265 "direct" stream -- the web consumer of the blob-free HEVC channel our
+// libkvm exposes through IMG_H265_* (#64). Installed by pkgs/nanokvm-server.nix
+// as service/stream/direct/h265.go; routed at GET /api/stream/h265/direct.
+//
+// Same transport as the H.264 direct path (streamer.go, left byte-identical):
+// one WebSocket binary message per encoded unit, framed
+//
+//	[key:1][timestamp_us:8 LE][Annex-B payload]
+//
+// and decoded browser-side by the same WebCodecs worker (codec hvc1.*).
+// Two deliberate differences:
+//
+//   - the reader is vision.ReadH265 (kvmv_read_img with IMG_H265_TYPE_SPS,
+//     which selects libkvm's third channel); a key unit is IMG_H265_TYPE_IF.
+//   - parameter sets are never sent on their own. libkvm serves VPS and SPS
+//     as two IMG_H265_TYPE_SPS units and the PPS as IMG_H265_TYPE_PPS, all
+//     immediately before the IDR slice they belong to. We hold them and
+//     prepend them to that IDR, so every key message is self-contained:
+//     a decoder configured without a `description` (Annex-B, in-band
+//     parameter sets) can start at ANY IDR, including the very first one it
+//     sees. The H.264 path sends SPS/PPS as separate delta messages, which
+//     costs the browser one GOP before the first decodable key frame.
+
+import (
+	"bytes"
+	"encoding/binary"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"NanoKVM-Server/common"
+	"NanoKVM-Server/service/stream"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
+)
+
+type h265Streamer struct {
+	mutex          sync.Mutex
+	clients        map[*websocket.Conn]bool
+	clientSnapshot atomic.Pointer[[]*websocket.Conn]
+	running        int32
+}
+
+var h265 = newH265Streamer()
+
+func newH265Streamer() *h265Streamer {
+	s := &h265Streamer{
+		clients: make(map[*websocket.Conn]bool),
+	}
+	s.updateClientSnapshotLocked()
+
+	return s
+}
+
+// ConnectH265 upgrades the request to a WebSocket and attaches it to the
+// H.265 stream until the peer closes. Mirrors Connect (h264.go).
+func ConnectH265(c *gin.Context) {
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Errorf("failed to upgrade to websocket: %s", err)
+		return
+	}
+	defer func() {
+		_ = ws.Close()
+		log.Debugf("h265 websocket disconnected: %s", ws.RemoteAddr())
+	}()
+	log.Debugf("h265 websocket connected: %s", ws.RemoteAddr())
+
+	_ = ws.SetReadDeadline(time.Time{})
+
+	h265.addClient(ws)
+	defer h265.removeClient(ws)
+
+	for {
+		if _, _, err := ws.ReadMessage(); err != nil {
+			log.Debugf("failed to read message (client disconnected): %s", err)
+			return
+		}
+	}
+}
+
+func (s *h265Streamer) addClient(ws *websocket.Conn) {
+	s.mutex.Lock()
+	s.clients[ws] = true
+	s.updateClientSnapshotLocked()
+	s.mutex.Unlock()
+
+	common.GetKvmVision().SetStreamType(common.STREAM_TYPE_H265_DIRECT)
+
+	if atomic.CompareAndSwapInt32(&s.running, 0, 1) {
+		go s.run()
+		log.Debug("h265 stream started")
+	}
+}
+
+func (s *h265Streamer) removeClient(ws *websocket.Conn) {
+	s.mutex.Lock()
+	delete(s.clients, ws)
+	count := s.updateClientSnapshotLocked()
+	s.mutex.Unlock()
+
+	log.Debugf("h265 websocket disconnected, remaining clients: %d", count)
+}
+
+func (s *h265Streamer) updateClientSnapshotLocked() int {
+	clients := make([]*websocket.Conn, 0, len(s.clients))
+	for client := range s.clients {
+		clients = append(clients, client)
+	}
+	s.clientSnapshot.Store(&clients)
+
+	return len(clients)
+}
+
+func (s *h265Streamer) getClients() []*websocket.Conn {
+	clients := s.clientSnapshot.Load()
+	if clients == nil {
+		return nil
+	}
+
+	return *clients
+}
+
+func (s *h265Streamer) run() {
+	defer atomic.StoreInt32(&s.running, 0)
+
+	ticker := time.NewTicker(time.Second / time.Duration(120))
+	defer ticker.Stop()
+
+	screen := common.GetScreen()
+	vision := common.GetKvmVision()
+	startTime := time.Now()
+	failStreak := 0
+
+	// VPS+SPS+PPS waiting for their IDR (see file comment).
+	var params []byte
+
+	for range ticker.C {
+		clients := s.getClients()
+		if len(clients) == 0 {
+			log.Debug("h265 stream stopped due to no clients")
+			return
+		}
+
+		if vision.StreamType != common.STREAM_TYPE_H265_DIRECT {
+			continue
+		}
+
+		data, result := vision.ReadH265(screen.Width, screen.Height, screen.BitRate)
+		if result < 0 || len(data) == 0 {
+			// Same backoff as the H.264 loops (nanokvm-server.nix step 7):
+			// a wedged encoder must not become a 120 Hz log storm.
+			failStreak++
+			if failStreak > 30 {
+				time.Sleep(time.Second)
+			}
+			continue
+		}
+		failStreak = 0
+
+		isKeyFrame := byte(0)
+		switch uint8(result) {
+		case common.IMG_H265_TYPE_SPS, common.IMG_H265_TYPE_PPS:
+			params = append(params, data...)
+			continue
+		case common.IMG_H265_TYPE_IF:
+			isKeyFrame = 1
+			if len(params) > 0 {
+				data = append(params, data...)
+				params = nil
+			}
+		}
+
+		timestamp := time.Since(startTime).Microseconds()
+
+		if err := s.send(clients, isKeyFrame, timestamp, data); err != nil {
+			continue
+		}
+
+		stream.GetFrameRateCounter().Update()
+	}
+}
+
+func (s *h265Streamer) send(clients []*websocket.Conn, isKeyFrame byte, timestamp int64, data []byte) error {
+	buf := stream.BufferPool.Get().(*bytes.Buffer)
+	defer stream.BufferPool.Put(buf)
+
+	buf.Reset()
+
+	if err := buf.WriteByte(isKeyFrame); err != nil {
+		log.Errorf("failed to write keyframe flag: %s", err)
+		return err
+	}
+
+	tsBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tsBytes, uint64(timestamp))
+	if _, err := buf.Write(tsBytes); err != nil {
+		log.Errorf("failed to write timestamp: %s", err)
+		return err
+	}
+
+	if _, err := buf.Write(data); err != nil {
+		log.Errorf("failed to write h265 data: %s", err)
+		return err
+	}
+
+	for _, client := range clients {
+		if err := client.WriteMessage(websocket.BinaryMessage, buf.Bytes()); err != nil {
+			log.Errorf("failed to write message to client %s: %s.", client.RemoteAddr(), err)
+
+			s.removeClient(client)
+		}
+	}
+
+	return nil
+}
