@@ -88,3 +88,9 @@ streamed at the same five, frames and register files diffed. Four geometry words
 (all already parametric), `0x6530` is a constant, and the `0x142f8 = 0` WDMA sample
 width word (missing from the non-zero-only snapshot) was the cause of the shifted
 pixel values. Open frames now match the vendor's; packing is YUYV. `geom/README.md`.
+
+## 2026-09-04: vendor receiver under its public API — `mipi-20260904/`
+DataRate sweep, lane-count runs, Start/Stop polling and the `0x02303000` block,
+all with the vendor `ax_mipi_rx` driven through the SDK API (read-only dumps).
+Results are folded into `../specs/spec-mipi-rx.md` §9 (items 4, 6, 8 resolved,
+5 partial). See `mipi-20260904/README.md`.

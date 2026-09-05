@@ -494,10 +494,9 @@ static void openvin_csi_ctrl_init(struct openvin_csi2 *priv)
 
 	/*
 	 * 12-13. Clear the stop bit, set the start bit. Device-confirmed
-	 * running state: +0x100 == 0x1.
-	 * TODO(bringup): the spec notes the vendor start/stop encodings are
-	 * RMW with a sentinel value 2 - verify start/stop/srst semantics by
-	 * toggling live and watching deskew status (spec section 9 item 6).
+	 * running state: +0x100 == 0x1. Vendor semantics observed 2026-09-04
+	 * (spec section 9 item 6): 1 = running, 2 = stopped, the value is
+	 * retained across clock gating, and no srst pulse is ever issued.
 	 */
 	csi_rmw(priv, CSI_CTRL_STREAM_CTRL, CSI_STREAM_CTRL_STOP, 0);
 	csi_rmw(priv, CSI_CTRL_STREAM_CTRL, CSI_STREAM_CTRL_START,

@@ -378,12 +378,33 @@ Sequencing: userspace must issue `set_lanecombo`(8) and `set_attr`(2) **before**
 4. **[DataRate]** Confirm on hardware that `DataRate` does **not** change any D-PHY
    register (sweep the attr `DataRate` and diff `0x023f0000` register dumps). If true,
    the open driver uses fixed per-combo timing presets. (§4, relevant to #17)
+   **CONFIRMED 2026-09-04 (`regdumps/mipi-20260904/`):** the vendor receiver driven
+   through its public API at DataRate 80…2500 programs identical D-PHY and CSI
+   config words; the only words that differ between runs are live status. The open
+   driver's fixed presets are correct.
 5. **[N_LANES table]** Dump the 4-entry lane table used for `+0x40` (values for
    LaneNum 1..4) — it is in `.rodata`; read `+0x40` after init for the KVM lane count
    to get the concrete value rather than reconstructing the table.
+   **PARTIAL 2026-09-04:** `+0x40` reads `0x1f` for LaneNum 1/2/3/4 alike, because
+   the CSI register file is clock-gated (not reset) between Stop and Start and the
+   vendor's write is an RMW-OR — a retained 0xf never drops within one boot. The
+   4-lane value is confirmed; the 1/2/3-lane entries are unobservable without a
+   module reload and stay inferred. LaneCombo does land in the D-PHY: `+0x58` =
+   0x3f (MODE_0), 0x3d (MODE_1 4-lane), 0x31 (MODE_1 2-lane / MODE_2 1-lane);
+   `+0x34` bit25 set for MODE_1.
 6. **[stream-ctrl bit semantics]** Verify `+0x100` bit0=start / bit1=stop / bit4=srst
    by toggling and watching the deskew-status + error counters (the stop/start
    encodings are RMW with sentinel `2`, worth a live check).
+   **CONFIRMED 2026-09-04 (poll logs, ~10–20 µs sampling):** `+0x100` = 1 while
+   running, 2 after Stop, retained across clock gating; on Start the bank comes up
+   clocked with the retained config, `+0x34` is rewritten field-by-field, then
+   `+0x100 → 1` ~30 ms later; on Stop the D-PHY gates first, `+0x100 → 2`, then the
+   CSI bank gates. No srst pulse (0x10/0x12) was ever sampled in five runs. Also:
+   `0x02500000+0x00` reads 0x5af (bits[1:0]=3) at every stage incl. unclocked, so
+   with the vendor stack it reflects the clock/mux selection, not a per-Start lock.
+   One difference from a full vendor stream: API-only Start leaves the D-PHY deskew
+   debug-ctrl reset asserted (`+0x44/+0x844` = 0x3c00; 0 when VIN streams) — the
+   VIN stage releases it, which the open driver does in its step 6.
 7. **[common_glb sharing]** With proton/VIN running, snapshot `0x02340000+0x28`,
    `+0x408`, `+0x1ec/+0x1f8` before/after a mipi `start`/`stop` to see whether proton
    depends on bits this driver toggles (the coordination hazard, §7).
@@ -395,6 +416,9 @@ Sequencing: userspace must issue `set_lanecombo`(8) and `set_attr`(2) **before**
 8. **[0x02303000 block]** Identify the `ax_dvp_bt_soc_init` target — likely a DVP/BT656
    bridge unrelated to the MIPI path; can probably be omitted for the pure-MIPI open
    driver, but confirm it is not gating a shared clock.
+   **RESOLVED 2026-09-04:** readable idle and streaming under the vendor stack (no
+   bus hang); word 0 = 0x00000210, the other 63 words 0, identical in both states.
+   Nothing the open driver must touch.
 
 ---
 

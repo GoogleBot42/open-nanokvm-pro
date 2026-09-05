@@ -1,0 +1,18 @@
+mipiprobe tag=P_L4 lanes=4 rate=600 reset=0 combo=0 delay=300
+AX_SYS_Init=0
+AX_MIPI_RX_Init=0
+AX_MIPI_RX_SetLaneCombo(0)=0
+[pre] csi+0x00=deadbeef csi+0x04=deadbeef csi+0x28=deadbeef csi+0x2c=deadbeef csi+0x40=deadbeef csi+0x4c=deadbeef csi+0x100=deadbeef csi+0x110=deadbeef csi+0x118=deadbeef | dphy+0x110=deadbeef dphy+0x34=deadbeef | glb+0x00=000005af deskew[1:0]=3 | lt6911 3840x2160@29
+sizeof(AX_MIPI_RX_DEV_T)=24
+AX_MIPI_RX_SetAttr(0,{lanes=4,rate=600})=0 (0x0)
+AX_MIPI_RX_GetAttr=0 -> mode=0 phy=0 lanes=0 rate=0 map=0,0,0,0 clk=0,0
+[attr] csi+0x00=deadbeef csi+0x04=deadbeef csi+0x28=deadbeef csi+0x2c=deadbeef csi+0x40=deadbeef csi+0x4c=deadbeef csi+0x100=deadbeef csi+0x110=deadbeef csi+0x118=deadbeef | dphy+0x110=deadbeef dphy+0x34=deadbeef | glb+0x00=000005af deskew[1:0]=3 | lt6911 3840x2160@29
+AX_MIPI_RX_Start(0)=0 (0x0)
+[start] csi+0x00=0001321c csi+0x04=00000000 csi+0x28=00000000 csi+0x2c=00011ee1 csi+0x40=0000001f csi+0x4c=00000000 csi+0x100=00000001 csi+0x110=00000010 csi+0x118=00000d1f | dphy+0x110=00000000 dphy+0x34=0005c540 | glb+0x00=000005af deskew[1:0]=3 | lt6911 3840x2160@29
+[start2] csi+0x00=0001321c csi+0x04=00000000 csi+0x28=00000000 csi+0x2c=00011ee1 csi+0x40=0000001f csi+0x4c=00000000 csi+0x100=00000001 csi+0x110=00000010 csi+0x118=00000d1f | dphy+0x110=00000000 dphy+0x34=0005c540 | glb+0x00=000005af deskew[1:0]=3 | lt6911 3840x2160@29
+AX_MIPI_RX_Stop(0)=0
+[stop] csi+0x00=deadbeef csi+0x04=deadbeef csi+0x28=deadbeef csi+0x2c=deadbeef csi+0x40=deadbeef csi+0x4c=deadbeef csi+0x100=deadbeef csi+0x110=deadbeef csi+0x118=deadbeef | dphy+0x110=deadbeef dphy+0x34=deadbeef | glb+0x00=000005af deskew[1:0]=3 | lt6911 3840x2160@29
+poll: 12 transition events -> /tmp/axwork/mipi/P_L4-poll.txt
+AX_MIPI_RX_DeInit=0
+AX_SYS_Deinit=0
+DONE
