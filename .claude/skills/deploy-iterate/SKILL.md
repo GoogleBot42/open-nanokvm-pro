@@ -90,10 +90,14 @@ loopback tunnel (`tunnel.sh`, device treats 127.0.0.1 as authenticated).
 
 Proven flow (2026-08-15, deploying the dead-extensions patch):
 
-1. `nix build .#nanokvm-web --out-link <scratch>/result-web` — output is the
-   static `dist/` (index.html + assets/). The bundle filename hash
-   (`assets/index-<hash>.js`) changes with content — note it; it's the
-   deploy-verification token.
+1. `nix build .#nanokvm-web --no-link --print-out-paths` — output is the
+   static `dist/` (index.html + assets/). Use the printed store path directly:
+   a reused `result-web` out-link that another build had re-pointed shipped the
+   WRONG bundle on 2026-09-05 (#73), and its hash still "changed", so the hash
+   check passed while the fix was absent. The bundle filename hash
+   (`assets/index-<hash>.js`) is the deploy token, but also verify a
+   **behavioural marker** in the served bundle (e.g. `grep -c
+   'getElementById("screen")' assets/index-*.js` for a fix that changes it).
 2. `tar czf web-dist.tar.gz -C result-web .` and `tools/kvmscp` it to `/tmp/`
    (~700 KB, quick).
 3. Install into BOTH trees with an atomic-ish swap; the web root is

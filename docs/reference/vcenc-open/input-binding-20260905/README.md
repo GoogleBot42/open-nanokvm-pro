@@ -27,9 +27,9 @@ run — including both unfixed h265-direct runs (2 frames, the ShiftLeft down/up
 pair). The "keyboard dead" half of the report is a conflation: with no mouse
 listeners nothing on the page calls `preventDefault()` on pointer events and the
 pointer never moves on the attached host, which reads as total input death.
-`device/unfixed-h265-direct.png` vs `device/fixed-h265-direct.png` shows it — the
-same host screen, cursor untouched at the top in the unfixed run and parked at
-the centre of the video (where the injected `mousemove` aimed) in the fixed one.
+The device screenshots (not committed; they show the attached host's screen)
+confirmed it: cursor untouched at the top in the unfixed run and parked at the
+centre of the video (where the injected `mousemove` aimed) in the fixed one.
 
 ## Method
 
@@ -59,7 +59,7 @@ point `ff_input.py` at `https://127.0.0.1:8443/`.
 Bundles: unfixed = `assets/index-Bg_C9wJe.js`, fixed = `assets/index-C49rIKCi.js`.
 Frames counted on `/api/ws` for one injection burst.
 
-### On the device (`device/*.json`, `device/*.png`)
+### On the device (`device/*.json`)
 
 Live open-stack HEVC playing throughout the h265 runs (1920x1080, ~880 segments
 per 18 s run, 0 dropped on the fixed runs).
