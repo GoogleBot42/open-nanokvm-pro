@@ -209,7 +209,7 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
           } else {
             // nothing to reclaim: drop the pending media segments, but keep the
             // init segments -- without them nothing behind them can decode.
-            const kept = queue.filter((q) => q.kind === 'append' && q.init);
+            const kept = queue.filter((q) => q.kind === 'changeType' || (q.kind === 'append' && q.init));
             queue.length = 0;
             queue.push(...kept);
           }
