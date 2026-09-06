@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
+import { notification } from 'antd';
 import { useAtom } from 'jotai';
 import { useTranslation } from 'react-i18next';
 import { useMediaQuery } from 'react-responsive';
 
 import { VideoMode } from '@/types';
 import * as storage from '@/lib/localstorage.ts';
-import { getSupportedVideoModes } from '@/lib/video.ts';
+import { resolveVideoMode } from '@/lib/video.ts';
 import { client } from '@/lib/websocket.ts';
 import { videoModeAtom } from '@/jotai/screen.ts';
 import { Head } from '@/components/head.tsx';
@@ -23,32 +24,40 @@ export const Desktop = () => {
   const isBigScreen = useMediaQuery({ minWidth: 850 });
 
   const [videoMode, setVideoMode] = useAtom(videoModeAtom);
+  const [notify, contextHolder] = notification.useNotification();
 
   useEffect(() => {
     client.connect();
 
-    const mode = getVideoMode() as VideoMode;
-    setVideoMode(mode);
+    // Honour the stored mode when this browser can play it; otherwise start the
+    // nearest mode that can AND rewrite the stored value, so the menu, the next
+    // reload and the picture all agree (upstream left a rejected stored mode in
+    // place and quietly started the WebRTC player).
+    const resolved = resolveVideoMode(storage.getVideoMode());
+    if (resolved.replaced) {
+      storage.setVideoMode(resolved.mode);
+      notify.warning({
+        key: 'video_mode_unsupported',
+        message: t('notification.videoMode.title'),
+        description: t('notification.videoMode.description', {
+          stored: resolved.replaced,
+          mode: resolved.mode
+        }),
+        placement: 'topRight',
+        duration: 10
+      });
+    }
+    setVideoMode(resolved.mode as VideoMode);
 
     return () => {
       client.close();
     };
   }, []);
 
-  function getVideoMode() {
-    const supportedModes = getSupportedVideoModes();
-
-    const cookieVideoMode = storage.getVideoMode();
-    if (cookieVideoMode && supportedModes.includes(cookieVideoMode)) {
-      return cookieVideoMode;
-    }
-
-    return supportedModes.includes('h264-webrtc') ? 'h264-webrtc' : 'mjpeg';
-  }
-
   return (
     <>
       <Head title={t('head.desktop')} />
+      {contextHolder}
 
       {isBigScreen && (
         <>

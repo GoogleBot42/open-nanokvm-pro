@@ -52,11 +52,39 @@ nix shell --impure --expr '(import <nixpkgs> {}).python3.withPackages (p: [p.web
 
 ## 2. Invocations
 
-Both take the same arguments:
+Both take the same arguments (parsed by the shared `runspec.py`):
 
 ```
-<script> <url> <video-mode> <seconds> <screenshot.png> [--port N]
+<script> <url> <video-mode> <seconds> <screenshot.png>
+         [--port N] [--probe-at 6,20,40] [--shot-each]
+         [--action T:JS] ... [--console-full]
 ```
+
+- `--probe-at` — seconds at which to evaluate `probe.js` (default `6,<seconds>`).
+- `--shot-each` — a screenshot at every checkpoint, `<shot>-t<N>s.png`.
+- `--action T:JS` — evaluate a JavaScript expression in the page at second `T`
+  and print its value (promises awaited). Repeatable. This is how a run changes
+  something on the device **mid-stream, through the same API the UI calls**,
+  from the page's own authenticated origin.
+- `--console-full` — every console entry in order with its timestamp instead of
+  the de-duplicated summary. Use it for timelines: the MSE player prints one
+  report line every 5 s and one line per init segment.
+
+**Changing the encoder resolution mid-stream.** There is no resolution API: the
+encoder always follows the HDMI source (`/proc/lt6911_info/{width,height}`,
+which `libkvm` re-reads at 2 Hz and re-inits the pipeline on a change — see
+`pkgs/kvm-encoder/src/libkvm.c`). The lever is therefore the **EDID**, exactly
+as the UI's Screen → EDID menu does it:
+
+```
+--action "20:fetch('/api/vm/edid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edid:'E54-1080P60FPS'})}).then(r=>r.text())"
+--action "45:fetch('/api/vm/edid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edid:'E18-4K30FPS'})}).then(r=>r.text())"
+```
+
+`GET /api/vm/edid` reports the current one — record it before the run and put
+it back after. The switch writes the LT6911UXC's EDID EEPROM and cycles HPD, so
+the **attached host really changes display mode**; do not do it without owning
+the bench.
 
 video-mode is stored verbatim in localStorage `nano-kvm-vide-mode` (sic):
 `h264-direct | h265-direct | h264-webrtc | mjpeg | h264-mse | h265-mse`.
@@ -91,8 +119,10 @@ Browser binaries default to the store paths; override with `$CHROMIUM_BIN` /
   `video#screen {videoWidth, videoHeight, currentTime, readyState, networkState,
   paused, ended, duration, buffered ranges, quality.{totalVideoFrames,
   droppedVideoFrames}, srcObject, src, error}`,
-  `img {naturalWidth, naturalHeight, complete, src}`, `MediaSource`/`VideoDecoder`
-  availability, and every `.ant-notification-notice` text.
+  `playbackRate`, `img {naturalWidth, naturalHeight, complete, src}`,
+  `MediaSource`/`VideoDecoder` availability, `t` (ms since page load) and every
+  `.ant-notification-notice` text.
+- `--- action t=<n>s <expr>` and its result, for every `--action`.
 - `--- screenshot <path>`: full-page PNG (`Page.captureScreenshot
   captureBeyondViewport` / BiDi `captureScreenshot origin:"document"`).
 - `--- console`: de-duplicated console log/warn/error + page exceptions for the

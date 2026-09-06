@@ -3,7 +3,12 @@
 tunnel with a chosen stored video mode; report console output, the screen
 element / notification state, and save a full-page screenshot.
 
-usage: cdp_ui.py <url> <video-mode> <seconds> <screenshot.png> [--port N]
+usage: cdp_ui.py <url> <video-mode> <seconds> <screenshot.png>
+                 [--port N] [--probe-at 6,20,40] [--shot-each]
+                 [--action T:JS] ... [--console-full]
+
+See runspec.py for what the flags do (probe checkpoints, per-checkpoint
+screenshots, in-page actions at a given second, ordered console).
 
 Fresh profile every run, so the device's cache-less index.html is never stale.
 """
@@ -20,16 +25,17 @@ import urllib.request
 
 import websockets
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from runspec import RunSpec, print_console, usage_guard  # noqa: E402
+
 CHROMIUM = os.environ.get(
     "CHROMIUM_BIN",
     "/nix/store/3qgx41z8882ff85y9prdc5zgbb2id6y8-chromium-152.0.7977.64/bin/chromium")
-HERE = os.path.dirname(os.path.abspath(__file__))
 
-url = sys.argv[1]
-mode = sys.argv[2]
-run_for = float(sys.argv[3]) if len(sys.argv) > 3 else 20
-shot = os.path.abspath(sys.argv[4]) if len(sys.argv) > 4 else os.path.join(HERE, "cdp_shot.png")
-PORT = int(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[5] == "--port" else 9335
+usage_guard(sys.argv)
+spec = RunSpec(sys.argv, HERE, default_port=9335, default_shot="cdp_shot.png")
+url, mode, run_for = spec.url, spec.mode, spec.run_for
 
 PROBE = open(os.path.join(HERE, "probe.js")).read()
 
@@ -40,7 +46,7 @@ chrome = subprocess.Popen(
      "--disable-application-cache", "--disk-cache-size=1",
      "--window-size=1920,1080",
      "--enable-logging=stderr", "--v=0",
-     f"--remote-debugging-port={PORT}", f"--user-data-dir={profile}", "about:blank"],
+     f"--remote-debugging-port={spec.port}", f"--user-data-dir={profile}", "about:blank"],
     stdout=subprocess.DEVNULL,
     stderr=open(os.path.join(HERE, "cdp_ui_chrome.err"), "w"))
 
@@ -49,11 +55,14 @@ document.cookie = 'nano-kvm-token=loopback-tunnel-bypass; path=/';
 try { localStorage.setItem('nano-kvm-vide-mode', '%s'); } catch (e) {}
 """ % mode
 
+# set just before the app is navigated to
+T0 = [time.time()]
+
 
 def targets():
     for _ in range(100):
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json") as r:
+            with urllib.request.urlopen(f"http://127.0.0.1:{spec.port}/json") as r:
                 t = json.load(r)
                 if any(x["type"] == "page" for x in t):
                     return t
@@ -70,17 +79,20 @@ async def main():
         console = []
 
         def note(msg):
+            text = None
             if msg.get("method") == "Runtime.consoleAPICalled":
                 args = msg["params"].get("args", [])
-                console.append(msg["params"].get("type", "") + ": " +
-                               " ".join(str(a.get("value", a.get("description", ""))) for a in args)[:400])
+                text = msg["params"].get("type", "") + ": " + \
+                    " ".join(str(a.get("value", a.get("description", ""))) for a in args)[:400]
             elif msg.get("method") == "Runtime.exceptionThrown":
                 d = msg["params"].get("exceptionDetails", {})
-                console.append("exception: " + str(d.get("text")) + " " +
-                               str(d.get("exception", {}).get("description", ""))[:300])
+                text = "exception: " + str(d.get("text")) + " " + \
+                    str(d.get("exception", {}).get("description", ""))[:300]
             elif msg.get("method") == "Log.entryAdded":
                 e = msg["params"]["entry"]
-                console.append(f"{e.get('level')}[{e.get('source')}]: {str(e.get('text'))[:300]}")
+                text = f"{e.get('level')}[{e.get('source')}]: {str(e.get('text'))[:300]}"
+            if text is not None:
+                console.append((time.time() - T0[0], text))
 
         async def call(method, **params):
             nonlocal seq
@@ -92,6 +104,33 @@ async def main():
                 if msg.get("id") == seq:
                     return msg.get("result", msg)
 
+        async def evaluate(expr):
+            r = await call("Runtime.evaluate", expression=expr, returnByValue=True,
+                           awaitPromise=True)
+            details = r.get("exceptionDetails")
+            if details:
+                return {"exception": str(details.get("text"))[:400]}
+            return r.get("result", {}).get("value")
+
+        async def shoot(path):
+            r = await call("Page.captureScreenshot", format="png", captureBeyondViewport=True)
+            data = r.get("data")
+            if data:
+                with open(path, "wb") as f:
+                    f.write(base64.b64decode(data))
+                print(f"--- screenshot {path} ({os.path.getsize(path)} bytes)")
+            else:
+                print("--- screenshot FAILED", json.dumps(r)[:400])
+
+        async def idle_until(deadline):
+            """Pump CDP events (so console/log entries are recorded) until t."""
+            while time.time() < deadline:
+                try:
+                    note(json.loads(await asyncio.wait_for(ws.recv(), 0.3)))
+                except Exception:
+                    pass
+
+        print(spec.describe())
         await call("Page.enable")
         await call("Runtime.enable")
         await call("Log.enable")
@@ -99,36 +138,35 @@ async def main():
         await call("Page.addScriptToEvaluateOnNewDocument", source=HOOK)
         await call("Page.navigate", url=url)
         t0 = time.time()
-        for checkpoint in (6, run_for):
-            while time.time() - t0 < checkpoint:
+        T0[0] = t0
+
+        for at, kind, payload in spec.timeline():
+            await idle_until(t0 + at)
+            now = time.time() - t0
+
+            if kind == "action":
+                print(f"--- action t={now:.1f}s {payload}")
                 try:
-                    note(json.loads(await asyncio.wait_for(ws.recv(), 0.3)))
-                except Exception:
-                    pass
-            r = await call("Runtime.evaluate", expression=PROBE, returnByValue=True,
-                           awaitPromise=True)
-            print(f"--- probe t={int(time.time() - t0)}s")
-            val = r.get("result", {}).get("value")
+                    print("   ->", json.dumps(await evaluate(payload))[:600])
+                except Exception as err:
+                    print("   -> FAILED", err)
+                continue
+
+            val = await evaluate(PROBE)
+            print(f"--- probe t={int(now)}s")
             try:
                 print(json.dumps(json.loads(val), indent=1))
             except Exception:
-                print(json.dumps(r, indent=1)[:2000])
+                print(repr(val)[:2000])
+            if spec.shot_each:
+                await shoot(spec.shot_path(at))
 
-        r = await call("Page.captureScreenshot", format="png", captureBeyondViewport=True)
-        data = r.get("data")
-        if data:
-            with open(shot, "wb") as f:
-                f.write(base64.b64decode(data))
-            print(f"--- screenshot {shot} ({os.path.getsize(shot)} bytes)")
-        else:
-            print("--- screenshot FAILED", json.dumps(r)[:400])
+        await idle_until(t0 + run_for)
 
-        print("--- console")
-        seen = set()
-        for c in console:
-            if c not in seen:
-                seen.add(c)
-                print(" ", c)
+        if not spec.shot_each:
+            await shoot(spec.shot)
+
+        print_console(console, spec.console_full)
 
 
 try:

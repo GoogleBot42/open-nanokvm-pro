@@ -3,7 +3,12 @@
 loopback tunnel with a chosen stored video mode; report console output, the
 screen element / notification state, and save a full-page screenshot.
 
-usage: ff_ui.py <url> <video-mode> <seconds> <screenshot.png> [--port N]
+usage: ff_ui.py <url> <video-mode> <seconds> <screenshot.png>
+                [--port N] [--probe-at 6,20,40] [--shot-each]
+                [--action T:JS] ... [--console-full]
+
+See runspec.py for what the flags do (probe checkpoints, per-checkpoint
+screenshots, in-page actions at a given second, ordered console).
 
 Fresh profile every run (so the device's cache-less index.html is never stale)
 with autoplay unblocked and self-signed certs accepted.
@@ -22,16 +27,17 @@ import urllib.parse
 
 import websockets
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from runspec import RunSpec, print_console, usage_guard  # noqa: E402
+
 FIREFOX = os.environ.get(
     "FIREFOX_BIN",
     "/nix/store/43rs4f0bccpx10h7fwidvsv4223yjzr5-firefox-154.0.1/bin/firefox")
-HERE = os.path.dirname(os.path.abspath(__file__))
 
-url = sys.argv[1]
-mode = sys.argv[2]
-run_for = float(sys.argv[3]) if len(sys.argv) > 3 else 20
-shot = os.path.abspath(sys.argv[4]) if len(sys.argv) > 4 else os.path.join(HERE, "ff_shot.png")
-PORT = int(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[5] == "--port" else 9444
+usage_guard(sys.argv)
+spec = RunSpec(sys.argv, HERE, default_port=9444, default_shot="ff_shot.png")
+url, mode, run_for = spec.url, spec.mode, spec.run_for
 
 p = urllib.parse.urlsplit(url)
 origin = f"{p.scheme}://{p.netloc}/"
@@ -77,9 +83,13 @@ errlog = open(os.path.join(HERE, "ff_ui_firefox.err"), "w+")
 ff = subprocess.Popen(
     [FIREFOX, "--headless", "--no-remote", "--new-instance",
      "--window-size=1920,1080",
-     f"--remote-debugging-port={PORT}", "--profile", profile, "about:blank"],
+     f"--remote-debugging-port={spec.port}", "--profile", profile, "about:blank"],
     stdout=subprocess.DEVNULL, stderr=errlog,
     env={**os.environ, "MOZ_HEADLESS": "1", "HOME": profile})
+
+# set just before the app is navigated to, so console timestamps are relative
+# to the page load
+T0 = [time.time()]
 
 
 def bidi_url():
@@ -127,7 +137,8 @@ class Bidi:
             text = e.get("text")
             if not text:
                 text = " ".join(str(a.get("value", a.get("type"))) for a in args)
-            self.console.append(f"{e.get('level')}[{e.get('method') or e.get('type')}]: {str(text)[:400]}")
+            self.console.append((time.time() - T0[0],
+                                 f"{e.get('level')}[{e.get('method') or e.get('type')}]: {str(text)[:400]}"))
 
     async def call(self, method, **params):
         self.seq += 1
@@ -150,6 +161,7 @@ async def main():
                             "webSocketUrl": True}})
         print("--- browser", cap["capabilities"]["browserName"],
               cap["capabilities"]["browserVersion"])
+        print(spec.describe())
         await b.call("session.subscribe", events=["log.entryAdded"])
         ctx = (await b.call("browsingContext.getTree"))["contexts"][0]["context"]
 
@@ -162,6 +174,13 @@ async def main():
                 return {"exception": str(r.get("exceptionDetails", {}).get("text"))[:400]}
             return r.get("result", {}).get("value")
 
+        async def shoot(path):
+            r = await b.call("browsingContext.captureScreenshot", context=ctx,
+                             origin="document")
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(r["data"]))
+            print(f"--- screenshot {path} ({os.path.getsize(path)} bytes)")
+
         # 1. reach the origin once so cookie + localStorage have a home
         await b.call("browsingContext.navigate", context=ctx, url=origin, wait="complete")
         seeded = await ev("(() => {" + HOOK + "})()")
@@ -170,28 +189,37 @@ async def main():
         # 2. now boot the app
         await b.call("browsingContext.navigate", context=ctx, url=url, wait="complete")
         t0 = time.time()
-        for checkpoint in (6, run_for):
-            while time.time() - t0 < checkpoint:
+        T0[0] = t0
+
+        for at, kind, payload in spec.timeline():
+            while time.time() - t0 < at:
                 await asyncio.sleep(0.2)
+            now = time.time() - t0
+
+            if kind == "action":
+                print(f"--- action t={now:.1f}s {payload}")
+                try:
+                    print("   ->", json.dumps(await ev(payload))[:600])
+                except Exception as err:
+                    print("   -> FAILED", err)
+                continue
+
             val = await ev(PROBE)
-            print(f"--- probe t={int(time.time() - t0)}s")
+            print(f"--- probe t={int(now)}s")
             try:
                 print(json.dumps(json.loads(val), indent=1))
             except Exception:
                 print(repr(val)[:2000])
+            if spec.shot_each:
+                await shoot(spec.shot_path(at))
 
-        r = await b.call("browsingContext.captureScreenshot", context=ctx,
-                         origin="document")
-        with open(shot, "wb") as f:
-            f.write(base64.b64decode(r["data"]))
-        print(f"--- screenshot {shot} ({os.path.getsize(shot)} bytes)")
+        while time.time() - t0 < run_for:
+            await asyncio.sleep(0.2)
 
-        print("--- console")
-        seen = set()
-        for c in b.console:
-            if c not in seen:
-                seen.add(c)
-                print(" ", c)
+        if not spec.shot_each:
+            await shoot(spec.shot)
+
+        print_console(b.console, spec.console_full)
         try:
             await b.call("session.end")
         except Exception:

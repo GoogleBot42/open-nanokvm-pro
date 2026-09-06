@@ -84,6 +84,11 @@ const en = {
         fallback:
           'This browser cannot decode H.265: neither WebCodecs nor its media player (MSE) accepts the stream. Playing H.264 Direct instead. The probe answers are in the browser console.'
       },
+      videoMode: {
+        title: 'Video mode changed',
+        description:
+          'This browser cannot play the saved video mode "{{stored}}", so "{{mode}}" is playing instead and has been saved. Pick another one from Screen -> Video; the browser console lists what this browser supports.'
+      },
       btnOk: 'OK'
     },
     screen: {
