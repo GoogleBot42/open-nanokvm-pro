@@ -354,3 +354,9 @@ propose SG2002 work without flagging this gap up front.
   through `<video>` without WebCodecs, Firefox/Chromium headless device-proven; "H.265
   Direct" auto-picks WebCodecs > MSE > H.264 fallback), **#70 filed** (mode change
   reloads the page), **#71 filed** (no cache headers on index.html -> stale bundles).
+  **Jeremy's browser results (evening):** Firefox/Linux plays H.265 via MSE (#72 confirmed);
+  Chromium/Linux/AMD paints EVERY <video>-element mode white (WebRTC + both MSE modes)
+  while canvas modes work -> **#69 broadened** to video-element rendering; **#73 filed**
+  (H.265 Direct's auto-MSE path has dead keyboard/mouse input; explicit h265-mse is fine);
+  #71 still forces cache-disable on every deploy. These four are targeted fixes for new
+  sessions: #69, #70, #71, #73 (+ #67 reconnect for the WebCodecs players).
