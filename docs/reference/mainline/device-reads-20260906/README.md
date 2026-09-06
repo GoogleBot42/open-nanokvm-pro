@@ -20,11 +20,13 @@ vendor kernel, our three from-source modules, zero vendor `ax_*.ko`).
 
 ## What these already prove
 
-- **247 clocks are registered**, matching section 2's count exactly. Their name
-  suffixes partition the tree independently of any vendor table: **86 `_eb`**
-  (gates — confirming the "86 gates, all one flag" claim), **50 `_sel`**
-  (muxes), **16 `_divn`** (dividers), and 95 roots, fixed-factor taps and PLLs.
-  Any clock driver for this SoC must reproduce those four counts.
+- **246 clocks come from the clock driver, not 247.** `clk_summary` has 247
+  rows, but `sysclk` is an unrelated 10 MHz DT `fixed-clock` with no consumer
+  (`AX620E.dtsi:127`) — section 2's "247 registered" counts it by mistake. The
+  remaining 246 partition exactly, and a from-scratch driver must reproduce the
+  split: **86 gates** (`_eb`), **50 muxes** (`_sel`), **20 dividers** (16
+  `_divn` + 4 `_divn_flash` — a suffix match on `_divn` alone undercounts), and
+  90 roots, fixed-factor taps and the one PLL. See `../clk-model-20260906.md`.
 - **The pinctrl register model is right.** Pad words appear every `0xC` bytes
   with the two intervening words reading zero, so the stride is real and not an
   artefact of the vendor's table. `0x02300060 = 0x00060003` reads back live:
