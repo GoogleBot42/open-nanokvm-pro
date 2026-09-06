@@ -1,0 +1,176 @@
+package router
+
+// Static web-UI serving with real HTTP caching semantics (Gitea #71).
+//
+// Upstream hands the Vite bundle to gin-contrib/static -> http.FileServer,
+// which sets no Cache-Control and no ETag. The only validator a browser gets
+// is Last-Modified -- and every file in the bundle is copied out of the Nix
+// store, whose mtimes are all 1970-01-01T00:00:01Z. A response with no
+// explicit freshness information and a Last-Modified decades in the past is
+// heuristically fresh for years (RFC 9111 4.2.2 suggests ~10% of the
+// document's age), so an ordinary reload after a deploy or an OTA keeps the
+// stale index.html -- and therefore a mix of old and new chunks, because the
+// asset filenames in the new index.html are never requested.
+//
+// This handler keeps the routing behaviour of static.Serve (serve the file if
+// it exists under <execdir>/web, otherwise fall through to the API routers,
+// which is what keeps /api/* untouched) and fixes only the caching:
+//
+//   - Content-hashed bundle assets (assets/<name>-<hash>.<ext>, everything
+//     Vite emits there): "public, max-age=31536000, immutable". The URL
+//     changes whenever the bytes do, so it is safe to cache forever. Their
+//     ETag is derived from the filename hash + size -- no file read.
+//   - Everything else, index.html first among them: "no-cache" -- cache it,
+//     but revalidate on every use. That costs one conditional request, and a
+//     strong content ETag turns it into a 304 whenever nothing changed.
+//
+// The bogus store Last-Modified is suppressed rather than forwarded: with an
+// explicit Cache-Control it can no longer drive heuristic freshness, but it
+// would still mislead anything that logs or displays it. A file with a
+// genuine mtime (a hand-patched file on the device) keeps its Last-Modified.
+//
+// Conditional requests, Range and HEAD are handled by http.ServeContent, the
+// same code path http.FileServer uses; the ETag header is set before the call
+// so ServeContent's precondition check sees it.
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+const (
+	immutableCacheControl  = "public, max-age=31536000, immutable"
+	revalidateCacheControl = "no-cache"
+
+	// Largest non-hashed file we are willing to hash per request. The bundle's
+	// unhashed files are index.html, the icon and the mock service worker --
+	// all a few KB. Anything larger is served without an ETag (still
+	// no-cache: correct, just not conditional).
+	etagHashLimit = 1 << 20
+)
+
+// Vite's default asset naming: assets/<name>-<hash><ext>, hash = 8 base64url
+// characters. Capture the hash so an immutable asset's ETag is free.
+var hashedAssetRe = regexp.MustCompile(`-([A-Za-z0-9_-]{8,})\.[A-Za-z0-9]+$`)
+
+// Nix-store mtimes are 1970-01-01T00:00:01Z. Treat anything this old as "no
+// modification time" instead of publishing a Last-Modified that means nothing.
+var modTimeFloor = time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// serveWeb replaces static.Serve("/", static.LocalFile(webPath, true)).
+func serveWeb(webPath string) gin.HandlerFunc {
+	// Directory listings (a directory with no index.html) keep going through
+	// http.FileServer, byte-for-byte as before, as do the trailing-slash
+	// redirects it issues for directory URLs.
+	fileServer := http.FileServer(http.Dir(webPath))
+
+	return func(c *gin.Context) {
+		reqPath := c.Request.URL.Path
+		if !strings.HasPrefix(reqPath, "/") {
+			reqPath = "/" + reqPath
+		}
+
+		// path.Clean on an absolute path cannot escape the root.
+		rel := path.Clean(reqPath)
+		name := filepath.Join(webPath, filepath.FromSlash(rel))
+
+		info, err := os.Stat(name)
+		if err != nil {
+			return // not a bundle file: fall through to the API routers
+		}
+
+		if info.IsDir() {
+			if !strings.HasSuffix(reqPath, "/") {
+				fileServer.ServeHTTP(c.Writer, c.Request) // 301 to <dir>/
+				c.Abort()
+				return
+			}
+			index := filepath.Join(name, "index.html")
+			st, ierr := os.Stat(index)
+			if ierr != nil || st.IsDir() {
+				fileServer.ServeHTTP(c.Writer, c.Request) // listing, as upstream
+				c.Abort()
+				return
+			}
+			// A directory request resolves to its index.html, so it gets the
+			// index.html treatment: no-cache + a content ETag.
+			name, info, rel = index, st, path.Join(rel, "index.html")
+		}
+
+		serveBundleFile(c, name, rel, info)
+		c.Abort()
+	}
+}
+
+func serveBundleFile(c *gin.Context, name string, rel string, info os.FileInfo) {
+	f, err := os.Open(name)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	header := c.Writer.Header()
+	if hash, ok := immutableAssetHash(rel); ok {
+		header.Set("Cache-Control", immutableCacheControl)
+		header.Set("ETag", `"`+hash+"-"+strconv.FormatInt(info.Size(), 10)+`"`)
+	} else {
+		header.Set("Cache-Control", revalidateCacheControl)
+		if etag, ok := contentETag(f, info); ok {
+			header.Set("ETag", etag)
+		}
+	}
+
+	modTime := info.ModTime()
+	if !modTime.After(modTimeFloor) {
+		modTime = time.Time{} // store mtime: no Last-Modified at all
+	}
+
+	http.ServeContent(c.Writer, c.Request, info.Name(), modTime, f)
+}
+
+// immutableAssetHash reports whether rel (a "/"-rooted bundle path) is a
+// content-hashed Vite asset, and returns the hash from its filename. Both
+// conditions must hold -- under assets/ and named with a hash -- so anything
+// unexpected falls back to the safe revalidating policy.
+func immutableAssetHash(rel string) (string, bool) {
+	if !strings.HasPrefix(rel, "/assets/") {
+		return "", false
+	}
+	m := hashedAssetRe.FindStringSubmatch(path.Base(rel))
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// contentETag hashes the file and rewinds it. Deliberately not memoised:
+// index.html keeps its name and mtime (and can keep its size) across deploys,
+// so any cache keyed on stat data could hand out a stale validator for the one
+// file this whole change exists to fix. It is under a kilobyte.
+func contentETag(f *os.File, info os.FileInfo) (string, bool) {
+	if !info.Mode().IsRegular() || info.Size() > etagHashLimit {
+		return "", false
+	}
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", false
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", false
+	}
+
+	return `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`, true
+}
