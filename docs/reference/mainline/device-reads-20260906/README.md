@@ -27,11 +27,22 @@ vendor kernel, our three from-source modules, zero vendor `ax_*.ko`).
   split: **86 gates** (`_eb`), **50 muxes** (`_sel`), **20 dividers** (16
   `_divn` + 4 `_divn_flash` — a suffix match on `_divn` alone undercounts), and
   90 roots, fixed-factor taps and the one PLL. See `../clk-model-20260906.md`.
-- **The pinctrl register model is right.** Pad words appear every `0xC` bytes
-  with the two intervening words reading zero, so the stride is real and not an
-  artefact of the vendor's table. `0x02300060 = 0x00060003` reads back live:
-  function field `[18:16]` = 6, drive `[3:0]` = 3 — the VI_D7 → GPIO0_A7 entry
-  that the SW_PWR pinmux trap turns on (`docs/mini-display.md`).
+- **The pinctrl register model is right, and the `0xC` stride is a slot.** Pad
+  words appear every `0xC` bytes and the two words between them read zero
+  because they are the write-1-to-set and write-1-to-clear aliases — write-only,
+  so a slot is `{VALUE, SET, CLR}` rather than a word plus padding. See
+  `../pinctrl-model-20260906.md`.
+- **The SW_PWR pad is confirmed end to end.** `0x02300060` reads back
+  `0x00060003` live: function `[18:16]` = 6 (GPIO0_A7), drive `[3:0]` = 3. That
+  address is `VI_D7_OFFSET = 0x60` in the vendor pad table, and function 6 is
+  GPIO — the entry the SW_PWR pinmux trap turns on (`docs/mini-display.md`).
+- **What this dump does *not* cover.** It reads `0x600` bytes from each of the
+  two pinctrl windows, which lands entirely inside the first pad block. The 111
+  pad offsets are not a dense run: they reach `0xa078`, grouped in blocks, 77 in
+  the window at `0x2300000` and 34 in the one at `0x104f0000`. Within a block
+  the register space aliases (offset `n` and `n + 0x200` read identically here),
+  so do not infer a pad count from a contiguous dump — take the offsets from the
+  spec's pad table.
 - **Which clocks the firmware leaves running.** The enable/prepare counts say
   what a first mainline boot can treat as already-on: a bring-up that models
   only gates does not have to bring up the PLL tree to reach a shell.
