@@ -335,8 +335,8 @@ propose SG2002 work without flagging this gap up front.
   **#66 DONE** (h265-direct web consumer, device-proven; supported-browser live check is
   a human step), **#46 DONE** (from-scratch CBR/VBR controller, CBR now the DEFAULT for
   both codecs, device-proven; `open-venc-rc` check), real-content vendor RC oracle
-  banked (`vendor-diff-rc-20260905/`), `docs/mainline-port.md` (#26 inventory, 14
-  proposed child issues NOT yet filed), **#67 filed** (direct players do not reconnect
+  banked (`vendor-diff-rc-20260905/`), `docs/mainline-port.md` (#26 inventory; its
+  14 proposed children were filed 2026-09-06 as #74-#87, see below), **#67 filed** (direct players do not reconnect
   after a ws close -- upstream behaviour). Draft `CHANGELOG.md` v2.1.0-alpha.5 section
   written; release NOT cut. Open on #64: cold-boot proof once an image ships.
   **Nothing left needs the 4.19 vendor stack** -- the pre-mainline wishlist is consumed.
@@ -397,3 +397,21 @@ propose SG2002 work without flagging this gap up front.
   `startRTCPReader`), which needs a force-IDR in libkvm first. Also unchanged: while
   two consumers are connected one is necessarily starved — that is arbitration, not a
   bug, and the page already says "inconsistent video mode".
+
+- **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
+  `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
+  (index map is a comment on #26, and the doc's section 8 now carries the real
+  numbers). **#74 is DONE + closed** (2fbc1b8, 3cf8fa4, 31ed0a2): `.#kernel-mainline`
+  builds mainline Linux 7.1.3 from the nixpkgs pin (`arm64 defconfig` +
+  `pkgs/kernel-mainline/ax630c.config`), `.#dtb-mainline` compiles our own
+  `dts/ax630c{.dtsi,-nanokvm-pro.dts}` with `cpp` + `dtc -p 4096`, and both are
+  packaged for the slot-B partitions so #75's first boot is reversible. Additive:
+  all eight vendor-path derivation hashes are byte-identical to before. New gate
+  `.#checks.<system>.mainline-dtb`. **#74 does NOT boot** — U-Boot arms wdt0 for 30 s
+  before `booti` and nothing pets it, which is exactly #75's scope.
+  Next: **#75** (needs the device for one slot-B boot); **#80** (clk + pinctrl) and
+  **#85** (aic8800) can start from source in parallel.
+  Two facts worth reusing: the mainline kernel's release string must be asserted
+  against `build/include/config/kernel.release` after the build, not `make
+  kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing
+  inside a block comment, which a phrase like `TEEC_*/tee_*` produces.
