@@ -67,7 +67,7 @@
 
 		/*
 		 * OP-TEE 3.21, firewalled by the ATF. Nothing in our stack
-		 * calls it (no TEEC_*/tee_* in any component), but the region
+		 * calls it (no TEEC_ or tee_ symbol in any component), but the region
 		 * must stay reserved regardless -- the secure world is using
 		 * it whether or not Linux talks to it.
 		 */
