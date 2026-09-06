@@ -1,0 +1,131 @@
+{
+ "url": "https://127.0.0.1:8443/",
+ "mode": "h265-direct",
+ "settle": 18.0,
+ "browser": "firefox 154.0.1",
+ "seeded": "{\"cookie\":\"nano-kvm-token=loopback-tunnel-bypass\",\"mode\":\"h265-direct\"}",
+ "probe": {
+  "href": "https://127.0.0.1:8443/",
+  "title": "Remote Desktop - NanoKVM",
+  "storedMode": "h265-direct",
+  "cookie": "nano-kvm-token",
+  "canvas": null,
+  "video": {
+   "el": "#screen",
+   "videoWidth": 1920,
+   "videoHeight": 1080,
+   "currentTime": 17.676732,
+   "readyState": 3,
+   "networkState": 2,
+   "paused": false,
+   "ended": false,
+   "duration": "Infinity",
+   "buffered": [
+    [
+     12.516,
+     17.766
+    ]
+   ],
+   "quality": {
+    "totalVideoFrames": 1062,
+    "droppedVideoFrames": 0
+   },
+   "srcObject": false,
+   "src": "blob:https://127.0.0.1:8443/24ed91da-548a-4eed-9f0f-3dd1876be971",
+   "error": null
+  },
+  "img": null,
+  "codecs": {
+   "MediaSource": "function",
+   "VideoDecoder": "function"
+  },
+  "notifications": [
+   "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+   "Change Password For the security of your device, please change the password! Ok"
+  ]
+ },
+ "before": {
+  "/api/ws": {
+   "total": 1,
+   "bytes": 1,
+   "tags": {
+    "heartbeat": 1
+   }
+  }
+ },
+ "injected": {
+  "screen": "video#screen",
+  "dispatched": [
+   "mousemove",
+   "mousemove",
+   "mousemove",
+   "mousedown",
+   "mouseup",
+   "wheel",
+   "keydown:ShiftLeft",
+   "keyup:ShiftLeft"
+  ],
+  "rect": {
+   "x": 77,
+   "y": 0,
+   "w": 1212,
+   "h": 682
+  }
+ },
+ "after": {
+  "/api/ws": {
+   "total": 9,
+   "bytes": 61,
+   "tags": {
+    "heartbeat": 1,
+    "mouse": 6,
+    "keyboard": 2
+   }
+  }
+ },
+ "delta": {
+  "/api/ws": {
+   "total": 8,
+   "bytes": 60,
+   "tags": {
+    "mouse": 6,
+    "keyboard": 2
+   }
+  }
+ },
+ "verdict": {
+  "screen_present": true,
+  "mouse_frames": 6,
+  "keyboard_frames": 2,
+  "mouse_ok": true,
+  "keyboard_ok": true
+ },
+ "screenshot": "/home/googlebot/workspace/nanokvm/nix-nanokvm-pro/.claude/worktrees/agent-a6fa5b69dc776a24e/docs/reference/vcenc-open/input-binding-20260905/device/fixed-h265-direct.png",
+ "console": [
+  "info[log]: [mse] isTypeSupported avc1.4D002A: true",
+  "info[log]: [mse] isTypeSupported avc1.42E01F: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 no-preference: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-hardware: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-software: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 no-preference: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-hardware: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-software: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 no-preference: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-hardware: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-software: unsupported",
+  "info[log]: [h265-direct] probe accepted nothing; trying hvc1.1.6.L153.B0 anyway",
+  "info[log]: [h265-direct] player: MSE (WebCodecs accepted no HEVC configuration)",
+  "info[log]: [mse:h265] MediaSource open",
+  "info[log]: [mse:h265] WebSocket open",
+  "info[log]: [mse:h265] init segment: 1920x1080 hvc1.1.2.L123.80 (741 B)",
+  "info[log]: [mse:h265] stream says hvc1.1.2.L123.80; isTypeSupported: true",
+  "info[log]: [mse:h265] loadedmetadata 1920x1080",
+  "info[log]: [mse:h265] 282 segments, 278 frames shown (0 dropped), 1920x1080, lag 0.085s, rate 1, first segment after 359 ms",
+  "info[log]: [mse:h265] 582 segments, 578 frames shown (0 dropped), 1920x1080, lag 0.093s, rate 1, first segment after 359 ms",
+  "info[log]: [mse:h265] 882 segments, 878 frames shown (0 dropped), 1920x1080, lag 0.060s, rate 1, first segment after 359 ms"
+ ]
+}

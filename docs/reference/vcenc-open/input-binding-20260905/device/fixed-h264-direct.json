@@ -1,0 +1,96 @@
+{
+ "url": "https://127.0.0.1:8443/",
+ "mode": "h264-direct",
+ "settle": 18.0,
+ "browser": "firefox 154.0.1",
+ "seeded": "{\"cookie\":\"nano-kvm-token=loopback-tunnel-bypass\",\"mode\":\"h264-direct\"}",
+ "probe": {
+  "href": "https://127.0.0.1:8443/",
+  "title": "Remote Desktop - NanoKVM",
+  "storedMode": "h264-direct",
+  "cookie": "nano-kvm-token",
+  "canvas": {
+   "el": "#screen",
+   "width": 1920,
+   "height": 1080,
+   "clientWidth": 1366,
+   "clientHeight": 768
+  },
+  "video": null,
+  "img": null,
+  "codecs": {
+   "MediaSource": "function",
+   "VideoDecoder": "function"
+  },
+  "notifications": [
+   "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+   "Change Password For the security of your device, please change the password! Ok"
+  ]
+ },
+ "before": {
+  "/api/ws": {
+   "total": 1,
+   "bytes": 1,
+   "tags": {
+    "heartbeat": 1
+   }
+  }
+ },
+ "injected": {
+  "screen": "canvas#screen",
+  "dispatched": [
+   "mousemove",
+   "mousemove",
+   "mousemove",
+   "mousedown",
+   "mouseup",
+   "wheel",
+   "keydown:ShiftLeft",
+   "keyup:ShiftLeft"
+  ],
+  "rect": {
+   "x": 0,
+   "y": -43,
+   "w": 1366,
+   "h": 768
+  }
+ },
+ "after": {
+  "/api/ws": {
+   "total": 9,
+   "bytes": 61,
+   "tags": {
+    "heartbeat": 1,
+    "mouse": 6,
+    "keyboard": 2
+   }
+  }
+ },
+ "delta": {
+  "/api/ws": {
+   "total": 8,
+   "bytes": 60,
+   "tags": {
+    "mouse": 6,
+    "keyboard": 2
+   }
+  }
+ },
+ "verdict": {
+  "screen_present": true,
+  "mouse_frames": 6,
+  "keyboard_frames": 2,
+  "mouse_ok": true,
+  "keyboard_ok": true
+ },
+ "screenshot": "/home/googlebot/workspace/nanokvm/nix-nanokvm-pro/.claude/worktrees/agent-a6fa5b69dc776a24e/docs/reference/vcenc-open/input-binding-20260905/device/fixed-h264-direct.png",
+ "console": [
+  "info[log]: [mse] isTypeSupported avc1.4D002A: true",
+  "info[log]: [mse] isTypeSupported avc1.42E01F: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true",
+  "info[log]: [direct] decoder configured: avc1.42E01F (default)"
+ ]
+}
