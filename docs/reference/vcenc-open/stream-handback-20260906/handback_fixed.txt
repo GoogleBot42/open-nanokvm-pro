@@ -1,0 +1,7 @@
+phase 1  mjpeg alone           : 58 frames
+  HTTP/1.1 101 Switching Protocols
+phase 2  direct took the stream: 1 mjpeg frames, 357 direct messages
+phase 3  direct gone           : 58 mjpeg frames
+
+expect: phase 1 > 0, phase 2 ~ 0 with direct messages > 0, phase 3 > 0
+VERDICT: PASS (hand-back works)

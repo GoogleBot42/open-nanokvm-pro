@@ -1,0 +1,112 @@
+--- t=12s  h264-direct running
+{
+ "sentinel": "alive",
+ "loads": 1,
+ "canvas": "1920x1080",
+ "video": null,
+ "screenEl": "canvas",
+ "streamSockets": [
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 704,
+   "closed": false
+  }
+ ]
+}
+--- restarting the service: cd /home/googlebot/workspace/nanokvm/nix-nanokvm-pro && tools/kvmssh 'systemctl restart nanokvm'
+--- t=42s  after the service restart (#67)
+{
+ "sentinel": "alive",
+ "loads": 1,
+ "canvas": "1920x1080",
+ "video": null,
+ "screenEl": "canvas",
+ "streamSockets": [
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 1821,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 0,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 0,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 0,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 1583,
+   "closed": false
+  }
+ ]
+}
+--- click lucide-monitor -> 0 popovers
+--- hover lucide-tv-minimal-play -> 1 popovers
+--- clicked: MJPEG
+--- after the mode change (#70)
+{
+ "sentinel": "alive",
+ "loads": 1,
+ "canvas": null,
+ "video": null,
+ "screenEl": "div",
+ "streamSockets": [
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 1821,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 0,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 0,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 0,
+   "closed": true
+  },
+  {
+   "url": "/api/stream/h264/direct",
+   "msgs": 1767,
+   "closed": true
+  }
+ ]
+}
+--- console
+  log: [mse] isTypeSupported avc1.4D002A: true
+  log: [mse] isTypeSupported avc1.42E01F: true
+  log: [mse] isTypeSupported hvc1.1.2.L123.80: false
+  log: [mse] isTypeSupported hvc1.1.2.L153.80: false
+  log: [mse] isTypeSupported hev1.1.2.L123.80: false
+  log: [mse] isTypeSupported hev1.1.2.L153.80: false
+  log: [direct:h264] WebSocket open
+  warning: [direct:h264] WebSocket closed; reconnecting in 500 ms
+  log: [WebSocket] Reconnecting... (attempt 1)
+  warning: [direct:h264] WebSocket closed; reconnecting in 1000 ms
+  warning: [direct:h264] WebSocket closed; reconnecting in 2000 ms
+  error: [WebSocket] Error: Event
+  error: [WebSocket] Max reconnect attempts reached
+  warning: [direct:h264] WebSocket closed; reconnecting in 4000 ms
+  log: AxiosError: Network Error
+    at d.onerror (https://127.0.0.1:8443/assets/head-BSg7eiz_.js:68:15932)
+  log: get EDID failed
+
+#67 reconnect : sockets 1 -> 5, messages 704 -> 3404, loads 1 -> 1, sentinel alive
+  PASS
+#70 in-place  : loads 1, sentinel alive, canvas None, screenEl div, direct sockets closed [True, True, True, True, True]
+  PASS
