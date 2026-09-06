@@ -86,7 +86,14 @@ served, and stays the deploy-verification token. (b) Prove
 UI behaviour in a real browser, not by reading code: the harnesses under
 `docs/reference/vcenc-open/{h264-direct-chromium,mse-player}-20260905/harness/`
 run the real UI in headless Chromium (CDP) or Firefox (screenshot) through an SSH
-loopback tunnel (`tunnel.sh`, device treats 127.0.0.1 as authenticated).
+loopback tunnel (`tunnel.sh`, device treats 127.0.0.1 as authenticated). Headless
+proves decode, not paint: for anything a user sees on screen, use the *headed*
+harness `docs/reference/vcenc-open/chromium-white-compositors-20260905/harness/xvfb_chrome.py`
+(Xvfb / sway / Weston / KWin `--virtual`, grades the compositor's own framebuffer;
+KWin needs `KWIN_SCREENSHOT_NO_PERMISSION_CHECKS=1`). (c) A browser symptom only
+one user sees: ask for a fresh `--user-data-dir` FIRST — #69 was one chrome://flags
+entry, and every display-stack variant here rendered fine until the profile was
+bisected.
 
 Proven flow (2026-08-15, deploying the dead-extensions patch):
 
