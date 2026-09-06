@@ -3763,3 +3763,28 @@ the WebRTC player silently: `resolveVideoMode()` now honours it or rewrites it t
 nearest mode that plays, with a notice. Evidence:
 `docs/reference/vcenc-open/mse-4k-20260905/`. Still unverified: a browser with hardware
 HEVC in WebCodecs.
+
+### 2026-09-05 (night, web) — #69: the page detects a Chromium that will not paint video
+
+Some Chromium installs decode into a `<video>` they never paint: the page is white,
+every counter is healthy. The trigger is **Chromium's Vulkan backend**
+(`chrome://flags/#enable-vulkan`), reproduced on the build host under headless KWin —
+`--enable-features=Vulkan` turns a software-decoded 1080p H.264 element into a 94%
+white screen while WebRTC counts 1779 frames decoded. The canvas modes are unaffected,
+so H.264 Direct and MJPEG always worked.
+
+The page now catches it. `useUndrawableVideoDetector` builds one `VideoFrame` **from
+the element** two seconds into playback and copies it out; under Vulkan `copyTo()`
+throws `InvalidStateError: Failed to read VideoFrame data` on every attempt, and on a
+healthy browser it resolves (NV12, real luma). After four failed attempts a second
+apart the page logs `[video-paint] …`, shows a notice naming the flag, rewrites the
+stored mode to `h264-direct` and mounts the canvas player. It runs only in
+Chromium-family browsers, only in the two `<video>` players, and a `sessionStorage`
+flag stops it bouncing a user who deliberately picks a `<video>` mode again.
+
+Two mechanisms were measured and rejected, both of which look right and are not: the
+**WebRTC remote track and a `captureStream()` track read fine in both states** (frames
+do leave the decoder — it is the element's output that is lost), and **every GPU-side
+pixel read comes back opaque black** under Vulkan, which is indistinguishable from a
+genuinely black host screen. Only a frame taken from the element discriminates.
+Evidence, harness and the full matrix: `docs/reference/vcenc-open/video-paint-fallback-20260905/`.

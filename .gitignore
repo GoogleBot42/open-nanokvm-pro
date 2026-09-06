@@ -15,3 +15,6 @@ __pycache__/
 
 # js deps (web/ fork; pnpm install for lint/typecheck runs)
 node_modules/
+
+# KWin/mesa caches written by the browser harnesses
+kwin-cache/

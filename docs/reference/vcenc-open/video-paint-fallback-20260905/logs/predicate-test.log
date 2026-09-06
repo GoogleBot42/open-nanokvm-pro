@@ -1,0 +1,9 @@
+PASS  a) InvalidStateError from copyTo (the measured failure): unreadable (want unreadable)
+PASS  b) TypeError (API misuse): inconclusive (want inconclusive)
+PASS  c) SecurityError (cross-origin media): inconclusive (want inconclusive)
+PASS  d) NotSupportedError: inconclusive (want inconclusive)
+PASS  e) a thrown string: inconclusive (want inconclusive)
+PASS  f) null: inconclusive (want inconclusive)
+PASS  g) undefined: inconclusive (want inconclusive)
+
+all 7 cases pass

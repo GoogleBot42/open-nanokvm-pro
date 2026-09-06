@@ -84,6 +84,15 @@ const en = {
         fallback:
           'This browser cannot decode H.265: neither WebCodecs nor its media player (MSE) accepts the stream. Playing H.264 Direct instead. The probe answers are in the browser console.'
       },
+      videoPaint: {
+        title: 'Chromium is not painting video frames',
+        description:
+          'Chromium is not painting decoded video frames (chrome://flags/#enable-vulkan does this); ' +
+          'using H.264 Direct. Set that flag to Default to use the video-element modes.',
+        stay:
+          'Chromium is not painting decoded video frames (chrome://flags/#enable-vulkan does this). ' +
+          'Pick H.264 Direct from Screen -> Video Mode, or set that flag to Default.'
+      },
       videoMode: {
         title: 'Video mode changed',
         description:

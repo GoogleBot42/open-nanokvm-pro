@@ -8,6 +8,7 @@ import { VideoStatus } from '@/types';
 import { microphoneEnabledAtom } from '@/jotai/audio.ts';
 import { mouseStyleAtom } from '@/jotai/mouse.ts';
 import { videoParametersAtom, videoStatusAtom, videoVolumeAtom } from '@/jotai/screen.ts';
+import { useUndrawableVideoDetector } from '@/hooks/useUndrawableVideoDetector.ts';
 
 interface WebRTCMessage {
   event: string;
@@ -78,6 +79,9 @@ export const H264Webrtc = () => {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // some browsers decode into a <video> they never paint (#69)
+  useUndrawableVideoDetector(videoRef);
 
   const videoOfferSent = useRef(false);
   const audioOfferSent = useRef(false);

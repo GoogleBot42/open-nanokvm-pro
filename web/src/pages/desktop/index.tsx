@@ -8,7 +8,7 @@ import { VideoMode } from '@/types';
 import * as storage from '@/lib/localstorage.ts';
 import { resolveVideoMode } from '@/lib/video.ts';
 import { client } from '@/lib/websocket.ts';
-import { videoModeAtom } from '@/jotai/screen.ts';
+import { videoModeAtom, videoPaintNoticeAtom } from '@/jotai/screen.ts';
 import { Head } from '@/components/head.tsx';
 
 import { Keyboard } from './keyboard';
@@ -24,6 +24,7 @@ export const Desktop = () => {
   const isBigScreen = useMediaQuery({ minWidth: 850 });
 
   const [videoMode, setVideoMode] = useAtom(videoModeAtom);
+  const [paintNotice, setPaintNotice] = useAtom(videoPaintNoticeAtom);
   const [notify, contextHolder] = notification.useNotification();
 
   useEffect(() => {
@@ -53,6 +54,25 @@ export const Desktop = () => {
       client.close();
     };
   }, []);
+
+  // The <video> paint check (#69) fires from inside a player that its own
+  // fallback then unmounts, so the notice is shown from here instead.
+  useEffect(() => {
+    if (!paintNotice) return;
+
+    notify.warning({
+      key: 'video_paint',
+      message: t('notification.videoPaint.title'),
+      description:
+        paintNotice === 'switched'
+          ? t('notification.videoPaint.description')
+          : t('notification.videoPaint.stay'),
+      placement: 'topRight',
+      duration: 0
+    });
+
+    setPaintNotice(null);
+  }, [paintNotice]);
 
   return (
     <>

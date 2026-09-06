@@ -41,12 +41,19 @@ web UI becomes our own.
 - **Input in H.265 Direct (#73).** Mouse handlers bind whenever the video
   surface appears or is replaced; the auto-selected MSE player used to mount too
   late for them.
+- **White video element auto-detected (#69).** Chromium's Vulkan backend
+  (`chrome://flags/#enable-vulkan`) decodes into a video element it never
+  paints, so the WebRTC and MSE players look white while every counter is
+  healthy. The page now reads one frame from the element a couple of seconds
+  into playback, and when the browser cannot hand it over it switches to
+  H.264 Direct by itself, with a notice naming the flag.
 - **Fixes.** libkvm self-heals capture starvation and live geometry changes
   (#65).
 - Known: the WebCodecs direct players still need a page refresh after a service
-  restart (#67); a white video element in one KDE/Chromium setup is under
-  investigation and does not reproduce on X11, sway, Weston or headless KWin
-  (#69); changing the video mode reloads the page (#70).
+  restart (#67); the Chromium Vulkan bug behind #69 is not fixed, only worked
+  around — H.265 needs a video element, so H.265 modes stay unusable there
+  until the flag is set back to Default; changing the video mode reloads the
+  page (#70).
 
 ## v2.1.0-alpha.4
 
