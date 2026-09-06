@@ -635,6 +635,11 @@ use. That is what makes #87's submission a `git add` instead of a re-layout.
 Both drivers are built in, not modular — a clock provider and a pinctrl driver
 are needed long before there is a rootfs.
 
+When you add a file under `tree/`, `git add` it before building: the flake only
+sees tracked paths, so a new driver that is merely written on disk fails
+evaluation with "Path … is not tracked by Git" rather than being silently
+skipped. Every later child issue that grafts a driver hits this.
+
 `drivers/clk/axera/` registers **246** clocks over eight controllers (one
 driver, match data selects the table). It takes the syscon regmap rather than a
 private `ioremap`, so it shares a lock with the reset driver #76 will add to the

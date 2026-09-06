@@ -409,8 +409,20 @@ propose SG2002 work without flagging this gap up front.
   all eight vendor-path derivation hashes are byte-identical to before. New gate
   `.#checks.<system>.mainline-dtb`. **#74 does NOT boot** — U-Boot arms wdt0 for 30 s
   before `booti` and nothing pets it, which is exactly #75's scope.
-  Next: **#75** (needs the device for one slot-B boot); **#80** (clk + pinctrl) and
-  **#85** (aic8800) can start from source in parallel.
+  **#80's source half is DONE (2026-09-06, still open).** Both data models are
+  banked as specs — `docs/reference/mainline/{clk,pinctrl}-model-20260906.md`,
+  written by Opus subagents from the vendor GPL *source* and reconciled against
+  read-only device captures in the sibling `device-reads-20260906/` — and both
+  drivers are written from those specs and building in-tree
+  (`pkgs/kernel-mainline/tree/`, a graft laid out at upstream paths). 246 clocks
+  (CPUPLL deliberately read-only, which deletes the relock hazard) and 111 pads /
+  56 functions / 167 groups. It corrected four counts in `docs/mainline-port.md`
+  §2: 246 clocks not 247, 133 DEMO writes not ~66, 56 functions not ~30, 97
+  gpio-ranges not 128. What #80 still owes is the I2C and DEMO-derived pin
+  states, deliberately deferred to #76 and #81 because they attach to DT nodes
+  that do not exist yet. Nothing about it is boot-tested; that needs #75.
+  Next: **#75** (needs the device for one slot-B boot); **#85** (aic8800) can
+  still start from source in parallel, as can #76/#81 now that clk+pinctrl exist.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

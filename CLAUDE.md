@@ -170,4 +170,12 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
   model. Reserve Fable/Mythos-tier work for what genuinely requires it; never let
   subagents inherit the session model. Always check the agent's work yourself
   (spot-read the code paths it cites, verify its claims) before acting on it.
+  For bulk transcription, hand the agent the invariant counts up front as an
+  acceptance test it must measure and reconcile itself -- then re-check them
+  from a *different artifact* than the one it wrote (compiled object sizes and
+  symbols, not a re-read of its source). Both #80 table agents passed 16- and
+  8-way count checks that way, and the same discipline caught two errors of
+  *mine*: an undercount from a too-narrow regex, and a claim of "device-
+  confirmed" for something the device could not actually witness (clk_summary
+  echoes the driver's own parent table, so it cannot corroborate that table).
 - After substantial work, run the reflect skill.
