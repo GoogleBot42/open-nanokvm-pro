@@ -1,0 +1,42 @@
+           CPU0       CPU1       
+  3:   15412969   37359927     GIC-0  27 Level     arch_timer
+  5:        485          0     GIC-0 150 Level     ttyS0
+ 12:          1          0     GIC-0  93 Level     axera_thermal, axera_adc
+ 13:       1159          0     GIC-0 181 Level     ax_wdt
+ 14:          0       1159     GIC-0 182 Level     ax_wdt
+ 15:      51180          0     GIC-0 167 Level     4850000.i2c
+ 16:        147          0     GIC-0 174 Level     4857000.i2c
+ 17:          0          0     GIC-0 177 Level     6051000.i2s_slv
+ 18:          0          0     GIC-0 142 Level     ax_cipher
+ 28:    2228479          0     GIC-0 112 Level     eth0
+ 29:          0          0     GIC-0  92 Level     deb_gpio_lp
+ 30:          0          0     GIC-0 156 Level     axera_hrtimer
+ 34:          0          0     GIC-0  87 Level     wake_int
+ 35:    1055982          0     GIC-0  59 Level     open_vin_capture
+ 37:         44          0     GIC-0  63 Level     open_vin_csi2
+ 39:     313223          0     GIC-0  41 Level     mmc0
+ 40:     546654          0     GIC-0 106 Level     mmc1
+ 41:       6404          0     GIC-0 105 Level     mmc2
+ 42:          0          0     GIC-0 184 Level     6071000.spi
+ 43:        403          0     GIC-0 185 Level     6072000.spi
+ 49:        216          0     GIC-0 144 Level     axera_dma_per
+ 52:     547294          0     GIC-0 125 Level     es_venc_vcmd_drv
+ 59:          0          0     GIC-0 113 Level     axgzipd
+ 60:      47586          0     GIC-0 108 Level     dwc3
+ 61:          0          0   ax-gpio   4 Edge      extcon_usb
+ 62:         19          0   ax-gpio  28 Edge      init_gpio_irq
+ 63:         18          0   ax-gpio  18 Edge      hdmi_rxi_irq
+ 64:          1          0   ax-gpio  19 Edge      hdmi_txi_irq
+ 65:    6191038          0   ax-gpio  13 Edge      jd9853_te
+ 66:          0          0   ax-gpio  22 Edge      GPIO KEY ENTER
+ 67:          0          0   ax-gpio   1 Edge      rotary-encoder
+ 68:          0          0   ax-gpio  18 Edge      rotary-encoder
+ 69:          0          0   ax-gpio  15 Edge      hyn_ts
+IPI0:   1488356    2491347       Rescheduling interrupts
+IPI1:      1366     241603       Function call interrupts
+IPI2:         0          0       CPU stop interrupts
+IPI3:         0          0       CPU stop (for crash dump) interrupts
+IPI4:         0          0       Timer broadcast interrupts
+IPI5:         0          0       IRQ work interrupts
+IPI6:         0          0       CPU wake-up interrupts
+Err:          0

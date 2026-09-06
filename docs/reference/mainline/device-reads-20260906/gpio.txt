@@ -1,0 +1,35 @@
+gpiochip0: GPIOs 0-31, parent: platform/4800000.gpio, 4800000.gpio:
+ gpio-5   (                    |LT6911UXC_PWR       ) out hi    
+ gpio-6   (                    |LT86102UXC_HDMI_PWR ) out hi    
+ gpio-7   (                    |sysfs               ) out lo    
+ gpio-8   (                    |scl                 ) out hi    
+ gpio-9   (                    |sda                 ) in  lo    
+ gpio-18  (                    |rotary@0            ) in  hi IRQ
+ gpio-21  (                    |LT86102UXC_HDMI_TXO ) out lo    
+ gpio-22  (                    |GPIO KEY ENTER      ) in  hi IRQ
+ gpio-23  (                    |sys-heartbeat       ) out lo    
+ gpio-24  (                    |scl                 ) out hi    
+ gpio-25  (                    |sda                 ) in  lo    
+ gpio-27  (                    |6072000.spi         ) out hi    
+
+gpiochip1: GPIOs 32-63, parent: platform/4801000.gpio, 4801000.gpio:
+ gpio-35  (                    |sysfs               ) out lo    
+ gpio-36  (                    |id                  ) in  hi IRQ
+ gpio-41  (                    |fb_jd9853           ) out hi    
+ gpio-43  (                    |fb_jd9853           ) out hi    
+ gpio-59  (                    |?                   ) out hi    
+ gpio-60  (                    |init_gpio           ) in  hi IRQ
+ gpio-61  (                    |reset               ) out hi    
+
+gpiochip2: GPIOs 64-95, parent: platform/6000000.gpio, 6000000.gpio:
+ gpio-74  (                    |sysfs               ) in  hi    
+ gpio-75  (                    |sysfs               ) in  lo    
+ gpio-78  (                    |hyn_reset_gpio      ) out hi    
+ gpio-79  (                    |hyn_irq_gpio        ) in  hi IRQ
+ gpio-81  (                    |LT86102UXC_LOOP_CTRL) out lo    
+ gpio-82  (                    |LT86102UXC_HDMI_RXI ) in  lo IRQ
+ gpio-83  (                    |LT86102UXC_HDMI_TXI ) in  hi IRQ
+ gpio-87  (                    |eMMC HW RESET       ) out hi    
+
+gpiochip3: GPIOs 96-127, parent: platform/6001000.gpio, 6001000.gpio:
+ gpio-97  (                    |rotary@0            ) in  hi IRQ
