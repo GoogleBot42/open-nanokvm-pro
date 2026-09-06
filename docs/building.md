@@ -52,6 +52,9 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `dtb` / `dtb-sd` | patched board DTB (eMMC / SD-root) | reserved-mem + bootargs patch |
 | `dtb-slot-image` / `-sd` | signed `dtb.img` partition | `ax_gzip -9` + 1 KB header |
 | `kernel-slot-image` | signed kernel partition | `ax_gzip -9` + 1 KB header |
+| `kernel-mainline` | `Image` + `dt-bindings` headers | **scaffold, never booted** — mainline Linux 7.1.3 from the nixpkgs pin, `arm64 defconfig` + `pkgs/kernel-mainline/ax630c.config`. Epic #26, issue #74 |
+| `dtb-mainline` | our own board DTB | compiled from `dts/` **in this repo** with `cpp` + `dtc -p 4096`; nothing vendor about it |
+| `kernel-mainline-slot-image` / `dtb-mainline-slot-image` | signed slot-B partitions | same header format as above, so #75's first boot is a reversible slot-B flash |
 | `boot` / `boot-sd` | full boot chain (UART0 / UART1 console) | SPL+ATF+OP-TEE+U-Boot |
 | `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
 | `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |

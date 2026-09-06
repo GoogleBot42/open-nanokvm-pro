@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+/*
+ * Sipeed NanoKVM-Pro (Axera AX630C) -- minimal mainline board DT (#74).
+ *
+ * Board facts only: memory size, the firmware carveouts, the console, and a
+ * cmdline that satisfies the U-Boot contract. Peripherals arrive with their
+ * drivers (see ax630c.dtsi).
+ */
+
+#include "ax630c.dtsi"
+
+/ {
+	model = "Sipeed NanoKVM-Pro";
+	compatible = "sipeed,nanokvm-pro", AX630C_SOC_COMPAT;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+
+		/*
+		 * U-Boot overwrites this from its `bootargs` env at `booti`
+		 * (fdt_chosen), so the string here is a documented default, not
+		 * the authority. Two traps it encodes (docs/mainline-port.md
+		 * section 5):
+		 *
+		 *  - blkdevparts= IS U-Boot's partition table. U-Boot parses it
+		 *    out of its own env; if the clause is missing it silently
+		 *    resets the env to the vendor BOOTARGS_EMMC. Never ship a
+		 *    cmdline without it.
+		 *  - fdt_chosen needs free space in the blob or boot_prep_linux
+		 *    calls hang(). pkgs/dtb-mainline.nix passes `dtc -p 4096`
+		 *    so a longer env string always fits.
+		 *
+		 * No mem= clause: the memory node below is correct, unlike the
+		 * vendor DT's, so the kernel does not need to be told twice.
+		 * U-Boot appends its own mem= from the board-id ADC read; that
+		 * is harmless and will be dropped when U-Boot moves (#26).
+		 */
+		bootargs = "console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 loglevel=8 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1M(env),6M(logo),6M(logo_b),1M(optee),1M(optee_b),1M(dtb),1M(dtb_b),64M(kernel),64M(kernel_b),128M(boot),-(rootfs)";
+	};
+
+	/*
+	 * 1 GiB. The vendor DT claims 3 GiB (0xC0000000) and relies on U-Boot's
+	 * mem= to cut it down -- wrong for every NanoKVM-Pro variant. Board
+	 * variants differ only in this node.
+	 */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x40000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* TF-A 2.7. no-map: secondary CPU bring-up runs from here. */
+		atf@40040000 {
+			reg = <0x0 0x40040000 0x0 0x40000>;
+			no-map;
+		};
+
+		/*
+		 * OP-TEE 3.21, firewalled by the ATF. Nothing in our stack
+		 * calls it (no TEEC_*/tee_* in any component), but the region
+		 * must stay reserved regardless -- the secure world is using
+		 * it whether or not Linux talks to it.
+		 */
+		optee@44200000 {
+			reg = <0x0 0x44200000 0x0 0x2000000>;
+			no-map;
+		};
+
+		/*
+		 * Deliberately mapped (no `no-map`): pstore needs it in the
+		 * linear map. With no serial on this unit, ramoops is how a
+		 * panic gets read back after the reboot.
+		 */
+		ramoops@48000000 {
+			compatible = "ramoops";
+			reg = <0x0 0x48000000 0x0 0xf0000>;
+			record-size = <0x40000>;
+			console-size = <0x80000>;
+			ftrace-size = <0x20000>;
+		};
+	};
+};

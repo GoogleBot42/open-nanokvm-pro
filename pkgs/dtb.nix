@@ -5,10 +5,9 @@
   #   (DTB aliases: mmc0 = eMMC sdhc@1B40000, mmc1 = SD sdhc@104E0000 -> the SD
   #    card always enumerates as mmcblk1 regardless of boot source.)
   # The SD variant is wired into pkgs/sd-image.nix. The vendor SD U-Boot sets env
-  # bootargs=BOOTARGS_SD (root=/dev/mmcblk1p2) and booti's fdt_chosen should
-  # overwrite /chosen/bootargs, but on-hardware the eMMC root still reached the
-  # kernel, so we fix the DTB too. With both the env and the DTB naming
-  # mmcblk1p2, every boot path agrees.
+  # bootargs=BOOTARGS_SD (root=/dev/mmcblk1p2) and booti's fdt_chosen() DOES win
+  # over /chosen/bootargs -- the SD boot showed the env string verbatim. We set
+  # the DTB to match anyway so no boot path depends on which one wins.
   rootDev ? "/dev/mmcblk0p17"
 , # ---- console UART baked into chosen/bootargs -----------------------------
   # Default (eMMC): UART0 = ttyS0 = MMIO 0x4880000 (the hidden debug pads).

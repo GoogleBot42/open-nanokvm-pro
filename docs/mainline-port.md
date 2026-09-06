@@ -18,7 +18,7 @@ inferences.
 - [5. Boot-chain contract](#5-boot-chain-contract)
 - [6. Rollback contract](#6-rollback-contract)
 - [7. Minimum bring-up set and order of work](#7-minimum-bring-up-set-and-order-of-work)
-- [8. Proposed child issues](#8-proposed-child-issues)
+- [8. Child issues](#8-child-issues)
 - [9. Device reads wanted](#9-device-reads-wanted)
 - [10. Verified vs inferred; corrections to other docs](#10-verified-vs-inferred-corrections-to-other-docs)
 
@@ -509,82 +509,115 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 
 ---
 
-## 8. Proposed child issues
+## 8. Child issues
 
-Draft titles and two-line bodies, dependency order. Not filed — for the
-coordinator's review.
+Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
+lives as a comment on #26. **#74 is done** (see "What exists now" at the end of
+this section); everything else is open.
 
-1. **#26.1 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
+1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
    with an AX630C config fragment and `dts/ax630c.dtsi` + `ax630c-nanokvm-pro.dts`
    in-repo; vendor-prefix behind one macro. Package via `slot-image.nix`
    (kernel ≤ 64 MiB, dtb ≤ 1 MiB, `dtc -p 4096`). Depends on: nothing.
-2. **#26.2 `ax_wdt` port + boot-contract shims (first hardware step)** —
+2. **#75 `ax_wdt` port + boot-contract shims (first hardware step)** —
    Describing-subagent spec of `axera,ax-wdt` → watchdog + restart-handler
    driver; cmdline keeps `blkdevparts=`; minimal initramfs that re-arms
    `SLOTB_BOOTABLE` and drives the heartbeat LED. Boot on slot B, read the
-   result via `bootsystem` on the following boot. Depends on: 26.1.
-3. **#26.3 eMMC/SD via `sdhci-cadence` + reset driver + gate-only clk driver** —
+   result via `bootsystem` on the following boot. Depends on: #74.
+3. **#76 eMMC/SD via `sdhci-cadence` + reset driver + gate-only clk driver** —
    Spec + port of `axera_reset` (`#reset-cells = <1>` + table) and a CCF
    driver covering the 86 gates (PLLs as fixed-factor); `cdns,sd4hc` with
    the board's `cdns,phy-*` values; diff `sdhci-axera.c` against mainline
-   for Axera-only tuning. Root on SD p2 first. Depends on: 26.2.
-4. **#26.4 Ethernet: DWMAC 4.10a glue + JL2101 PHY** — stmmac
+   for Axera-only tuning. Root on SD p2 first. Depends on: #75.
+4. **#77 Ethernet: DWMAC 4.10a glue + JL2101 PHY** — stmmac
    `dwmac-generic`/tiny glue with the five clock names + PHY reset GPIO;
    genphy first, JLSemi RGMII-delay/LED spec only if link fails. Exit: SSH.
-   Depends on: 26.3.
-5. **#26.5 NixOS appliance on mainline (unstable pin), identity, env config** —
+   Depends on: #76.
+5. **#78 NixOS appliance on mainline (unstable pin), identity, env config** —
    Move `nixos/appliance.nix` off `nixpkgs-rootfs`; NixOS initrd replaces the
    vendor `/init`; `/boot` vfat contract; `device_key` → MAC/hostname from the
    bootloader's IRAM `misc_info` UID (nvmem node, or a U-Boot `ethaddr` fixup); ship `/etc/fw_env.config = /dev/mmcblk0 0x4C0000 0x100000`
-   after a hexdump check. Depends on: 26.4.
-6. **#26.6 Health-gated A/B re-arm + systemd watchdog (NixOS-native rollback)** —
+   after a hexdump check. Depends on: #77.
+6. **#79 Health-gated A/B re-arm + systemd watchdog (NixOS-native rollback)** —
    `nanokvm-checkboot` after `nanokvm-healthy.target`; `RuntimeWatchdogSec` on
    `/dev/watchdog0`; kernel/dtb updates write the other slot and flip
    `bootsystem`; document the cold-power-cycle caveat. Hardware-test the
    ATF/U-Boot slot failover that updates.md still lists as unexercised.
-   Depends on: 26.5.
-7. **#26.7 Full clock driver + pinctrl (data model + driver)** — Extend the
+   Depends on: #78.
+7. **#80 Full clock driver + pinctrl (data model + driver)** — Extend the
    gate-only CCF driver to the 247 registered clocks incl. the fractional-N
    CPUPLL (`cpufreq-dt` follows); pinctrl driver + a regenerated dtsi (~30
    multi-group functions instead of 551 single-group ones), restoring the
    I2C `pinctrl-0` states the board dts deletes and turning the DEMO pad
    table into DT states; `gpio_request_enable` wired (kills the SW_PWR mux
-   trap at the root). Depends on: 26.4 (can start in parallel).
-8. **#26.8 GPIO + ATX + LT6911 on mainline** — New ~500-LOC driver for
+   trap at the root). Depends on: #77 (can start in parallel).
+8. **#81 GPIO + ATX + LT6911 on mainline** — New ~500-LOC driver for
    `axera,ax-apb-gpio` (one register per line; `gpio-dwapb` cannot bind);
    `lt6911_manage` gets a DT node (I2C0 @0x2b, GPIO descriptors, its three
    pinmux pokes as pinctrl states) and keeps its `/proc` ABI; `nanokvm-gpio`
-   moves to libgpiod/DT names. Depends on: 26.7.
-9. **#26.9 USB: dwc3 glue + gadget HID** — `dwc3-of-simple`-class glue (one
+   moves to libgpiod/DT names. Depends on: #80.
+9. **#82 USB: dwc3 glue + gadget HID** — `dwc3-of-simple`-class glue (one
    PHY reset bit + clocks), `extcon-usb-gpio`, configfs `hid/mass_storage/ncm/
    uac2` as today (`usbdev.sh` contract from nixos-rootfs.md gap 2).
-   Depends on: 26.7.
-10. **#26.10 Video stack on mainline (fwnode graph, syscon, reserved-memory)** —
+   Depends on: #80.
+10. **#83 Video stack on mainline (fwnode graph, syscon, reserved-memory)** —
     Port `open_vin_csi2`, `open_vin_capture`, `vc8000-vcmd` glue to the
     current V4L2/dma APIs; DT `ports/endpoints` incl. the LT6911 subdev;
     carveouts as `reserved-memory` + `memory-region`; drop module-param maps
-    and `compute_mem_map`. libkvm unchanged. Depends on: 26.7, 26.8.
-11. **#26.11 Mini-display + audio on mainline** — `spi-dw-mmio` + `fb_jd9853`
+    and `compute_mem_map`. libkvm unchanged. Depends on: #80, #81.
+11. **#84 Mini-display + audio on mainline** — `spi-dw-mmio` + `fb_jd9853`
     (staging fbtft port or `drm/tiny/panel-mipi-dbi` with an init blob),
     `pwm-dwc` OF glue for the backlight, `gpio-keys`/`rotary-encoder` DT;
     `designware-i2s` slave glue (routing word via syscon, `snd-soc-dummy`) for
     the LT6911 audio card — PIO first, else a `dma_per` dmaengine driver.
-    Depends on: 26.7, 26.8.
-12. **#26.12 WiFi: aic8800 out-of-tree module + firmware pin** — Package
+    Depends on: #80, #81.
+12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — Package
     `radxa-pkg/aic8800` (SDIO) against the pinned kernel, `aic_bsp` reset GPIO,
-    firmware MD5-pinned; or record the drop decision. Depends on: 26.3.
-13. **#26.13 Flake-based updates replace the custom OTA; legacy migration OTA** —
+    firmware MD5-pinned; or record the drop decision. Depends on: #76.
+13. **#86 Flake-based updates replace the custom OTA; legacy migration OTA** —
     `system.autoUpgrade`-style against the flake; one final legacy
     `update-package` that migrates a vendor-base device to the NixOS image;
-    rewrite updates.md. Depends on: 26.6.
-14. **#26.14 nixosModules split (product 1) and upstreaming** — Expose
+    rewrite updates.md. Depends on: #79.
+14. **#87 nixosModules split (product 1) and upstreaming** — Expose
     `nixosModules.nanokvm-pro-{kernel,video,display,atx,updates}`; submit
     bindings/drivers once the Axera prefix question resolves on LKML.
-    Depends on: 26.10.
+    Depends on: #83.
 
-Recommended: 26.1 → 26.2 immediately (they need the device for one slot-B
-boot each); 26.7 and 26.12 can start from source in parallel.
+Recommended: #74 → #75 immediately (#75 needs the device for one slot-B
+boot); #80 and #85 can start from source in parallel.
+
+### What exists now (#74, 2026-09-06)
+
+`.#kernel-mainline` builds mainline Linux 7.1.3 for the AX630C from the
+kernel.org tree our nixpkgs pin carries — no vendor SDK tree, no vendor
+defconfig, no vermagic contract. `arm64 defconfig` is the base; the only
+deltas are `pkgs/kernel-mainline/ax630c.config`, which pins the boot path
+(initrd, `blkdevparts=` parsing, `8250_dw`), the watchdog and pstore core that
+#75 needs, CMA (now allowed — #49's ABI break only applied while prebuilt
+`ax_*.ko` shared struct layouts with our kernel), the systemd/NixOS floor the
+vendor defconfig lacks, and no DWARF/BTF.
+
+`.#dtb-mainline` compiles `dts/ax630c.dtsi` + `dts/ax630c-nanokvm-pro.dts` —
+ours, in this repo — with `cpp` + `dtc -p 4096` against the dt-bindings headers
+of that exact kernel. The DT is deliberately minimal: CPUs, PSCI, GIC-400, the
+24 MHz arch timer, the two DesignWare UARTs, a disabled `wdt0` node, 1 GiB of
+memory (the vendor DT claims 3 GiB and leans on `mem=`), and the ATF/OP-TEE/
+ramoops reservations. Every other peripheral arrives with the issue that ports
+its driver — a DT node without a driver is a DT that lies. All axera-prefixed
+compatibles live in `dts/ax630c-compat.h` so #87 can rename them in one place.
+
+`.#kernel-mainline-slot-image` and `.#dtb-mainline-slot-image` wrap those in the
+vendor signed-header format for the **slot-B** partitions (p15 / p13, 64 MiB /
+1 MiB caps), which is what makes #75's first boot a reversible flash.
+
+The build asserts what a serial-less board cannot show you: the config fragment
+survived `olddefconfig`, the release string is stable, the Image fits its
+partition, the dtb carries real FDT slack (trap 2), the `blkdevparts=` clause
+survived (trap 1), and the ATF/OP-TEE reservations are present.
+
+This does not boot. U-Boot arms wdt0 for 30 s before `booti` and nothing here
+pets it (trap 3) — that is #75.
 
 ---
 

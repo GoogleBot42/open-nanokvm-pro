@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Axera AX630C (AX620E family) -- minimal mainline SoC description (#74).
+ *
+ * Written from the vendor GPL device tree
+ * (maix_ax620e_sdk_kernel, arch/arm64/boot/dts/axera/AX620E.dtsi) and the
+ * inventory in docs/mainline-port.md section 2. Register windows, interrupt
+ * numbers and the 24 MHz timer rate are taken verbatim from that source; the
+ * bindings are mainline ones.
+ *
+ * DELIBERATELY MINIMAL. This describes what an arm64 SMP kernel needs to reach
+ * userspace and nothing else. Clocks, resets, pinctrl, GPIO, storage, network,
+ * USB, video and audio all arrive with the child issues that port their
+ * drivers (#76 storage, #77 net, #80 clk/pinctrl, #81 GPIO, #82 USB, #83
+ * video, #84 display/audio). Adding a node here before its driver exists only
+ * creates a DT that lies.
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include "ax630c-compat.h"
+
+/ {
+	compatible = AX630C_SOC_COMPAT, AX620E_FAMILY_COMPAT;
+	interrupt-parent = <&gic>;
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0>;
+			enable-method = "psci";
+			next-level-cache = <&l2>;
+		};
+
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x1>;
+			enable-method = "psci";
+			next-level-cache = <&l2>;
+		};
+
+		l2: l2-cache {
+			compatible = "cache";
+			cache-level = <2>;
+			cache-unified;
+		};
+	};
+
+	/*
+	 * TF-A 2.7 (plat/axera/ax620e) sits at 0x40040000 and MUST stay
+	 * reserved no-map, or secondary CPU bring-up dies. Its plat_psci_ops
+	 * implements no system_off/system_reset -- reboot comes from the
+	 * watchdog restart handler instead (#75).
+	 */
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	firmware {
+		optee {
+			compatible = "linaro,optee-tz";
+			method = "smc";
+		};
+	};
+
+	/*
+	 * arm,armv7-timer with arm,cpu-registers-not-fw-configured: the
+	 * firmware does not program CNTFRQ, so the 24 MHz clock-frequency here
+	 * is load-bearing. Both properties are carried over verbatim.
+	 */
+	timer {
+		compatible = "arm,armv7-timer";
+		arm,cpu-registers-not-fw-configured;
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(2) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(2) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(2) | IRQ_TYPE_LEVEL_HIGH)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(2) | IRQ_TYPE_LEVEL_HIGH)>;
+		clock-frequency = <24000000>;
+	};
+
+	/*
+	 * No PMU node. The vendor tree has none, so the PMU SPI numbers are
+	 * simply not known from source -- inventing them would be worse than
+	 * having no perf. Determine them on hardware and add the node then.
+	 */
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/*
+		 * GIC-400 (GICv2). The vendor node gives GICC a 0x1000 window;
+		 * mainline's arm,gic-400 binding wants 0x2000 so GICC_DIR at
+		 * +0x1000 is mapped for split EOI. 0x1852000 + 0x2000 stops
+		 * short of GICH at 0x1854000, so widening it is safe.
+		 */
+		gic: interrupt-controller@1851000 {
+			compatible = "arm,gic-400";
+			reg = <0x0 0x1851000 0x0 0x1000>,	/* GICD */
+			      <0x0 0x1852000 0x0 0x2000>,	/* GICC */
+			      <0x0 0x1854000 0x0 0x2000>,	/* GICH */
+			      <0x0 0x1856000 0x0 0x2000>;	/* GICV */
+			interrupt-controller;
+			#interrupt-cells = <3>;
+		};
+
+		/*
+		 * DesignWare APB UARTs. 8250_dw binds these unmodified; the
+		 * vendor's 8250_axera.c is a fork of it. clock-frequency
+		 * replaces a clocks phandle until the clk driver lands (#80).
+		 *
+		 * uart0 is the debug console on hidden pads; uart1 is the
+		 * accessible header (pkgs/boot.nix routes the SD debug console
+		 * there). Neither is a working console on this unit -- see
+		 * "No serial on this unit" -- but earlycon is the only thing
+		 * that could ever explain an early hang.
+		 */
+		uart0: serial@4880000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x0 0x4880000 0x0 0x400>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			clock-frequency = <208000000>;
+			interrupts = <GIC_SPI 118 IRQ_TYPE_LEVEL_HIGH>;
+			status = "okay";
+		};
+
+		uart1: serial@4881000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x0 0x4881000 0x0 0x400>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			clock-frequency = <208000000>;
+			interrupts = <GIC_SPI 119 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+		};
+
+		/*
+		 * Watchdog 0. Disabled here because the driver is #75; the node
+		 * is present so that issue is a driver change and not a DT
+		 * change. Two windows: the WDT itself, then the peripheral
+		 * clock/reset syscon the vendor driver pokes directly (it
+		 * predates any clk provider for this block).
+		 */
+		wdt0: watchdog@4840000 {
+			compatible = AX630C_WDT_COMPAT;
+			reg = <0x0 0x4840000 0x0 0x400>,
+			      <0x0 0x4870000 0x0 0x400>;
+			interrupts = <GIC_SPI 149 IRQ_TYPE_LEVEL_HIGH>;
+			status = "disabled";
+		};
+	};
+};

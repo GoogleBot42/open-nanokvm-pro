@@ -121,6 +121,13 @@
 
         kernel = callPkg ./pkgs/kernel.nix { inherit initramfs; };
 
+        # Mainline kernel scaffolding for epic #26 (issue #74). Built from the
+        # kernel.org tree our nixpkgs pin carries, with our own config fragment
+        # and our own device tree (dts/, compiled by pkgs/dtb-mainline.nix).
+        # Additive: no image, rootfs or update output references it, and the
+        # 4.19 outputs are untouched. Booting it is #75.
+        kernel-mainline = callPkg ./pkgs/kernel-mainline.nix { };
+
         # NOTE (#49, resolved 2026-08-30): there is deliberately NO CMA kernel
         # variant. CONFIG_CMA/CONFIG_DMA_CMA are vermagic-invisible but ABI-
         # BREAKING for the vendor ax_*.ko blobs -- DMA_CMA adds `cma_area` to
@@ -181,6 +188,52 @@
             plus the real kernel bootargs. Built from pkgs/dtb.nix.'';
         };
         dtb-slot-image = callPkg ./pkgs/slot-image.nix dtbSlotArgs;
+
+        # Mainline device tree, compiled from dts/ in this repo (#74).
+        dtb-mainline = callPkg ./pkgs/dtb-mainline.nix { inherit kernel-mainline; };
+
+        # The mainline pair, packaged for the SAME slot-B partitions the vendor
+        # kernel uses -- that is the whole point: #75's first boot test is a
+        # reversible slot-B flash, rolled back by booting slot A.
+        kernel-mainline-slot-image = callPkg ./pkgs/slot-image.nix {
+          payload = "${kernel-mainline}/Image";
+          pname = "nanokvm-pro-kernel-mainline-slot-image";
+          version = "ax630c-kernel-mainline-b";
+          artifact = "kernel_b.bin";
+          partSize = 64 * 1024 * 1024;
+          loadAddr = "0x40200000";
+          nameSuffix = "-mainline";
+          title = "mainline kernel partition image (slot B, #74)";
+          flashNotes = ''
+            TARGET partition: kernel_b  (A/B slot B), 64M
+              eMMC device   : /dev/mmcblk0p15   (p14 = slot A / shipped 4.19 kernel)
+
+            This is SCAFFOLDING (#74). It has no watchdog driver, so U-Boot's
+            30 s wdt0 arm-before-booti WILL hard-reset it -- that is #75's job.
+            Flash it only together with the matching mainline dtb.
+
+            Flash (reversible slot-B test):
+              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync'';
+        };
+
+        dtb-mainline-slot-image = callPkg ./pkgs/slot-image.nix {
+          payload = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
+          pname = "nanokvm-pro-dtb-mainline-slot-image";
+          version = "ax630c-dtb-mainline";
+          artifact = "${project}_mainline_signed.dtb";
+          partSize = 1024 * 1024;
+          loadAddr = "0x40001000";
+          nameSuffix = "-mainline";
+          title = "mainline dtb partition image (#74)";
+          flashNotes = ''
+            TARGET partition: dtb_b  (A/B slot B), 1M (p13)
+
+            Built from dts/ in this repo, with 4 KiB of FDT slack so U-Boot's
+            fdt_chosen() can write the env bootargs without hanging.
+
+            Flash (reversible slot-B test):
+              dd if=${project}_mainline_signed.dtb of=/dev/mmcblk0p13 bs=1M conv=fsync'';
+        };
 
         kernel-slot-image = callPkg ./pkgs/slot-image.nix {
           payload = "${kernel}/Image";
@@ -319,6 +372,8 @@
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
+            kernel-mainline dtb-mainline
+            kernel-mainline-slot-image dtb-mainline-slot-image
             open-vin-csi2 open-vin-capture
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
@@ -338,6 +393,9 @@
           open-capture-geometry = kvm-encoder-geom-test;
           open-venc-geometry = vcenc-geom-test;
           open-venc-rc = vcenc-rc-test;
+          # The mainline DT asserts its own boot contract (FDT slack, the
+          # blkdevparts= clause, the ATF/OP-TEE reservations) -- #74.
+          mainline-dtb = dtb-mainline;
         };
 
         # `nix run .#axdl -- --file result/*.axp --wait-for-device`
