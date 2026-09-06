@@ -373,5 +373,8 @@ propose SG2002 work without flagging this gap up front.
   Vulkan backend cannot import software-decoded frames on Wayland ozone; WebCodecs/canvas
   modes unaffected). Only page-side oracle: `VideoFrame.copyTo()` throws
   `InvalidStateError` (pixel reads give opaque black = same as a black host screen). A
-  detector + H.264 Direct auto-fallback with a notice naming the flag was delegated to
-  an Opus agent (branch pending merge).** Remaining targeted fixes: #67, #70.
+  detector + H.264 Direct auto-fallback with a notice naming the flag SHIPPED (merged
+  42070bb, on the device as `index-BZloHD67.js`; `useUndrawableVideoDetector.ts` keys on
+  `new VideoFrame(videoElement).copyTo()` throwing — track/captureStream frames read fine
+  even when the screen is white). #69 closed.** Remaining targeted fixes: #67, #70, and
+  the WebRTC stream-type takeover hand-back described at the top of #69 (unfiled).
