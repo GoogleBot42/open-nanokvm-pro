@@ -5,6 +5,7 @@ import { useMediaQuery } from 'react-responsive';
 import { MouseReportAbsolute } from '@/lib/mouse.ts';
 import { client, MessageEvent } from '@/lib/websocket.ts';
 import { scrollDirectionAtom, scrollIntervalAtom } from '@/jotai/mouse.ts';
+import { useScreenElement } from '@/hooks/useScreenElement.ts';
 
 import { MouseAbsoluteEvent } from './types.ts';
 
@@ -18,6 +19,11 @@ enum MouseButton {
 
 export const Absolute = () => {
   const isBigScreen = useMediaQuery({ minWidth: 650 });
+
+  // The element the active player mounted. It can appear after this component
+  // (H.265 Direct picks its player from an async probe) or be replaced later
+  // (mode switch, player swap), so it is tracked, not read once. See #73.
+  const screenElement = useScreenElement();
 
   const scrollDirection = useAtomValue(scrollDirectionAtom);
   const scrollInterval = useAtomValue(scrollIntervalAtom);
@@ -41,8 +47,8 @@ export const Absolute = () => {
   const VELOCITY_THRESHOLD = 0.3;
 
   useEffect(() => {
-    const screen = document.getElementById('screen') as HTMLVideoElement;
-    if (!screen) return;
+    if (!screenElement) return;
+    const screen = screenElement as HTMLVideoElement;
 
     screen.addEventListener('mousedown', handleMouseDown);
     screen.addEventListener('mouseup', handleMouseUp);
@@ -301,7 +307,7 @@ export const Absolute = () => {
         clearTimeout(longPressTimerRef.current);
       }
     };
-  }, [isBigScreen, scrollDirection, scrollInterval]);
+  }, [screenElement, isBigScreen, scrollDirection, scrollInterval]);
 
   // Mouse event handler
   function handleMouseEvent(event: MouseAbsoluteEvent) {
