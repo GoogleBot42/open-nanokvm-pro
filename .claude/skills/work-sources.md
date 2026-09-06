@@ -367,7 +367,11 @@ propose SG2002 work without flagging this gap up front.
   human at a hardware-HEVC browser). **#69 NOT reproduced** across headed Chromium/
   Chrome 152 on Xvfb, sway (pixman/radeonsi), Weston colour-managed, and KWin 6.7
   `--virtual` incl. the device's WebRTC/MSE streams — harness + matrix in
-  `docs/reference/vcenc-open/chromium-white-compositors-20260905/`; Jeremy's KDE
-  colour pipeline (HDR/WCG/ICC, not emulable headless) is the remaining suspect,
-  discriminating tests posted on the issue; page-side mitigation if confirmed = opt-in
-  canvas renderer for the `<video>` modes. Remaining targeted fixes: #67, #70.
+  `docs/reference/vcenc-open/chromium-white-compositors-20260905/`. **Then RESOLVED the
+  same night: Jeremy bisected his profile to `chrome://flags/#enable-vulkan`; reproduced
+  on the build host under KWin and sway (`--enable-features=Vulkan` → 93 % white, Skia
+  Vulkan backend cannot import software-decoded frames on Wayland ozone; WebCodecs/canvas
+  modes unaffected). Only page-side oracle: `VideoFrame.copyTo()` throws
+  `InvalidStateError` (pixel reads give opaque black = same as a black host screen). A
+  detector + H.264 Direct auto-fallback with a notice naming the flag was delegated to
+  an Opus agent (branch pending merge).** Remaining targeted fixes: #67, #70.

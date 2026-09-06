@@ -66,7 +66,7 @@ single out the `<video>` modes; the page body is **black**, so a `<video>` that 
 paint would read black, not white — Jeremy's white means the element is *painting*
 white (or his page background differs).
 
-## What is left
+## What was left at this point (superseded by the update below)
 
 Everything that differs between these runs and Jeremy's desktop is per-session state
 that cannot be synthesised here: the monitor's KDE colour settings (HDR / wide gamut /

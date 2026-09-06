@@ -26,7 +26,13 @@ ETag and hashed assets ship `immutable` (#71 fixed 2026-09-05) — a warm browse
 up a deploy on its own. **Chromium refuses to cache any response whose certificate
 errored**, so a harness using `--ignore-certificate-errors` makes every resource look
 uncacheable; pin the cert instead (`--ignore-certificate-errors-spki-list`,
-`docs/reference/vcenc-open/cache-headers-20260905/harness/`).
+`docs/reference/vcenc-open/cache-headers-20260905/harness/`). **Chromium with
+`chrome://flags/#enable-vulkan` (Skia Vulkan backend) paints every `<video>` white on
+Wayland** (#69): decoded frames never import, WebCodecs/canvas modes are unaffected,
+and the only page-side oracle is `VideoFrame.copyTo()` throwing `InvalidStateError`
+(pixel reads return opaque black, indistinguishable from a black host screen).
+Headless-KWin/sway harness that reproduces it:
+`docs/reference/vcenc-open/chromium-white-compositors-20260905/`.
 
 ## Git
 
