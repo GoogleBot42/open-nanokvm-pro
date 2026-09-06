@@ -1,0 +1,80 @@
+
+=== phase A cold (empty cache)
+    resource                                     status  source           bytes  cache-control / etag
+    /                                               200  network            639  no-cache | "b0635f289f83613ab3646275f8d6a1c6"
+    assets/index-Bg_C9wJe.js                        200  network         600834  public, max-age=31536000, immutable | "Bg_C9wJe-600429"
+    assets/index-Bu-yeoLU.css                       200  network          24217  public, max-age=31536000, immutable | "Bu-yeoLU-24107"
+    assets/index-Cy1w9TtM.js                        200  network         899551  public, max-age=31536000, immutable | "Cy1w9TtM-899007"
+    assets/head-yNmFTqot.js                         200  network         229806  public, max-age=31536000, immutable | "yNmFTqot-229631"
+    assets/network-B2_tboHq.js                      200  network          43232  public, max-age=31536000, immutable | "B2_tboHq-43158"
+    assets/LockOutlined-B4RRqdD7.js                 200  network           1095  public, max-age=31536000, immutable | "B4RRqdD7-1049"
+    assets/index-Cyfg8h__.js                        200  network          31094  public, max-age=31536000, immutable | "Cyfg8h__-31029"
+    assets/Skeleton-BFpi9XrP.js                     200  network           9906  public, max-age=31536000, immutable | "BFpi9XrP-9851"
+    assets/auth-Ctc668sT.js                         200  network         104224  public, max-age=31536000, immutable | "Ctc668sT-104113"
+    assets/index-B-SPelWm.css                       200  network           4882  public, max-age=31536000, immutable | "B-SPelWm-4827"
+    sipeed.ico                                      200  network          17053  no-cache | "0eb81193d3767d11a55a141f65069691"
+    api/vm/web-title                                200  network            104  - | -
+    api/auth/password                               200  network             78  - | -
+    api/stream/mode                                 200  network             66  - | -
+    api/stream/rate-control                         200  network             63  - | -
+    api/vm/gpio                                     200  network             86  - | -
+    api/application/version                         200  network            106  - | -
+    api/vm/menubar                                  200  network             83  - | -
+    api/hid/shortcut/leader-key                     200  network             72  - | -
+    api/stream/quality                              200  network             63  - | -
+    api/stream/gop                                  200  network             63  - | -
+    api/stream/fps                                  200  network             63  - | -
+    api/vm/gpio                                     200  network            106  - | -
+
+=== phase B fresh navigation (warm cache)
+    resource                                     status  source           bytes  cache-control / etag
+    /                                               200  network             39  no-cache | "b0635f289f83613ab3646275f8d6a1c6"
+    assets/index-Bg_C9wJe.js                        200  disk-cache           0  public, max-age=31536000, immutable | "Bg_C9wJe-600429"
+    assets/index-Bu-yeoLU.css                       200  disk-cache           0  public, max-age=31536000, immutable | "Bu-yeoLU-24107"
+    assets/index-Cy1w9TtM.js                        200  disk-cache           0  public, max-age=31536000, immutable | "Cy1w9TtM-899007"
+    assets/head-yNmFTqot.js                         200  disk-cache           0  public, max-age=31536000, immutable | "yNmFTqot-229631"
+    assets/network-B2_tboHq.js                      200  disk-cache           0  public, max-age=31536000, immutable | "B2_tboHq-43158"
+    assets/LockOutlined-B4RRqdD7.js                 200  disk-cache           0  public, max-age=31536000, immutable | "B4RRqdD7-1049"
+    assets/index-Cyfg8h__.js                        200  disk-cache           0  public, max-age=31536000, immutable | "Cyfg8h__-31029"
+    assets/Skeleton-BFpi9XrP.js                     200  disk-cache           0  public, max-age=31536000, immutable | "BFpi9XrP-9851"
+    assets/auth-Ctc668sT.js                         200  disk-cache           0  public, max-age=31536000, immutable | "Ctc668sT-104113"
+    assets/index-B-SPelWm.css                       200  disk-cache           0  public, max-age=31536000, immutable | "B-SPelWm-4827"
+    api/vm/web-title                                200  network             78  - | -
+    api/auth/password                               200  network             78  - | -
+    api/stream/mode                                 200  network             63  - | -
+    api/stream/rate-control                         200  network             63  - | -
+    api/vm/gpio                                     200  network             83  - | -
+    api/application/version                         200  network            103  - | -
+    api/vm/menubar                                  200  network             83  - | -
+    api/hid/shortcut/leader-key                     200  network             69  - | -
+    api/stream/quality                              200  network             63  - | -
+    api/stream/gop                                  200  network             63  - | -
+    api/stream/fps                                  200  network             63  - | -
+    api/vm/gpio                                     200  network            106  - | -
+
+=== phase C reload (F5, warm cache)
+    resource                                     status  source           bytes  cache-control / etag
+    /                                               200  network             39  no-cache | "b0635f289f83613ab3646275f8d6a1c6"
+    assets/index-Bg_C9wJe.js                        200  disk-cache           0  public, max-age=31536000, immutable | "Bg_C9wJe-600429"
+    assets/index-Bu-yeoLU.css                       200  disk-cache           0  public, max-age=31536000, immutable | "Bu-yeoLU-24107"
+    assets/index-Cy1w9TtM.js                        200  disk-cache           0  public, max-age=31536000, immutable | "Cy1w9TtM-899007"
+    assets/head-yNmFTqot.js                         200  disk-cache           0  public, max-age=31536000, immutable | "yNmFTqot-229631"
+    assets/network-B2_tboHq.js                      200  disk-cache           0  public, max-age=31536000, immutable | "B2_tboHq-43158"
+    assets/LockOutlined-B4RRqdD7.js                 200  disk-cache           0  public, max-age=31536000, immutable | "B4RRqdD7-1049"
+    assets/index-Cyfg8h__.js                        200  disk-cache           0  public, max-age=31536000, immutable | "Cyfg8h__-31029"
+    assets/Skeleton-BFpi9XrP.js                     200  disk-cache           0  public, max-age=31536000, immutable | "BFpi9XrP-9851"
+    assets/auth-Ctc668sT.js                         200  disk-cache           0  public, max-age=31536000, immutable | "Ctc668sT-104113"
+    assets/index-B-SPelWm.css                       200  disk-cache           0  public, max-age=31536000, immutable | "B-SPelWm-4827"
+    api/vm/web-title                                200  network             78  - | -
+    api/auth/password                               200  network             78  - | -
+    api/stream/mode                                 200  network             63  - | -
+    api/stream/rate-control                         200  network             63  - | -
+    api/vm/gpio                                     200  network             83  - | -
+    api/application/version                         200  network            103  - | -
+    api/vm/menubar                                  200  network             83  - | -
+    api/hid/shortcut/leader-key                     200  network             69  - | -
+    sipeed.ico                                      200  network             16  no-cache | "0eb81193d3767d11a55a141f65069691"
+    api/stream/quality                              200  network             63  - | -
+    api/stream/gop                                  200  network             63  - | -
+    api/stream/fps                                  200  network             63  - | -
+    api/vm/gpio                                     200  network            106  - | -

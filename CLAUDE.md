@@ -21,8 +21,12 @@ WebCodecs, so H.265 reaches them only via the MediaSource player (`mse-player.ts
 **Never assert browser codec support without measuring it** (`web/`'s probes log every
 answer to the console; the Firefox/Chromium headless harnesses under
 `docs/reference/vcenc-open/{h264-direct-chromium,mse-player}-20260905/harness/` run the
-real UI through an SSH loopback tunnel). The device serves `index.html` without cache
-headers (#71): test with a fresh profile or cache disabled.
+real UI through an SSH loopback tunnel). `index.html` now ships `no-cache` + a content
+ETag and hashed assets ship `immutable` (#71 fixed 2026-09-05) — a warm browser picks
+up a deploy on its own. **Chromium refuses to cache any response whose certificate
+errored**, so a harness using `--ignore-certificate-errors` makes every resource look
+uncacheable; pin the cert instead (`--ignore-certificate-errors-spki-list`,
+`docs/reference/vcenc-open/cache-headers-20260905/harness/`).
 
 ## Git
 

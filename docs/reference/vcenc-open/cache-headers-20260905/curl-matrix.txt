@@ -1,0 +1,87 @@
+served bundle: assets/index-Bg_C9wJe.js
+
+=== HEAD /
+    HTTP/2 200 
+    cache-control: no-cache
+    content-type: text/html; charset=utf-8
+    etag: "b0635f289f83613ab3646275f8d6a1c6"
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 456
+
+=== HEAD /index.html
+    HTTP/2 200 
+    cache-control: no-cache
+    content-type: text/html; charset=utf-8
+    etag: "b0635f289f83613ab3646275f8d6a1c6"
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 456
+
+=== HEAD /sipeed.ico
+    HTTP/2 200 
+    cache-control: no-cache
+    content-type: image/vnd.microsoft.icon
+    etag: "0eb81193d3767d11a55a141f65069691"
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 16958
+
+=== HEAD /mockServiceWorker.js
+    HTTP/2 200 
+    cache-control: no-cache
+    content-type: text/javascript; charset=utf-8
+    etag: "09e44e19efffa78342666f2e57b3f109"
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 9120
+
+=== HEAD /assets/index-Bg_C9wJe.js
+    HTTP/2 200 
+    cache-control: public, max-age=31536000, immutable
+    content-type: text/javascript; charset=utf-8
+    etag: "Bg_C9wJe-600429"
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 600429
+
+=== HEAD /assets/index-DrlLKa8f.css
+    HTTP/2 200 
+    cache-control: public, max-age=31536000, immutable
+    content-type: text/css; charset=utf-8
+    etag: "DrlLKa8f-3012"
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 3012
+
+=== conditional requests
+    index etag = "b0635f289f83613ab3646275f8d6a1c6"
+    asset etag = "Bg_C9wJe-600429"
+    GET / (no validator)                           -> 200 456B
+    GET / If-None-Match: <current>                 -> 304 0B
+    GET / If-None-Match: <stale>                   -> 200 456B
+    GET / If-Modified-Since: now                   -> 200 456B
+    GET asset If-None-Match: <current>             -> 304 0B
+    GET asset Range: bytes=0-99                    -> 206 100B
+
+=== routing (must match upstream)
+    GET /                                          -> 200 456B
+    GET /index.html                                -> 200 456B
+    GET /desktop                                   -> 404 18B
+    GET /assets                                    -> 301 0B
+    GET /assets/                                   -> 404 1097B
+    GET /kvm                                       -> 302 24B
+
+=== API (no Cache-Control / ETag may appear)
+    HTTP/2 200 
+    content-type: application/json; charset=utf-8
+    strict-transport-security: max-age=31536000; includeSubDomains
+    x-content-type-options: nosniff
+    x-frame-options: DENY
+    content-length: 745

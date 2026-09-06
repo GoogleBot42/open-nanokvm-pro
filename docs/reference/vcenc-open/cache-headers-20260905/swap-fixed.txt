@@ -1,0 +1,9 @@
+=== NEW server binary (#71 cache headers, md5 516e77ad) ===
+live: 23b4092c19b0e96a860b7476e3d618ae size=501 mtime=1
+gold: 9cc6b57671832ed08ef26691cd7c363d size=456 mtime=1
+cache-probe" content="v2"
+    1 cold load                        document=network     marker=v1  entry=/assets/index-Bg_C9wJe.js
+--- deploy: /home/googlebot/workspace/nanokvm/nix-nanokvm-pro/.claude/worktrees/agent-a51e9986e0b7c7938/tools/kvmssh '/tmp/probe-marker.sh v2'
+--- deploy exit 0
+    2 open the page again (warm)       document=network     marker=v2  entry=/assets/index-Bg_C9wJe.js
+    3 reload / F5 (warm)               document=network     marker=v2  entry=/assets/index-Bg_C9wJe.js

@@ -238,6 +238,16 @@ since 2026-09-05 every UI change is an ordinary commit in `web/` and
 `pkgs/nanokvm-web.nix` builds from `../web`. The `nanokvm-pro-src` flake input
 now feeds only the Go server.
 
+The server serves that bundle from `<execdir>/web` with our own static handler
+(`pkgs/nanokvm-server/web-static.go.in`, nix step 11): content-hashed `assets/`
+files are `immutable` for a year, `index.html` and every other non-hashed file
+are `no-cache` with a strong content ETag. Upstream's `gin-contrib/static` sent
+neither, and every bundle file carries the Nix store's 1970 mtime, so browsers
+kept a stale `index.html` for years — and even a forced revalidation was
+answered with a stale 304, because that mtime never changes across deploys
+(#71, fixed and device-proven 2026-09-05:
+`docs/reference/vcenc-open/cache-headers-20260905/`).
+
 Earlier backends stay buildable as bench alternatives — both need vendor blobs
 that a #54 image no longer carries, so they only run on a device flashed with
 the vendor `.axp`: `.#kvm-encoder-openvenc` (raw-ioctl replay against the

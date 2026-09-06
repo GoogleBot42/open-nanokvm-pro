@@ -76,11 +76,13 @@ Package names below are confirmed against `flake.nix`
 # Variant: web bundle (`nanokvm-web`)
 
 Source is the in-tree fork `web/` since 2026-09-05 (no patch stack). Two traps
-learned that day: (a) the server serves `index.html` with no cache headers and a
-1970 Last-Modified, so a normal browser reload keeps the OLD bundle (or a mix of
-old and new chunks) for years — verify with cache disabled / a fresh profile and
-tell Jeremy to hard-refresh (#71); `curl -sk https://127.0.0.1/ | grep -o
-'assets/index-[^"]*\.js'` on the device shows what is actually served. (b) Prove
+learned that day: (a) the server used to serve `index.html` with no cache headers
+and a 1970 Last-Modified, so a browser kept the OLD bundle (or a mix of old and
+new chunks) for years and even F5 got a stale 304 — **fixed the same day (#71)**:
+`index.html` is `no-cache` + content ETag, hashed assets are `immutable`, and a
+warm browser now picks up a deploy by itself. `curl -sk https://127.0.0.1/ |
+grep -o 'assets/index-[^"]*\.js'` on the device still shows what is actually
+served, and stays the deploy-verification token. (b) Prove
 UI behaviour in a real browser, not by reading code: the harnesses under
 `docs/reference/vcenc-open/{h264-direct-chromium,mse-player}-20260905/harness/`
 run the real UI in headless Chromium (CDP) or Firefox (screenshot) through an SSH

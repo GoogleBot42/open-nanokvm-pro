@@ -317,6 +317,24 @@ EOF
 				params = nil
 			}
 		}'
+
+    # 11. HTTP caching for the web bundle (#71). Upstream serves it with
+    #     gin-contrib/static -> http.FileServer: no Cache-Control, no ETag,
+    #     and a Last-Modified of 1970-01-01T00:00:01Z, because every file in
+    #     the bundle is copied out of the Nix store. No explicit freshness
+    #     plus a validator decades old = heuristic freshness measured in
+    #     years, so an ordinary reload after a deploy or an OTA keeps the old
+    #     index.html -- and therefore a mix of old and new chunks. Our handler
+    #     (pkgs/nanokvm-server/web-static.go.in) keeps the same "serve it if
+    #     it exists under <execdir>/web, else fall through to the API routers"
+    #     gate and changes only the caching: immutable for content-hashed
+    #     assets/ files, no-cache + a strong content ETag for everything else.
+    cp ${./nanokvm-server/web-static.go.in} router/web_static.go
+    substituteInPlace router/router.go \
+      --replace-fail 'r.Use(static.Serve("/", static.LocalFile(webPath, true)))' \
+                     'r.Use(serveWeb(webPath))' \
+      --replace-fail '	"github.com/gin-gonic/contrib/static"
+	"github.com/gin-gonic/gin"' '	"github.com/gin-gonic/gin"'
   '';
 
   # cgo on for the kvm_vision + opus bindings.
