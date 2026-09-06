@@ -335,6 +335,60 @@ EOF
                      'r.Use(serveWeb(webPath))' \
       --replace-fail '	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"' '	"github.com/gin-gonic/gin"'
+
+    # 12. Hand the stream type back when a consumer empties (#69). One capture
+    #     channel serves MJPEG, both direct streams and WebRTC, and upstream
+    #     has each of them assert the global KvmVision.StreamType on connect
+    #     and never give it back -- so a second viewer in a different mode
+    #     starves the first PERMANENTLY, and the WebRTC page, which hides its
+    #     <video> on the resulting video-status -4, stays white long after the
+    #     intruder is gone. pkgs/nanokvm-server/stream-claims.go.in (the file
+    #     comment has the full rationale) arbitrates instead: consumers report
+    #     their live client count, a claim still takes the stream, and a
+    #     release that empties the holder passes it to whoever still has
+    #     clients. Each streamer already computes that count in removeClient;
+    #     addClient gets it from the same helper.
+    cp ${./nanokvm-server/stream-claims.go.in} service/stream/claims.go
+    substituteInPlace service/stream/direct/streamer.go \
+      --replace-fail '	s.clients[ws] = true
+	s.updateClientSnapshotLocked()
+	s.mutex.Unlock()
+
+	common.GetKvmVision().SetStreamType(common.STREAM_TYPE_H264_DIRECT)' \
+'	s.clients[ws] = true
+	count := s.updateClientSnapshotLocked()
+	s.mutex.Unlock()
+
+	stream.ClaimStreamType(common.STREAM_TYPE_H264_DIRECT, count)' \
+      --replace-fail '	log.Debugf("h264 websocket disconnected, remaining clients: %d", count)' \
+'	stream.ReleaseStreamType(common.STREAM_TYPE_H264_DIRECT, count)
+
+	log.Debugf("h264 websocket disconnected, remaining clients: %d", count)'
+    substituteInPlace service/stream/mjpeg/streamer.go \
+      --replace-fail '	s.clients[c] = true
+	s.mutex.Unlock()
+
+	common.GetKvmVision().SetStreamType(common.STREAM_TYPE_MJPEG)' \
+'	s.clients[c] = true
+	added := len(s.clients)
+	s.mutex.Unlock()
+
+	stream.ClaimStreamType(common.STREAM_TYPE_MJPEG, added)' \
+      --replace-fail '	log.Debugf("mjpeg connection removed, remaining clients: %d", count)' \
+'	stream.ReleaseStreamType(common.STREAM_TYPE_MJPEG, count)
+
+	log.Debugf("mjpeg connection removed, remaining clients: %d", count)'
+    substituteInPlace service/stream/webrtc/manager.go \
+      --replace-fail '	common.GetKvmVision().SetStreamType(common.STREAM_TYPE_H264_WEBRTC)
+
+	log.Debugf("added client %s, total clients: %d", ws.RemoteAddr(), count)' \
+'	stream.ClaimStreamType(common.STREAM_TYPE_H264_WEBRTC, count)
+
+	log.Debugf("added client %s, total clients: %d", ws.RemoteAddr(), count)' \
+      --replace-fail '	log.Debugf("removed client %s, total clients: %d", ws.RemoteAddr(), count)' \
+'	stream.ReleaseStreamType(common.STREAM_TYPE_H264_WEBRTC, count)
+
+	log.Debugf("removed client %s, total clients: %d", ws.RemoteAddr(), count)'
   '';
 
   # cgo on for the kvm_vision + opus bindings.

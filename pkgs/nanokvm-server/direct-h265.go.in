@@ -86,10 +86,10 @@ func ConnectH265(c *gin.Context) {
 func (s *h265Streamer) addClient(ws *websocket.Conn) {
 	s.mutex.Lock()
 	s.clients[ws] = true
-	s.updateClientSnapshotLocked()
+	count := s.updateClientSnapshotLocked()
 	s.mutex.Unlock()
 
-	common.GetKvmVision().SetStreamType(common.STREAM_TYPE_H265_DIRECT)
+	stream.ClaimStreamType(common.STREAM_TYPE_H265_DIRECT, count)
 
 	if atomic.CompareAndSwapInt32(&s.running, 0, 1) {
 		go s.run()
@@ -102,6 +102,8 @@ func (s *h265Streamer) removeClient(ws *websocket.Conn) {
 	delete(s.clients, ws)
 	count := s.updateClientSnapshotLocked()
 	s.mutex.Unlock()
+
+	stream.ReleaseStreamType(common.STREAM_TYPE_H265_DIRECT, count)
 
 	log.Debugf("h265 websocket disconnected, remaining clients: %d", count)
 }

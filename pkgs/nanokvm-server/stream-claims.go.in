@@ -1,0 +1,83 @@
+package stream
+
+import (
+	"sync"
+
+	"NanoKVM-Server/common"
+
+	log "github.com/sirupsen/logrus"
+)
+
+// Stream-type arbitration (#69). One capture channel serves every consumer, so
+// KvmVision.StreamType is a single global that says which of them may read it.
+// Upstream has each consumer assert it on connect and nobody give it back: the
+// MJPEG, direct and WebRTC loops all skip their read while another type is
+// active, so a second viewer -- another browser or tab in a different mode, a
+// curl of /api/stream/mjpeg, a stray POST /api/stream/mode -- takes the stream
+// away permanently. The dispossessed WebRTC page hides its <video> on
+// video-status -4 and stays hidden (a white screen) even after the intruder
+// leaves, because nothing ever hands the type back.
+//
+// Fix: the consumers report their live client count here instead of poking
+// SetStreamType directly. A claim still takes the stream (upstream behaviour --
+// the newest viewer wins). A release that empties a consumer AND held the
+// active type hands it to whichever consumer still has clients, and its read
+// loop -- still spinning on the skip branch -- picks up where it left off. The
+// WebRTC page un-hides on its own: the next ReadH264 result goes out as
+// video-status 1.
+//
+// Only the arbitration lives here. While two consumers are connected one of
+// them is necessarily starved; the page already says so ("inconsistent video
+// mode", desktop/message.tsx).
+
+// Order in which an emptied consumer's stream type is offered on. Fixed so the
+// hand-back is deterministic; WebRTC leads because it is the mode whose page
+// blanks itself while starved.
+var handBackOrder = []uint8{
+	common.STREAM_TYPE_H264_WEBRTC,
+	common.STREAM_TYPE_H264_DIRECT,
+	common.STREAM_TYPE_H265_DIRECT,
+	common.STREAM_TYPE_MJPEG,
+}
+
+var streamClients = struct {
+	mutex sync.Mutex
+	count map[uint8]int
+}{
+	count: make(map[uint8]int),
+}
+
+// ClaimStreamType records that consumer streamType now has `clients` of them
+// (> 0) and makes it the active type.
+func ClaimStreamType(streamType uint8, clients int) {
+	streamClients.mutex.Lock()
+	defer streamClients.mutex.Unlock()
+
+	streamClients.count[streamType] = clients
+	common.GetKvmVision().SetStreamType(streamType)
+}
+
+// ReleaseStreamType records consumer streamType's remaining client count. When
+// that is zero and it held the active type, the type goes to the first consumer
+// in handBackOrder that still has clients. Safe to call more than once for the
+// same client: the count is reported, not decremented, and a consumer that no
+// longer holds the active type hands nothing back.
+func ReleaseStreamType(streamType uint8, clients int) {
+	streamClients.mutex.Lock()
+	defer streamClients.mutex.Unlock()
+
+	streamClients.count[streamType] = clients
+	if clients > 0 || common.GetKvmVision().StreamType != streamType {
+		return
+	}
+
+	for _, candidate := range handBackOrder {
+		if candidate == streamType || streamClients.count[candidate] == 0 {
+			continue
+		}
+
+		common.GetKvmVision().SetStreamType(candidate)
+		log.Debugf("stream type %d released with no clients left; handed to %d", streamType, candidate)
+		return
+	}
+}
