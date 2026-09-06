@@ -6,12 +6,18 @@ import { useTranslation } from 'react-i18next';
 import { MouseReportRelative } from '@/lib/mouse.ts';
 import { client, MessageEvent } from '@/lib/websocket.ts';
 import { scrollDirectionAtom, scrollIntervalAtom } from '@/jotai/mouse.ts';
+import { useScreenElement } from '@/hooks/useScreenElement.ts';
 
 import { MouseRelativeEvent } from './types.ts';
 
 export const Relative = () => {
   const { t } = useTranslation();
   const [messageApi, contextHolder] = message.useMessage();
+
+  // The element the active player mounted. It can appear after this component
+  // (H.265 Direct picks its player from an async probe) or be replaced later
+  // (mode switch, player swap), so it is tracked, not read once. See #73.
+  const screenElement = useScreenElement();
 
   const scrollDirection = useAtomValue(scrollDirectionAtom);
   const scrollInterval = useAtomValue(scrollIntervalAtom);
@@ -50,7 +56,7 @@ export const Relative = () => {
   }
 
   useEffect(() => {
-    const screen = document.getElementById('screen');
+    const screen = screenElement;
     if (!screen) return;
 
     showMessage();
@@ -129,7 +135,7 @@ export const Relative = () => {
       screen.removeEventListener('contextmenu', disableEvent);
       document.removeEventListener('pointerlockchange', handlePointerLockChange);
     };
-  }, [scrollDirection, scrollInterval]);
+  }, [screenElement, scrollDirection, scrollInterval]);
 
   // show message
   function showMessage() {

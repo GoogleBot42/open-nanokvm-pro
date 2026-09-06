@@ -12,3 +12,6 @@ __pycache__/
 
 # per-machine Claude Code overrides
 .claude/settings.local.json
+
+# js deps (web/ fork; pnpm install for lint/typecheck runs)
+node_modules/
