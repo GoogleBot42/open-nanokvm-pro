@@ -136,8 +136,10 @@ pkgs.stdenv.mkDerivation {
 
     # dt-bindings headers, so pkgs/dtb-mainline.nix compiles dts/ against the
     # exact kernel it will boot on rather than unpacking the tarball twice.
+    # -L: a few dt-bindings headers are symlinks into include/uapi (e.g.
+    # input/linux-event-codes.h), which we do not ship. Dereference them.
     mkdir -p "$out/include"
-    cp -r include/dt-bindings "$out/include/"
+    cp -rL include/dt-bindings "$out/include/"
 
     # The slot-image cap is on the COMPRESSED payload, but an Image that
     # already exceeds it uncompressed is a design error worth catching here.
