@@ -376,5 +376,24 @@ propose SG2002 work without flagging this gap up front.
   detector + H.264 Direct auto-fallback with a notice naming the flag SHIPPED (merged
   42070bb, on the device as `index-BZloHD67.js`; `useUndrawableVideoDetector.ts` keys on
   `new VideoFrame(videoElement).copyTo()` throwing — track/captureStream frames read fine
-  even when the screen is white). #69 closed.** Remaining targeted fixes: #67, #70, and
-  the WebRTC stream-type takeover hand-back described at the top of #69 (unfiled).
+  even when the screen is white). #69 closed.**
+  **2026-09-06 — the browser queue is EMPTY.** #67, #70 and the #69 stream-type
+  hand-back all shipped and are device-proven; #68 and #46 (done since 2026-09-05)
+  were closed as bookkeeping. Open issues are down to 17, and every one of them is
+  either an epic (#55, #26), `needs-human`, or open only pending a human bench/browser
+  check (#61, #64 cold boot, #66 supported-browser, #72 hardware-HEVC browser).
+  Evidence + reusable harnesses: `docs/reference/vcenc-open/stream-handback-20260906/`
+  (`handback_test.py` runs on the device, stdlib only; `cdp_reconnect.py` drives the
+  real UI in headless Chromium through the loopback tunnel). Three lessons worth
+  keeping: **build an A/B control by deploying the pre-fix binary** — the pre-change
+  server was one `nix build` from a throwaway git worktree away, and phase 3 going
+  58 → 0 → 58 frames is what makes the result mean anything; **for a page-lifetime
+  claim, use an oracle a reload destroys** (a wrapped `window.WebSocket` counter plus
+  a post-load sentinel), not a screenshot; and **the antd menu chain is
+  click-then-hover** — `components/menu-item.tsx` sets `trigger="click"` on the
+  sidebar while the video-mode Popover inside it is hover-triggered, so a harness
+  must do both, locating each by its lucide icon class rather than a translated
+  label. Still open on the #69 write-up: fix 3 (honour PLI/FIR in
+  `startRTCPReader`), which needs a force-IDR in libkvm first. Also unchanged: while
+  two consumers are connected one is necessarily starved — that is arbitration, not a
+  bug, and the page already says "inconsistent video mode".
