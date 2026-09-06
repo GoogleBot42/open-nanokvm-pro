@@ -151,7 +151,7 @@ PROBE = r"""
       const ctx = c.getContext('2d'); ctx.drawImage(v, 0, 0, 64, 36);
       const d = ctx.getImageData(0, 0, 64, 36).data; let s = 0, s2 = 0, white = 0, n = 0;
       for (let k = 0; k < d.length; k += 4) { const l = (d[k] + d[k+1] + d[k+2]) / 3; s += l; s2 += l*l; n++; if (d[k] > 245 && d[k+1] > 245 && d[k+2] > 245) white++; }
-      out.drawImage = { mean: +(s/n).toFixed(1), std: +Math.sqrt(s2/n - (s/n)**2).toFixed(1), whiteFrac: +(white/n).toFixed(3) };
+      const alphaSum = (() => { let a = 0; for (let k = 3; k < d.length; k += 4) a += d[k]; return a; })(); out.drawImage = { alphaSum, mean: +(s/n).toFixed(1), std: +Math.sqrt(s2/n - (s/n)**2).toFixed(1), whiteFrac: +(white/n).toFixed(3) };
     } catch (e) { out.drawImage = { error: String(e) }; }
   }
   const cv = document.querySelector('canvas#screen'); if (cv) out.canvas = { w: cv.width, h: cv.height };

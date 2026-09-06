@@ -91,3 +91,36 @@ opt-in canvas renderer (draw each `<video>` frame into `canvas#screen` on
 Files: `harness/` (scripts + local pages + the KWin desktop entry),
 `results/gpu-matrix.txt` (per-run `chrome://gpu` compositing/decode state and GPU string).
 No screenshots committed (they show the attached host's desktop).
+
+## Update, same night: REPRODUCED — trigger is `chrome://flags/#enable-vulkan`
+
+Jeremy bisected his profile: a fresh profile rendered, and the one flag that breaks
+it is **`#enable-vulkan`** (`--enable-features=Vulkan`, Skia's native Vulkan backend).
+Reproduced here immediately:
+
+| display server | `--enable-features=Vulkan` | source | on screen |
+|---|---|---|---|
+| KWin 6.7 virtual (radeonsi) | yes | local H.264 file (`local_file.html`) | **93 % white** (mean 238), Chromium's own capture 95 % white |
+| KWin 6.7 virtual | yes | `canvas.captureStream()` MediaStream (`local_video.html`) | OK — canvas-sourced frames bypass the import |
+| sway headless, gles2 radeonsi | yes | local H.264 file | **91 % white** |
+| Xvfb, llvmpipe, `--ignore-gpu-blocklist` | yes | local H.264 file | OK (Vulkan not actually engaged) |
+| KWin 6.7 virtual | no | local H.264 file, black clip | OK |
+
+Chromium 152 with the Vulkan backend fails to import software-decoded video frames
+on Wayland; every `<video>` mode (WebRTC, both MSE) is hit, the WebCodecs canvas
+modes and MJPEG are not. `--enable-unsafe-webgpu`, Skia Graphite, and ANGLE-Vulkan
+(`--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan`)
+do NOT reproduce it — it is specifically Skia-on-Vulkan.
+
+### Detector oracle (`local_oracle.html`, served same-origin via `python -m http.server`)
+
+| read path | Vulkan | healthy |
+|---|---|---|
+| 2D `drawImage` + `getImageData` | opaque black (alpha 255, RGB 0) | real pixels (mean 123) |
+| WebGL `texImage2D` + `readPixels` | black | real pixels |
+| `createImageBitmap(video)` | black | real pixels |
+| `captureStream()` → `MediaStreamTrackProcessor` → `VideoFrame.copyTo()` | **throws `InvalidStateError: Failed to read VideoFrame data`** | resolves, NV12, mean luma 126 |
+| genuinely black clip (`local_black.html`), healthy | — | opaque black, RGB 0: pixel tests **cannot** separate it from the failure |
+
+So the page-side fallback (see the `video-paint-fallback-20260905` evidence dir once it
+lands) keys on `copyTo` throwing, never on pixel values.

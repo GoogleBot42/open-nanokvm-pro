@@ -1,0 +1,28 @@
+<!doctype html><html><body style="margin:0;background:#000">
+<video id="screen" autoplay muted loop playsinline src="test1080.mp4" style="display:block;width:1400px;height:800px;object-fit:scale-down"></video>
+<script>
+const v = document.getElementById('screen');
+function lumaStats(d, stride) { let s=0,n=0,mx=0; for (let i=0;i<d.length;i+=stride){s+=d[i];n++;if(d[i]>mx)mx=d[i];} return {mean:+(s/n).toFixed(1),max:mx,n}; }
+async function probe() {
+  const out = {t: v.currentTime, frames: v.getVideoPlaybackQuality().totalVideoFrames};
+  // 1. 2D canvas drawImage
+  try { const c=document.createElement('canvas'); c.width=32; c.height=18; const x=c.getContext('2d'); x.drawImage(v,0,0,32,18);
+    out.draw2d = lumaStats(x.getImageData(0,0,32,18).data, 4); } catch(e) { out.draw2d = String(e); }
+  // 2. WebGL texImage2D + readPixels
+  try { const c=document.createElement('canvas'); c.width=32; c.height=18; const gl=c.getContext('webgl');
+    const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,v);
+    const fb=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,fb); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+    const px=new Uint8Array(1920*1080*4); gl.readPixels(0,0,1920,1080,gl.RGBA,gl.UNSIGNED_BYTE,px); out.webgl = lumaStats(px, 4*97); } catch(e) { out.webgl = String(e); }
+  // 3. raw frame via captureStream + MediaStreamTrackProcessor
+  try { const track = v.captureStream().getVideoTracks()[0]; const proc = new MediaStreamTrackProcessor({track}); const reader = proc.readable.getReader();
+    const {value: frame} = await reader.read(); if (frame) { const size = frame.allocationSize(); const buf = new Uint8Array(size); const layout = await frame.copyTo(buf);
+      const y = buf.subarray(layout[0].offset, layout[0].offset + layout[0].stride * frame.codedHeight);
+      out.raw = Object.assign({format: frame.format, w: frame.codedWidth}, lumaStats(y, 613)); frame.close(); } else out.raw = 'no frame';
+    reader.releaseLock(); track.stop(); } catch(e) { out.raw = String(e); }
+  // 4. createImageBitmap
+  try { const bm = await createImageBitmap(v); const c=document.createElement('canvas'); c.width=32; c.height=18; const x=c.getContext('2d'); x.drawImage(bm,0,0,32,18);
+    out.bitmap = lumaStats(x.getImageData(0,0,32,18).data, 4); bm.close(); } catch(e) { out.bitmap = String(e); }
+  console.log('ORACLE ' + JSON.stringify(out));
+}
+v.addEventListener('playing', () => { setTimeout(probe, 2000); setTimeout(probe, 4000); });
+</script></body></html>
