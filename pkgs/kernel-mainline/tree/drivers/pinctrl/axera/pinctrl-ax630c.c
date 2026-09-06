@@ -36,7 +36,6 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
-#include <linux/spinlock.h>
 
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinconf-generic.h>
@@ -68,16 +67,22 @@ struct ax630c_pinctrl {
 	struct pinctrl_dev *pctl;
 	void __iomem *base[2];
 	struct ax630c_dphytx dphytx;
-	/*
-	 * The pad word is read-modify-written. Per-pad set/clear aliases very
-	 * likely exist (the 0xC stride is a {VALUE, SET, CLR} slot), which
-	 * would make each field write atomic and retire this lock -- but that
-	 * has not been confirmed on hardware, so take the lock.
-	 */
-	spinlock_t lock;
 	/* Function selected before a pad was taken for GPIO, to restore. */
 	u8 saved_func[AX630C_NUM_PADS];
 };
+
+/*
+ * Each pad occupies a 12-byte slot of {VALUE, SET, CLR}: writing a 1 to a bit
+ * of SET sets that bit of VALUE, writing a 1 to a bit of CLR clears it, and
+ * both alias words read back as zero. Measured on the device 2026-09-06 --
+ * see docs/reference/mainline/device-reads-20260906/pull-and-alias-probe.md.
+ *
+ * So a field update is two writes that name only the bits they touch, never a
+ * read-modify-write, and pads do not contend with each other. That is why
+ * there is no lock in this driver.
+ */
+#define AX630C_PAD_SET	0x4
+#define AX630C_PAD_CLR	0x8
 
 static void __iomem *ax630c_pad_reg(struct ax630c_pinctrl *pc, unsigned int pin)
 {
@@ -86,18 +91,25 @@ static void __iomem *ax630c_pad_reg(struct ax630c_pinctrl *pc, unsigned int pin)
 	return pc->base[pad->window] + pad->offset;
 }
 
+/*
+ * Clear the bits of @mask that @val does not want, then set the ones it does.
+ *
+ * A multi-bit field therefore passes through the value with those bits clear
+ * -- for the function field, briefly function 0. That is acceptable: pinctrl
+ * arbitrates the pad (.strict = true), so nothing is driving it through a mux
+ * change, and the change itself is the disruption. The alternative, a single
+ * read-modify-write store, would be transient-free but would clobber any
+ * concurrent change to another field of the same pad.
+ */
 static void ax630c_pad_update(struct ax630c_pinctrl *pc, unsigned int pin,
 			      u32 mask, u32 val)
 {
 	void __iomem *reg = ax630c_pad_reg(pc, pin);
-	unsigned long flags;
-	u32 v;
 
-	spin_lock_irqsave(&pc->lock, flags);
-	v = readl(reg);
-	v = (v & ~mask) | (val & mask);
-	writel(v, reg);
-	spin_unlock_irqrestore(&pc->lock, flags);
+	if (mask & ~val)
+		writel(mask & ~val, reg + AX630C_PAD_CLR);
+	if (val & mask)
+		writel(val & mask, reg + AX630C_PAD_SET);
 }
 
 static u32 ax630c_pad_read(struct ax630c_pinctrl *pc, unsigned int pin)
@@ -427,7 +439,6 @@ static int ax630c_pinctrl_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	pc->dev = dev;
-	spin_lock_init(&pc->lock);
 
 	for (i = 0; i < ARRAY_SIZE(pc->base); i++) {
 		pc->base[i] = devm_platform_ioremap_resource(pdev, i);

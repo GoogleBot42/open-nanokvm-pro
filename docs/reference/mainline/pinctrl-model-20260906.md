@@ -144,8 +144,17 @@ address comparison.
 gets `0x…83` — bit 7 set, bit 6 clear — which under the G7 EN/SE encoding is
 "pull disabled, select up", i.e. no pull at all, while the same bit pattern on a
 G1 pad means pull-up. Either the table generator is encoding-blind, or the EN/SE
-reading is wrong for G7 specifically. **Unresolved — measure the pad on hardware
-before trusting either reading.**
+reading is wrong for G7 specifically.
+
+**Probed on hardware 2026-09-06 and still unresolved — this board cannot settle
+it** ([`device-reads-20260906/pull-and-alias-probe.md`](device-reads-20260906/pull-and-alias-probe.md)).
+A G7 pad (`MICN_L_D`) and a known one-hot pad (`VI_D2`) give identical readings
+across all four bias codes, which is consistent with one-hot but proves nothing:
+both sit on external pull-ups, where "internal pull-up" and "no pull" read alike.
+Deciding it needs a pad that floats *low*, and every G2/G5/G7 pad here is either
+externally pulled up or held low hard enough that no internal pull moves it. The
+driver keeps the EN/SE reading and the per-pad flag; a meter on a pad, not
+another register experiment, is what would change that.
 
 ### 1.5 Group MISC words
 
@@ -1127,9 +1136,12 @@ it:
 * **DPHY-TX sequencing** — §2.1. Take two `syscon` phandles (DPHY-TX soft-reset
   and MIPI-enable) on the pinctrl node and run the sequence before muxing a
   `CDTX_*` pad away from function 0.
-* **Locking**: one spinlock around read-modify-write of the pad word. If the
-  per-pad SET/CLR aliases turn out to work (§1.2), function/pull/schmitt/drive
-  can each be written atomically and the lock goes away — worth a hardware test.
+* **Locking**: none. The per-pad SET/CLR aliases were confirmed on hardware
+  2026-09-06 (`device-reads-20260906/pull-and-alias-probe.md`), so
+  function/pull/schmitt/drive are each written as a clear-then-set pair that
+  names only its own bits — no read, no cross-field clobber, no contention
+  between pads, and no lock. A multi-bit field passes briefly through the
+  bits-cleared value, which `.strict = true` makes harmless.
 * **No `regmap`**: two `devm_platform_ioremap_resource()` calls, indexed by the
   pad's `window` field. Drop the `SECOND_OFFSET` arithmetic.
 
@@ -1191,10 +1203,15 @@ Ranked by how much they can hurt the driver author:
    *mechanism* is still an inference. If mainline's own CSI driver ever writes
    pad words, this comes straight back.
 2. **The G2/G5/G7 pull encoding.** The driver says EN/SE, the DEMO table writes
-   one-hot values into those groups anyway (§1.4). Measure a G7 pad with a known
-   pull before trusting either reading.
-3. **Do per-pad SET/CLR aliases work?** Verified for the group MISC word only
-   (§1.2). Cheap to test, and it decides whether the driver needs a lock.
+   one-hot values into those groups anyway (§1.4). **Probed 2026-09-06 and still
+   open:** a G7 pad and a known one-hot pad read identically across all four bias
+   codes, but every G-group pad on this board is externally pulled up or hard-tied
+   low, so "pull-up" and "no pull" cannot be told apart here. Needs a meter, not
+   another register experiment.
+3. ~~**Do per-pad SET/CLR aliases work?**~~ **ANSWERED 2026-09-06: yes**, on
+   ordinary pad words as well as the group MISC word, in both directions and for
+   multi-bit fields; the alias words are write-only. The driver has no lock.
+   See `device-reads-20260906/pull-and-alias-probe.md`.
 4. **Group MISC0 field map.** Only bits `[8:7]` (I/O voltage) are known; the
    DEMO writes `[3:0] = 1` and bit 9 into every group with no explanation.
 5. **Bit 5 of the pad word.** Never written by anything. Slew rate? Open-drain?
