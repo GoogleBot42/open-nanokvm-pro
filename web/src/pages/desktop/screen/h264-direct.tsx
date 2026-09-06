@@ -21,6 +21,9 @@ type DirectPlayerProps = {
   onDecoderError?: (reason: string) => void;
 };
 
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 5000;
+
 // One WebSocket of [key:1][timestamp_us:8 LE][Annex-B] messages, decoded in a
 // worker and drawn onto an OffscreenCanvas. Codec-agnostic; H264Direct and
 // H265Direct only differ in the props.
@@ -36,6 +39,13 @@ export const DirectPlayer = ({ init, connect, decoderConfig, onDecoderError }: D
       return;
     }
 
+    const tag = init === 'init_h265' ? '[direct:h265]' : '[direct:h264]';
+
+    let disposed = false;
+    let ws: ReturnType<typeof connect> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = RECONNECT_MIN_MS;
+
     const worker = new DirectWorker();
     workerRef.current = worker;
 
@@ -48,28 +58,65 @@ export const DirectPlayer = ({ init, connect, decoderConfig, onDecoderError }: D
     const offscreen = canvasRef.current.transferControlToOffscreen();
     worker.postMessage({ type: init, canvas: offscreen, ...decoderConfig }, [offscreen]);
 
-    const ws = connect();
-    ws.binaryType = 'arraybuffer';
-
-    ws.onmessage = (event) => {
-      try {
-        worker.postMessage({ type: 'ws_message', data: event.data }, [event.data]);
-      } catch (error) {
-        console.error('Error processing WebSocket message:', error);
+    // Reconnect after a close (#67): upstream left the canvas frozen until the
+    // user refreshed, so a nanokvm.service restart, a resolution change that
+    // rebuilds the encoder channel or a transient network drop killed the
+    // stream for good. The worker owns the canvas and closes its decoder on
+    // 'close'/'error', so a reconnect only has to reopen the socket: the
+    // decoder rebuilds itself at the next key message, which carries its own
+    // parameter sets (see nanokvm-server.nix steps 9 and 10).
+    function open() {
+      if (disposed) {
+        return;
       }
-    };
 
-    ws.onerror = () => {
-      worker.postMessage({ type: 'error' });
-    };
+      const socket = connect();
+      ws = socket;
+      socket.binaryType = 'arraybuffer';
 
-    ws.onclose = () => {
-      worker.postMessage({ type: 'close' });
-    };
+      socket.onopen = () => {
+        reconnectDelay = RECONNECT_MIN_MS;
+        console.log(`${tag} WebSocket open`);
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          worker.postMessage({ type: 'ws_message', data: event.data }, [event.data]);
+        } catch (error) {
+          console.error(`${tag} error processing WebSocket message:`, error);
+        }
+      };
+
+      socket.onerror = () => {
+        worker.postMessage({ type: 'error' });
+      };
+
+      socket.onclose = () => {
+        if (disposed || ws !== socket) {
+          return;
+        }
+        ws = null;
+        worker.postMessage({ type: 'close' });
+        console.warn(`${tag} WebSocket closed; reconnecting in ${reconnectDelay} ms`);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          open();
+        }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+      };
+    }
+
+    open();
 
     return () => {
-      if (ws.readyState === 1) {
-        ws.close();
+      disposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      const socket = ws;
+      ws = null;
+      if (socket && socket.readyState === 1) {
+        socket.close();
       }
       worker.terminate();
     };

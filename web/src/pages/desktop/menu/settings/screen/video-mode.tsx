@@ -20,6 +20,8 @@ export const VideoMode = () => {
 
   const [videoMode, setVideoMode] = useAtom(videoModeAtom);
 
+  // No reload (#70): setting the atom is enough -- see the comment in
+  // menu/screen/video-mode.tsx.
   function update(value: string) {
     if (value === videoMode) {
       return;
@@ -27,10 +29,6 @@ export const VideoMode = () => {
 
     setVideoMode(value as TVideoMode);
     storage.setVideoMode(value);
-
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
   }
 
   return (

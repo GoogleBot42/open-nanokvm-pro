@@ -1,9 +1,10 @@
 import { Divider, Popover } from 'antd';
 import clsx from 'clsx';
-import { useAtomValue } from 'jotai';
+import { useAtom } from 'jotai';
 import { CheckIcon, TvMinimalPlayIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import type { VideoMode as TVideoMode } from '@/types';
 import { setVideoMode as setCookie } from '@/lib/localstorage.ts';
 import { getSupportedVideoModes } from '@/lib/video.ts';
 import { videoModeAtom } from '@/jotai/screen.ts';
@@ -35,19 +36,22 @@ const videoGroups = [
 
 export const VideoMode = () => {
   const { t } = useTranslation();
-  const videoMode = useAtomValue(videoModeAtom);
+  const [videoMode, setVideoMode] = useAtom(videoModeAtom);
 
   const supportedVideoModes = getSupportedVideoModes();
 
+  // Swap the player in place (#70). Upstream reloaded the whole page, which
+  // tore down the app and closed whatever menu or settings panel the mode was
+  // picked from. The Screen component already mounts the player for the mode
+  // atom and each player closes its own socket or peer connection on unmount,
+  // and menu/screen/index.tsx POSTs the new mode to the server (plus the
+  // bitrate/gop/fps/quality it needs) whenever the atom changes -- so setting
+  // the atom is the whole job.
   function update(mode: string) {
     if (mode === videoMode || !supportedVideoModes.includes(mode)) return;
 
     setCookie(mode);
-
-    // reload after changing video mode
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
+    setVideoMode(mode as TVideoMode);
   }
 
   const content = (
