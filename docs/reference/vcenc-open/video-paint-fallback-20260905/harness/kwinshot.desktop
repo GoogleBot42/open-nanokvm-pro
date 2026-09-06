@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=kwinshot
+Exec=/nix/store/b5bpi6zfajzzrwwpgba2q6li3nnya4bs-python3-3.14.7/bin/python3.14
+X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2
+NoDisplay=true

@@ -6,6 +6,7 @@ import * as api from '@/api/stream.ts';
 import { type MseCodec, mseCodecSupport } from '@/lib/video.ts';
 import { mouseStyleAtom } from '@/jotai/mouse';
 import { videoParametersAtom } from '@/jotai/screen.ts';
+import { useUndrawableVideoDetector } from '@/hooks/useUndrawableVideoDetector.ts';
 
 import MseWorker from './mse.worker.ts?worker';
 
@@ -48,6 +49,9 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
   const mouseStyle = useAtomValue(mouseStyleAtom);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // some browsers decode into a <video> they never paint (#69)
+  useUndrawableVideoDetector(videoRef);
 
   useEffect(() => {
     const video = videoRef.current;

@@ -13,6 +13,11 @@ export const videoParametersAtom = atom<VideoParameters>({
   quality: 80 // 1-100 (only for mjpeg)
 });
 
+// Raised by the <video> paint check (#69) when this browser decodes frames it
+// never paints. Held here, not in the player, because acting on it unmounts
+// the player: 'switched' = H.264 Direct took over, 'stay' = it could not.
+export const videoPaintNoticeAtom = atom<'switched' | 'stay' | null>(null);
+
 export const videoStatusAtom = atom<VideoStatus>(VideoStatus.Normal);
 
 export const videoVolumeAtom = atom(0);

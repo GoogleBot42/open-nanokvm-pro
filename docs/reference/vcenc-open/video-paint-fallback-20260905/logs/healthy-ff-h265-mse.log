@@ -1,0 +1,108 @@
+--- browser firefox 154.0.1
+--- run mode=h265-mse for=30.0s probes=[10.0, 30.0] actions=[] port=9445
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h265-mse"}
+--- probe t=10s
+{
+ "t": 10057,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 9.685792,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    4.133,
+    9.75
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 584,
+   "droppedVideoFrames": 0
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/ae854f57-f028-40ac-acc5-d2936669db96",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=30s
+{
+ "t": 30095,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 29.739097,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1.1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    24.967,
+    29.8
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 1786,
+   "droppedVideoFrames": 2
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/ae854f57-f028-40ac-acc5-d2936669db96",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/h-ff-h265mse.png (192668 bytes)
+--- console
+  [   0.12] info[log]: [mse] isTypeSupported avc1.4D002A: true
+  [   0.12] info[log]: [mse] isTypeSupported avc1.42E01F: true
+  [   0.12] info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  [   0.12] info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  [   0.12] info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  [   0.12] info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  [   0.17] info[log]: [mse:h265] MediaSource open
+  [   0.25] info[log]: [mse:h265] WebSocket open
+  [   0.31] info[log]: [mse:h265] init segment: 1920x1080 hvc1.1.2.L123.80 (741 B)
+  [   0.31] info[log]: [mse:h265] stream says hvc1.1.2.L123.80; isTypeSupported: true
+  [   0.31] info[log]: [mse:h265] loadedmetadata 1920x1080
+  [   4.97] info[log]: [mse:h265] 285 segments, 281 frames shown (0 dropped), 1920x1080, lag 0.083s, rate 1, first segment after 342 ms
+  [   9.97] info[log]: [mse:h265] 585 segments, 581 frames shown (0 dropped), 1920x1080, lag 0.054s, rate 1, first segment after 342 ms
+  [  14.97] info[log]: [mse:h265] 885 segments, 881 frames shown (0 dropped), 1920x1080, lag 0.074s, rate 1, first segment after 342 ms
+  [  19.97] info[log]: [mse:h265] 1185 segments, 1181 frames shown (0 dropped), 1920x1080, lag 0.078s, rate 1, first segment after 342 ms
+  [  24.97] info[log]: [mse:h265] 1485 segments, 1481 frames shown (1 dropped), 1920x1080, lag 0.049s, rate 1, first segment after 342 ms
+  [  29.99] info[log]: [mse:h265] 1786 segments, 1782 frames shown (2 dropped), 1920x1080, lag 0.058s, rate 1, first segment after 342 ms

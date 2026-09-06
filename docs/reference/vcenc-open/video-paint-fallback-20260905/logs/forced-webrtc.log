@@ -1,0 +1,63 @@
+--- run mode=h264-webrtc for=25.0s probes=[20.0, 25.0] actions=[1.0] port=9335
+--- action t=1.1s localStorage.setItem('nano-kvm-debug-force-undrawable','1')||'forced'
+   -> "forced"
+--- probe t=20s
+{
+ "t": 20320,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": {
+  "el": "#screen",
+  "width": 1920,
+  "height": 1080,
+  "clientWidth": 1920,
+  "clientHeight": 1080
+ },
+ "video": null,
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok",
+  "Chromium is not painting video frames Chromium is not painting decoded video frames (chrome://flags/#enable-vulkan does this); using H.264 Direct. Set that flag to Default to use the video-element modes."
+ ]
+}
+--- probe t=25s
+{
+ "t": 25430,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": {
+  "el": "#screen",
+  "width": 1920,
+  "height": 1080,
+  "clientWidth": 1920,
+  "clientHeight": 1080
+ },
+ "video": null,
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok",
+  "Chromium is not painting video frames Chromium is not painting decoded video frames (chrome://flags/#enable-vulkan does this); using H.264 Direct. Set that flag to Default to use the video-element modes."
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/forced.png (232152 bytes)
+--- console
+  [   0.18] log: [mse] isTypeSupported avc1.4D002A: true
+  [   0.18] log: [mse] isTypeSupported avc1.42E01F: true
+  [   0.18] log: [mse] isTypeSupported hvc1.1.2.L123.80: false
+  [   0.18] log: [mse] isTypeSupported hvc1.1.2.L153.80: false
+  [   0.18] log: [mse] isTypeSupported hev1.1.2.L123.80: false
+  [   0.18] log: [mse] isTypeSupported hev1.1.2.L153.80: false
+  [   5.39] warning: [video-paint] h264-webrtc: Chromium is not painting decoded video frames (chrome://flags/#enable-vulkan does this); switching to h264-direct
+  [   5.46] info[worker]: [direct] decoder configured: avc1.42E01F (default)
