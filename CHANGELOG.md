@@ -47,13 +47,24 @@ web UI becomes our own.
   healthy. The page now reads one frame from the element a couple of seconds
   into playback, and when the browser cannot hand it over it switches to
   H.264 Direct by itself, with a notice naming the flag.
+- **Direct players reconnect (#67).** H.264 and H.265 Direct now reopen their
+  WebSocket with backoff instead of freezing on a closed one, so a service
+  restart, an OTA or a transient drop no longer needs a page refresh. The
+  decoder rebuilds at the next key frame, which carries its own parameter sets.
+- **Changing the video mode no longer reloads the page (#70).** The player is
+  swapped in place, so the menu or settings panel the mode was picked from
+  stays open.
+- **The stream is handed back (#69).** One capture channel serves every viewer,
+  and whoever connects last takes it. Before, nobody gave it back: a second
+  browser or tab in another mode — or a single `curl /api/stream/mjpeg` — left
+  the first viewer starved for good, which is what turned a WebRTC page white
+  until it was reloaded. A consumer that loses its last client now passes the
+  stream to whichever one still has viewers, and that page recovers on its own.
 - **Fixes.** libkvm self-heals capture starvation and live geometry changes
   (#65).
-- Known: the WebCodecs direct players still need a page refresh after a service
-  restart (#67); the Chromium Vulkan bug behind #69 is not fixed, only worked
-  around — H.265 needs a video element, so H.265 modes stay unusable there
-  until the flag is set back to Default; changing the video mode reloads the
-  page (#70).
+- Known: the Chromium Vulkan bug behind #69 is not fixed, only worked around —
+  H.265 needs a video element, so H.265 modes stay unusable there until the flag
+  is set back to Default.
 
 ## v2.1.0-alpha.4
 
