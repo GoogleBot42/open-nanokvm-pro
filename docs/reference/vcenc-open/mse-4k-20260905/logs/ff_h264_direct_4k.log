@@ -1,0 +1,62 @@
+--- browser firefox 154.0.1
+--- run mode=h264-direct for=18.0s probes=[6.0, 18.0] actions=[] port=9444
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h264-direct"}
+--- probe t=6s
+{
+ "t": 6061,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": {
+  "el": "#screen",
+  "width": 3840,
+  "height": 2160,
+  "clientWidth": 1366,
+  "clientHeight": 768
+ },
+ "video": null,
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=18s
+{
+ "t": 18090,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": {
+  "el": "#screen",
+  "width": 3840,
+  "height": 2160,
+  "clientWidth": 1366,
+  "clientHeight": 768
+ },
+ "video": null,
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h264_direct_4k.png (184085 bytes)
+--- console
+  [   0.11] info[log]: [mse] isTypeSupported avc1.4D002A: true
+  [   0.11] info[log]: [mse] isTypeSupported avc1.42E01F: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  [   0.29] info[log]: [direct] decoder configured: avc1.42E01F (default)

@@ -3734,3 +3734,32 @@ live, survives a `nanokvm` restart without reload); Chromium headless plays H.26
 (1201 frames, 44 ms lag); ffmpeg decodes the remuxed fMP4 with zero errors. Evidence:
 `docs/reference/vcenc-open/mse-player-20260905/`. Unverified: a browser with hardware
 HEVC in WebCodecs, 4K HEVC via MSE, a mid-stream resolution change.
+
+### 2026-09-05 (later, web) — 4K HEVC through MSE and a live resolution change (#72)
+
+There is no resolution API: the encoder follows the HDMI source, `libkvm` re-reads
+`/proc/lt6911_info` at 2 Hz and re-inits the pipeline on a change, and
+`OPENKVM_FORCE_GEOM` (init-time `getenv`) disables that poll. So a resolution change
+is an EDID switch — the UI's own `POST /api/vm/edid` — and the bench host follows it
+in ~6 s from POST to a new-geometry init segment in the browser.
+
+At `E18-4K30FPS` (source 3840x2160@29) headless Firefox 154 plays **4K HEVC in
+`<video>` through MSE with no WebCodecs involved**: `hvc1.1.2.L153.80`, 597 frames /
+25 s, 21 dropped, 40–140 ms behind the last append, first segment 520 ms; `h265-direct`
+auto-selects MSE there. H.264 MSE at 4K: 601 frames Firefox, 613 Chromium (14 dropped,
+55–63 ms). Throughput is the pipeline, not the player — 1080p60 delivers a flat 60.0
+fps, 4K30 delivers 24.5 fps identically in both codecs and browsers.
+
+Resolution change **while playing**, 4K → 1080p → 4K with no reload: one new init
+segment per switch, the codec string moving with the level
+(`hvc1.1.2.L153.80` ↔ `L123.80`, `avc1.4D0033` ↔ `4D002A`), `changeType` accepted both
+ways, `videoWidth` following, `readyState` dipping 3 → 2 for a beat. 2885–2896 frames
+per 90 s run, zero `QuotaExceededError`, zero `<video>` errors, zero reconnects, in
+Firefox (H.265 and H.264) and Chromium (H.264). Hardening that went in with it: probe
+`isTypeSupported` for the NEW codec string before `changeType`, rebuild the SourceBuffer
+if `changeType` is missing or throws, never drop an init segment under memory pressure.
+Also fixed the upstream quirk where a stored video mode the browser cannot play started
+the WebRTC player silently: `resolveVideoMode()` now honours it or rewrites it to the
+nearest mode that plays, with a notice. Evidence:
+`docs/reference/vcenc-open/mse-4k-20260905/`. Still unverified: a browser with hardware
+HEVC in WebCodecs.
