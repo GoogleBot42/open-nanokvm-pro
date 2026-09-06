@@ -75,6 +75,17 @@ Package names below are confirmed against `flake.nix`
 
 # Variant: web bundle (`nanokvm-web`)
 
+Source is the in-tree fork `web/` since 2026-09-05 (no patch stack). Two traps
+learned that day: (a) the server serves `index.html` with no cache headers and a
+1970 Last-Modified, so a normal browser reload keeps the OLD bundle (or a mix of
+old and new chunks) for years — verify with cache disabled / a fresh profile and
+tell Jeremy to hard-refresh (#71); `curl -sk https://127.0.0.1/ | grep -o
+'assets/index-[^"]*\.js'` on the device shows what is actually served. (b) Prove
+UI behaviour in a real browser, not by reading code: the harnesses under
+`docs/reference/vcenc-open/{h264-direct-chromium,mse-player}-20260905/harness/`
+run the real UI in headless Chromium (CDP) or Firefox (screenshot) through an SSH
+loopback tunnel (`tunnel.sh`, device treats 127.0.0.1 as authenticated).
+
 Proven flow (2026-08-15, deploying the dead-extensions patch):
 
 1. `nix build .#nanokvm-web --out-link <scratch>/result-web` — output is the
