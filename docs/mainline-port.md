@@ -174,10 +174,10 @@ have / can be dropped).
 | GIC | `arm,gic-400` @`0x1850000` (GICv2) | `irq-gic` | standard | DT only | S | boot |
 | Timer | `arm,armv7-timer`, 24 MHz, `arm,cpu-registers-not-fw-configured` | `arch_timer` | standard | DT only | S | boot |
 | OP-TEE | `linaro,optee-tz` (OP-TEE 3.21, 32 MB `no-map` @`0x44200000`) | `drivers/tee/optee` (`CONFIG_OPTEE=y`) | standard; **nothing in the vendor stack uses it** (no `TEEC_*`, no `tee_*` imports in any blob, V) | keep the `no-map` reservation (ATF firewalls it); `CONFIG_OPTEE` optional | S | boot (the reservation) |
-| Clocks | 9 provider nodes `axera,ax620x-{cpu,common,dispc,flash,isp,mm,periph,vpu,pllc}-clk` + `syscon` (`0x1900000`, `0x2340000`, `0x4600000`, `0x10030000`, `0x2500000`, `0x4430000`, `0x4870000`, `0x4030000`, `0x2210000`); 493 IDs in `dt-bindings/clock/ax620e-clock.h`, 247 registered | `drivers/clk/axera/clk-ax620e.c` 572 + `clk.c` 668 LOC (`clk.c` is a rename-fork of `drivers/clk/hisilicon/clk.c`) | Axera-custom: 86 gates (all one flag → `clk_hw_register_gate`), muxes/dividers, **one** runtime-programmed fractional-N PLL (CPUPLL); the other PLLs are bootloader-set and modelled as `fixed_factor` (V) | **new driver** (table-driven CCF, ~1.5–2 kLOC); a gate-only subset is enough for bring-up because the vendor peripheral drivers each gate their own clock via the periph syscon — mainline drivers will expect `clocks =` instead | M | boot |
+| Clocks | 9 provider nodes `axera,ax620x-{cpu,common,dispc,flash,isp,mm,periph,vpu,pllc}-clk` + `syscon` (`0x1900000`, `0x2340000`, `0x4600000`, `0x10030000`, `0x2500000`, `0x4430000`, `0x4870000`, `0x4030000`, `0x2210000`); 493 IDs in `dt-bindings/clock/ax620e-clock.h`, **246 registered** (the 247th `clk_summary` row is `sysclk`, an unrelated DT `fixed-clock` -- corrected 2026-09-06 by clk-model-20260906.md) | `drivers/clk/axera/clk-ax620e.c` 572 + `clk.c` 668 LOC (`clk.c` is a rename-fork of `drivers/clk/hisilicon/clk.c`) | Axera-custom: 86 gates (all one flag → `clk_hw_register_gate`), muxes/dividers, **one** runtime-programmed fractional-N PLL (CPUPLL); the other PLLs are bootloader-set and modelled as `fixed_factor` (V) | **new driver** (table-driven CCF, ~1.5–2 kLOC); a gate-only subset is enough for bring-up because the vendor peripheral drivers each gate their own clock via the periph syscon — mainline drivers will expect `clocks =` instead | M | boot |
 | Resets | 18 provider nodes `axera,axera_reset_match` + `syscon`, `#reset-cells` = 3 (`<bit reg polarity>`), 4 (`<set_bit set_reg clr_bit clr_reg>`) or 10 (4-cell + a clock gate closed across the reset) — all data in consumer phandle args | `drivers/reset/axera_reset/axera_reset.c` 298 LOC | Axera-custom SET/CLR reset controller (V) | **new driver**; mainline wants `#reset-cells = <1>` + an in-driver table harvested from the ~60 consumers (`reset-simple` cannot express the vendor specifier) | S–M | boot |
-| Pinctrl / pinmux | `axera,ax620e-pinctrl` @`0x2300000` (+`0x104f0000`); 6855-line `AX620E_pinctrl.dtsi` = 111 pins × 551 single-group functions / 563 states. **The board relies on a replayed table, not DT states:** `drivers/soc/axera/pinmux/ax_pinmux.c` self-registers at `arch_initcall` and writes the SDK `AX630C_DEMO_pinmux.h` `<addr,value>` pairs (~66 writes, incl. `0x02300060 = 0x00060003` VI_D7 → GPIO0_A7); U-Boot applies the same table first. The board dts `/delete-property/`s `pinctrl-0` on every I2C node | `drivers/pinctrl/axera/pinctrl-ax620e.c` 728 + `ax_pinmux.c` 225 LOC | Axera-custom, one word per pad, stride `0xC`, function `[18:16]`, pull `[7:6]`, drive `[3:0]` (V) | **new driver + remodelled DT** (~30 real multi-group functions, regenerated dtsi, I2C states restored). Not needed for first boot (U-Boot's table pass persists). This is also the **root of the SW_PWR trap**: the DEMO table muxes VI_D7 to GPIO at init, capture re-muxes it, nothing re-applies; `gpio-axera` overrides `chip.request` with a no-op so `pinctrl_gpio_request()` never runs — a correct mainline pinctrl+GPIO pair fixes it for free | **L** (data model) | KVM |
-| GPIO | `axera,ax-apb-gpio` ×4 (`0x4800000`, `0x4801000`, `0x6000000`, `0x6001000`, SPI 114–117), 128 `gpio-ranges` | `drivers/gpio/gpio-axera.c` 538 LOC (defconfig also has `GPIO_DWAPB=y`, unused) | DesignWare *names* only: **one 32-bit register per GPIO** at `base + (n+1)*4` with DR/DDR/INTEN/… as bit fields, relocated port regs (`EXT_PORTA 0x8c`, secure/non-secure INTSTATUS `0x84/0xa4`), raw clock pokes at `0x4870000` (V) | **new driver** (~500 LOC); `gpio-dwapb` cannot bind | S–M | KVM (ATX, panel, LT6911 pins) |
+| Pinctrl / pinmux | `axera,ax620e-pinctrl` @`0x2300000` (+`0x104f0000`); 6855-line `AX620E_pinctrl.dtsi` = 111 pins × 551 single-group functions / 563 states. **The board relies on a replayed table, not DT states:** `drivers/soc/axera/pinmux/ax_pinmux.c` self-registers at `arch_initcall` and writes the SDK `AX630C_DEMO_pinmux.h` `<addr,value>` pairs (**133 writes** -- 22 group-MISC plus exactly one per pad; corrected 2026-09-06 by pinctrl-model-20260906.md -- incl. `0x02300060 = 0x00060003` VI_D7 → GPIO0_A7); U-Boot applies the same table first. The board dts `/delete-property/`s `pinctrl-0` on every I2C node | `drivers/pinctrl/axera/pinctrl-ax620e.c` 728 + `ax_pinmux.c` 225 LOC | Axera-custom, one word per pad, stride `0xC`, function `[18:16]`, pull `[7:6]`, drive `[3:0]` (V) | **new driver + remodelled DT** (**56** real multi-group functions, regenerated dtsi, I2C states restored). Not needed for first boot (U-Boot's table pass persists). This is also the **root of the SW_PWR trap**: the DEMO table muxes VI_D7 to GPIO at init, capture re-muxes it, nothing re-applies; `gpio-axera` overrides `chip.request` with a no-op so `pinctrl_gpio_request()` never runs — a correct mainline pinctrl+GPIO pair fixes it for free | **L** (data model) | KVM |
+| GPIO | `axera,ax-apb-gpio` ×4 (`0x4800000`, `0x4801000`, `0x6000000`, `0x6001000`, SPI 114–117), **97** `gpio-ranges` (not 128; corrected 2026-09-06) | `drivers/gpio/gpio-axera.c` 538 LOC (defconfig also has `GPIO_DWAPB=y`, unused) | DesignWare *names* only: **one 32-bit register per GPIO** at `base + (n+1)*4` with DR/DDR/INTEN/… as bit fields, relocated port regs (`EXT_PORTA 0x8c`, secure/non-secure INTSTATUS `0x84/0xa4`), raw clock pokes at `0x4870000` (V) | **new driver** (~500 LOC); `gpio-dwapb` cannot bind | S–M | KVM (ATX, panel, LT6911 pins) |
 | Watchdog | `axera,ax-wdt` @`0x4840000` (wdt0) + `0x6040000` (wdt2) | `drivers/watchdog/ax_wdt.c` 514 LOC (`CONFIG_AX_WATCHDOG=y`, `NOWAYOUT=y`) | **not** DesignWare: EN `+0x00`, TORR `+0x0c`, start `+0x18`, count `+0x24`, kick `+0x30` magic `0x61696370` (V) | **new driver, mandatory**: U-Boot arms wdt0 for 30 s before `booti`; the vendor kernel pets it from the WDT's own ISR and reboots through `ax_wdt_restart()` because PSCI reset is absent | S | **boot** |
 | Thermal + ADC | `axera,ax620e-tsensor` @`0x2000000` (trips 80/105/120 °C) and `axera,ax620e-adc` (no `reg`; the driver `ioremap`s the *same* `0x2000000` block — one analog-monitor IP). `in_voltage0_raw` is the **board-id** the loader turns into DRAM size / pool geometry | `drivers/thermal/axera_thermal.c` 487 + `drivers/iio/adc/axera_adc.c` 307 LOC | Axera-custom 10-bit sensor block (V). **Thermal is decorative today**: no `cooling-maps` anywhere, `CPU_THERMAL` off, the 120 °C trip is typed `passive` — the SoC neither throttles nor shuts down | one new driver exposing `#thermal-sensor-cells` + `#io-channel-cells` (~200 LOC); DRAM size becomes a per-board DT fact | S | opt |
 | UID / identity | `ax,ax_hwinfo` → `/proc/ax_proc/uid`, read by the initramfs for `device_key` → MAC + hostname | `drivers/soc/axera/ax_hwinfo/ax_hwinfo.c` 261 LOC | **not an efuse peripheral**: it `memcpy`s the `misc_info_t` the bootloader leaves in IRAM0 at `0x740` (`uid_l/uid_h` at `+0x48/+0x4c`; `include/linux/soc/axera/ax_boardinfo.h`) (V) | tiny `nvmem` (or `syscon`) over that IRAM window, **or** have our U-Boot derive `ethaddr` from the UID and let its existing `fdt_fixup_ethernet()` write `local-mac-address` (no kernel driver at all). Without either, every unit gets the same MAC | S | KVM (identity) |
@@ -546,7 +546,7 @@ this section); everything else is open.
    ATF/U-Boot slot failover that updates.md still lists as unexercised.
    Depends on: #78.
 7. **#80 Full clock driver + pinctrl (data model + driver)** — Extend the
-   gate-only CCF driver to the 247 registered clocks incl. the fractional-N
+   gate-only CCF driver to the 246 registered clocks incl. the fractional-N
    CPUPLL (`cpufreq-dt` follows); pinctrl driver + a regenerated dtsi (~30
    multi-group functions instead of 551 single-group ones), restoring the
    I2C `pinctrl-0` states the board dts deletes and turning the DEMO pad
@@ -618,6 +618,47 @@ survived (trap 1), and the ATF/OP-TEE reservations are present.
 
 This does not boot. U-Boot arms wdt0 for 30 s before `booti` and nothing here
 pets it (trap 3) — that is #75.
+
+### What exists now (#80, 2026-09-06)
+
+The clock and pin-control drivers, in the kernel and building. Both were
+written from data-model specifications rather than ported from the vendor
+drivers: [clk-model-20260906.md](reference/mainline/clk-model-20260906.md) and
+[pinctrl-model-20260906.md](reference/mainline/pinctrl-model-20260906.md), each
+reconciled against read-only captures from a running device
+(`reference/mainline/device-reads-20260906/`).
+
+`pkgs/kernel-mainline/tree/` is a graft: files laid out at the path they would
+occupy upstream, copied into the kernel tree at `postPatch` and hooked into
+each subsystem's Kconfig and Makefile in the alphabetical slot upstream would
+use. That is what makes #87's submission a `git add` instead of a re-layout.
+Both drivers are built in, not modular — a clock provider and a pinctrl driver
+are needed long before there is a rootfs.
+
+`drivers/clk/axera/` registers **246** clocks over eight controllers (one
+driver, match data selects the table). It takes the syscon regmap rather than a
+private `ioremap`, so it shares a lock with the reset driver #76 will add to the
+same windows. **CPUPLL is read-only**: firmware leaves it at 1.2 GHz, this
+part's ceiling, and with it fixed all five CPU OPPs are pure mux switches — which
+removes the one real hazard in the tree, since relocking that PLL can stop the
+clock feeding the running core and the silicon has no interlock.
+
+`drivers/pinctrl/axera/` covers **111 pads / 56 functions / 167 groups**. Two
+behaviours differ from the vendor deliberately: `set_mux()` refuses a function
+the pad does not implement (the vendor writes mux 0 and returns success, and 337
+of 888 slots are unpopulated), and `gpio_request_enable()` programs the mux,
+which is the root fix for the SW_PWR trap.
+
+**No pin states are declared in the DT yet, on purpose.** The bootloader
+programs every pad before Linux starts, so a state that merely restates that is
+a second source of truth. The states this issue still owes — the I2C ones the
+vendor board dts deletes, and the 40 DEMO-table entries whose electrical config
+no DT state carries — attach to nodes that do not exist until #76 (I2C) and #81
+(GPIO), so they land with those.
+
+Not booted, and cannot be until #75. What is verified is that the kernel builds,
+both drivers link in with their initcalls registered, the dtb builds, and the
+table counts hold when counted back out of the compiled objects.
 
 ---
 
