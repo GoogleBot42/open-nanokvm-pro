@@ -65,8 +65,41 @@ pkgs.stdenv.mkDerivation {
 
   configFragment = ./kernel-mainline/ax630c.config;
 
+  # Our own in-tree drivers, laid out at the path they would occupy upstream so
+  # that #87's submission is a `git add`, not a re-layout. Grafted into the
+  # kernel tree in postPatch below. Built in, not modular: a clock provider and
+  # a pinctrl driver are needed long before there is a rootfs to load a .ko from.
+  treeGraft = ./kernel-mainline/tree;
+
   postPatch = ''
     patchShebangs scripts
+
+    # --- graft our in-tree drivers (#80 clk + pinctrl) --------------------
+    cp -r "$treeGraft"/. .
+    chmod -R u+w drivers include
+
+    # Hook each grafted directory into its subsystem's Kconfig and Makefile,
+    # in the alphabetical slot upstream would put it. `sed` is doing an
+    # insertion, so assert it landed -- a silently missed hook would build a
+    # kernel with no clock driver and fail much later and much less clearly.
+    # $1 = subsystem dir, $2 = the existing entry we sort ourselves after,
+    # $3 = the tab run that keeps our Makefile line in the file's column. The
+    # entry is unconditional obj-y: the Kconfig symbols gate it from inside our
+    # own Makefile, which is how a directory with several symbols does it
+    # upstream.
+    graft_into() {
+      sed -i "s|^source \"drivers/$1/$2/Kconfig\"|&\nsource \"drivers/$1/axera/Kconfig\"|" \
+        "drivers/$1/Kconfig"
+      grep -q "^source \"drivers/$1/axera/Kconfig\"" "drivers/$1/Kconfig" \
+        || { echo "ERROR: could not hook drivers/$1/axera into Kconfig" >&2; exit 1; }
+
+      sed -i "s|^obj-[^ \t]*[ \t]*+= $2/|&\nobj-y$3+= axera/|" "drivers/$1/Makefile"
+      grep -qF "obj-y$3+= axera/" "drivers/$1/Makefile" \
+        || { echo "ERROR: could not hook drivers/$1/axera into the Makefile" >&2; exit 1; }
+    }
+
+    graft_into clk     aspeed "$(printf '\t\t\t\t\t')"
+    graft_into pinctrl aspeed "$(printf '\t\t\t\t')"
   '';
 
   configurePhase = ''
@@ -89,7 +122,9 @@ pkgs.stdenv.mkDerivation {
     # --- assert the fragment survived olddefconfig ------------------------
     for opt in CONFIG_BLK_DEV_INITRD CONFIG_SERIAL_8250_DW CONFIG_WATCHDOG \
                CONFIG_PSTORE_RAM CONFIG_DMA_CMA CONFIG_NAMESPACES \
-               CONFIG_OVERLAY_FS CONFIG_TMPFS_XATTR; do
+               CONFIG_OVERLAY_FS CONFIG_TMPFS_XATTR \
+               CONFIG_COMMON_CLK_AX630C CONFIG_PINCTRL_AX630C \
+               CONFIG_MFD_SYSCON; do
       grep -q "^$opt=y" build/.config \
         || { echo "ERROR: $opt did not survive olddefconfig" >&2; exit 1; }
     done

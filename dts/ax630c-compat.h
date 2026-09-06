@@ -30,4 +30,20 @@
  */
 #define AX630C_WDT_COMPAT		"axera,ax630c-wdt"
 
+/*
+ * Clock controllers (#80). Nine windows in the vendor tree; eight here --
+ * "axera,ax620x-isp-clk" is dropped because it never had an implementation,
+ * in the vendor kernel or anywhere else. Each is also a "syscon": the windows
+ * carry reset and pinmux-adjacent registers that other drivers need, so the
+ * clock driver shares a regmap with them rather than mapping privately.
+ */
+#define AX630C_PLLC_CLK_COMPAT		"axera,ax630c-pllc-clk"
+#define AX630C_CPU_CLK_COMPAT		"axera,ax630c-cpu-clk"
+#define AX630C_COMMON_CLK_COMPAT	"axera,ax630c-common-clk"
+#define AX630C_DISPC_CLK_COMPAT		"axera,ax630c-dispc-clk"
+#define AX630C_FLASH_CLK_COMPAT		"axera,ax630c-flash-clk"
+#define AX630C_MM_CLK_COMPAT		"axera,ax630c-mm-clk"
+#define AX630C_PERIPH_CLK_COMPAT	"axera,ax630c-periph-clk"
+#define AX630C_VPU_CLK_COMPAT		"axera,ax630c-vpu-clk"
+
 #endif /* _DTS_AX630C_COMPAT_H */

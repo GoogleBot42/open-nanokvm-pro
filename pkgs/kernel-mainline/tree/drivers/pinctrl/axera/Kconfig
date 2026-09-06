@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config PINCTRL_AX630C
+	bool "Axera AX630C (AX620E) pin controller"
+	depends on ARM64 || COMPILE_TEST
+	depends on OF
+	select GENERIC_PINCTRL_GROUPS
+	select GENERIC_PINMUX_FUNCTIONS
+	select GENERIC_PINCONF
+	select MFD_SYSCON
+	help
+	  Pin multiplexing and pin configuration for the Axera AX630C and the
+	  rest of the AX620E family: 111 pads across two register windows, with
+	  a 3-bit function select and per-pad bias, drive-strength and schmitt
+	  configuration.
+
+	  Say Y if you are building a kernel for an AX620E-family SoC. There is
+	  no module option: pads must be muxed before the peripherals that use
+	  them probe.

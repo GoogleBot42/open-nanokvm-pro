@@ -114,6 +114,99 @@
 		};
 
 		/*
+		 * Clock controllers (#80). Grouped rather than scattered
+		 * through the address ordering, because they are one driver
+		 * and one data model: the register maps and per-clock tables
+		 * are docs/reference/mainline/clk-model-20260906.md, which was
+		 * reconciled clock by clock against a running device.
+		 *
+		 * Every window is 64 KiB and every one is also a syscon. The
+		 * eight here register 246 clocks between them; the vendor's
+		 * ninth ("isp") is omitted because no driver has ever
+		 * implemented it, as is the whole ddr namespace.
+		 *
+		 * No node carries assigned-clocks yet. The bootloader leaves
+		 * the tree in a working state -- CPUPLL locked at 1.2 GHz, the
+		 * UART fed from cpll_208m, the Ethernet refs already selected
+		 * -- and a first mainline boot should change nothing it does
+		 * not have to.
+		 */
+		/*
+		 * Pin controller (#80). 111 pads in two windows that form one
+		 * logical offset space; the driver keeps each pad's offset
+		 * local to its own window rather than reproducing the vendor's
+		 * SECOND_OFFSET arithmetic.
+		 *
+		 * No pin states are declared here yet. The bootloader programs
+		 * every pad before Linux starts, so the board comes up muxed
+		 * correctly without them, and a state that merely restates what
+		 * firmware already did is a second source of truth. States
+		 * arrive with the drivers that need them to CHANGE something --
+		 * which, for the SW_PWR line, is the point of this driver: a
+		 * GPIO consumer now programs its own mux.
+		 *
+		 * axera,dphytx-reset / axera,dphytx-mipien are deliberately
+		 * absent. The six CDTX_* pads need the D-PHY transmitter parked
+		 * before they can be muxed off function 0, and the syscon that
+		 * holds the MIPI-enable bit has no node until the video stack
+		 * lands (#83). Until then the driver refuses those six pads
+		 * rather than half-programming them.
+		 */
+		pinctrl: pinctrl@2300000 {
+			compatible = "axera,ax630c-pinctrl";
+			reg = <0x0 0x2300000 0x0 0xb000>,
+			      <0x0 0x104f0000 0x0 0x3000>;
+		};
+
+		cpu_clk: clock-controller@1900000 {
+			compatible = AX630C_CPU_CLK_COMPAT, "syscon";
+			reg = <0x0 0x1900000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		pllc_clk: clock-controller@2210000 {
+			compatible = AX630C_PLLC_CLK_COMPAT, "syscon";
+			reg = <0x0 0x2210000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		common_clk: clock-controller@2340000 {
+			compatible = AX630C_COMMON_CLK_COMPAT, "syscon";
+			reg = <0x0 0x2340000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		vpu_clk: clock-controller@4030000 {
+			compatible = AX630C_VPU_CLK_COMPAT, "syscon";
+			reg = <0x0 0x4030000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		mm_clk: clock-controller@4430000 {
+			compatible = AX630C_MM_CLK_COMPAT, "syscon";
+			reg = <0x0 0x4430000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		dispc_clk: clock-controller@4600000 {
+			compatible = AX630C_DISPC_CLK_COMPAT, "syscon";
+			reg = <0x0 0x4600000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		periph_clk: clock-controller@4870000 {
+			compatible = AX630C_PERIPH_CLK_COMPAT, "syscon";
+			reg = <0x0 0x4870000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		flash_clk: clock-controller@10030000 {
+			compatible = AX630C_FLASH_CLK_COMPAT, "syscon";
+			reg = <0x0 0x10030000 0x0 0x10000>;
+			#clock-cells = <1>;
+		};
+
+		/*
 		 * DesignWare APB UARTs. 8250_dw binds these unmodified; the
 		 * vendor's 8250_axera.c is a fork of it. clock-frequency
 		 * replaces a clocks phandle until the clk driver lands (#80).
@@ -150,6 +243,12 @@
 		 * change. Two windows: the WDT itself, then the peripheral
 		 * clock/reset syscon the vendor driver pokes directly (it
 		 * predates any clk provider for this block).
+		 *
+		 * That second window is now periph_clk's, and #80 made it a
+		 * syscon. #75 must NOT ioremap it a second time -- overlapping
+		 * request_mem_region()s fail. Take a syscon phandle to
+		 * &periph_clk (or, better, a clocks/resets phandle now that a
+		 * provider exists) and drop the second reg entry.
 		 */
 		wdt0: watchdog@4840000 {
 			compatible = AX630C_WDT_COMPAT;
