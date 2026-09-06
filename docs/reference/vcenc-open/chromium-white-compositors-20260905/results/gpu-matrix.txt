@@ -1,0 +1,23 @@
+run-headed-default disabled_software disabled_software | ANGLE (Mesa, llvmpipe (LLVM 21.1.8 256 bits), OpenGL 4.6 (Core Profile
+run-headed-gpu enabled enabled | ANGLE (Mesa, llvmpipe (LLVM 21.1.8 256 bits), OpenGL 4.6 (Core Profile
+run-headed-mse disabled_software disabled_software | ANGLE (Mesa, llvmpipe (LLVM 21.1.8 256 bits), OpenGL 4.6 (Core Profile
+run-headed-nogpu disabled_software disabled_software | 
+run-kwin-file enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-kwin-ksd enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-kwin-mediastream enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-kwin-mse enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-kwin-scale2 enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-kwin-webrtc enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-weston-cm enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-weston-cm-gray enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-weston-cm-gray2 enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-weston-cm-nogpu disabled_software disabled_software | 
+run-weston-nocm enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-gles-file enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-gles-file-gchrome enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-gles-file-swdec enabled disabled_software | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-gles-local enabled enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-nogpu disabled_software disabled_software | 
+run-wl-nogpucomp disabled_software enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-pixman disabled_software enabled | ANGLE (AMD, AMD Radeon 8060S Graphics (radeonsi strix_halo ACO), OpenG
+run-wl-vulkan enabled enabled | ANGLE (AMD, Vulkan 1.4.354 (AMD Radeon 8060S Graphics (RADV STRIX_HALO

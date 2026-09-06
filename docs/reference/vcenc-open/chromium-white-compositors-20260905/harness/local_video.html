@@ -1,0 +1,7 @@
+<!doctype html><html><body style="margin:0;background:#000">
+<video id="screen" autoplay muted playsinline style="display:block;width:1400px;height:800px;object-fit:scale-down"></video>
+<script>
+const c = document.createElement('canvas'); c.width = 1920; c.height = 1080; const x = c.getContext('2d'); let t = 0;
+setInterval(() => { x.fillStyle = `rgb(${(t*3)%255},${(t*7)%255},80)`; x.fillRect(0,0,1920,1080); x.fillStyle='#fff'; x.font='120px sans-serif'; x.fillText('frame '+t, 200, 500); t++; }, 33);
+document.getElementById('screen').srcObject = c.captureStream(30);
+</script></body></html>
