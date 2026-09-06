@@ -29,12 +29,24 @@ web UI becomes our own.
 - **Chromium fix (#68).** H.264 Direct no longer shows a white screen in
   Chromium: SPS/PPS ride in every key message. The H.265 option is never greyed
   out by a probe; fallback to H.264 happens only on a real decoder failure.
+- **4K H.265 in the browser and live resolution changes (#72).** The MSE player
+  plays 3840x2160 HEVC in Firefox and follows an HDMI mode change mid-stream
+  with a new init segment, no reload. A stored video mode the browser cannot
+  play is rewritten to the nearest one that can, with a notice, instead of
+  silently starting WebRTC.
+- **Web UI cached correctly (#71).** `index.html` is served `no-cache` with a
+  content ETag and hashed assets `immutable`, so a plain reload picks up a new
+  firmware's UI. Before, browsers kept the old bundle for years and even a forced
+  reload got a stale 304.
+- **Input in H.265 Direct (#73).** Mouse handlers bind whenever the video
+  surface appears or is replaced; the auto-selected MSE player used to mount too
+  late for them.
 - **Fixes.** libkvm self-heals capture starvation and live geometry changes
   (#65).
 - Known: the WebCodecs direct players still need a page refresh after a service
-  restart (#67); a WebRTC white screen in one Chromium setup is under
-  investigation (#69); changing the video mode reloads the page (#70); the UI is
-  served without cache headers, so hard-refresh after an update (#71).
+  restart (#67); a white video element in one KDE/Chromium setup is under
+  investigation and does not reproduce on X11, sway, Weston or headless KWin
+  (#69); changing the video mode reloads the page (#70).
 
 ## v2.1.0-alpha.4
 

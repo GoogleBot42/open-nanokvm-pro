@@ -358,5 +358,16 @@ propose SG2002 work without flagging this gap up front.
   Chromium/Linux/AMD paints EVERY <video>-element mode white (WebRTC + both MSE modes)
   while canvas modes work -> **#69 broadened** to video-element rendering; **#73 filed**
   (H.265 Direct's auto-MSE path has dead keyboard/mouse input; explicit h265-mse is fine);
-  #71 still forces cache-disable on every deploy. These four are targeted fixes for new
-  sessions: #69, #70, #71, #73 (+ #67 reconnect for the WebCodecs players).
+  #71 still forces cache-disable on every deploy. **Night of 2026-09-05 (three Opus
+  worktree agents + session):** **#71 FIXED+closed** (content-ETag/no-cache index,
+  immutable assets; the store mtime made even forced reloads 304-stale), **#73
+  FIXED+closed** (`useScreenElement` MutationObserver hook; keyboard was never dead),
+  **#72 agent boxes DONE** (4K HEVC via MSE in Firefox, EDID-driven live resolution
+  change with a new init segment, stored-mode fallback fix; left open only for a
+  human at a hardware-HEVC browser). **#69 NOT reproduced** across headed Chromium/
+  Chrome 152 on Xvfb, sway (pixman/radeonsi), Weston colour-managed, and KWin 6.7
+  `--virtual` incl. the device's WebRTC/MSE streams — harness + matrix in
+  `docs/reference/vcenc-open/chromium-white-compositors-20260905/`; Jeremy's KDE
+  colour pipeline (HDR/WCG/ICC, not emulable headless) is the remaining suspect,
+  discriminating tests posted on the issue; page-side mitigation if confirmed = opt-in
+  canvas renderer for the `<video>` modes. Remaining targeted fixes: #67, #70.
