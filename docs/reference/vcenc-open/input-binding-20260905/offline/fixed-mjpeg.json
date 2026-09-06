@@ -1,0 +1,93 @@
+{
+ "url": "http://127.0.0.1:8099/",
+ "mode": "mjpeg",
+ "settle": 10.0,
+ "browser": "firefox 154.0.1",
+ "seeded": "{\"cookie\":\"nano-kvm-token=loopback-tunnel-bypass\",\"mode\":\"mjpeg\"}",
+ "probe": {
+  "href": "http://127.0.0.1:8099/",
+  "title": "Remote Desktop - NanoKVM",
+  "storedMode": "mjpeg",
+  "cookie": "nano-kvm-token",
+  "canvas": null,
+  "video": null,
+  "img": {
+   "el": "ant-image-img",
+   "naturalWidth": 24,
+   "naturalHeight": 24,
+   "clientWidth": 683,
+   "clientHeight": 682,
+   "complete": true,
+   "src": "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20"
+  },
+  "codecs": {
+   "MediaSource": "function",
+   "VideoDecoder": "function"
+  },
+  "notifications": [
+   "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+   "Change Password For the security of your device, please change the password! Ok"
+  ]
+ },
+ "before": {},
+ "injected": {
+  "screen": "div#screen",
+  "dispatched": [
+   "mousemove",
+   "mousemove",
+   "mousemove",
+   "mousedown",
+   "mouseup",
+   "wheel",
+   "keydown:ShiftLeft",
+   "keyup:ShiftLeft"
+  ],
+  "rect": {
+   "x": 342,
+   "y": 0,
+   "w": 683,
+   "h": 682
+  }
+ },
+ "after": {
+  "/api/ws": {
+   "total": 9,
+   "bytes": 61,
+   "tags": {
+    "mouse": 6,
+    "keyboard": 2,
+    "heartbeat": 1
+   }
+  }
+ },
+ "delta": {
+  "/api/ws": {
+   "total": 9,
+   "bytes": 61,
+   "tags": {
+    "mouse": 6,
+    "keyboard": 2,
+    "heartbeat": 1
+   }
+  }
+ },
+ "verdict": {
+  "screen_present": true,
+  "mouse_frames": 6,
+  "keyboard_frames": 2,
+  "mouse_ok": true,
+  "keyboard_ok": true
+ },
+ "screenshot": "/tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/mock_fixed_mjpeg.png",
+ "console": [
+  "info[log]: [mse] isTypeSupported avc1.4D002A: true",
+  "info[log]: [mse] isTypeSupported avc1.42E01F: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true",
+  "info[log]: Error: Network Error",
+  "error[javascript]: AxiosError: Network Error",
+  "error[javascript]: TypeError: Invalid version. Must be a string. Got type \"undefined\"."
+ ]
+}

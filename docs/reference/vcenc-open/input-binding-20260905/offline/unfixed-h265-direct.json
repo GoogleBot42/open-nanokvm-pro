@@ -1,0 +1,121 @@
+{
+ "url": "http://127.0.0.1:8098/",
+ "mode": "h265-direct",
+ "settle": 12.0,
+ "browser": "firefox 154.0.1",
+ "seeded": "{\"cookie\":\"nano-kvm-token=loopback-tunnel-bypass\",\"mode\":\"h265-direct\"}",
+ "probe": {
+  "href": "http://127.0.0.1:8098/",
+  "title": "Remote Desktop - NanoKVM",
+  "storedMode": "h265-direct",
+  "cookie": "nano-kvm-token",
+  "canvas": null,
+  "video": {
+   "el": "#screen",
+   "videoWidth": 0,
+   "videoHeight": 0,
+   "currentTime": 0,
+   "readyState": 0,
+   "networkState": 2,
+   "paused": true,
+   "ended": false,
+   "duration": "NaN",
+   "buffered": [],
+   "quality": {
+    "totalVideoFrames": 0,
+    "droppedVideoFrames": 0
+   },
+   "srcObject": false,
+   "src": "blob:http://127.0.0.1:8098/461b08da-4125-48ac-9950-6c35f59eaf52",
+   "error": null
+  },
+  "img": null,
+  "codecs": {
+   "MediaSource": "function",
+   "VideoDecoder": "function"
+  },
+  "notifications": [
+   "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+   "Change Password For the security of your device, please change the password! Ok"
+  ]
+ },
+ "before": {
+  "/api/ws": {
+   "total": 1,
+   "bytes": 1,
+   "tags": {
+    "heartbeat": 1
+   }
+  }
+ },
+ "injected": {
+  "screen": "video#screen",
+  "dispatched": [
+   "mousemove",
+   "mousemove",
+   "mousemove",
+   "mousedown",
+   "mouseup",
+   "wheel",
+   "keydown:ShiftLeft",
+   "keyup:ShiftLeft"
+  ],
+  "rect": {
+   "x": 342,
+   "y": 170,
+   "w": 683,
+   "h": 342
+  }
+ },
+ "after": {
+  "/api/ws": {
+   "total": 3,
+   "bytes": 19,
+   "tags": {
+    "heartbeat": 1,
+    "keyboard": 2
+   }
+  }
+ },
+ "delta": {
+  "/api/ws": {
+   "total": 2,
+   "bytes": 18,
+   "tags": {
+    "keyboard": 2
+   }
+  }
+ },
+ "verdict": {
+  "screen_present": true,
+  "mouse_frames": 0,
+  "keyboard_frames": 2,
+  "mouse_ok": false,
+  "keyboard_ok": true
+ },
+ "screenshot": "/tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/mock_unfixed_h265direct.png",
+ "console": [
+  "info[log]: [mse] isTypeSupported avc1.4D002A: true",
+  "info[log]: [mse] isTypeSupported avc1.42E01F: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true",
+  "info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 no-preference: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-hardware: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-software: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 no-preference: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-hardware: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-software: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 no-preference: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-hardware: unsupported",
+  "info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-software: unsupported",
+  "info[log]: [h265-direct] probe accepted nothing; trying hvc1.1.6.L153.B0 anyway",
+  "info[log]: [h265-direct] player: MSE (WebCodecs accepted no HEVC configuration)",
+  "info[log]: Error: Network Error",
+  "info[log]: [mse:h265] MediaSource open",
+  "info[log]: [mse:h265] WebSocket open",
+  "error[javascript]: AxiosError: Network Error",
+  "error[javascript]: TypeError: Invalid version. Must be a string. Got type \"undefined\"."
+ ]
+}
