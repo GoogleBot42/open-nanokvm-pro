@@ -33,6 +33,14 @@ and the only page-side oracle is `VideoFrame.copyTo()` throwing `InvalidStateErr
 (pixel reads return opaque black, indistinguishable from a black host screen).
 Headless-KWin/sway harness that reproduces it:
 `docs/reference/vcenc-open/chromium-white-compositors-20260905/`.
+**One capture channel serves every viewer**, gated by the global
+`KvmVision.StreamType`: a second viewer in another mode — another tab, a
+`curl /api/stream/mjpeg`, a stray mode POST — takes the stream and starves the
+first, which the page reports as "inconsistent video mode". Upstream never gave
+it back (that half of #69 looked like a rendering bug for a week); since
+2026-09-06 `service/stream/claims.go` hands it to whoever still has clients when
+a consumer empties. Two viewers at once still means one of them is starved —
+that is arbitration, not a bug.
 
 ## Git
 

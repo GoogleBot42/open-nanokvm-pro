@@ -93,7 +93,31 @@ harness `docs/reference/vcenc-open/chromium-white-compositors-20260905/harness/x
 KWin needs `KWIN_SCREENSHOT_NO_PERMISSION_CHECKS=1`). (c) A browser symptom only
 one user sees: ask for a fresh `--user-data-dir` FIRST — #69 was one chrome://flags
 entry, and every display-stack variant here rendered fine until the profile was
-bisected.
+bisected. (d) Start `tunnel.sh` with `nohup ... &` — backgrounding it in a
+subshell `( ... & )` from the Bash tool dies silently and every later request
+gets `000`. (e) Driving the real menu needs a **click then a hover**:
+`components/menu-item.tsx` sets `trigger="click"` on the icon-only sidebar, and
+the video-mode Popover inside it uses the default hover trigger, so dispatch
+`.click()` on the first and `pointerenter/pointerover/mouseenter/mouseover` on
+the second, ~1.5 s apart. Locate each by its lucide icon class
+(`svg.lucide-monitor`, `svg.lucide-tv-minimal-play`) so the run does not depend
+on the UI language, and remember MJPEG mounts antd's `<Image id="screen">`,
+which puts the id on a wrapper **div**, not the `<img>`.
+
+**Proving a claim about page LIFETIME** (a reconnect, an in-place swap): a
+screenshot cannot tell "recovered" from "reloaded". Use an oracle a reload would
+destroy — wrap `window.WebSocket` via
+`Page.addScriptToEvaluateOnNewDocument` to count sockets and messages per URL,
+and write a sentinel into `window` *after* load. Worked example:
+`docs/reference/vcenc-open/stream-handback-20260906/harness/cdp_reconnect.py`.
+
+**Build the A/B control; it is cheap.** For any device result that depends on a
+change of ours, run the same test against the PRE-fix build before believing it:
+`git worktree add <scratch>/pre <commit-before>` then
+`nix build "path:<scratch>/pre#<package>"`, deploy that binary to BOTH trees,
+restart, run the test, then restore the fixed build (md5-verify both times) and
+re-run to confirm it still passes. A/B/A took ~10 minutes for #69 and is the
+difference between "the number looks right" and a result that means something.
 
 Proven flow (2026-08-15, deploying the dead-extensions patch):
 
