@@ -31,7 +31,12 @@ const TRIM_AT = 8; // trim once this much history has accumulated
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 5000;
 
-type QueueItem = { kind: 'append'; data: Uint8Array } | { kind: 'changeType'; mime: string };
+// `init: true` marks an initialization segment: it describes every media
+// segment queued behind it, so it is never the thing we drop under memory
+// pressure.
+type QueueItem =
+  | { kind: 'append'; data: Uint8Array; init?: boolean }
+  | { kind: 'changeType'; mime: string };
 
 // Media Source Extensions player for the direct WebSocket streams: a worker
 // remuxes [key][ts][Annex-B] messages into fragmented MP4 (lib/mp4), the page
@@ -66,11 +71,12 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
     let sourceBuffer: SourceBuffer | null = null;
     let currentMime = '';
     const queue: QueueItem[] = [];
-    let pendingInit: { mime: string; codec: string; data: Uint8Array } | null = null;
+    let pendingInit: { mime: string; codec: string; size: string; data: Uint8Array } | null = null;
 
     let segments = 0;
     let firstSegmentAt = 0;
     let lastReport = 0;
+    let currentSize = ''; // geometry of the init segment in force
 
     const worker = new MseWorker();
     worker.postMessage({ type: 'init', codec, hevcBox: support.hevcBox });
@@ -86,38 +92,81 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
       });
     }
 
+    function addSourceBuffer(mime: string): SourceBuffer | null {
+      try {
+        const sb = mediaSource.addSourceBuffer(mime);
+        sb.mode = 'sequence';
+        sb.addEventListener('updateend', onUpdateEnd);
+        sb.addEventListener('error', (e) => console.error(`${tag} SourceBuffer error`, e));
+        currentMime = mime;
+        return sb;
+      } catch (err: any) {
+        console.error(`${tag} addSourceBuffer(${mime}) failed: ${err?.name ?? err}`);
+        return null;
+      }
+    }
+
+    // Last resort when changeType is unavailable or refuses the new codec
+    // string: drop the SourceBuffer and make a new one. Loses what was
+    // buffered (a visible hiccup), but the stream keeps playing.
+    function rebuildSourceBuffer(mime: string): boolean {
+      const old = sourceBuffer;
+      if (!old || mediaSource.readyState !== 'open') return false;
+
+      console.warn(`${tag} rebuilding the SourceBuffer for ${mime}`);
+      sourceBuffer = null;
+      try {
+        old.removeEventListener('updateend', onUpdateEnd);
+        if (old.updating) old.abort();
+        mediaSource.removeSourceBuffer(old);
+      } catch (err) {
+        console.error(`${tag} removeSourceBuffer failed: ${err}`);
+      }
+
+      sourceBuffer = addSourceBuffer(mime);
+      return !!sourceBuffer;
+    }
+
     // Accept the init segment: create the SourceBuffer (first time), or switch
-    // codec string / re-init on a parameter-set change.
-    function acceptInit(mime: string, codecString: string, data: Uint8Array) {
+    // codec string / re-init on a parameter-set change (a resolution change on
+    // the HDMI source, which re-inits the device encoder).
+    function acceptInit(mime: string, codecString: string, size: string, data: Uint8Array) {
       if (mediaSource.readyState !== 'open') {
-        pendingInit = { mime, codec: codecString, data };
+        pendingInit = { mime, codec: codecString, size, data };
         return;
       }
 
       if (!sourceBuffer) {
+        console.log(`${tag} stream says ${codecString}; isTypeSupported: ${MediaSource.isTypeSupported(mime)}`);
+        sourceBuffer = addSourceBuffer(mime);
+        if (!sourceBuffer) {
+          onUnsupported?.(`addSourceBuffer(${mime}) failed`);
+          return;
+        }
+      } else if (mime !== currentMime) {
+        // A resolution change usually moves the level, so the codec string
+        // moves with it -- ask before switching, the old answer said nothing
+        // about the new string.
         const supported = MediaSource.isTypeSupported(mime);
-        console.log(`${tag} stream says ${codecString}; isTypeSupported: ${supported}`);
-        try {
-          sourceBuffer = mediaSource.addSourceBuffer(mime);
-        } catch (err: any) {
-          const reason = `addSourceBuffer(${mime}) failed: ${err?.name ?? err}`;
+        console.log(`${tag} codec changed ${currentMime} -> ${mime}; isTypeSupported: ${supported}`);
+        if (!supported) {
+          const reason = `stream switched to ${codecString}, which MediaSource rejects`;
           console.error(`${tag} ${reason}`);
           onUnsupported?.(reason);
           return;
         }
-        sourceBuffer.mode = 'sequence';
-        sourceBuffer.addEventListener('updateend', onUpdateEnd);
-        sourceBuffer.addEventListener('error', (e) => console.error(`${tag} SourceBuffer error`, e));
-        currentMime = mime;
-      } else if (mime !== currentMime) {
-        console.log(`${tag} codec changed ${currentMime} -> ${mime}`);
         queue.push({ kind: 'changeType', mime });
         currentMime = mime;
       } else {
         console.log(`${tag} new init segment (same codec ${codecString})`);
       }
 
-      queue.push({ kind: 'append', data });
+      if (currentSize && currentSize !== size) {
+        console.log(`${tag} resolution changed ${currentSize} -> ${size}`);
+      }
+      currentSize = size;
+
+      queue.push({ kind: 'append', data, init: true });
       pump();
     }
 
@@ -129,15 +178,20 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
       if (!item) return;
 
       if (item.kind === 'changeType') {
+        let switched = false;
         if (typeof sb.changeType === 'function') {
           try {
             sb.changeType(item.mime);
+            switched = true;
           } catch (err) {
             console.error(`${tag} changeType failed: ${err}`);
           }
         } else {
-          console.warn(`${tag} changeType unavailable; continuing with ${currentMime}`);
+          console.warn(`${tag} changeType unavailable`);
         }
+        // Appending an init segment the buffer was never switched to is a
+        // guaranteed decode error; start a fresh buffer instead.
+        if (!switched) rebuildSourceBuffer(item.mime);
         pump();
         return;
       }
@@ -150,8 +204,15 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
           queue.unshift(item);
           const cut = Math.max(0, video!.currentTime - 1);
           console.warn(`${tag} QuotaExceededError; removing [0, ${cut.toFixed(2)})`);
-          if (cut > 0) sb.remove(0, cut);
-          else queue.length = 0;
+          if (cut > 0) {
+            sb.remove(0, cut);
+          } else {
+            // nothing to reclaim: drop the pending media segments, but keep the
+            // init segments -- without them nothing behind them can decode.
+            const kept = queue.filter((q) => q.kind === 'append' && q.init);
+            queue.length = 0;
+            queue.push(...kept);
+          }
         } else {
           console.error(`${tag} appendBuffer failed: ${err}`);
         }
@@ -202,7 +263,7 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
       switch (msg.type) {
         case 'init':
           console.log(`${tag} init segment: ${msg.width}x${msg.height} ${msg.codec} (${msg.data.byteLength} B)`);
-          acceptInit(msg.mime, msg.codec, msg.data);
+          acceptInit(msg.mime, msg.codec, `${msg.width}x${msg.height}`, msg.data);
           break;
         case 'segment':
           if (!sourceBuffer && !pendingInit) return; // no init yet
@@ -236,9 +297,9 @@ export const MsePlayer = ({ codec, connect, onUnsupported }: MsePlayerProps) => 
       if (disposed) return;
       console.log(`${tag} MediaSource open`);
       if (pendingInit) {
-        const { mime, codec: c, data } = pendingInit;
+        const { mime, codec: c, size, data } = pendingInit;
         pendingInit = null;
-        acceptInit(mime, c, data);
+        acceptInit(mime, c, size, data);
       }
     });
     mediaSource.addEventListener('sourceended', () => console.log(`${tag} MediaSource ended`));

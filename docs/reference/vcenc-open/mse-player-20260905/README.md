@@ -60,7 +60,7 @@ apart.
 - A real desktop browser with hardware HEVC (Chrome/Edge/Safari on Windows or
   macOS): expected to take the WebCodecs branch of H.265 Direct; the MSE modes
   should work there too.
-- 4K HEVC through MSE (the 1080p60 source was the only one attached);
-  `hvc1.1.2.L153.80` is in the probe list.
-- Resolution change mid-stream (new init segment path) — exercised only by the
-  reconnect case, which re-sends an identical init segment.
+
+Done later the same day in `../mse-4k-20260905/`: 4K HEVC through MSE
+(`hvc1.1.2.L153.80`) and a 4K → 1080p → 4K resolution change while playing (the
+real new-init path, not the reconnect case).

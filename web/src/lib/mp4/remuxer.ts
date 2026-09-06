@@ -4,7 +4,7 @@
 // first key frame (and again whenever the parameter sets change -- a
 // resolution change), then one media segment per frame with the parameter sets
 // stripped (they live in avcC / hvcC).
-import { lengthPrefixed, splitNalUnits } from './annexb.ts';
+import { bytesEqual, lengthPrefixed, splitNalUnits } from './annexb.ts';
 import { initSegment, mediaSegment, type Sample, type VideoTrack } from './fmp4.ts';
 import {
   H264_NAL_AUD,
@@ -48,7 +48,11 @@ export class Remuxer {
   private vps?: Uint8Array;
   private sps?: Uint8Array;
   private pps?: Uint8Array;
-  private trackKey = ''; // identity of the parameter sets the current init segment describes
+  // the exact parameter sets the current init segment describes, so a
+  // resolution change (new SPS bytes) is detected by content, not presence
+  private trackVps?: Uint8Array;
+  private trackSps?: Uint8Array;
+  private trackPps?: Uint8Array;
   private initialized = false;
   private sequence = 0;
   private decodeTime = 0;
@@ -66,7 +70,9 @@ export class Remuxer {
   // emits a fresh init segment even if the parameter sets did not change.
   reset(): void {
     this.initialized = false;
-    this.trackKey = '';
+    this.trackVps = undefined;
+    this.trackSps = undefined;
+    this.trackPps = undefined;
     this.lastTimestamp = null;
   }
 
@@ -139,8 +145,11 @@ export class Remuxer {
       };
     }
 
-    const trackKey = [this.vps, this.sps, this.pps].map((p) => (p ? Array.from(p).join(',') : '')).join('|');
-    if (this.initialized && trackKey === this.trackKey) {
+    const unchanged =
+      bytesEqual(this.sps, this.trackSps) &&
+      bytesEqual(this.pps, this.trackPps) &&
+      (this.codec === 'h264' || bytesEqual(this.vps, this.trackVps));
+    if (this.initialized && unchanged) {
       return null;
     }
 
@@ -165,7 +174,9 @@ export class Remuxer {
       return { type: 'log', level: 'error', text: `[mse] parameter set parse failed: ${err}` };
     }
 
-    this.trackKey = trackKey;
+    this.trackVps = this.vps;
+    this.trackSps = this.sps;
+    this.trackPps = this.pps;
     this.initialized = true;
     // A new init segment restarts the decode timeline; in sequence mode the
     // SourceBuffer abuts it to what is already buffered.

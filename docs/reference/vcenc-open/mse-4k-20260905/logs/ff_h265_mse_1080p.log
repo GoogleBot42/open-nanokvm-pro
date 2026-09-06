@@ -1,0 +1,150 @@
+--- browser firefox 154.0.1
+--- run mode=h265-mse for=25.0s probes=[6.0, 15.0, 25.0] actions=[] port=9444
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h265-mse"}
+--- probe t=6s
+{
+ "t": 6054,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 5.711399,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    0,
+    5.765
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 344,
+   "droppedVideoFrames": 1
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/7f008ebc-1d31-4a7c-9871-4ee8aa5c4b4f",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=15s
+{
+ "t": 15075,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 14.716026,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    8.331,
+    14.781
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 885,
+   "droppedVideoFrames": 5
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/7f008ebc-1d31-4a7c-9871-4ee8aa5c4b4f",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=25s
+{
+ "t": 25096,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 24.757688,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    20.831,
+    24.815
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 1486,
+   "droppedVideoFrames": 8
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/7f008ebc-1d31-4a7c-9871-4ee8aa5c4b4f",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_1080.png (189966 bytes)
+--- console
+  [   0.11] info[log]: [mse] isTypeSupported avc1.4D002A: true
+  [   0.11] info[log]: [mse] isTypeSupported avc1.42E01F: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  [   0.16] info[log]: [mse:h265] MediaSource open
+  [   0.22] info[log]: [mse:h265] WebSocket open
+  [   0.26] info[log]: [mse:h265] init segment: 1920x1080 hvc1.1.2.L123.80 (741 B)
+  [   0.27] info[log]: [mse:h265] stream says hvc1.1.2.L123.80; isTypeSupported: true
+  [   0.27] info[log]: [mse:h265] loadedmetadata 1920x1080
+  [   4.97] info[log]: [mse:h265] 285 segments, 281 frames shown (1 dropped), 1920x1080, lag 0.066s, rate 1, first segment after 299 ms
+  [   9.97] info[log]: [mse:h265] 585 segments, 581 frames shown (2 dropped), 1920x1080, lag 0.090s, rate 1, first segment after 299 ms
+  [  14.97] info[log]: [mse:h265] 885 segments, 881 frames shown (5 dropped), 1920x1080, lag 0.095s, rate 1, first segment after 299 ms
+  [  19.97] info[log]: [mse:h265] 1185 segments, 1181 frames shown (7 dropped), 1920x1080, lag 0.061s, rate 1, first segment after 299 ms
+  [  24.97] info[log]: [mse:h265] 1485 segments, 1481 frames shown (8 dropped), 1920x1080, lag 0.077s, rate 1, first segment after 299 ms

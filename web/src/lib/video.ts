@@ -157,6 +157,56 @@ export function serverStreamMode(mode: string): string {
   }
 }
 
+// The nearest playable stand-in for a stored mode this browser cannot play,
+// best first: the same codec before the same transport before anything that
+// paints at all.
+const VIDEO_MODE_FALLBACKS: Record<string, string[]> = {
+  'h265-webrtc': ['h265-direct', 'h265-mse', 'h264-webrtc', 'h264-direct', 'h264-mse', 'mjpeg'],
+  'h265-direct': ['h265-mse', 'h264-direct', 'h264-mse', 'h264-webrtc', 'mjpeg'],
+  'h265-mse': ['h265-direct', 'h264-mse', 'h264-direct', 'h264-webrtc', 'mjpeg'],
+  'h264-webrtc': ['h264-direct', 'h264-mse', 'mjpeg'],
+  'h264-direct': ['h264-mse', 'h264-webrtc', 'mjpeg'],
+  'h264-mse': ['h264-direct', 'h264-webrtc', 'mjpeg'],
+  mjpeg: ['h264-webrtc', 'h264-direct', 'h264-mse']
+};
+
+export type ResolvedVideoMode = {
+  mode: string;
+  // set when the stored mode cannot play here and was replaced
+  replaced?: string;
+  supported: string[];
+};
+
+// Decide which player actually starts. Upstream silently fell through to the
+// default WebRTC player when the stored mode was not in
+// getSupportedVideoModes() and left the stored value alone -- so the menu kept
+// showing (and the next reload kept choosing) a mode that was not playing.
+// Resolve it here instead: honour the stored mode when it plays, otherwise pick
+// the nearest mode that does and tell the caller, which rewrites the stored
+// value and shows a notice.
+export function resolveVideoMode(stored: string | null | undefined): ResolvedVideoMode {
+  const supported = getSupportedVideoModes();
+  const fallback = supported.includes('h264-webrtc') ? 'h264-webrtc' : supported[0];
+
+  if (stored && supported.includes(stored)) {
+    return { mode: stored, supported };
+  }
+
+  if (!stored) {
+    return { mode: fallback, supported };
+  }
+
+  const preferred = (VIDEO_MODE_FALLBACKS[stored] ?? []).find((m) => supported.includes(m));
+  const mode = preferred ?? fallback;
+
+  console.warn(
+    `[video-mode] stored mode "${stored}" is not playable in this browser ` +
+      `(supported: ${supported.join(', ')}); using "${mode}"`
+  );
+
+  return { mode, replaced: stored, supported };
+}
+
 export function getSupportedVideoModes() {
   const webrtcSupported = isWebrtcSupported();
   const decoderSupported = isDecoderSupported();

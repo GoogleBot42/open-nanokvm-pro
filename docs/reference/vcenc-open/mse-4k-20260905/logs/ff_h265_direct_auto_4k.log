@@ -1,0 +1,117 @@
+--- browser firefox 154.0.1
+--- run mode=h265-direct for=20.0s probes=[6.0, 20.0] actions=[] port=9444
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h265-direct"}
+--- probe t=6s
+{
+ "t": 6052,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 5.653797,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1.1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    0,
+    5.774
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 138,
+   "droppedVideoFrames": 3
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/6122d12b-2856-4ace-9cc0-212260bda25a",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=20s
+{
+ "t": 20081,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-direct",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 19.688201,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    12.301,
+    19.781
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 480,
+   "droppedVideoFrames": 10
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/6122d12b-2856-4ace-9cc0-212260bda25a",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_direct_4k.png (166454 bytes)
+--- console
+  [   0.11] info[log]: [mse] isTypeSupported avc1.4D002A: true
+  [   0.11] info[log]: [mse] isTypeSupported avc1.42E01F: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  [   0.15] info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 no-preference: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-hardware: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hvc1.1.6.L153.B0 prefer-software: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 no-preference: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-hardware: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hvc1.1.6.L123.B0 prefer-software: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 no-preference: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-hardware: unsupported
+  [   0.15] info[log]: [h265-direct] isConfigSupported hev1.1.6.L123.B0 prefer-software: unsupported
+  [   0.15] info[log]: [h265-direct] probe accepted nothing; trying hvc1.1.6.L153.B0 anyway
+  [   0.15] info[log]: [h265-direct] player: MSE (WebCodecs accepted no HEVC configuration)
+  [   0.18] info[log]: [mse:h265] MediaSource open
+  [   0.18] info[log]: [mse:h265] WebSocket open
+  [   0.31] info[log]: [mse:h265] init segment: 3840x2160 hvc1.1.2.L153.80 (741 B)
+  [   0.31] info[log]: [mse:h265] stream says hvc1.1.2.L153.80; isTypeSupported: true
+  [   0.31] info[log]: [mse:h265] loadedmetadata 3840x2160
+  [   4.97] info[log]: [mse:h265] 115 segments, 112 frames shown (3 dropped), 3840x2160, lag 0.121s, rate 1, first segment after 300 ms
+  [  10.00] info[log]: [mse:h265] 238 segments, 235 frames shown (6 dropped), 3840x2160, lag 0.074s, rate 1, first segment after 300 ms
+  [  15.04] info[log]: [mse:h265] 360 segments, 357 frames shown (8 dropped), 3840x2160, lag 0.120s, rate 1, first segment after 300 ms
+  [  20.09] info[log]: [mse:h265] 483 segments, 481 frames shown (10 dropped), 3840x2160, lag 0.053s, rate 1, first segment after 300 ms

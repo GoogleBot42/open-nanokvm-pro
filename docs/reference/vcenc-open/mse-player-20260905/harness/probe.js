@@ -24,12 +24,14 @@
       videoWidth: v.videoWidth, videoHeight: v.videoHeight,
       currentTime: v.currentTime, readyState: v.readyState,
       networkState: v.networkState, paused: v.paused, ended: v.ended,
+      playbackRate: v.playbackRate,
       duration: Number.isFinite(v.duration) ? v.duration : String(v.duration), buffered: buf, quality: q,
       srcObject: !!v.srcObject, src: (v.currentSrc || v.src || '').slice(0, 120),
       error: v.error ? { code: v.error.code, message: v.error.message } : null
     };
   }
   return JSON.stringify({
+    t: Math.round(performance.now()), // ms since page load, to order probes
     href: location.href,
     title: document.title,
     storedMode: (() => { try { return localStorage.getItem('nano-kvm-vide-mode'); } catch (e) { return 'ERR ' + e; } })(),

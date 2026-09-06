@@ -1,0 +1,2 @@
+# transient browser stderr from ff_ui.py / cdp_ui.py
+*.err

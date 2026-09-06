@@ -1,0 +1,481 @@
+--- browser firefox 154.0.1
+--- run mode=h265-mse for=90.0s probes=[6.0, 18.0, 25.0, 32.0, 40.0, 52.0, 62.0, 70.0, 80.0, 90.0] actions=[20.0, 55.0] port=9444
+--- seeded {"cookie":"nano-kvm-token=loopback-tunnel-bypass","mode":"h265-mse"}
+--- probe t=6s
+{
+ "t": 6066,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 5.656383,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1.1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    0,
+    5.737
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 137,
+   "droppedVideoFrames": 4
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t6s.png (166464 bytes)
+--- probe t=18s
+{
+ "t": 18156,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 17.769741,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    12.384,
+    17.852
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 424,
+   "droppedVideoFrames": 18
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t18s.png (166454 bytes)
+--- action t=20.2s fetch('/api/vm/edid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edid:'E54-1080P60FPS'})}).then(r=>r.text())
+   -> "{\"code\":0,\"msg\":\"success\",\"data\":null}"
+--- probe t=25s
+{
+ "t": 25158,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 20.510608,
+  "readyState": 2,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    16.485,
+    20.545
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 492,
+   "droppedVideoFrames": 22
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t25s.png (166475 bytes)
+--- probe t=32s
+{
+ "t": 32234,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 26.67446,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    20.545,
+    26.732
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 861,
+   "droppedVideoFrames": 24
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t32s.png (189972 bytes)
+--- probe t=40s
+{
+ "t": 40082,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 34.510516,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    28.882,
+    34.582
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 1332,
+   "droppedVideoFrames": 24
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t40s.png (189937 bytes)
+--- probe t=52s
+{
+ "t": 52144,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 1920,
+  "videoHeight": 1080,
+  "currentTime": 46.566298,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    41.382,
+    46.649
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 2055,
+   "droppedVideoFrames": 27
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t52s.png (189912 bytes)
+--- action t=55.1s fetch('/api/vm/edid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edid:'E18-4K30FPS'})}).then(r=>r.text())
+   -> "{\"code\":0,\"msg\":\"success\",\"data\":null}"
+--- probe t=62s
+{
+ "t": 62080,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 50.282295,
+  "readyState": 2,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    45.549,
+    50.282
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 2276,
+   "droppedVideoFrames": 29
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t62s.png (212135 bytes)
+--- probe t=70s
+{
+ "t": 70172,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 58.26721,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1.1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    54.341,
+    58.411
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 2471,
+   "droppedVideoFrames": 33
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t70s.png (166470 bytes)
+--- probe t=80s
+{
+ "t": 80071,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 68.212388,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    62.558,
+    68.307
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 2713,
+   "droppedVideoFrames": 34
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t80s.png (166468 bytes)
+--- probe t=90s
+{
+ "t": 90164,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h265-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 78.288676,
+  "readyState": 3,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1.1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    70.758,
+    78.404
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 2959,
+   "droppedVideoFrames": 39
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/13ae4835-b69e-499f-81b7-79ebdbf08072",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Browser Recommendation For the best user experience, we recommend using the Chrome browser. While we strive for compatibility across all major browsers, some advanced features may not work as intended outside of Chrome.",
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/ff_h265_switch-t90s.png (166447 bytes)
+--- console
+  [   0.11] info[log]: [mse] isTypeSupported avc1.4D002A: true
+  [   0.11] info[log]: [mse] isTypeSupported avc1.42E01F: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hvc1.1.2.L153.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L123.80: true
+  [   0.11] info[log]: [mse] isTypeSupported hev1.1.2.L153.80: true
+  [   0.16] info[log]: [mse:h265] MediaSource open
+  [   0.19] info[log]: [mse:h265] WebSocket open
+  [   0.27] info[log]: [mse:h265] init segment: 3840x2160 hvc1.1.2.L153.80 (741 B)
+  [   0.27] info[log]: [mse:h265] stream says hvc1.1.2.L153.80; isTypeSupported: true
+  [   0.27] info[log]: [mse:h265] loadedmetadata 3840x2160
+  [   4.97] info[log]: [mse:h265] 114 segments, 109 frames shown (4 dropped), 3840x2160, lag 0.201s, rate 1.1, first segment after 312 ms
+  [  10.00] info[log]: [mse:h265] 237 segments, 234 frames shown (10 dropped), 3840x2160, lag 0.080s, rate 1.1, first segment after 312 ms
+  [  15.04] info[log]: [mse:h265] 359 segments, 350 frames shown (18 dropped), 3840x2160, lag 0.058s, rate 1, first segment after 312 ms
+  [  20.06] info[log]: [mse:h265] 482 segments, 472 frames shown (19 dropped), 3840x2160, lag 0.082s, rate 1, first segment after 312 ms
+  [  26.02] info[log]: [mse:h265] init segment: 1920x1080 hvc1.1.2.L123.80 (741 B)
+  [  26.02] info[log]: [mse:h265] codec changed video/mp4; codecs="hvc1.1.2.L153.80" -> video/mp4; codecs="hvc1.1.2.L123.80"; isTypeSupported: true
+  [  26.02] info[log]: [mse:h265] resolution changed 3840x2160 -> 1920x1080
+  [  26.02] info[log]: [mse:h265] 501 segments, 492 frames shown (22 dropped), 3840x2160, lag 0.034s, rate 1, first segment after 312 ms
+  [  31.03] info[log]: [mse:h265] 801 segments, 792 frames shown (23 dropped), 1920x1080, lag 0.014s, rate 1, first segment after 312 ms
+  [  36.03] info[log]: [mse:h265] 1101 segments, 1092 frames shown (24 dropped), 1920x1080, lag 0.025s, rate 1, first segment after 312 ms
+  [  41.03] info[log]: [mse:h265] 1401 segments, 1392 frames shown (24 dropped), 1920x1080, lag 0.037s, rate 1, first segment after 312 ms
+  [  46.03] info[log]: [mse:h265] 1701 segments, 1692 frames shown (24 dropped), 1920x1080, lag 0.014s, rate 1, first segment after 312 ms
+  [  51.03] info[log]: [mse:h265] 2001 segments, 1992 frames shown (27 dropped), 1920x1080, lag 0.025s, rate 1, first segment after 312 ms
+  [  61.98] info[log]: [mse:h265] init segment: 3840x2160 hvc1.1.2.L153.80 (741 B)
+  [  61.98] info[log]: [mse:h265] codec changed video/mp4; codecs="hvc1.1.2.L123.80" -> video/mp4; codecs="hvc1.1.2.L153.80"; isTypeSupported: true
+  [  61.98] info[log]: [mse:h265] resolution changed 1920x1080 -> 3840x2160
+  [  61.98] info[log]: [mse:h265] 2284 segments, 2275 frames shown (29 dropped), 1920x1080, lag 0.000s, rate 1, first segment after 312 ms
+  [  67.01] info[log]: [mse:h265] 2406 segments, 2396 frames shown (31 dropped), 3840x2160, lag 0.050s, rate 1.1, first segment after 312 ms
+  [  72.01] info[log]: [mse:h265] 2528 segments, 2519 frames shown (33 dropped), 3840x2160, lag 0.080s, rate 1, first segment after 312 ms
+  [  77.03] info[log]: [mse:h265] 2650 segments, 2640 frames shown (34 dropped), 3840x2160, lag 0.117s, rate 1, first segment after 312 ms
+  [  82.05] info[log]: [mse:h265] 2773 segments, 2764 frames shown (35 dropped), 3840x2160, lag 0.036s, rate 1, first segment after 312 ms
+  [  87.09] info[log]: [mse:h265] 2895 segments, 2885 frames shown (39 dropped), 3840x2160, lag 0.089s, rate 1.1, first segment after 312 ms

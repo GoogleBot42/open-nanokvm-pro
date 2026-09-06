@@ -1,0 +1,103 @@
+--- run mode=h264-mse for=25.0s probes=[6.0, 25.0] actions=[] port=9335
+--- probe t=6s
+{
+ "t": 6209,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 5.691208,
+  "readyState": 4,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    0,
+    5.773
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 142,
+   "droppedVideoFrames": 4
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/aa6355c3-19d4-4b57-b023-552dee7b7a02",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- probe t=25s
+{
+ "t": 25401,
+ "href": "https://127.0.0.1:8443/",
+ "title": "Remote Desktop - NanoKVM",
+ "storedMode": "h264-mse",
+ "cookie": "nano-kvm-token",
+ "canvas": null,
+ "video": {
+  "el": "#screen",
+  "videoWidth": 3840,
+  "videoHeight": 2160,
+  "currentTime": 24.880449,
+  "readyState": 4,
+  "networkState": 2,
+  "paused": false,
+  "ended": false,
+  "playbackRate": 1,
+  "duration": "Infinity",
+  "buffered": [
+   [
+    20.324,
+    24.954
+   ]
+  ],
+  "quality": {
+   "totalVideoFrames": 613,
+   "droppedVideoFrames": 14
+  },
+  "srcObject": false,
+  "src": "blob:https://127.0.0.1:8443/aa6355c3-19d4-4b57-b023-552dee7b7a02",
+  "error": null
+ },
+ "img": null,
+ "codecs": {
+  "MediaSource": "function",
+  "VideoDecoder": "function"
+ },
+ "notifications": [
+  "Change Password For the security of your device, please change the password! Ok"
+ ]
+}
+--- screenshot /tmp/claude-1000/-home-googlebot-workspace-nanokvm-nix-nanokvm-pro/6c1705d1-17a3-46b7-9c69-ded3031887be/scratchpad/shots/cdp_h264_4k.png (167502 bytes)
+--- console
+  [   0.15] log: [mse] isTypeSupported avc1.4D002A: true
+  [   0.15] log: [mse] isTypeSupported avc1.42E01F: true
+  [   0.15] log: [mse] isTypeSupported hvc1.1.2.L123.80: false
+  [   0.15] log: [mse] isTypeSupported hvc1.1.2.L153.80: false
+  [   0.15] log: [mse] isTypeSupported hev1.1.2.L123.80: false
+  [   0.15] log: [mse] isTypeSupported hev1.1.2.L153.80: false
+  [   0.22] log: [mse:h264] MediaSource open
+  [   0.23] log: [mse:h264] WebSocket open
+  [   0.29] log: [mse:h264] init segment: 3840x2160 avc1.4D0033 (650 B)
+  [   0.29] log: [mse:h264] stream says avc1.4D0033; isTypeSupported: true
+  [   0.30] log: [mse:h264] loadedmetadata 3840x2160
+  [   4.86] log: [mse:h264] 112 segments, 111 frames shown (4 dropped), 3840x2160, lag 0.055s, rate 1, first segment after 442 ms
+  [   9.88] log: [mse:h264] 236 segments, 235 frames shown (6 dropped), 3840x2160, lag 0.059s, rate 1, first segment after 442 ms
+  [  14.91] log: [mse:h264] 359 segments, 358 frames shown (9 dropped), 3840x2160, lag 0.056s, rate 1, first segment after 442 ms
+  [  19.92] log: [mse:h264] 483 segments, 482 frames shown (11 dropped), 3840x2160, lag 0.059s, rate 1, first segment after 442 ms
+  [  24.95] log: [mse:h264] 606 segments, 605 frames shown (14 dropped), 3840x2160, lag 0.063s, rate 1.1, first segment after 442 ms
