@@ -349,7 +349,7 @@ open-userspace capture or a precise reason it's stuck.
   identical frames into each.
 - **Units** (both run our from-source image, both link the Axera blobs — the blob
   path is exactly what we trace):
-  - ATX version — `192.168.0.221`
+  - ATX version — `<atx-device-ip>`
   - Desk version — `<device-ip>`
 - SSH as `root` (default password `sipeed` on the from-source image).
 
@@ -376,7 +376,7 @@ An OTA module-autoload bug bricked a device once (see `provenance.md` and the
 
 ## Test log
 
-### 2026-07-20 — Stage 1 ABI recovery on the ATX unit (192.168.0.221)
+### 2026-07-20 — Stage 1 ABI recovery on the ATX unit (<atx-device-ip>)
 
 **Setup.** Both units reachable over SSH (`root`/`sipeed`). ATX = experimental,
 Desk (`.224`) left untouched. `/tmp` is **tmpfs** on the device, so every
