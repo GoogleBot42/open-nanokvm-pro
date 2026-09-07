@@ -508,7 +508,9 @@
 			compatible = "snps,designware-i2c";
 			reg = <0x0 0x4850000 0x0 0x400>;
 			interrupts = <GIC_SPI 135 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&periph_clk AX630C_CLK_I2C_MST0_EB>;
+			clocks = <&periph_clk AX630C_CLK_I2C_MST0_EB>,
+				 <&periph_clk AX630C_PCLK_I2C_MST0_EB>;
+			clock-names = "ref", "pclk";
 			resets = <&periph_clk AX630C_RST_PERIPH_I2C0>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2c0_pins>;

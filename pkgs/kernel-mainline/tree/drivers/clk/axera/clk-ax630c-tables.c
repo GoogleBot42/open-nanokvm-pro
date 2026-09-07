@@ -929,7 +929,14 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_GATE_C(AX630C_PCLK_I2S_TDM_M_EB, "pclk_i2s_tdm_m_eb", "pclk_top_sel", 0x0c, 29, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_S_EB, "pclk_i2s_s_eb", "pclk_top_sel", 0x0c, 28, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_M_EB, "pclk_i2s_m_eb", "pclk_top_sel", 0x0c, 27, CLK_SET_RATE_PARENT),
-	/* The APB gates of the same blocks (#81). */
+	/*
+	 * The APB gates of the same blocks (#81). Unlike #76's mmc bus gates,
+	 * none of these needs CLK_IS_CRITICAL: every one has a consumer that
+	 * names it, so clk_disable_unused() leaves them alone because they are
+	 * not unused. i2c-designware asks for its timing input unnamed and its
+	 * APB gate as "pclk", which works together because a NULL clk_get()
+	 * ignores clock-names and takes index 0.
+	 */
 	AX630C_GATE_C(AX630C_PCLK_I2C_MST0_EB, "pclk_i2c_mst0_eb", "pclk_top_sel", 0x0c, 17, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_GPIO3_EB, "pclk_gpio3_eb", "pclk_top_sel", 0x0c, 16, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_GPIO2_EB, "pclk_gpio2_eb", "pclk_top_sel", 0x0c, 15, CLK_SET_RATE_PARENT),
