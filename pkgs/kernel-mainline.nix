@@ -172,19 +172,38 @@ pkgs.stdenv.mkDerivation {
       build/.config "$configFragment"
     make O=build olddefconfig
 
-    # --- assert the fragment survived olddefconfig ------------------------
-    for opt in CONFIG_BLK_DEV_INITRD CONFIG_SERIAL_8250_DW CONFIG_WATCHDOG \
-               CONFIG_PSTORE CONFIG_PSTORE_RAM CONFIG_PSTORE_CONSOLE \
-               CONFIG_DMA_CMA CONFIG_NAMESPACES \
-               CONFIG_OVERLAY_FS CONFIG_TMPFS_XATTR \
-               CONFIG_COMMON_CLK_AX630C CONFIG_PINCTRL_AX630C \
-               CONFIG_AX630C_WATCHDOG CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED \
-               CONFIG_POWER_RESET_SYSCON CONFIG_DEVMEM \
-               CONFIG_INITRAMFS_COMPRESSION_NONE \
-               CONFIG_MFD_SYSCON; do
-      grep -q "^$opt=y" build/.config \
-        || { echo "ERROR: $opt did not survive olddefconfig" >&2; exit 1; }
-    done
+    # --- assert EVERY fragment line survived olddefconfig -----------------
+    # Generated from the fragment itself, not hand-maintained. The previous
+    # hand-written list could only check what someone remembered to add to it,
+    # and it did not include CONFIG_BLK_CMDLINE_PARSER -- a symbol that does
+    # not exist in 7.x at all (it is the 4.19 name for CMDLINE_PARTITION).
+    # olddefconfig dropped it in silence, nothing noticed for two issues, and
+    # the first #76 boot came up with an eMMC that enumerated perfectly and had
+    # no partitions.
+    #
+    # A fragment line that does not survive is ALWAYS a bug: either the symbol
+    # is misspelled or its dependencies are unmet. Both deserve a failed build
+    # rather than a surprise three hours later on hardware. If a line ever
+    # legitimately cannot hold, special-case it here deliberately and say why.
+    fail=0
+    while read -r line; do
+      case "$line" in
+        CONFIG_*=*)
+          grep -qxF "$line" build/.config || {
+            echo "ERROR: fragment line did not survive olddefconfig: $line" >&2
+            echo "       (misspelled symbol, or unmet dependency)" >&2
+            fail=1
+          } ;;
+        "# CONFIG_"*" is not set")
+          opt=''${line#'# '}
+          opt=''${opt%' is not set'}
+          grep -q "^$opt=" build/.config && {
+            echo "ERROR: $opt is set, but the fragment disables it" >&2
+            fail=1
+          } ;;
+      esac
+    done < "$configFragment"
+    [ "$fail" -eq 0 ] || exit 1
 
     # --- assert the things whose ABSENCE is load-bearing ------------------
     # STRICT_DEVMEM would let the bring-up init map the two MMIO windows but

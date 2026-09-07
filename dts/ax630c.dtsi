@@ -258,6 +258,20 @@
 			no-sdio;
 			disable-wp;
 			cap-mmc-highspeed;
+			/*
+			 * This logs "mmc0: invalid driver type, default to
+			 * driver type B" a few times per boot, and that is
+			 * correct behaviour, not a defect to chase.
+			 * fixed-emmc-driver-type carries an eMMC-spec driver
+			 * type (table 206); 4 = 40 ohm. sdhci can only express
+			 * the SD host types A/B/C/D = 0..3, so it warns and
+			 * uses B -- while the CARD is still programmed to type
+			 * 4 through EXT_CSD_HS_TIMING. The vendor's own driver
+			 * has the identical limitation, so keeping the property
+			 * reproduces the vendor's proven electrical state
+			 * exactly; dropping it would quiet the log and change
+			 * the card's drive strength.
+			 */
 			fixed-emmc-driver-type = <4>;
 			/*
 			 * Pinned to high speed for bring-up, on purpose.

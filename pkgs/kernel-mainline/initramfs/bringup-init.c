@@ -293,14 +293,30 @@ static void log_partitions(void)
 	}
 	buf[n] = '\0';
 
-	/* One write() per line: each is a separate kmsg record. */
+	/*
+	 * ONE write() per line, prefix included. Three writes would be three
+	 * kmsg records, and the prefix would arrive as its own empty-looking
+	 * line with the data orphaned in the record after it -- which is
+	 * exactly how the first #76 run reported a working eMMC as four blank
+	 * "part:" lines.
+	 */
 	for (start = 0, i = 0; i < n; i++) {
+		char line[256];
+		size_t len, pfx;
+
 		if (buf[i] != '\n')
 			continue;
 		if (i > start) {
-			kmsg("openkvm: part: ");
-			(void)write(kmsg_fd, buf + start, (size_t)(i - start));
-			kmsg("\n");
+			static const char prefix[] = "openkvm: part:";
+			pfx = sizeof(prefix) - 1;
+			len = (size_t)(i - start);
+			if (len > sizeof(line) - pfx - 2)
+				len = sizeof(line) - pfx - 2;
+			memcpy(line, prefix, pfx);
+			memcpy(line + pfx, buf + start, len);
+			line[pfx + len] = '\n';
+			if (kmsg_fd >= 0)
+				(void)write(kmsg_fd, line, pfx + len + 1);
 		}
 		start = i + 1;
 	}
