@@ -202,7 +202,15 @@ clear means the port works and the physical link does not — that unit's USB
 link has been unreliable since 2026-09-05 (#42 was a physical fault). Check it
 from the bench host the KVM's USB-C is plugged into: `lsusb -d 1d6b:0104`
 should show "NanoKVM-Pro mainline bring-up", and a `hidraw`/`input` device
-should appear in its `dmesg`.
+should appear in its `dmesg`. **We have no shell on that machine**, so the
+practical pre-flight is to read the VENDOR system's own
+`/sys/class/udc/8000000.dwc3/state` before arming slot B: `configured` there
+means a host is attached and working, and bit 24 coming back clear is then a
+real failure rather than an unplugged cable.
+
+**debugfs is not mounted in the bring-up initramfs.** `clk_summary` and
+everything else under `/sys/kernel/debug` silently returns nothing until you
+`mount -t debugfs none /sys/kernel/debug` from the mainline shell.
 
 Note the storage, network and USB bits are all set *before* the dwell, so
 `0x01ff3014` — everything up to USB good, dwell and reboot missing — means the
@@ -250,6 +258,16 @@ reboot: Restarting system
 `timeleft` holding steady across 10 s samples is the watchdog core petting the
 dog; if it counts down instead, the driver did not adopt it and the board will
 reset mid-dwell. `state=inactive` is correct — nothing opened `/dev/watchdog`.
+
+A full run since #82 also carries (`docs/reference/mainline/usb-gadget-20260907/`):
+
+```
+axera-dwc3 soc:usb@8000000: 2 clocks, VBUSVALID set (peripheral mode)
+openkvm: usb: UDC is 8000000.usb
+openkvm: usb: 5 of 5 usbdev.sh function drivers present
+openkvm: usb: HID keyboard gadget bound
+openkvm: usb: host enumerated and configured us
+```
 
 ## 6. Put slot B back
 

@@ -514,8 +514,8 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 
 Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
 lives as a comment on #26. **#74, #75, #76 and #77 are done** (see "What exists
-now" at the end of this section), #80 is written and boot-proven, and #82's
-source half is written but not yet booted; everything else is open.
+now" at the end of this section), and #80 and #82 are written and boot-proven;
+everything else is open.
 
 1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
@@ -574,14 +574,15 @@ source half is written but not yet booted; everything else is open.
    `lt6911_manage` gets a DT node (I2C0 @0x2b, GPIO descriptors, its three
    pinmux pokes as pinctrl states) and keeps its `/proc` ABI; `nanokvm-gpio`
    moves to libgpiod/DT names. Depends on: #80.
-9. **#82 USB: dwc3 glue + gadget HID** — source half DONE 2026-09-07 (see
-   "What exists now (#82)" at the end of this section): `dwc3-axera.c` over
-   the mainline dwc3 core, three new flash clock rows and two reset lines,
-   the configfs gadget and all five `usbdev.sh` function drivers built in,
-   and three new milestone bits that make enumeration readable without a
-   serial console. `extcon-usb-gpio` is deliberately deferred: OTG ID
-   detection is a raw GPIO and there is no GPIO controller until #81, and
-   the appliance is a peripheral in every mode it ships in.
+9. **#82 USB: dwc3 glue + gadget HID** — DONE 2026-09-07, device-proven: a
+   host enumerated a mainline-kernel HID gadget from this board (see "What
+   exists now (#82)" at the end of this section). `dwc3-axera.c` over the
+   mainline dwc3 core, three new flash clock rows and two reset lines, the
+   configfs gadget and all five `usbdev.sh` function drivers built in, and
+   three new milestone bits that make enumeration readable without a serial
+   console. `extcon-usb-gpio` is deliberately deferred: OTG ID detection is
+   a raw GPIO and there is no GPIO controller until #81, and the appliance
+   is a peripheral in every mode it ships in.
    Depends on: #80.
 10. **#83 Video stack on mainline (fwnode graph, syscon, reserved-memory)** —
     Port `open_vin_csi2`, `open_vin_capture`, `vc8000-vcmd` glue to the
@@ -1011,11 +1012,15 @@ three USB gates and the two USB software resets, all in the flash window.
 Both figures were re-derived the same way, from the table sizes in the
 compiled `vmlinux` rather than from the source that generated them.)
 
-### What exists now (#82, 2026-09-07) — USB, SOURCE HALF, NOT YET BOOTED
+### What exists now (#82, 2026-09-07) — USB GADGET ENUMERATED BY A HOST
 
-**Not hardware-proven.** Everything below builds and asserts itself; the
-slot-B boot test is queued behind another agent's use of the device. The
-procedure and the two oracles it turns on are at the end of this section.
+**A machine on the other end of the cable enumerated a mainline-kernel gadget
+from this board.** One slot-B run, milestone register `0x01FFF014` on return —
+every bit — and the board rebooted itself back to slot A. The gadget bound at
+`t = 12.63 s` and the host had it configured 1.0 s later, at high speed.
+Evidence, including the clock rows and flash-syscon words read from the
+running mainline kernel:
+[reference/mainline/usb-gadget-20260907/](reference/mainline/usb-gadget-20260907/).
 
 The controller needed no reverse engineering either. It is a stock Synopsys
 DWC3 in a high-speed-only configuration, mainline's dwc3 core drives it, and
@@ -1044,6 +1049,17 @@ glue hardcodes: `0x29`, `0x7f0`, `0xa`. Handing the core
 frequency adjustment to **zero**, because 10⁹/41 is 24.39 MHz and the core
 would conclude no adjustment is needed. Same register, silently 1.6 % off.
 
+`clk_summary` on the running board shows `clk_usb_ref_eb` at **24000000**,
+enabled, with consumer `8000000.usb` and connection id `ref` — the core node's
+clock, not the glue's. Read that for what it is: the consumer binding is an
+independent fact (the clock framework's own consumer list, and it is what
+proves the DT split works), and 24000000 is the rate the core's GFLADJ
+arithmetic actually ran on — but the *number* is the driver's own model
+echoed back, not a measurement. The silicon evidence for 24 MHz is elsewhere:
+#80 measured `cpll_24m` at 24.007 MHz, and the vendor glue's hardcoded
+`0x7f0`/`0xa` are only reproducible from a rate of exactly 24000000. The glue
+logs **2 clocks**, which is the design working and not a missing one.
+
 **Three clock rows and two reset lines, confirmed by two artifacts that
 agree.** The flash window's id-to-bit relation is arithmetic — every
 registered id in the `0x04` word sits at bit `25 - id` and every one in `0x08`
@@ -1063,8 +1079,14 @@ provider and programmed nothing at probe, because every line it described
 belonged to a block already running. These two do not: they are active high,
 not self-clearing, and firmware leaves them released, so the glue asserts,
 waits 2 µs and releases. A deassert-only bring-up — which is all the dwc3
-core itself would do — never resets the PHY at all. Whether the pulse behaves
-is the first thing the boot test reports.
+core itself would do — never resets the PHY at all.
+
+It behaved: both calls returned 0, probe carried on, and SW_RST0 (`+0x14`)
+reads `0x3C0002E0` afterwards with bits 24 and 25 clear. Be precise about what
+that shows — the `.assert` path ran and its regmap writes succeeded, which
+nothing before this run had exercised, but a clear reading is also what
+"nothing was written" looks like. Catching the asserted state needs a read
+from inside a 2 µs pulse.
 
 **`dr_mode = "peripheral"`, not the vendor's `"otg"`.** OTG on this board is
 ID detection on a raw GPIO (GPIO1_A4) through `linux,extcon-usb-gpio`, and
@@ -1112,30 +1134,36 @@ the boot-protocol keyboard one from `Documentation/usb/gadget_hid.rst` — the
 same shape as `usbdev.sh`'s `hid.GS0` because there is only one shape a boot
 keyboard can have, but copied from the kernel's own documentation.
 
-#### The hardware test, when the device is free
+#### How this was measured, and how to re-measure it
 
 Standard slot-B loop (`.claude/skills/mainline-boot-test`), with the mask at
 `0x1FFF000`. Two oracles, and they answer different questions:
 
 - **Device-side, no host needed.** From the mainline shell during the dwell:
-  `ls /sys/class/udc` names the controller, `cat /sys/class/udc/*/state` says
-  how far enumeration got, and `ls /sys/kernel/config/usb_gadget/g0/functions`
-  shows the bound gadget. `dmesg | grep -i -e dwc3 -e axera-dwc3` carries the
-  glue's own `3 clocks, VBUSVALID set (peripheral mode)` line. And
+  `ls /sys/class/udc` names the controller (`8000000.usb`),
+  `cat /sys/class/udc/*/state` says how far enumeration got, and
+  `ls /sys/kernel/config/usb_gadget/g0/functions` shows the bound gadget.
+  `dmesg | grep -i -e dwc3 -e axera-dwc3` carries the glue's own
+  `2 clocks, VBUSVALID set (peripheral mode)` line. And
   `grep -e clk_usb_ref_eb -e bus_clk_usb_eb -e usb_ref_alt_clk_eb
   /sys/kernel/debug/clk/clk_summary` is the check that matters most: the ref
   row must read **24000000** and be enabled, because that number is what the
-  core's GFLADJ arithmetic is built on and nothing else reports it. Milestone
-  bits 22 and 23 record the rest for a run nobody watches.
-- **Host-side, on the bench machine the KVM's USB-C is plugged into.**
-  `lsusb -d 1d6b:0104` and `dmesg | tail` around the boot; a `hidraw` node and
-  an `input` device should appear. This is the only check that proves the
-  cable and the pullup, and it is the one to distrust first when bit 24 is
-  clear.
+  core's GFLADJ arithmetic is built on and nothing else reports it. **Mount
+  debugfs first** (`mount -t debugfs none /sys/kernel/debug`) -- the bring-up
+  initramfs does not, and the grep silently returns nothing if you forget.
+- **Host-side.** `lsusb -d 1d6b:0104` on the machine the KVM's USB-C is
+  plugged into shows "NanoKVM-Pro mainline bring-up", with a `hidraw` node and
+  an `input` device in its `dmesg`. **We have no shell on that machine**, so
+  this run took the equivalent from the device instead: bit 24 and
+  `/sys/class/udc/*/state = configured`, which is the same fact read from our
+  end of the cable. Before arming slot B, check the vendor system's own
+  `/sys/class/udc/8000000.dwc3/state` -- if that already reads `configured`, a
+  host is attached and bit 24 coming back clear is a real failure rather than
+  an unplugged cable.
 
 Not proven, and not attempted: mass storage, NCM, UAC2 and ACM as *running*
-functions (only their drivers' presence is checked), any transfer, suspend and
-resume, and host mode.
+functions (only their drivers' presence is checked, 5 of 5), any transfer over
+the HID endpoint, suspend and resume, and host mode.
 
 ---
 

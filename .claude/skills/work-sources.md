@@ -460,18 +460,22 @@ propose SG2002 work without flagging this gap up front.
   **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
   watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
   `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states and the CPUPLL/
-  cpufreq model; **#82 SOURCE HALF DONE, NOT YET BOOTED** (`dwc3-axera.c`, a
-  ~210-line of-simple-class glue whose real content is the VBUSVALID bit no
-  generic glue can express; two DT nodes so the core can take the 24 MHz `ref`
-  clock and land on the vendor's exact GFLADJ constants; three flash clock rows
-  and two reset lines -- the reset controller's FIRST real `.assert`; the
-  configfs gadget and all five `usbdev.sh` function drivers built in; milestone
-  bits 22/23/24 and mask `0x1FFF000`; 1235543). All four issues stay open; only
-  #74 is closed.
+  cpufreq model; **#82 DONE, device-proven** -- **a host enumerated a
+  mainline-kernel USB HID gadget from this board** (`0x01FFF014`, every bit;
+  gadget bound at t=12.63 s, host had it configured 1.0 s later at high speed;
+  `docs/reference/mainline/usb-gadget-20260907/`). `dwc3-axera.c` is a
+  ~200-line of-simple-class glue whose real content is the VBUSVALID bit no
+  generic glue can express; two DT nodes so the core takes the 24 MHz `ref`
+  clock and lands on the vendor's exact GFLADJ constants; three flash clock
+  rows and two reset lines -- the reset controller's FIRST real `.assert`;
+  the configfs gadget and all five `usbdev.sh` function drivers built in
+  (5 of 5 instantiated); milestone bits 22/23/24 and mask `0x1FFF000`.
+  All four issues stay open; only #74 is closed.
   Next: **#78** (NixOS appliance on mainline -- note the eth0 MAC is a
   provisioning-time literal in `/etc/network/interfaces`, not UID-derived);
-  **#81** can start in parallel, and **#82** needs one slot-B boot with the
-  bench host's USB-C attached; **#85** (aic8800) still can start from source.
+  **#81** can start in parallel; **#85** (aic8800) still can start from source.
+  #82's leftovers are the gadget's *policy* (report descriptors, flag files,
+  the `udhcpd` instance) and running the other four functions -- both #78.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

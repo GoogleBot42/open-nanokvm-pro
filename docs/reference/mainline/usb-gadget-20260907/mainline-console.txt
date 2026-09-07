@@ -1,0 +1,220 @@
+all_debug=0
+[    1.342269]     logomode=vo0@dsi_dpi_video
+[    1.347285] openkvm: mainline bring-up init (#75) running
+[    1.352998] openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    1.397548] openkvm: /proc/version: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[    1.415038] openkvm: BACKUP0 after milestone 1: 0x00001018
+[    1.421557] openkvm: kernel log stashed, bytes: 0x0000463c
+[    1.547285] mmc0: invalid driver type, default to driver type B
+[    1.554057] mmc0: invalid driver type, default to driver type B
+[    1.572432] mmc0: invalid driver type, default to driver type B
+[    1.578376] mmc0: invalid driver type, default to driver type B
+[    1.584328] mmc0: invalid driver type, default to driver type B
+[    2.774107] mmc0: new HS200 MMC card at address 0001
+[    2.779922] mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+[    2.785668]  mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+[    2.805863] mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+[    2.813022] mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+[    2.820008] mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (510:0)
+[    2.828079] openkvm: part:major minor  #blocks  name
+[    2.833089] openkvm: part: 179        0   30539776 mmcblk0
+[    2.838590] openkvm: part: 179        1        768 mmcblk0p1
+[    2.844265] openkvm: part: 179        2        512 mmcblk0p2
+[    2.849939] openkvm: part: 179        3        256 mmcblk0p3
+[    2.855613] openkvm: part: 179        4        256 mmcblk0p4
+[    2.861285] openkvm: part: 179        5       1536 mmcblk0p5
+[    2.866958] openkvm: part: 179        6       1536 mmcblk0p6
+[    2.872630] openkvm: part: 179        7       1024 mmcblk0p7
+[    2.878302] openkvm: part: 179        8       6144 mmcblk0p8
+[    2.883992] openkvm: part: 179        9       6144 mmcblk0p9
+[    2.889667] openkvm: part: 179       10       1024 mmcblk0p10
+[    2.895428] openkvm: part: 179       11       1024 mmcblk0p11
+[    2.901188] openkvm: part: 179       12       1024 mmcblk0p12
+[    2.906948] openkvm: part: 179       13       1024 mmcblk0p13
+[    2.912718] openkvm: part: 179       14      65536 mmcblk0p14
+[    2.918507] openkvm: part: 179       15      65536 mmcblk0p15
+[    2.924269] openkvm: part: 179       16     131072 mmcblk0p16
+[    2.930028] openkvm: part: 179       17   30255360 mmcblk0p17
+[    2.935789] openkvm: part: 179       32       4096 mmcblk0boot0
+[    2.941722] openkvm: part: 179       64       4096 mmcblk0boot1
+[    2.947776] openkvm: storage: mmcblk0p17 found after ms: 0x00000578
+[    2.954062] openkvm: storage: major: 0x000000b3
+[    2.958607] openkvm: storage: minor: 0x00000011
+[    2.974444] EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b ro with ordered data mode. Quota mode: none.
+[    2.987435] openkvm: storage: OK -- root entries: 0x00000022
+[    2.994051] openkvm: net: harvested MAC, length: 0x00000011
+[    3.003155] openkvm: net: harvested root shadow entry, length: 0x00000062
+[    3.010326] EXT4-fs (mmcblk0p17): unmounting filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b.
+[    3.021245] axera-dwmac 104c0000.ethernet eth0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[    3.055034] axera-dwmac 104c0000.ethernet eth0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[    3.077142] axera-dwmac 104c0000.ethernet eth0: No Safety Features support found
+[    3.085102] axera-dwmac 104c0000.ethernet eth0: IEEE 1588-2008 Advanced Timestamp supported
+[    3.093793] axera-dwmac 104c0000.ethernet eth0: registered PTP clock
+[    3.100201] axera-dwmac 104c0000.ethernet eth0: configuring for phy/rgmii-id link mode
+[    6.208391] axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+[    6.217683] axera-dwmac 104c0000.ethernet eth0: Link is Up - 1Gbps/Full - flow control off
+[    6.337386] openkvm: net: carrier up after ms: 0x00000c80
+[    6.342956] openkvm: net: link 1000 Mbit/s full duplex
+[    6.350082] udhcpc: started, v1.37.0
+[    6.371077] udhcpc: broadcasting discover
+[    8.409189] udhcpc: broadcasting discover
+[    8.443216] udhcpc: broadcasting select for <redacted-ip>, server <redacted-ip>
+[    8.491055] udhcpc: lease of <redacted-ip> obtained from <redacted-ip>, lease time 43200
+[    8.506628] openkvm: net: lease (address netmask router): <redacted-ip> <redacted-ip> <redacted-ip>
+[    8.516761] PING <redacted-ip> (<redacted-ip>): 56 data bytes
+[    8.523299] 64 bytes from <redacted-ip>: seq=0 ttl=64 time=0.824 ms
+[    9.523144] 64 bytes from <redacted-ip>: seq=1 ttl=64 time=0.486 ms
+[   10.523264] 64 bytes from <redacted-ip>: seq=2 ttl=64 time=0.424 ms
+[   10.529435] 
+[   10.529435] --- <redacted-ip> ping statistics ---
+[   10.529435] 3 packets transmitted, 3 packets received, 0% packet loss
+[   10.529435] round-trip min/avg/max = 0.424/0.578/0.824 ms
+[   10.547659] openkvm: net: ping the router, exit: 0x00000000
+[   10.554459] Waiting for kernel randomness to be initialised...
+[   12.539011] random: crng init done
+[   12.543905] Generating 256 bit ed25519 key, this may take a while...
+[   12.566637] Public key portion is:
+[   12.570313] ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDvHPIMJqn2btbW+dfQnnXFR8E865Pugf9hKIjOvHLmt root@(none)
+[   12.570313] Fingerprint: SHA256:48hQh5vDALjpWlswKILSS4Gk3lRR/ZjsL1FbGBd5+HA
+[   12.589381] openkvm: sshd: dropbear exit: 0x00000000
+[   12.589888] [83] Jan 01 00:00:12 Running in background
+[   12.594773] openkvm: usb: UDC is 8000000.usb
+[   12.604284] Mass Storage Function, version: 2009/09/11
+[   12.609517] LUN: removable file: (no medium)
+[   12.614532] openkvm: usb: 5 of 5 usbdev.sh function drivers present
+[   12.627246] openkvm: usb: HID keyboard gadget bound
+[   13.632736] openkvm: usb: host enumerated and configured us
+[   13.639641] openkvm: kernel log re-stashed, bytes: 0x00005dd8
+[   13.645622] openkvm: alive 0s/300s, watchdog0 state=inactive timeleft=27
+[   15.497690] [86] Jan 01 00:00:15 Child connection from <redacted-ip>:52372
+[   15.505147] [86] Jan 01 00:00:15 Exit before auth from <<redacted-ip>:52372>: Exited normally
+[   20.236711] [87] Jan 01 00:00:20 Child connection from <redacted-ip>:52386
+[   20.444447] [87] Jan 01 00:00:20 Bad password attempt for 'root' from <redacted-ip>:52386
+[   20.587930] [87] Jan 01 00:00:20 Exit before auth from <<redacted-ip>:52386>: (user 'root', 1 fails): Exited normally
+[   20.587953] 
+[   23.655469] openkvm: alive 10s/300s, watchdog0 state=inactive timeleft=27
+[   25.536487] [88] Jan 01 00:00:25 Child connection from <redacted-ip>:35038
+[   25.748426] [88] Jan 01 00:00:25 Password auth succeeded for 'root' from <redacted-ip>:35038
+[   25.766112] [88] Jan 01 00:00:25 Exit (root) from <<redacted-ip>:35038>: Disconnect received
+[   33.665360] openkvm: alive 20s/300s, watchdog0 state=inactive timeleft=27
+[   43.675147] openkvm: alive 30s/300s, watchdog0 state=inactive timeleft=27
+[   53.117420] [91] Jan 01 00:00:53 Child connection from <redacted-ip>:48142
+[   53.124705] [91] Jan 01 00:00:53 Exit before auth from <<redacted-ip>:48142>: Exited normally
+[   53.684948] openkvm: alive 40s/300s, watchdog0 state=inactive timeleft=27
+[   58.302184] [92] Jan 01 00:00:58 Child connection from <redacted-ip>:48152
+[   58.512507] [92] Jan 01 00:00:58 Bad password attempt for 'root' from <redacted-ip>:48152
+[   58.667381] [92] Jan 01 00:00:58 Exit before auth from <<redacted-ip>:48152>: (user 'root', 1 fails): Exited normally
+[   58.667404] 
+[   63.694862] openkvm: alive 50s/300s, watchdog0 state=inactive timeleft=27
+[   64.150155] [93] Jan 01 00:01:04 Child connection from <redacted-ip>:35042
+[   64.360283] [93] Jan 01 00:01:04 Password auth succeeded for 'root' from <redacted-ip>:35042
+[   64.391567] [93] Jan 01 00:01:04 Exit (root) from <<redacted-ip>:35042>: Disconnect received
+[   73.704784] openkvm: alive 60s/300s, watchdog0 state=inactive timeleft=27
+[   75.907248] [97] Jan 01 00:01:15 Child connection from <redacted-ip>:59954
+[   75.914515] [97] Jan 01 00:01:15 Exit before auth from <<redacted-ip>:59954>: Exited normally
+[   79.705722] [98] Jan 01 00:01:19 Child connection from <redacted-ip>:59964
+[   79.915764] [98] Jan 01 00:01:19 Bad password attempt for 'root' from <redacted-ip>:59964
+[   80.057461] [98] Jan 01 00:01:19 Exit before auth from <<redacted-ip>:59964>: (user 'root', 1 fails): Exited normally
+[   80.057485] 
+[   83.714775] openkvm: alive 70s/300s, watchdog0 state=inactive timeleft=27
+[   84.341100] [99] Jan 01 00:01:24 Child connection from <redacted-ip>:42524
+[   84.551803] [99] Jan 01 00:01:24 Password auth succeeded for 'root' from <redacted-ip>:42524
+[   84.566671] [99] Jan 01 00:01:24 Exit (root) from <<redacted-ip>:42524>: Disconnect received
+[   92.019548] [101] Jan 01 00:01:31 Child connection from <redacted-ip>:46874
+[   92.026890] [101] Jan 01 00:01:31 Exit before auth from <<redacted-ip>:46874>: Exited normally
+[   93.724693] openkvm: alive 80s/300s, watchdog0 state=inactive timeleft=27
+[   96.613332] [102] Jan 01 00:01:36 Child connection from <redacted-ip>:46880
+[   96.827945] [102] Jan 01 00:01:36 Bad password attempt for 'root' from <redacted-ip>:46880
+[   96.959307] [102] Jan 01 00:01:36 Exit before auth from <<redacted-ip>:46880>: (user 'root', 1 fails): Exited normally
+[   96.959330] 
+[  101.050847] [103] Jan 01 00:01:40 Child connection from <redacted-ip>:46882
+[  101.260391] [103] Jan 01 00:01:41 Password auth succeeded for 'root' from <redacted-ip>:46882
+[  101.281654] [103] Jan 01 00:01:41 Exit (root) from <<redacted-ip>:46882>: Disconnect received
+[  103.734571] openkvm: alive 90s/300s, watchdog0 state=inactive timeleft=27
+[  111.576279] [109] Jan 01 00:01:51 Child connection from <redacted-ip>:56732
+[  111.583654] [109] Jan 01 00:01:51 Exit before auth from <<redacted-ip>:56732>: Exited normally
+[  113.744407] openkvm: alive 100s/300s, watchdog0 state=inactive timeleft=27
+[  116.070382] [110] Jan 01 00:01:55 Child connection from <redacted-ip>:56746
+[  116.282079] [110] Jan 01 00:01:56 Bad password attempt for 'root' from <redacted-ip>:56746
+[  116.444687] [110] Jan 01 00:01:56 Exit before auth from <<redacted-ip>:56746>: (user 'root', 1 fails): Exited normally
+[  116.444709] 
+[  121.050895] [111] Jan 01 00:02:00 Child connection from <redacted-ip>:56760
+[  121.260946] [111] Jan 01 00:02:01 Password auth succeeded for 'root' from <redacted-ip>:56760
+[  121.300390] [111] Jan 01 00:02:01 Exit (root) from <<redacted-ip>:56760>: Disconnect received
+[  123.754394] openkvm: alive 110s/300s, watchdog0 state=inactive timeleft=27
+[  133.764288] openkvm: alive 120s/300s, watchdog0 state=inactive timeleft=27
+[  136.079300] [114] Jan 01 00:02:15 Child connection from <redacted-ip>:51236
+[  136.086641] [114] Jan 01 00:02:15 Exit before auth from <<redacted-ip>:51236>: Exited normally
+[  139.881403] [115] Jan 01 00:02:19 Child connection from <redacted-ip>:51250
+[  140.093934] [115] Jan 01 00:02:19 Bad password attempt for 'root' from <redacted-ip>:51250
+[  140.261119] [115] Jan 01 00:02:20 Exit before auth from <<redacted-ip>:51250>: (user 'root', 1 fails): Exited normally
+[  140.261140] 
+[  143.774308] openkvm: alive 130s/300s, watchdog0 state=inactive timeleft=27
+[  144.551758] [116] Jan 01 00:02:24 Child connection from <redacted-ip>:41708
+[  144.761291] [116] Jan 01 00:02:24 Password auth succeeded for 'root' from <redacted-ip>:41708
+[  144.789207] [116] Jan 01 00:02:24 Exit (root) from <<redacted-ip>:41708>: Disconnect received
+[  153.784284] openkvm: alive 140s/300s, watchdog0 state=inactive timeleft=27
+[  162.783152] [125] Jan 01 00:02:42 Child connection from <redacted-ip>:33676
+[  162.790498] [125] Jan 01 00:02:42 Exit before auth from <<redacted-ip>:33676>: Exited normally
+[  163.794201] openkvm: alive 150s/300s, watchdog0 state=inactive timeleft=27
+[  167.003851] [126] Jan 01 00:02:46 Child connection from <redacted-ip>:33682
+[  167.216308] [126] Jan 01 00:02:47 Bad password attempt for 'root' from <redacted-ip>:33682
+[  167.387792] [126] Jan 01 00:02:47 Exit before auth from <<redacted-ip>:33682>: (user 'root', 1 fails): Exited normally
+[  167.387816] 
+[  172.036010] [127] Jan 01 00:02:51 Child connection from <redacted-ip>:43120
+[  172.248857] [127] Jan 01 00:02:52 Password auth succeeded for 'root' from <redacted-ip>:43120
+[  172.272363] [127] Jan 01 00:02:52 Exit (root) from <<redacted-ip>:43120>: Disconnect received
+[  173.804208] openkvm: alive 160s/300s, watchdog0 state=inactive timeleft=27
+[  181.012283] [133] Jan 01 00:03:00 Child connection from <redacted-ip>:43128
+[  181.019742] [133] Jan 01 00:03:00 Exit before auth from <<redacted-ip>:43128>: Exited normally
+[  183.814155] openkvm: alive 170s/300s, watchdog0 state=inactive timeleft=27
+[  185.905580] [134] Jan 01 00:03:05 Child connection from <redacted-ip>:45858
+[  186.119890] [134] Jan 01 00:03:06 Bad password attempt for 'root' from <redacted-ip>:45858
+[  186.323128] [134] Jan 01 00:03:06 Exit before auth from <<redacted-ip>:45858>: (user 'root', 1 fails): Exited normally
+[  186.323152] 
+[  191.103529] [135] Jan 01 00:03:11 Child connection from <redacted-ip>:45868
+[  191.312675] [135] Jan 01 00:03:11 Password auth succeeded for 'root' from <redacted-ip>:45868
+[  191.342562] [135] Jan 01 00:03:11 Exit (root) from <<redacted-ip>:45868>: Disconnect received
+[  193.824151] openkvm: alive 180s/300s, watchdog0 state=inactive timeleft=27
+[  199.968779] [140] Jan 01 00:03:19 Child connection from <redacted-ip>:50488
+[  199.976223] [140] Jan 01 00:03:19 Exit before auth from <<redacted-ip>:50488>: Exited normally
+[  203.834035] openkvm: alive 190s/300s, watchdog0 state=inactive timeleft=27
+[  204.659167] [141] Jan 01 00:03:24 Child connection from <redacted-ip>:49204
+[  204.868845] [141] Jan 01 00:03:24 Bad password attempt for 'root' from <redacted-ip>:49204
+[  205.088697] [141] Jan 01 00:03:24 Exit before auth from <<redacted-ip>:49204>: (user 'root', 1 fails): Exited normally
+[  205.088721] 
+[  210.069157] [142] Jan 01 00:03:29 Child connection from <redacted-ip>:49218
+[  210.280634] [142] Jan 01 00:03:30 Password auth succeeded for 'root' from <redacted-ip>:49218
+[  213.844053] openkvm: alive 200s/300s, watchdog0 state=inactive timeleft=27
+[  223.853939] openkvm: alive 210s/300s, watchdog0 state=inactive timeleft=27
+[  233.863797] openkvm: alive 220s/300s, watchdog0 state=inactive timeleft=27
+[  243.873676] openkvm: alive 230s/300s, watchdog0 state=inactive timeleft=27
+[  253.883534] openkvm: alive 240s/300s, watchdog0 state=inactive timeleft=27
+[  263.893406] openkvm: alive 250s/300s, watchdog0 state=inactive timeleft=27
+[  273.903282] openkvm: alive 260s/300s, watchdog0 state=inactive timeleft=27
+[  283.913166] openkvm: alive 270s/300s, watchdog0 state=inactive timeleft=27
+[  293.923088] openkvm: alive 280s/300s, watchdog0 state=inactive timeleft=27
+[  303.932981] openkvm: alive 290s/300s, watchdog0 state=inactive timeleft=27
+[  313.944379] openkvm: kernel log final stash, bytes: 0x00007fe0
+[  313.950257] openkvm: rebooting via the restart handler
+[  315.103482] reboot: Restarting system
+with IPv6
+[    1.226308] NET: Registered PF_PACKET protocol family
+[    1.231472] 9pnet: Installing 9P2000 support
+[    1.235874] Key type dns_resolver registered
+[    1.253885] registered taskstats version 1
+[    1.259046] Loading compiled-in X.509 certificates
+[    1.273873] Demotion targets for Node 0: null
+[    1.290709] clk: Disabling unused clocks
+[    1.295007] PM: genpd: Disabling unused power domains
+[    1.300092] ALSA device list:
+[    1.303076]   No soundcards found.
+[    1.306529] Warning: unable to open an initial console.
+[    1.314441] Freeing unused kernel memory: 5952K
+[    1.319208] Run /init as init process
+[    1.322884]   with arguments:
+[    1.325872]     /init
+[    1.328166]   with environment:
+[    1.331332]     HOME=/
+[    1.333694]     TERM=linux
+[    1.336422]     board_id=0x5,boot_reason=0x04,initc
