@@ -1,0 +1,69 @@
+### uname
+Linux nanokvm 7.1.3-nanokvm #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970 aarch64 GNU/Linux
+### os-release
+NAME=NixOS
+VERSION="26.11 (Zokor)"
+### root filesystem
+/dev/loop0 ext4 rw,noatime
+/dev/loop0: [45841]:471 (/nanokvm-host/nixos-root.img)
+/dev/mmcblk0p17 /vendor-root rw,relatime
+### identity
+device_key: <uid-hi><uid-lo>
+sha512(device_key)[0:16]: <uid-hash>
+kernel hostname: nanokvm
+vendor rootfs hwaddress: hwaddress ether <redacted-mac>
+end0             UP             <redacted-mac> <BROADCAST,MULTICAST,UP,LOWER_UP> 
+### misc_info read back from the appliance itself
+0x780 = 0x00000005
+0x784 = 0x00000004
+0x788 = <uid-lo>
+0x78c = <uid-hi>
+### fw_env
+/dev/mmcblk0 0x4C0000 0x100000
+bootsystem=B
+bootdelay=0
+bootcmd=axera_boot
+### slot register
+0x00000018
+### watchdog
+inactive
+60
+AX630C watchdog
+### gpio (read-only get)
+atx-power      0
+atx-reset      0
+atx-power-led  0
+atx-hdd-led    0
+### gpiochips
+/dev/gpiochip0
+/dev/gpiochip1
+/dev/gpiochip2
+/dev/gpiochip3
+### lt6911 proc ABI
+asr chip_id edid edid_snapshot fps hdcp hdmi_power hdmi_rx_status hdmi_tx_status height loopout_power power status version width 
+chip_id: lt6911uxc
+### clocks
+306
+### failed units
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.
+### nanokvm units
+  nanokvm-appdir.service   loaded active exited  Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)
+  nanokvm-cert.service     loaded active exited  Generate the NanoKVM-Pro HTTPS certificate if absent
+  nanokvm-identity.service loaded active exited  Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)
+  nanokvm-usb.service      loaded active exited  NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)
+  nanokvm-video.service    loaded active exited  NanoKVM-Pro open video stack (capture + encoder modules)
+  nanokvm.service          loaded active running NanoKVM-Pro server (open stack)
+### boot time
+Startup finished in 7.117s (kernel) + 12.936s (userspace) = 20.053s 
+multi-user.target reached after 12.922s in userspace.
+### https
+local https status: 200
+### networkd
+                       State: routable (configured)
+            Hardware Address: <redacted-mac> (Shenzhen Sipeed Technology Co., Ltd)
+                       Speed: 1Gbps
+                      Duplex: full
+                     Address: <device-ip-new> (DHCPv4 via <router>)
+            DHCPv4 Client ID: IAID:<iaid>/DUID

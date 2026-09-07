@@ -211,7 +211,18 @@ let
       host="${cfg.identity.hostnamePrefix}''${hi_b}''${lo_b}"
 
       echo "identity: uid=$uid mac=$mac hostname=$host"
-      hostnamectl set-hostname "$host" || true
+
+      # --transient, and it is load-bearing. `hostnamectl set-hostname` sets the
+      # STATIC hostname, which means writing /etc/hostname -- a read-only store
+      # symlink on NixOS. On the first hardware boot that failed with
+      # "Could not set static hostname: /etc/hostname is in a read-only
+      # filesystem" and the board came up as `nanokvm`: the same
+      # write-into-a-store-symlink trap the vendor's own sed hits, reproduced by
+      # its replacement. The transient hostname is what gethostname(2), the
+      # server, mDNS and the DHCP client all actually read.
+      if ! hostnamectl --transient set-hostname "$host"; then
+        echo "identity: WARNING could not set the transient hostname" >&2
+      fi
 
       for d in /sys/class/net/*; do
         ifn=$(basename "$d")
@@ -803,6 +814,17 @@ in
     networking.hostName = "nanokvm";
     networking.useNetworkd = true;
     networking.useDHCP = lib.mkDefault true;
+
+    # THE SAME MAC IS NOT ENOUGH TO GET THE SAME LEASE. systemd-networkd's
+    # default `ClientIdentifier=duid` sends a DUID+IAID in DHCP option 61, and
+    # a DHCP server keys its reservation on whatever option 61 says. The vendor
+    # stack runs udhcpc through ifupdown, which sends the MAC. So the first
+    # hardware boot of this appliance came up with the correct derived MAC and
+    # a BRAND NEW ADDRESS -- .225 where the unit has always been .224 -- which
+    # on a board reached only over the network is most of the way to invisible.
+    # `mac` restores option 61 to what every previous boot of this device sent.
+    systemd.network.networks."99-ethernet-default-dhcp".dhcpV4Config.ClientIdentifier =
+      "mac";
     networking.firewall.enable = false; # appliance on a trusted LAN, ports 22/80/443
 
     users.mutableUsers = true;

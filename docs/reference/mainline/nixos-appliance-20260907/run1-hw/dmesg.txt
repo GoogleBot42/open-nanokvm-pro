@@ -1,0 +1,386 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[    0.000000] KASLR disabled due to lack of seed
+[    0.000000] Machine model: Sipeed NanoKVM-Pro
+[    0.000000] Memory limited to 824MB
+[    0.000000] earlycon: uart8250 at MMIO32 0x0000000004880000 (options '')
+[    0.000000] printk: legacy bootconsole [uart8250] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000040040000..0x000000004007ffff (256 KiB) nomap non-reusable atf@40040000
+[    0.000000] OF: reserved mem: 0x0000000044200000..0x00000000461fffff (32768 KiB) nomap non-reusable optee@44200000
+[    0.000000] OF: reserved mem: 0x0000000048000000..0x00000000480dffff (896 KiB) nomap non-reusable vendor-pstore@48000000
+[    0.000000] OF: reserved mem: 0x00000000480e0000..0x00000000480e7fff (32 KiB) map non-reusable ramoops@480e0000
+[    0.000000] OF: reserved mem: 0x00000000480e8000..0x00000000480effff (32 KiB) map non-reusable bringup-log@480e8000
+[    0.000000] NUMA: Faking a node at [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000] NODE_DATA(0) allocated [mem 0x7366f380-0x73671a7f]
+[    0.000000] cma: Reserved 32 MiB at 0x0000000071600000
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: Trusted OS migration not required
+[    0.000000] psci: SMC Calling Convention v1.2
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x000000004003ffff]
+[    0.000000]   node   0: [mem 0x0000000040040000-0x000000004007ffff]
+[    0.000000]   node   0: [mem 0x0000000040080000-0x00000000441fffff]
+[    0.000000]   node   0: [mem 0x0000000044200000-0x00000000461fffff]
+[    0.000000]   node   0: [mem 0x0000000046200000-0x0000000047ffffff]
+[    0.000000]   node   0: [mem 0x0000000048000000-0x00000000480dffff]
+[    0.000000]   node   0: [mem 0x00000000480e0000-0x00000000737fffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000] On node 0, zone DMA: 18432 pages in unavailable ranges
+[    0.000000] percpu: Embedded 26 pages/cpu s66904 r8192 d31400 u106496
+[    0.000000] pcpu-alloc: s66904 r8192 d31400 u106496 alloc=26*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    0.000000] Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 logomode=vo0@dsi_dpi_video", will be passed to user space.
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 0MB
+[    0.000000] software IO TLB: area num 2.
+[    0.000000] software IO TLB: mapped [mem 0x0000000070580000-0x0000000070680000] (1MB)
+[    0.000000] Fallback order for Node 0: 0 
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 210944
+[    0.000000] Policy zone: DMA
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=2.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] RCU Tasks: Setting shift to 1 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=2.
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000001] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008527] Console: colour dummy device 80x25
+[    0.013080] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.023371] pid_max: default: 32768 minimum: 301
+[    0.028243] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.035666] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.043845] VFS: Finished mounting rootfs on nullfs
+[    0.050672] rcu: Hierarchical SRCU implementation.
+[    0.055534] rcu: 	Max phase no-delay instances is 1000.
+[    0.060998] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.069824] EFI services will not be available.
+[    0.074608] smp: Bringing up secondary CPUs ...
+[    0.079753] Detected VIPT I-cache on CPU1
+[    0.079888] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.080050] smp: Brought up 1 node, 2 CPUs
+[    0.094757] SMP: Total of 2 processors activated.
+[    0.099474] CPU: All CPU(s) started at EL1
+[    0.103630] CPU features: detected: 32-bit EL0 Support
+[    0.108786] CPU features: detected: 32-bit EL1 Support
+[    0.113950] CPU features: detected: CRC32 instructions
+[    0.119113] CPU features: detected: PMUv3
+[    0.123182] alternatives: applying system-wide alternatives
+[    0.130418] Memory: 704320K/843776K available (19712K kernel code, 5262K rwdata, 14728K rodata, 10176K init, 722K bss, 103680K reserved, 32768K cma-reserved)
+[    0.145468] devtmpfs: initialized
+[    0.152799] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.162628] posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+[    0.170080] futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+[    0.179379] 20048 pages in range for non-PLT usage
+[    0.179399] 511568 pages in range for PLT usage
+[    0.186327] DMI: not present or invalid.
+[    0.197431] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.204766] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.212729] audit: initializing netlink subsys (disabled)
+[    0.218486] audit: type=2000 audit(0.136:1): state=initialized audit_enabled=0 res=1
+[    0.219905] thermal_sys: Registered thermal governor 'step_wise'
+[    0.226271] thermal_sys: Registered thermal governor 'power_allocator'
+[    0.232393] cpuidle: using governor menu
+[    0.243216] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.250099] ASID allocator initialised with 65536 entries
+[    0.258007] Serial: AMBA PL011 UART driver
+[    0.263522] pstore: Using crash dump compression: deflate
+[    0.268990] printk: legacy console [ramoops-1] enabled
+[    0.274508] pstore: Registered ramoops as persistent store backend
+[    0.280706] ramoops: using 0x8000@0x480e0000, ecc: 0
+[    0.305096] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.311934] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.318220] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.325025] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[    0.331308] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.338113] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.344396] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.351208] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.359939] ACPI: Interpreter disabled.
+[    0.366169] iommu: Default domain type: Translated
+[    0.371010] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.377619] SCSI subsystem initialized
+[    0.381668] libata version 3.00 loaded.
+[    0.385800] usbcore: registered new interface driver usbfs
+[    0.391341] usbcore: registered new interface driver hub
+[    0.396706] usbcore: registered new device driver usb
+[    0.402568] pps_core: LinuxPPS API ver. 1 registered
+[    0.407577] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.416742] PTP clock support registered
+[    0.420836] EDAC MC: Ver: 3.0.0
+[    0.424547] scmi_core: SCMI protocol bus registered
+[    0.430582] FPGA manager framework
+[    0.434156] Advanced Linux Sound Architecture Driver Initialized.
+[    0.441626] vgaarb: loaded
+[    0.445059] clocksource: Switched to clocksource arch_sys_counter
+[    0.451517] VFS: Disk quotas dquot_6.6.0
+[    0.455502] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.462984] pnp: PnP ACPI: disabled
+[    0.473405] NET: Registered PF_INET protocol family
+[    0.478511] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.486932] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.495359] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.503137] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.510967] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.518420] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.524960] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.531800] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.538056] RPC: Registered named UNIX socket transport module.
+[    0.544038] RPC: Registered udp transport module.
+[    0.548759] RPC: Registered tcp transport module.
+[    0.553478] RPC: Registered tcp-with-tls transport module.
+[    0.558982] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.565453] PCI: CLS 0 bytes, default 64
+[    0.569759] kvm [1]: HYP mode not available
+[    0.575402] Initialise system trusted keyrings
+[    0.580438] workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[    0.589695] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.596369] NFS: Registering the id_resolver key type
+[    0.601680] Key type id_resolver registered
+[    0.605976] Key type id_legacy registered
+[    0.610160] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.616957] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    0.624827] 9p: Installing v9fs 9p2000 file system support
+[    0.630799] Key type asymmetric registered
+[    0.635003] Asymmetric key parser 'x509' registered
+[    0.640128] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.647628] io scheduler mq-deadline registered
+[    0.652238] io scheduler kyber registered
+[    0.656407] io scheduler bfq registered
+[    0.673268] ledtrig-cpu: registered to indicate activity on CPUs
+[    0.720875] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.732055] printk: legacy console [ttyS0] disabled
+[    0.737649] 4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+[    0.746667] printk: legacy console [ttyS0] enabled
+[    0.756478] printk: legacy bootconsole [uart8250] disabled
+[    0.776728] msm_serial: driver initialized
+[    0.782403] SuperH (H)SCI(F) driver initialized
+[    0.787425] STM32 USART driver initialized
+[    0.804082] loop: module loaded
+[    0.809307] megasas: 07.734.00.00-rc1
+[    0.823542] tun: Universal TUN/TAP device driver, 1.6
+[    0.830773] thunder_xcv, ver 1.0
+[    0.834281] thunder_bgx, ver 1.0
+[    0.837697] nicpf, ver 1.0
+[    0.842984] e1000: Intel(R) PRO/1000 Network Driver
+[    0.848006] e1000: Copyright (c) 1999-2006 Intel Corporation.
+[    0.853926] e1000e: Intel(R) PRO/1000 Network Driver
+[    0.858975] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    0.865125] igb: Intel(R) Gigabit Ethernet Network Driver
+[    0.870615] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    0.876378] igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[    0.882735] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    0.889615] sky2: driver version 1.30
+[    0.895453] axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[    0.902007] axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[    0.914513] axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[    0.921613] axera-dwmac 104c0000.ethernet: 	DWMAC4/5
+[    0.926657] axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[    0.934037] axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[    0.941021] axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[    0.948413] axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[    0.955467] axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[    0.961921] axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[    0.969868] axera-dwmac 104c0000.ethernet: device MAC address 62:2a:f2:bf:6c:bb
+[    0.977234] axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[    0.984271] axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[    0.991326] axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[    0.999169] axera-dwmac 104c0000.ethernet: TSO supported
+[    1.004543] axera-dwmac 104c0000.ethernet: TSO feature enabled
+[    1.010404] axera-dwmac 104c0000.ethernet: SPH feature enabled
+[    1.016253] axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[    1.027134] VFIO - User Level meta-driver version: 0.3
+[    1.033626] axera-dwc3 soc:usb@8000000: 2 clocks, VBUSVALID set (peripheral mode)
+[    1.050029] usbcore: registered new interface driver usb-storage
+[    1.061345] i2c_dev: i2c /dev entries driver
+[    1.073222] ax630c-wdt 4840000.watchdog: counter at 24000000 Hz, timeout 60s, max 357s
+[    1.096494] SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[    1.104663] usbcore: registered new interface driver usbhid
+[    1.110302] usbhid: USB HID core driver
+[    1.122439] optee: probing for conduit method.
+[    1.125142] mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+[    1.127012] optee: revision 3.21
+[    1.134421] mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+[    1.134935] optee: initialized driver
+[    1.153622] NET: Registered PF_INET6 protocol family
+[    1.159817] Segment Routing with IPv6
+[    1.163584] In-situ OAM (IOAM) with IPv6
+[    1.167589] NET: Registered PF_PACKET protocol family
+[    1.172761] 9pnet: Installing 9P2000 support
+[    1.177173] Key type dns_resolver registered
+[    1.195282] registered taskstats version 1
+[    1.200396] Loading compiled-in X.509 certificates
+[    1.215285] Demotion targets for Node 0: null
+[    1.246500] axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[    1.253112] axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[    1.265396] axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[    1.272469] axera-dwmac 104c0000.ethernet: 	DWMAC4/5
+[    1.277485] axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[    1.284842] axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[    1.291762] axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[    1.299137] axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[    1.306054] axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[    1.312370] axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[    1.320266] axera-dwmac 104c0000.ethernet: device MAC address 92:d9:cd:42:99:41
+[    1.327628] axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[    1.334612] axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[    1.341614] axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[    1.349373] axera-dwmac 104c0000.ethernet: TSO supported
+[    1.354715] axera-dwmac 104c0000.ethernet: TSO feature enabled
+[    1.360563] axera-dwmac 104c0000.ethernet: SPH feature enabled
+[    1.366412] axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[    1.462365] mmc0: invalid driver type, default to driver type B
+[    1.469151] mmc0: invalid driver type, default to driver type B
+[    1.487579] mmc0: invalid driver type, default to driver type B
+[    1.493552] mmc0: invalid driver type, default to driver type B
+[    1.499503] mmc0: invalid driver type, default to driver type B
+[    1.581877] lt6911-manage 0-002b: LT6911UXC found
+[    1.817073] lt6911-manage 0-002b: ready
+[    1.821716] clk: Disabling unused clocks
+[    1.825992] PM: genpd: Disabling unused power domains
+[    1.831073] ALSA device list:
+[    1.834055]   No soundcards found.
+[    1.837707] dw-apb-uart 4880000.serial: forbid DMA for kernel console
+[    1.848916] Freeing unused kernel memory: 10176K
+[    1.853736] Run /init as init process
+[    1.857424]   with arguments:
+[    1.860395]     /init
+[    1.862679]   with environment:
+[    1.865830]     HOME=/
+[    1.868192]     TERM=linux
+[    1.870910]     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[    1.876758]     logomode=vo0@dsi_dpi_video
+[    2.043821] stage-1-init: [Thu Jan  1 00:00:01 UTC 1970] running udev...
+[    2.110211] stage-1-init: [Thu Jan  1 00:00:01 UTC 1970] Starting systemd-udevd version 261
+[    2.358717] mmc0: new HS200 MMC card at address 0001
+[    2.367210] mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+[    2.383995]  mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+[    2.418824] mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+[    2.433658] mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+[    2.441026] mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (510:0)
+[    2.504250] axera-dwmac 104c0000.ethernet end0: renamed from eth0
+[    2.994671] stage-1-init: [Thu Jan  1 00:00:02 UTC 1970] kbd_mode: KDSKBMODE: Inappropriate ioctl for device
+[    3.010721] stage-1-init: [Thu Jan  1 00:00:02 UTC 1970] starting device mapper and LVM...
+[    4.169069] random: crng init done
+[    4.187295] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] /dev/mapper/control: open failed: No such device
+[    4.206154] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Failure to communicate with kernel device-mapper driver.
+[    4.229325] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Check that device-mapper is available in the kernel.
+[    4.244797] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Incompatible libdevmapper 1.02.215 (2026-05-15) and kernel driver (unknown version).
+[    4.289784] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] nanokvm: loop-mounting /nixos-root.img off /dev/mmcblk0p17
+[    4.303236] EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b r/w with ordered data mode. Quota mode: none.
+[    4.327056] loop0: detected capacity change from 0 to 3768352
+[    4.423481] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] checking /dev/loop0...
+[    4.436790] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] fsck (busybox 1.37.0)
+[    4.455984] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/loop0
+[    4.472385] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] NANOKVM: clean, 47280/119520 files, 331915/471044 blocks
+[    4.489308] stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] mounting /dev/loop0 on /...
+[    4.512675] EXT4-fs (loop0): mounted filesystem 44444444-4444-4444-8888-888888888888 r/w with ordered data mode. Quota mode: none.
+[    5.353101] EXT4-fs (loop0): re-mounted 44444444-4444-4444-8888-888888888888.
+[    5.365606] booting system configuration /nix/store/n5608nqsl696xr04i7z2qzfrnzsy5psb-nixos-system-nanokvm-26.11pre-git
+[    5.530905] stage-2-init: running activation script...
+[    6.568683] stage-2-init: setting up /etc...
+[    7.292260] systemd[1]: System time advanced to built-in epoch: Tue 2026-03-17 19:55:52 UTC
+[    8.461197] systemd[1]: systemd 261 running in system mode (+PAM +AUDIT -SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF -XKBCOMMON +UTMP +LIBARCHIVE)
+[    8.492728] systemd[1]: Detected architecture arm64.
+[    8.497932] systemd[1]: Detected first boot.
+[    8.529204] systemd[1]: Initializing machine ID from random generator.
+[    8.547420] systemd[1]: Hostname set to <nanokvm>.
+[    8.928590] systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[    9.253342] systemd[1]: Applying preset policy.
+[    9.668513] systemd[1]: Populated /etc with preset unit settings.
+[   10.237458] systemd[1]: Queued start job for default target Multi-User System.
+[   10.284083] systemd[1]: Created slice Slice /system/getty.
+[   10.305537] systemd[1]: Created slice Slice /system/modprobe.
+[   10.329611] systemd[1]: Created slice Slice /system/serial-getty.
+[   10.353631] systemd[1]: Created slice Slice /system/systemd-fsck.
+[   10.377223] systemd[1]: Created slice User and Session Slice.
+[   10.393619] systemd[1]: Started Dispatch Password Requests to Console Directory Watch.
+[   10.413589] systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+[   10.433406] systemd[1]: Expecting device /dev/mmcblk0p16...
+[   10.449253] systemd[1]: Expecting device /dev/ttyS0...
+[   10.465281] systemd[1]: Reached target Local Encrypted Volumes.
+[   10.481389] systemd[1]: Reached target Virtual Machines and Containers.
+[   10.501411] systemd[1]: Reached target Path Units.
+[   10.517352] systemd[1]: Reached target Remote File Systems.
+[   10.533323] systemd[1]: Reached target Slice Units.
+[   10.549362] systemd[1]: Reached target Swaps.
+[   10.572194] systemd[1]: Listening on Query the User Interactively for a Password.
+[   10.605547] systemd[1]: Listening on Process Core Dump Socket.
+[   10.630152] systemd[1]: Listening on Credential Encryption/Decryption.
+[   10.656334] systemd[1]: Listening on Factory Reset Management.
+[   10.673806] systemd[1]: Listening on Hostname Service Socket.
+[   10.704510] systemd[1]: Starting Journal Log Access Socket...
+[   10.732958] systemd[1]: Listening on Journal Audit Socket.
+[   10.750030] systemd[1]: Listening on Journal Socket (/dev/log).
+[   10.773957] systemd[1]: Listening on Journal Sockets.
+[   10.796776] systemd[1]: Listening on Console Output Muting Service Socket.
+[   10.818237] systemd[1]: Listening on Network Management Metrics Varlink Socket.
+[   10.838305] systemd[1]: Listening on Network Management Varlink Socket.
+[   10.858129] systemd[1]: Listening on Network Management Netlink Socket.
+[   10.877443] systemd[1]: Userspace Out-Of-Memory (OOM) Killer Socket skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   10.890491] systemd[1]: TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-os
+[   10.900285] systemd[1]: Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[   10.924614] systemd[1]: Listening on Disk Repartitioning Service Socket.
+[   10.945909] systemd[1]: Listening on Resolve Monitor Varlink Socket.
+[   10.965831] systemd[1]: Listening on Resolve Service Varlink Socket.
+[   10.985873] systemd[1]: Listening on udev Control Socket.
+[   11.005731] systemd[1]: Listening on udev Kernel Socket.
+[   11.021879] systemd[1]: Listening on udev Varlink Socket.
+[   11.053697] systemd[1]: Mounting Huge Pages File System...
+[   11.076362] systemd[1]: Mounting POSIX Message Queue File System...
+[   11.103782] systemd[1]: Mounting Kernel Debug File System...
+[   11.122212] systemd[1]: Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[   11.133489] systemd[1]: Create List of Static Device Nodes skipped, unmet condition check ConditionFileNotEmpty=/run/booted-system/kernel-modules/lib/modules/7.1.3-nanokvm/modules.devname
+[   11.150795] systemd[1]: Load Kernel Module configfs skipped, unmet condition check ConditionKernelModuleLoaded=!configfs
+[   11.169381] systemd[1]: Mounting Kernel Configuration File System...
+[   11.219182] systemd[1]: Starting Load Kernel Module drm...
+[   11.244164] systemd[1]: Load Kernel Module efi_pstore skipped, unmet condition check ConditionKernelModuleLoaded=!efi_pstore
+[   11.274821] systemd[1]: Starting Load Kernel Module fuse...
+[   11.301748] systemd[1]: File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[   11.312540] systemd[1]: Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[   11.344798] systemd[1]: Starting Journal Service...
+[   11.362431] systemd[1]: Load Kernel Modules skipped, no trigger condition checks were met.
+[   11.371184] systemd[1]: Userspace Out-Of-Memory (OOM) Killer skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   11.390306] systemd[1]: Starting Remount Root and Kernel File Systems...
+[   11.425450] systemd[1]: Starting Apply Kernel Variables...
+[   11.475247] systemd[1]: Starting Create Static Device Nodes in /dev gracefully...
+[   11.522526] systemd-journald[344]: Collecting audit messages is enabled.
+[   11.530374] systemd[1]: Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   11.545289] EXT4-fs (loop0): re-mounted 44444444-4444-4444-8888-888888888888.
+[   11.555875] systemd[1]: Starting Coldplug All udev Devices...
+[   11.607343] systemd[1]: Listening on Journal Log Access Socket.
+[   11.638380] systemd[1]: Mounted Huge Pages File System.
+[   11.658604] systemd[1]: Mounted POSIX Message Queue File System.
+[   11.676380] systemd[1]: Mounted Kernel Debug File System.
+[   11.691680] systemd[1]: Started Journal Service.
+[   11.981652] systemd-journald[344]: Received client request to flush runtime journal.
+[   17.033689] axera-dwmac 104c0000.ethernet end0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[   17.081137] axera-dwmac 104c0000.ethernet end0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[   17.121153] axera-dwmac 104c0000.ethernet end0: No Safety Features support found
+[   17.148753] axera-dwmac 104c0000.ethernet end0: IEEE 1588-2008 Advanced Timestamp supported
+[   17.168537] axera-dwmac 104c0000.ethernet end0: registered PTP clock
+[   17.181036] axera-dwmac 104c0000.ethernet end0: configuring for phy/rgmii-id link mode
+[   21.306840] axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+[   21.320544] axera-dwmac 104c0000.ethernet end0: Link is Up - 1Gbps/Full - flow control off
