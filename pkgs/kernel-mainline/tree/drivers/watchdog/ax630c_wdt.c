@@ -75,6 +75,14 @@
  * driver registers the six WDT clock IDs -- it registers none of them today,
  * which is why this driver programs the bits itself rather than calling
  * clk_prepare_enable() and getting a silent no-op.
+ *
+ * That conversion is table rows, not reverse engineering: the WDT clocks are
+ * in the clock model's "declared but not registered" bucket (clk-model
+ * section 5.2), i.e. the vendor CCF never registered them either, and every
+ * register position they need is already marked (V) in
+ * wdt-model-20260906.md section 7. eMMC, SD, SDIO and the UARTs are in the
+ * same bucket, so whoever adds those rows for sdhci-cadence (#76) can add
+ * these in the same pass.
  */
 #define AX630C_PERIPH_MUX0_SET		0xa8
 #define AX630C_PERIPH_MUX0_CLR		0xac
