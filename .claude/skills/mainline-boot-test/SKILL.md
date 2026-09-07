@@ -103,6 +103,11 @@ tools/kvmssh 'devmem 0x0239002C 32 0x3F000
 tools/kvmssh 'sync; reboot'
 ```
 
+The first write clears milestone bits 12–17 from any previous run — **skip it
+and you will read a stale result and believe it**. `S99checkboot systemB` is
+mandatory: a raw `SLOTB` poke leaves `SLOTB_BOOTABLE` clear and the SPL falls
+straight back to A. Expect `0x00000038` after arming.
+
 **Reboot in the foreground.** An earlier version of this skill used
 `nohup sh -c "sleep 2; reboot" >/dev/null 2>&1 &`, and it is a race: the
 backgrounded shell has to survive session teardown for two seconds, which it
@@ -124,11 +129,6 @@ tools/kvmssh 'devmem 0x02390024'            # still 0x38 = armed, never consumed
 
 A slot register still reading `0x00000038` means the SPL never consumed
 `SLOTB_BOOTABLE` — that is "no reboot happened", not "the kernel failed".
-
-The first write clears milestone bits 12–17 from any previous run — **skip it
-and you will read a stale result and believe it**. `S99checkboot systemB` is
-mandatory: a raw `SLOTB` poke leaves `SLOTB_BOOTABLE` clear and the SPL falls
-straight back to A. Expect `0x00000038` after arming.
 
 **The mask grows as milestones are added.** It was `0xF000` for #75's four bits
 and is `0x3F000` since #76 added two more. The register's bits 12–29 are all
@@ -232,7 +232,7 @@ tools/kvmssh 'cd /root/pre75
   dd if=p13-dtb_b.bak    of=/dev/mmcblk0p13 bs=1M conv=fsync
   dd if=p15-kernel_b.bak of=/dev/mmcblk0p15 bs=1M conv=fsync
   sync; echo 3 > /proc/sys/vm/drop_caches'
-tools/kvmssh 'devmem 0x0239002C 32 0xF000'   # clear the milestone bits
+tools/kvmssh 'devmem 0x0239002C 32 0x3F000'  # clear the milestone bits
 ```
 
 Verify both restores from the medium against the step-2 md5s, and confirm

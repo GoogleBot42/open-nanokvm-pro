@@ -529,10 +529,20 @@ of this section); #80's source half is written but unbooted; everything else is 
    `SLOTB_BOOTABLE` would strand the device on a slot with no rootfs, so
    the milestone bits are the oracle and every exit path returns to slot A.
 3. **#76 eMMC/SD via `sdhci-cadence` + reset driver + gate-only clk driver** —
-   Spec + port of `axera_reset` (`#reset-cells = <1>` + table) and a CCF
-   driver covering the 86 gates (PLLs as fixed-factor); `cdns,sd4hc` with
-   the board's `cdns,phy-*` values; diff `sdhci-axera.c` against mainline
-   for Axera-only tuning. Root on SD p2 first. Depends on: #75.
+   **eMMC half DONE 2026-09-06, device-proven** (see "What exists now (#76)").
+   Most of the filed scope evaporated on contact: #80 had already shipped the
+   full clock driver, so only the fifteen mmc clock rows the vendor CCF never
+   registered were owed; and the controller turned out to be a stock Cadence
+   SD4HC needing a 14-line quirk patch rather than a port. **The reset driver
+   is specified but not written, and storage does not need it** — mainline
+   reserves `resets` on an mmc node for the card's `RST_n`, and firmware
+   leaves the SoC lines deasserted. It stays here because #81/#83/#84 all
+   block on it: spec in
+   [reset-model-20260906.md](reference/mainline/reset-model-20260906.md),
+   which recommends folding `#reset-cells = <1>` into the existing
+   `clock-controller` nodes rather than adding separate ones.
+   **Still open: root on SD p2, blocked on there being no SD card in the
+   device.** Depends on: #75.
 4. **#77 Ethernet: DWMAC 4.10a glue + JL2101 PHY** — stmmac
    `dwmac-generic`/tiny glue with the five clock names + PHY reset GPIO;
    genphy first, JLSemi RGMII-delay/LED spec only if link fails. Exit: SSH.
@@ -733,6 +743,73 @@ two milestone lines to it. `/init` now sets it before logging anything.
 
 Still absent, by design: no storage, network, GPIO, USB or video driver. The
 kernel reaches its initramfs and nothing further — #76 is the next step.
+
+### What exists now (#76, 2026-09-06) — eMMC BOOTED, SD untested
+
+**A mainline kernel enumerates this board's eMMC, parses the vendor partition
+layout and reads the rootfs.** Milestone register `0x0003F014` on return; log
+and analysis in
+[reference/mainline/storage-boot-20260906/](reference/mainline/storage-boot-20260906/).
+
+The issue's filed scope assumed this would be a driver port. It is not. The
+controller is an **unmodified Cadence SD4HC** and mainline's own
+`sdhci-cadence` drives it; the entire code delta is a 14-line patch adding a
+compatible whose match data carries `SDHCI_QUIRK2_PRESET_VALUE_BROKEN`
+(`pkgs/kernel-mainline/patches/`, kept in upstream-submission shape for #87).
+The 1208-vs-675 line gap against the vendor fork is not Axera tuning — tuning
+is byte-identical — it is clock/reset integration that belongs in DT, plus dead
+code. Full accounting:
+[sdhci-model-20260906.md](reference/mainline/sdhci-model-20260906.md).
+
+Three decisions in the DT are worth carrying forward, because each would have
+passed a first boot and failed later:
+
+- **No `resets`, on any mmc node.** Mainline reserves that property for the
+  card's `RST_n` and binds index 0 to `card_hw_reset`, so listing the
+  controller's own APB reset there makes `mmc_hw_reset()` — an error-recovery
+  path — reset the host. Firmware leaves all three SoC lines deasserted, so
+  doing nothing is correct. The reset and sdhci specs reached this
+  independently, in separate contexts.
+- **No `sdhci-caps-mask`.** Redundant with the `cap-*` properties, and it
+  leaves the eMMC on a 1.8 V-only OCR by accident rather than intent. It is
+  *not* the probe-killer it first looked like — `CAPS0 = 0x176AC8B2` advertises
+  all three voltages and the mask leaves `CAN_VDD_180`.
+- **No `cdns,phy-input-delay-mmc-legacy`.** PHY address `0x06` has no entry in
+  any driver's property table, the vendor's included, so that value has never
+  been applied to this board.
+
+Clocks were the hidden dependency. #80 registered the 246 clocks the *vendor*
+CCF registered, and the vendor CCF models none of eMMC, SD, SDIO or UART — its
+own drivers programmed those windows by hand. `sdhci-cadence` calls `clk_get()`,
+so #76 added fifteen rows. The bus gates cannot be named in DT (the binding
+allows one clock per node) and are `CLK_IS_CRITICAL` instead; `clk: Disabling
+unused clocks` runs before the card enumerates and leaves them alone, which is
+that marking working. **This generalises: anything calling `clk_get()` on a
+block the vendor drove by hand will hit the same gap.**
+
+The eMMC card mux is registered with all four parents, from the SDK's own
+manual rather than from source — no vendor source names values 0–2. The SD and
+SDIO card muxes are deliberately *not* registered: that manual covers eMMC
+only, so their dividers parent straight onto `npll_400m`, which describes every
+state the hardware is ever in.
+
+Two things the run corrected:
+
+- `CONFIG_BLK_CMDLINE_PARSER`, added in #74 to honour `blkdevparts=`, **does
+  not exist in 7.x**. The eMMC has no on-disk partition table, so the first run
+  came back with a perfectly healthy card and no partitions. The symbol is
+  `CMDLINE_PARTITION`, gated behind `PARTITION_ADVANCED`. The build's
+  "fragment survived `olddefconfig`" assertion was a hand-maintained list that
+  did not include it — it is now generated from the fragment and checks every
+  line, so a misspelled or unsatisfiable symbol fails the build.
+- The card negotiates **HS200** from `CAPS1` SDR104, not from the DT properties
+  this issue withheld. The read-gap tuning storm that the conservative
+  `max-frequency = <50000000>` hedges against does not occur, so that hedge and
+  the `mmc-hs400-*` properties can be restored.
+
+**Not proven: the SD slot.** `mmc1` binds and the controller is healthy, but
+there is no card in the device — so rooting a mainline system from SD, the half
+of #76 that gives #77 a shell, is blocked on hardware.
 
 ---
 
