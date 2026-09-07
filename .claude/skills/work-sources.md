@@ -505,15 +505,26 @@ propose SG2002 work without flagging this gap up front.
   every boot and rewrites `/etc/network/interfaces`, so that file is a cache;
   and IRAM0 is at physical 0, so `misc_info` really is at physical `0x740`
   (`uid_l` `0x788`, `uid_h` `0x78c`).
-  **#78 hardware half, 2026-09-07 evening:** run 1 BOOTED the appliance from
-  slot B (NixOS 26.11 on mainline 7.1.3, multi-user in 20 s, zero failed units,
-  root on a loop image over the vendor rootfs; UID/MAC/fw_env proven on silicon;
-  `nanokvm-gpio` ran on hardware for the first time). Run 2 carried two fixes
-  (transient hostname, `ClientIdentifier=mac`) and STRANDED the board: a slot-B
-  *appliance* stays up and pets the dog, so it never fails over -- fixed in
-  `nixos/loop-test.nix` (stage-1 panicOnFail, 30-min deadman, milestone bits
-  25-27), untested. The board needs a power cycle, then p13/p15 restored from
-  `/root/pre75/*.bak`. #81, #82 and #78 are all merged to main (bff4044).
+  **#78 HARDWARE HALF DONE, 2026-09-07 evening -- the appliance boots this
+  board.** Six slot-B runs ending in a NixOS 26.11 system on mainline 7.1.3 with
+  the device's own MAC, its own DHCP lease and its own derived hostname, zero
+  failed units, NanoKVM-Server on HTTPS, in 26.3 s; root on a loop image over the
+  vendor rootfs throughout, so nothing on the eMMC was overwritten.
+  `docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`.
+  Four findings, each of which cost a run:
+  (1) **the eMMC is not reliably `mmcblk0`, and when it loses the race it has NO
+  partitions at all** -- `blkdevparts=mmcblk0:` binds the table to a NAME, so it
+  lands on the empty SD slot; two boots in five; fixed with `aliases { mmc0 =
+  &emmc; ... }` in `dts/ax630c.dtsi`, and this affects EVERY mainline boot, not
+  just #78's. (2) A slot-B appliance needs its own exit: stage-1 `panicOnFail`
+  (NixOS's `fail()` blocks on an unreachable console) and a userspace deadman on
+  `/proc/uptime` -- NOT `date +%s`, which timesyncd invalidates the moment DHCP
+  lands. Both fired on hardware. (3) `networking.hostName` must be EMPTY or
+  systemd-hostnamed refuses the transient hostname the identity service sets.
+  (4) `ClientIdentifier=mac` -- the same MAC does not get the same lease when
+  networkd sends a DUID. Also: the milestone clear-mask is `0xFFFF000`, not
+  `0x7FFF000` (bit 27). Device left on slot A, slot B restored from
+  `/root/pre75/*.bak` and verified from the medium.
   Next: **#83**/**#84** are unblocked by #81; **#79** is unblocked by #78 (and
   wants the SD card); **#85** (aic8800) is an owner decision, `needs-human`.
   Two facts worth reusing: the mainline kernel's release string must be asserted

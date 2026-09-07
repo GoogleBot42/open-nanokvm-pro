@@ -132,13 +132,29 @@ that is arbitration, not a bug.
   `postPatch` (a patch that drops an import drops a module). Validate
   release-critical FODs with `nix build --rebuild` before cutting --
   `docs/building.md` "Pinned hashes" (alpha.5, 2026-09-07).
-- **A slot-B *appliance* has no way back to slot A.** The #75 initramfs always
-  ended in `reboot(2)`; a NixOS system that boots and stays up pets U-Boot's
-  watchdog forever, and if it comes up without network the board is stranded
-  until someone pulls power (#78 run 2, 2026-09-07). Every slot-B appliance
-  test must carry its own exit -- `nixos/loop-test.nix` (stage-1 panicOnFail,
-  userspace deadman, milestone bits 25-27) -- and `checkboot` disabled so it
-  never re-arms slot B.
+- **The eMMC is not reliably `mmcblk0` on mainline, and when it loses it has NO
+  partitions at all.** The three SD4HC instances probe concurrently and the
+  eMMC's layout comes from the `blkdevparts=mmcblk0:...` cmdline clause, which
+  binds the table to a device *name* (there is no on-disk partition table). Lose
+  the race and the table lands on the empty SD slot while the eMMC comes up bare
+  -- two boots in five, measured in #78. Locating the partition by name does not
+  help, because in the losing case nothing is named. Fixed by `aliases { mmc0 =
+  &emmc; ... }` in `dts/ax630c.dtsi`; #76/#77 never saw it because they won.
+- **A slot-B *appliance* has no way back to slot A** unless you give it one, and
+  NixOS stage 1's `fail()` is INTERACTIVE -- it blocks in `read` on a console
+  whose pads nobody can reach, while the kernel pets U-Boot's watchdog forever.
+  Set `panicOnFail=1` from `boot.initrd.preDeviceCommands` (upstream only reads
+  it from the cmdline, which here comes from the U-Boot env) and carry a
+  userspace deadman on `/proc/uptime` -- NOT `date +%s`, because timesyncd jumps
+  the clock months forward the moment DHCP lands and a wall-clock deadline
+  expires instantly. `nixos/loop-test.nix`; both halves hardware-proven in #78.
+- **Three separate things decide the appliance's identity, and each looks
+  sufficient alone.** `hostnamectl` must be `--transient` (the plain call writes
+  `/etc/hostname`, a read-only store symlink); `networking.hostName` must be
+  **empty**, or systemd-hostnamed refuses the transient one ("static hostname is
+  already set"); and `dhcpV4Config.ClientIdentifier` must be `mac`, because the
+  same MAC does not get the same lease when networkd sends a DUID in option 61.
+  Four hardware runs, one per discovery -- `docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`.
 - **The board's ethernet PHY is a Realtek RTL8211F, not the JLSemi JL2101 the
   vendor DT names** (PHYID 0x001cc916, read over MDIO 2026-09-06). An
   `ethernet-phy-id*` compatible makes Linux skip the bus read, so the vendor has

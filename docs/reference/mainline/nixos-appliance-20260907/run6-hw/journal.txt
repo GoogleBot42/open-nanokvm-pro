@@ -1,0 +1,812 @@
+[   11.469934] nixos kernel: Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[   11.470179] nixos kernel: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[   11.470286] nixos kernel: KASLR disabled due to lack of seed
+[   11.470353] nixos kernel: Machine model: Sipeed NanoKVM-Pro
+[   11.470410] nixos kernel: Memory limited to 824MB
+[   11.470465] nixos kernel: earlycon: uart8250 at MMIO32 0x0000000004880000 (options '')
+[   11.470527] nixos kernel: printk: legacy bootconsole [uart8250] enabled
+[   11.470581] nixos kernel: efi: UEFI not found.
+[   11.470634] nixos kernel: OF: reserved mem: 0x0000000040040000..0x000000004007ffff (256 KiB) nomap non-reusable atf@40040000
+[   11.470688] nixos kernel: OF: reserved mem: 0x0000000044200000..0x00000000461fffff (32768 KiB) nomap non-reusable optee@44200000
+[   11.470765] nixos kernel: OF: reserved mem: 0x0000000048000000..0x00000000480dffff (896 KiB) nomap non-reusable vendor-pstore@48000000
+[   11.470818] nixos kernel: OF: reserved mem: 0x00000000480e0000..0x00000000480e7fff (32 KiB) map non-reusable ramoops@480e0000
+[   11.470882] nixos kernel: OF: reserved mem: 0x00000000480e8000..0x00000000480effff (32 KiB) map non-reusable bringup-log@480e8000
+[   11.470937] nixos kernel: NUMA: Faking a node at [mem 0x0000000040000000-0x00000000737fffff]
+[   11.471012] nixos kernel: NODE_DATA(0) allocated [mem 0x7366f1c0-0x736718bf]
+[   11.471064] nixos kernel: cma: Reserved 32 MiB at 0x0000000071600000
+[   11.471116] nixos kernel: psci: probing for conduit method from DT.
+[   11.471193] nixos kernel: psci: PSCIv1.1 detected in firmware.
+[   11.471247] nixos kernel: psci: Using standard PSCI v0.2 function IDs
+[   11.471300] nixos kernel: psci: Trusted OS migration not required
+[   11.471356] nixos kernel: psci: SMC Calling Convention v1.2
+[   11.471408] nixos kernel: Zone ranges:
+[   11.471478] nixos kernel:   DMA      [mem 0x0000000040000000-0x00000000737fffff]
+[   11.471531] nixos kernel:   DMA32    empty
+[   11.471581] nixos kernel:   Normal   empty
+[   11.471636] nixos kernel: Movable zone start for each node
+[   11.471688] nixos kernel: Early memory node ranges
+[   11.471757] nixos kernel:   node   0: [mem 0x0000000040000000-0x000000004003ffff]
+[   11.471823] nixos kernel:   node   0: [mem 0x0000000040040000-0x000000004007ffff]
+[   11.471876] nixos kernel:   node   0: [mem 0x0000000040080000-0x00000000441fffff]
+[   11.471928] nixos kernel:   node   0: [mem 0x0000000044200000-0x00000000461fffff]
+[   11.471980] nixos kernel:   node   0: [mem 0x0000000046200000-0x0000000047ffffff]
+[   11.472194] nixos kernel:   node   0: [mem 0x0000000048000000-0x00000000480dffff]
+[   11.472264] nixos kernel:   node   0: [mem 0x00000000480e0000-0x00000000737fffff]
+[   11.472318] nixos kernel: Initmem setup node 0 [mem 0x0000000040000000-0x00000000737fffff]
+[   11.472370] nixos kernel: On node 0, zone DMA: 18432 pages in unavailable ranges
+[   11.472422] nixos kernel: percpu: Embedded 26 pages/cpu s66904 r8192 d31400 u106496
+[   11.472474] nixos kernel: pcpu-alloc: s66904 r8192 d31400 u106496 alloc=26*4096
+[   11.472528] nixos kernel: pcpu-alloc: [0] 0 [0] 1 
+[   11.472584] nixos kernel: Detected VIPT I-cache on CPU0
+[   11.472674] nixos kernel: CPU features: detected: ARM erratum 845719
+[   11.472728] nixos kernel: alternatives: applying boot alternatives
+[   11.472790] nixos kernel: Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[   11.472847] nixos kernel: Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 logomode=vo0@dsi_dpi_video", will be passed to user space.
+[   11.472899] nixos kernel: printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[   11.472968] nixos kernel: Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[   11.473024] nixos kernel: Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[   11.473079] nixos kernel: software IO TLB: SWIOTLB bounce buffer size adjusted to 0MB
+[   11.473288] nixos kernel: software IO TLB: area num 2.
+[   11.473358] nixos kernel: software IO TLB: mapped [mem 0x0000000070580000-0x0000000070680000] (1MB)
+[   11.473410] nixos kernel: Fallback order for Node 0: 0 
+[   11.473462] nixos kernel: Built 1 zonelists, mobility grouping on.  Total pages: 210944
+[   11.473515] nixos kernel: Policy zone: DMA
+[   11.473567] nixos kernel: mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[   11.473619] nixos kernel: SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[   11.473674] nixos kernel: rcu: Preemptible hierarchical RCU implementation.
+[   11.473730] nixos kernel: rcu:         RCU event tracing is enabled.
+[   11.473784] nixos kernel: rcu:         RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=2.
+[   11.473838] nixos kernel:         Trampoline variant of Tasks RCU enabled.
+[   11.473893] nixos kernel:         Tracing variant of Tasks RCU enabled.
+[   11.473972] nixos kernel: rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[   11.474029] nixos kernel: rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[   11.474082] nixos kernel: RCU Tasks: Setting shift to 1 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=2.
+[   11.474135] nixos kernel: NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[   11.474187] nixos kernel: Root IRQ handler: gic_handle_irq
+[   11.474240] nixos kernel: rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[   11.474293] nixos kernel: arch_timer: cp15 timer running at 24.00MHz (virt).
+[   11.474353] nixos kernel: clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[   11.474407] nixos kernel: sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[   11.474465] nixos kernel: Console: colour dummy device 80x25
+[   11.474525] nixos kernel: Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[   11.474581] nixos kernel: pid_max: default: 32768 minimum: 301
+[   11.474639] nixos kernel: Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[   11.474721] nixos kernel: Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[   11.474778] nixos kernel: VFS: Finished mounting rootfs on nullfs
+[   11.474835] nixos kernel: rcu: Hierarchical SRCU implementation.
+[   11.474894] nixos kernel: rcu:         Max phase no-delay instances is 1000.
+[   11.474950] nixos kernel: Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[   11.475006] nixos kernel: EFI services will not be available.
+[   11.475061] nixos kernel: smp: Bringing up secondary CPUs ...
+[   11.475115] nixos kernel: Detected VIPT I-cache on CPU1
+[   11.475197] nixos kernel: CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[   11.475254] nixos kernel: smp: Brought up 1 node, 2 CPUs
+[   11.475310] nixos kernel: SMP: Total of 2 processors activated.
+[   11.475365] nixos kernel: CPU: All CPU(s) started at EL1
+[   11.475421] nixos kernel: CPU features: detected: 32-bit EL0 Support
+[   11.475477] nixos kernel: CPU features: detected: 32-bit EL1 Support
+[   11.475533] nixos kernel: CPU features: detected: CRC32 instructions
+[   11.475590] nixos kernel: CPU features: detected: PMUv3
+[   11.475647] nixos kernel: alternatives: applying system-wide alternatives
+[   11.475737] nixos kernel: Memory: 704316K/843776K available (19712K kernel code, 5262K rwdata, 14728K rodata, 10176K init, 722K bss, 103684K reserved, 32768K cma-reserved)
+[   11.475794] nixos kernel: devtmpfs: initialized
+[   11.475852] nixos kernel: clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[   11.475908] nixos kernel: posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+[   11.475965] nixos kernel: futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+[   11.476159] nixos kernel: 20048 pages in range for non-PLT usage
+[   11.476238] nixos kernel: 511568 pages in range for PLT usage
+[   11.476297] nixos kernel: DMI: not present or invalid.
+[   11.476353] nixos kernel: NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[   11.476443] nixos kernel: DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[   11.476501] nixos kernel: audit: initializing netlink subsys (disabled)
+[   11.476558] nixos kernel: audit: type=2000 audit(0.164:1): state=initialized audit_enabled=0 res=1
+[   11.476615] nixos kernel: thermal_sys: Registered thermal governor 'step_wise'
+[   11.476673] nixos kernel: thermal_sys: Registered thermal governor 'power_allocator'
+[   11.476728] nixos kernel: cpuidle: using governor menu
+[   11.476783] nixos kernel: hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[   11.476838] nixos kernel: ASID allocator initialised with 65536 entries
+[   11.476895] nixos kernel: Serial: AMBA PL011 UART driver
+[   11.477298] nixos kernel: pstore: Using crash dump compression: deflate
+[   11.477422] nixos kernel: printk: legacy console [ramoops-1] enabled
+[   11.477482] nixos kernel: pstore: Registered ramoops as persistent store backend
+[   11.477811] nixos kernel: ramoops: using 0x8000@0x480e0000, ecc: 0
+[   11.477896] nixos kernel: HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[   11.477959] nixos kernel: HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[   11.478017] nixos kernel: HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[   11.478076] nixos kernel: HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[   11.478169] nixos kernel: HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[   11.478230] nixos kernel: HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[   11.478315] nixos kernel: HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[   11.478386] nixos kernel: HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[   11.478445] nixos kernel: ACPI: Interpreter disabled.
+[   11.478503] nixos kernel: iommu: Default domain type: Translated
+[   11.478561] nixos kernel: iommu: DMA domain TLB invalidation policy: strict mode
+[   11.478621] nixos kernel: SCSI subsystem initialized
+[   11.478682] nixos kernel: libata version 3.00 loaded.
+[   11.478741] nixos kernel: usbcore: registered new interface driver usbfs
+[   11.478827] nixos kernel: usbcore: registered new interface driver hub
+[   11.478884] nixos kernel: usbcore: registered new device driver usb
+[   11.478944] nixos kernel: pps_core: LinuxPPS API ver. 1 registered
+[   11.479000] nixos kernel: pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[   11.479056] nixos kernel: PTP clock support registered
+[   11.479313] nixos kernel: EDAC MC: Ver: 3.0.0
+[   11.479394] nixos kernel: scmi_core: SCMI protocol bus registered
+[   11.479487] nixos kernel: FPGA manager framework
+[   11.479546] nixos kernel: Advanced Linux Sound Architecture Driver Initialized.
+[   11.479603] nixos kernel: vgaarb: loaded
+[   11.479659] nixos kernel: clocksource: Switched to clocksource arch_sys_counter
+[   11.479716] nixos kernel: VFS: Disk quotas dquot_6.6.0
+[   11.479778] nixos kernel: VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[   11.479834] nixos kernel: pnp: PnP ACPI: disabled
+[   11.479890] nixos kernel: NET: Registered PF_INET protocol family
+[   11.479946] nixos kernel: IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[   11.483833] nixos kernel: tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[   11.483976] nixos kernel: Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[   11.484163] nixos kernel: TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[   11.487518] nixos kernel: TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[   11.487593] nixos kernel: TCP: Hash tables configured (established 8192 bind 8192)
+[   11.487651] nixos kernel: UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[   11.487709] nixos kernel: NET: Registered PF_UNIX/PF_LOCAL protocol family
+[   11.488139] nixos kernel: RPC: Registered named UNIX socket transport module.
+[   11.488343] nixos kernel: RPC: Registered udp transport module.
+[   11.488418] nixos kernel: RPC: Registered tcp transport module.
+[   11.488478] nixos kernel: RPC: Registered tcp-with-tls transport module.
+[   11.488536] nixos kernel: RPC: Registered tcp NFSv4.1 backchannel transport module.
+[   11.488593] nixos kernel: PCI: CLS 0 bytes, default 64
+[   11.488649] nixos kernel: kvm [1]: HYP mode not available
+[   11.488706] nixos kernel: Initialise system trusted keyrings
+[   11.488767] nixos kernel: workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[   11.488823] nixos kernel: squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[   11.488904] nixos kernel: NFS: Registering the id_resolver key type
+[   11.488962] nixos kernel: Key type id_resolver registered
+[   11.489019] nixos kernel: Key type id_legacy registered
+[   11.489077] nixos kernel: nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[   11.489136] nixos kernel: nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[   11.489193] nixos kernel: 9p: Installing v9fs 9p2000 file system support
+[   11.489250] nixos kernel: Key type asymmetric registered
+[   11.489308] nixos kernel: Asymmetric key parser 'x509' registered
+[   11.489365] nixos kernel: Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[   11.489446] nixos kernel: io scheduler mq-deadline registered
+[   11.489506] nixos kernel: io scheduler kyber registered
+[   11.489562] nixos kernel: io scheduler bfq registered
+[   11.489622] nixos kernel: ledtrig-cpu: registered to indicate activity on CPUs
+[   11.489683] nixos kernel: Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[   11.489743] nixos kernel: printk: legacy console [ttyS0] disabled
+[   11.489803] nixos kernel: 4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+[   11.489859] nixos kernel: printk: legacy console [ttyS0] enabled
+[   11.489914] nixos kernel: printk: legacy bootconsole [uart8250] disabled
+[   11.489999] nixos kernel: msm_serial: driver initialized
+[   11.490055] nixos kernel: SuperH (H)SCI(F) driver initialized
+[   11.490110] nixos kernel: STM32 USART driver initialized
+[   11.490166] nixos kernel: loop: module loaded
+[   11.490221] nixos kernel: megasas: 07.734.00.00-rc1
+[   11.490279] nixos kernel: tun: Universal TUN/TAP device driver, 1.6
+[   11.490333] nixos kernel: thunder_xcv, ver 1.0
+[   11.490390] nixos kernel: thunder_bgx, ver 1.0
+[   11.490446] nixos kernel: nicpf, ver 1.0
+[   11.490521] nixos kernel: e1000: Intel(R) PRO/1000 Network Driver
+[   11.490578] nixos kernel: e1000: Copyright (c) 1999-2006 Intel Corporation.
+[   11.490636] nixos kernel: e1000e: Intel(R) PRO/1000 Network Driver
+[   11.490695] nixos kernel: e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[   11.490751] nixos kernel: igb: Intel(R) Gigabit Ethernet Network Driver
+[   11.490811] nixos kernel: igb: Copyright (c) 2007-2014 Intel Corporation.
+[   11.490868] nixos kernel: igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[   11.490923] nixos kernel: igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[   11.490979] nixos kernel: sky2: driver version 1.30
+[   11.498751] nixos kernel: axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[   11.500509] nixos kernel: axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[   11.501924] nixos kernel: axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[   11.502992] nixos kernel: axera-dwmac 104c0000.ethernet:         DWMAC4/5
+[   11.509310] nixos kernel: axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[   11.514975] nixos kernel: axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[   11.524365] nixos kernel: axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[   11.525605] nixos kernel: axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[   11.526575] nixos kernel: axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[   11.527468] nixos kernel: axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[   11.528686] nixos kernel: axera-dwmac 104c0000.ethernet: device MAC address c6:94:78:33:22:99
+[   11.529762] nixos kernel: axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[   11.530837] nixos kernel: axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[   11.531910] nixos kernel: axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[   11.537499] nixos kernel: axera-dwmac 104c0000.ethernet: TSO supported
+[   11.538721] nixos kernel: axera-dwmac 104c0000.ethernet: TSO feature enabled
+[   11.539942] nixos kernel: axera-dwmac 104c0000.ethernet: SPH feature enabled
+[   11.545436] nixos kernel: axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[   11.545596] nixos kernel: VFIO - User Level meta-driver version: 0.3
+[   11.546811] nixos kernel: axera-dwc3 soc:usb@8000000: 2 clocks, VBUSVALID set (peripheral mode)
+[   11.546975] nixos kernel: usbcore: registered new interface driver usb-storage
+[   11.547051] nixos kernel: i2c_dev: i2c /dev entries driver
+[   11.550642] nixos kernel: ax630c-wdt 4840000.watchdog: counter at 24000000 Hz, timeout 60s, max 357s
+[   11.553167] nixos kernel: SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[   11.553313] nixos kernel: usbcore: registered new interface driver usbhid
+[   11.553376] nixos kernel: usbhid: USB HID core driver
+[   11.553434] nixos kernel: optee: probing for conduit method.
+[   11.553491] nixos kernel: mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+[   11.553550] nixos kernel: optee: revision 3.21
+[   11.553606] nixos kernel: mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+[   11.553662] nixos kernel: optee: initialized driver
+[   11.553757] nixos kernel: NET: Registered PF_INET6 protocol family
+[   11.553820] nixos kernel: Segment Routing with IPv6
+[   11.553876] nixos kernel: In-situ OAM (IOAM) with IPv6
+[   11.553931] nixos kernel: NET: Registered PF_PACKET protocol family
+[   11.553988] nixos kernel: 9pnet: Installing 9P2000 support
+[   11.554043] nixos kernel: Key type dns_resolver registered
+[   11.554101] nixos kernel: registered taskstats version 1
+[   11.554158] nixos kernel: Loading compiled-in X.509 certificates
+[   11.554242] nixos kernel: Demotion targets for Node 0: null
+[   11.555598] nixos kernel: axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[   11.560869] nixos kernel: axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[   11.561940] nixos kernel: axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[   11.563010] nixos kernel: axera-dwmac 104c0000.ethernet:         DWMAC4/5
+[   11.565159] nixos kernel: axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[   11.566210] nixos kernel: axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[   11.567123] nixos kernel: axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[   11.568074] nixos kernel: axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[   11.569012] nixos kernel: axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[   11.570016] nixos kernel: axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[   11.571173] nixos kernel: axera-dwmac 104c0000.ethernet: device MAC address 92:61:16:58:b9:98
+[   11.576958] nixos kernel: axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[   11.579772] nixos kernel: axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[   11.581811] nixos kernel: axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[   11.582755] nixos kernel: axera-dwmac 104c0000.ethernet: TSO supported
+[   11.588775] nixos kernel: axera-dwmac 104c0000.ethernet: TSO feature enabled
+[   11.589834] nixos kernel: axera-dwmac 104c0000.ethernet: SPH feature enabled
+[   11.590784] nixos kernel: axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[   11.590963] nixos kernel: mmc0: invalid driver type, default to driver type B
+[   11.591058] nixos kernel: mmc0: invalid driver type, default to driver type B
+[   11.591176] nixos kernel: mmc0: invalid driver type, default to driver type B
+[   11.591237] nixos kernel: mmc0: invalid driver type, default to driver type B
+[   11.591294] nixos kernel: mmc0: invalid driver type, default to driver type B
+[   11.595361] nixos kernel: lt6911-manage 0-002b: LT6911UXC found
+[   11.598739] nixos kernel: lt6911-manage 0-002b: ready
+[   11.598894] nixos kernel: clk: Disabling unused clocks
+[   11.598958] nixos kernel: PM: genpd: Disabling unused power domains
+[   11.599016] nixos kernel: ALSA device list:
+[   11.599073] nixos kernel:   No soundcards found.
+[   11.604868] nixos kernel: dw-apb-uart 4880000.serial: forbid DMA for kernel console
+[   11.605026] nixos kernel: Freeing unused kernel memory: 10176K
+[   11.605087] nixos kernel: Run /init as init process
+[   11.605144] nixos kernel:   with arguments:
+[   11.605202] nixos kernel:     /init
+[   11.605257] nixos kernel:   with environment:
+[   11.605315] nixos kernel:     HOME=/
+[   11.605371] nixos kernel:     TERM=linux
+[   11.605468] nixos kernel:     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[   11.605530] nixos kernel:     logomode=vo0@dsi_dpi_video
+[   11.605595] nixos stage-1-init: [Thu Jan  1 00:00:01 UTC 1970] running udev...
+[   11.605658] nixos stage-1-init: [Thu Jan  1 00:00:01 UTC 1970] Starting systemd-udevd version 261
+[   11.606615] nixos kernel: axera-dwmac 104c0000.ethernet end0: renamed from eth0
+[   11.606734] nixos kernel: mmc0: new HS200 MMC card at address 0001
+[   11.606795] nixos kernel: mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+[   11.606856] nixos kernel:  mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+[   11.606946] nixos kernel: mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+[   11.607002] nixos kernel: mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+[   11.607057] nixos kernel: mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (510:0)
+[   11.607121] nixos stage-1-init: [Thu Jan  1 00:00:02 UTC 1970] kbd_mode: KDSKBMODE: Inappropriate ioctl for device
+[   11.607182] nixos stage-1-init: [Thu Jan  1 00:00:02 UTC 1970] starting device mapper and LVM...
+[   11.607239] nixos kernel: random: crng init done
+[   11.607298] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] /dev/mapper/control: open failed: No such device
+[   11.607358] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Failure to communicate with kernel device-mapper driver.
+[   11.607437] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Check that device-mapper is available in the kernel.
+[   11.607806] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Incompatible libdevmapper 1.02.215 (2026-05-15) and kernel driver (unknown version).
+[   11.609076] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] nanokvm: loop-mounting /nixos-root.img off /dev/mmcblk0p17
+[   11.609195] nixos kernel: EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b r/w with ordered data mode. Quota mode: none.
+[   11.609258] nixos kernel: loop0: detected capacity change from 0 to 3768448
+[   11.609323] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] checking /dev/loop0...
+[   11.609381] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] fsck (busybox 1.37.0)
+[   11.609441] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/loop0
+[   11.609533] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] NANOKVM: clean, 47293/119520 files, 331927/471056 blocks
+[   11.609593] nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] mounting /dev/loop0 on /...
+[   11.609656] nixos kernel: EXT4-fs (loop0): mounted filesystem 44444444-4444-4444-8888-888888888888 r/w with ordered data mode. Quota mode: none.
+[   11.609714] nixos kernel: EXT4-fs (loop0): re-mounted 44444444-4444-4444-8888-888888888888.
+[   11.609774] nixos unknown: booting system configuration /nix/store/lxkqxhqqncc4rw7xgm63j7pk1v3b3fmx-nixos-system-unnamed-26.11pre-git
+[   11.609832] nixos stage-2-init: running activation script...
+[   11.609894] nixos stage-2-init: setting up /etc...
+[   11.609987] nixos systemd[1]: System time advanced to built-in epoch: Tue 2026-03-17 19:55:52 UTC
+[   11.610065] nixos systemd[1]: systemd 261 running in system mode (+PAM +AUDIT -SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF -XKBCOMMON +UTMP +LIBARCHIVE)
+[   11.610131] nixos systemd[1]: Detected architecture arm64.
+[   11.610192] nixos systemd[1]: Detected first boot.
+[   11.610253] nixos systemd[1]: Initializing machine ID from random generator.
+[   11.610316] nixos systemd[1]: No hostname configured, using default hostname.
+[   11.610382] nixos systemd[1]: Hostname set to <nixos>.
+[   11.610453] nixos systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[   11.610516] nixos systemd[1]: Applying preset policy.
+[   11.610577] nixos systemd[1]: Populated /etc with preset unit settings.
+[   11.611496] nixos systemd[1]: Queued start job for default target Multi-User System.
+[   11.611695] nixos systemd[1]: Created slice Slice /system/getty.
+[   11.611764] nixos systemd[1]: Created slice Slice /system/modprobe.
+[   11.611827] nixos systemd[1]: Created slice Slice /system/serial-getty.
+[   11.611979] nixos systemd[1]: Created slice Slice /system/systemd-fsck.
+[   11.612209] nixos systemd[1]: Created slice User and Session Slice.
+[   11.612307] nixos systemd[1]: Started Dispatch Password Requests to Console Directory Watch.
+[   11.612372] nixos systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+[   11.612436] nixos systemd[1]: Expecting device /dev/mmcblk0p16...
+[   11.612499] nixos systemd[1]: Expecting device /dev/ttyS0...
+[   11.620286] nixos systemd[1]: Reached target Local Encrypted Volumes.
+[   11.620414] nixos systemd[1]: Reached target Virtual Machines and Containers.
+[   11.620479] nixos systemd[1]: Reached target Path Units.
+[   11.620542] nixos systemd[1]: Reached target Remote File Systems.
+[   11.620642] nixos systemd[1]: Reached target Slice Units.
+[   11.620704] nixos systemd[1]: Reached target Swaps.
+[   11.620766] nixos systemd[1]: Listening on Query the User Interactively for a Password.
+[   11.620828] nixos systemd[1]: Listening on Process Core Dump Socket.
+[   11.620893] nixos systemd[1]: Listening on Credential Encryption/Decryption.
+[   11.620955] nixos systemd[1]: Listening on Factory Reset Management.
+[   11.621019] nixos systemd[1]: Listening on Hostname Service Socket.
+[   11.621082] nixos systemd[1]: Starting Journal Log Access Socket...
+[   11.621145] nixos systemd[1]: Listening on Journal Audit Socket.
+[   11.621216] nixos systemd[1]: Listening on Journal Socket (/dev/log).
+[   11.621277] nixos systemd[1]: Listening on Journal Sockets.
+[   11.621341] nixos systemd[1]: Listening on Console Output Muting Service Socket.
+[   11.621402] nixos systemd[1]: Listening on Network Management Metrics Varlink Socket.
+[   11.621465] nixos systemd[1]: Listening on Network Management Varlink Socket.
+[   11.621527] nixos systemd[1]: Listening on Network Management Netlink Socket.
+[   11.621593] nixos systemd[1]: Userspace Out-Of-Memory (OOM) Killer Socket skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   11.621668] nixos systemd[1]: TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-os
+[   11.621732] nixos systemd[1]: Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[   11.621794] nixos systemd[1]: Listening on Disk Repartitioning Service Socket.
+[   11.621856] nixos systemd[1]: Listening on Resolve Monitor Varlink Socket.
+[   11.621919] nixos systemd[1]: Listening on Resolve Service Varlink Socket.
+[   11.621982] nixos systemd[1]: Listening on udev Control Socket.
+[   11.622044] nixos systemd[1]: Listening on udev Kernel Socket.
+[   11.622106] nixos systemd[1]: Listening on udev Varlink Socket.
+[   11.622176] nixos systemd[1]: Mounting Huge Pages File System...
+[   11.622264] nixos systemd[1]: Mounting POSIX Message Queue File System...
+[   11.622337] nixos systemd[1]: Mounting Kernel Debug File System...
+[   11.622402] nixos systemd[1]: Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[   11.622484] nixos systemd[1]: Create List of Static Device Nodes skipped, unmet condition check ConditionFileNotEmpty=/run/booted-system/kernel-modules/lib/modules/7.1.3-nanokvm/modules.devname
+[   11.622552] nixos systemd[1]: Load Kernel Module configfs skipped, unmet condition check ConditionKernelModuleLoaded=!configfs
+[   11.622614] nixos systemd[1]: Mounting Kernel Configuration File System...
+[   11.622677] nixos systemd[1]: Starting Load Kernel Module drm...
+[   11.622769] nixos systemd[1]: Load Kernel Module efi_pstore skipped, unmet condition check ConditionKernelModuleLoaded=!efi_pstore
+[   11.622860] nixos systemd[1]: Starting Load Kernel Module fuse...
+[   11.622928] nixos systemd[1]: File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[   11.622993] nixos systemd[1]: Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[   11.623058] nixos systemd[1]: Starting Journal Service...
+[   11.623122] nixos systemd[1]: Load Kernel Modules skipped, no trigger condition checks were met.
+[   11.623186] nixos systemd[1]: Userspace Out-Of-Memory (OOM) Killer skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   11.623250] nixos systemd[1]: Starting Remount Root and Kernel File Systems...
+[   11.623333] nixos systemd[1]: Starting Apply Kernel Variables...
+[   11.623397] nixos systemd[1]: Starting Create Static Device Nodes in /dev gracefully...
+[   11.623458] nixos kernel: EXT4-fs (loop0): re-mounted 44444444-4444-4444-8888-888888888888.
+[   11.623700] nixos systemd-journald[344]: Collecting audit messages is enabled.
+[   11.623860] nixos systemd[1]: Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   11.623959] nixos systemd[1]: Starting Coldplug All udev Devices...
+[   11.624122] nixos systemd[1]: Listening on Journal Log Access Socket.
+[   11.625149] nixos systemd[1]: Mounted Huge Pages File System.
+[   11.625395] nixos systemd[1]: Mounted POSIX Message Queue File System.
+[   11.625932] nixos systemd[1]: Mounted Kernel Debug File System.
+[   11.626033] nixos systemd-journald[344]: Journal started
+[   11.626167] nixos systemd-journald[344]: Runtime Journal (/run/log/journal/<machine-id>) is 2M, max 16M, 14M free.
+[   11.640185] nixos systemd[1]: Started Journal Service.
+[   11.647486] nixos systemd[1]: Mounted Kernel Configuration File System.
+[   11.657726] nixos systemd[1]: modprobe@drm.service: Deactivated successfully.
+[   11.664404] nixos systemd[1]: Finished Load Kernel Module drm.
+[   11.681735] nixos systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[   11.683879] nixos systemd[1]: Finished Load Kernel Module fuse.
+[   11.700455] nixos systemd[1]: Finished Remount Root and Kernel File Systems.
+[   11.716848] nixos systemd[1]: Finished Apply Kernel Variables.
+[   11.736816] nixos systemd[1]: Finished Create Static Device Nodes in /dev gracefully.
+[   11.783688] nixos systemd[1]: Listening on Disk Image Download Service Socket.
+[   11.800970] nixos systemd[1]: FUSE Control File System skipped, unmet condition check ConditionPathExists=/sys/fs/fuse/connections
+[   11.808501] nixos systemd[1]: Starting Flush Journal to Persistent Storage...
+[   11.838149] nixos systemd[1]: Starting Platform Persistent Storage Archival...
+[   11.872943] nixos systemd[1]: Starting Load/Save OS Random Seed...
+[   11.932326] nixos systemd-journald[344]: Time spent on flushing to /var/log/journal/<machine-id> is 43.700ms for 393 entries.
+[   11.932326] nixos systemd-journald[344]: System Journal (/var/log/journal/<machine-id>) is 4M, max 32M, 28M free.
+[   12.019596] nixos systemd-journald[344]: Received client request to flush runtime journal.
+[   11.944493] nixos systemd[1]: Starting Network Name Resolution...
+[   11.996113] nixos systemd-pstore[363]: PStore console-ramoops-0 moved to /var/lib/systemd/pstore/console-ramoops-0
+[   11.997123] nixos systemd-pstore[363]: PStore dmesg-ramoops-0 moved to /var/lib/systemd/pstore/dmesg-ramoops-0
+[   12.002151] nixos systemd[1]: Starting Network Time Synchronization...
+[   12.055537] nixos systemd[1]: Starting Create Static Device Nodes in /dev...
+[   12.064246] nixos systemd[1]: TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   12.108430] nixos systemd[1]: Finished Flush Journal to Persistent Storage.
+[   12.131914] nixos systemd[1]: Finished Platform Persistent Storage Archival.
+[   12.168491] nixos systemd[1]: Finished Load/Save OS Random Seed.
+[   12.207055] nixos systemd[1]: Reached target First Boot Complete.
+[   12.242530] nixos systemd[1]: Finished Create Static Device Nodes in /dev.
+[   12.264741] nixos systemd[1]: Reached target Preparation for Local File Systems.
+[   12.300581] nixos systemd[1]: Starting Rule-based Manager for Device Events and Files...
+[   12.359132] nixos systemd-resolved[366]: Positive Trust Anchors:
+[   12.359221] nixos systemd-resolved[366]: . IN DS 20326 8 2 e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d
+[   12.359245] nixos systemd-resolved[366]: . IN DS 38696 8 2 683d2d0acb8c9b712a1948b27f741219298d0a450d612c483af444a4c0fb2b16
+[   12.359506] nixos systemd-resolved[366]: Negative trust anchors: home.arpa 10.in-addr.arpa 16.172.in-addr.arpa 17.172.in-addr.arpa 18.172.in-addr.arpa 19.172.in-addr.arpa 20.172.in-addr.arpa 21.172.in-addr.arpa 22.172.in-addr.arpa 23.172.in-addr.arpa 24.172.in-addr.arpa 25.172.in-addr.arpa 26.172.in-addr.arpa 27.172.in-addr.arpa 28.172.in-addr.arpa 29.172.in-addr.arpa 30.172.in-addr.arpa 31.172.in-addr.arpa 170.0.0.192.in-addr.arpa 171.0.0.192.in-addr.arpa 168.192.in-addr.arpa d.f.ip6.arpa ipv4only.arpa resolver.arpa corp home internal intranet lan local private test
+[   12.575223] nixos systemd[1]: Mounting /run/wrappers...
+[   12.586538] nixos systemd-timesyncd[367]: Disabling NSCD because DNSSEC validation is turned off
+[   12.718189] nixos systemd-udevd[377]: Using default interface naming scheme 'v261'.
+[   12.723091] nixos systemd[1]: Started Network Time Synchronization.
+[   12.748316] nixos systemd[1]: Mounted /run/wrappers.
+[   12.762573] nixos systemd[1]: Reached target Local File Systems.
+[   12.784611] nixos systemd[1]: Reached target System Time Set.
+[   12.807992] nixos systemd[1]: Listening on Boot Loader Control Service Socket.
+[   12.836933] nixos systemd[1]: Starting Create SUID/SGID Wrappers...
+[   12.846967] nixos systemd[1]: Update Boot Loader Random Seed skipped, no trigger condition checks were met.
+[   12.868496] nixos systemd[1]: Starting Save Transient machine-id to Disk...
+[   12.922286] nixos systemd[1]: Starting Create System Files and Directories...
+[   13.151942] nixos systemd[1]: etc-machine\x2did.mount: Deactivated successfully.
+[   13.157102] nixos systemd-resolved[366]: Using system hostname 'nixos'.
+[   13.163900] nixos systemd[1]: Finished Save Transient machine-id to Disk.
+[   13.200760] nixos systemd[1]: Started Network Name Resolution.
+[   13.217822] nixos systemd-resolved[366]: Switching to fallback DNS server 1.1.1.1#one.one.one.one.
+[   13.308439] nixos systemd[1]: Finished Create System Files and Directories.
+[   13.326963] nixos systemd[1]: Started Rule-based Manager for Device Events and Files.
+[   13.351158] nixos systemd[1]: Starting Rebuild Journal Catalog...
+[   13.376916] nixos systemd[1]: Starting Record System Boot/Shutdown in UTMP...
+[   13.557560] nixos systemd[1]: Finished Record System Boot/Shutdown in UTMP.
+[   13.652628] nixos systemd[1]: Finished Rebuild Journal Catalog.
+[   13.689432] nixos systemd[1]: Starting Update is Completed...
+[   13.796603] nixos systemd[1]: Finished Update is Completed.
+[   13.963009] nixos systemd[1]: suid-sgid-wrappers.service: Deactivated successfully.
+[   13.968522] nixos systemd[1]: Finished Create SUID/SGID Wrappers.
+[   13.980607] nixos systemd[1]: suid-sgid-wrappers.service: Consumed 464ms CPU time over 1.126s wall clock time, 7.3M memory peak, 4.3M read from disk.
+[   14.246411] nixos systemd[1]: Finished Coldplug All udev Devices.
+[   14.261661] nixos systemd[1]: Reached target System Initialization.
+[   14.273578] nixos systemd[1]: Started Discard unused filesystem blocks once a week.
+[   14.284930] nixos systemd[1]: Started logrotate.timer.
+[   14.296611] nixos systemd[1]: Started Daily Cleanup of Temporary Directories.
+[   14.308516] nixos systemd[1]: Reached target Timer Units.
+[   14.320896] nixos systemd[1]: Listening on Avahi mDNS/DNS-SD Stack Activation Socket.
+[   14.333740] nixos systemd[1]: Listening on D-Bus System Message Bus Socket.
+[   14.356951] nixos systemd[1]: Listening on OpenSSH Server Socket (systemd-ssh-generator, AF_UNIX Local).
+[   14.369070] nixos systemd[1]: Listening on Virtual Machine and Container Registration Service Socket.
+[   14.380511] nixos systemd[1]: Reached target Socket Units.
+[   14.392499] nixos systemd[1]: Reached target Basic System.
+[   14.418202] nixos systemd[1]: Starting Avahi mDNS/DNS-SD Stack...
+[   14.444889] nixos systemd[1]: Starting Import lastlog data into lastlog2 database...
+[   14.479960] nixos systemd[1]: Starting Logrotate configuration check...
+[   14.548910] nixos systemd[1]: Starting Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)...
+[   14.578148] nixos logrotate[450]: warning: logrotate in debug mode does nothing except printing debug messages!  Consider using verbose mode (-v) instead if this is not what you want.
+[   14.579787] nixos logrotate[450]: reading config file /nix/store/c5c5s0c34b1llcns7fgp9lm8pkc492p3-logrotate.conf
+[   14.582926] nixos logrotate[450]: note: 'monthly' overrides previously specified 'weekly'
+[   14.592148] nixos logrotate[450]: note: 'size' overrides previously specified 'daily'
+[   14.592148] nixos logrotate[450]: Reading state from file: /var/lib/logrotate.status
+[   14.592148] nixos logrotate[450]: state file /var/lib/logrotate.status does not exist
+[   14.592148] nixos logrotate[450]: Allocating hash table for state file, size 64 entries
+[   14.592148] nixos logrotate[450]: Handling 3 logs
+[   14.592148] nixos logrotate[450]: rotating pattern: "/var/log/btmp" monthly empty log files are not rotated, only log files >= 1048576 bytes are rotated, (1 rotations), old logs are removed
+[   14.592148] nixos logrotate[450]: considering log /var/log/btmp
+[   14.592148] nixos logrotate[450]: Creating new state
+[   14.592148] nixos logrotate[450]:   Now: 2026-03-17 19:55
+[   14.592148] nixos logrotate[450]:   Last rotated at 2026-03-17 19:00
+[   14.592148] nixos logrotate[450]:   log does not need rotating (log has already been rotated)
+[   14.592148] nixos logrotate[450]: rotating pattern: "/var/log/wtmp" monthly empty log files are not rotated, only log files >= 1048576 bytes are rotated, (1 rotations), old logs are removed
+[   14.592148] nixos logrotate[450]: considering log /var/log/wtmp
+[   14.592148] nixos logrotate[450]: Creating new state
+[   14.592148] nixos logrotate[450]:   Now: 2026-03-17 19:55
+[   14.592148] nixos logrotate[450]:   Last rotated at 2026-03-17 19:00
+[   14.592148] nixos logrotate[450]:   log does not need rotating (log has already been rotated)
+[   14.592148] nixos logrotate[450]: rotating pattern: "/var/log/nanokvm/*.log" 10485760 bytes empty log files are not rotated, (3 rotations), old logs are removed
+[   14.592148] nixos logrotate[450]: considering log /var/log/nanokvm/*.log
+[   14.592148] nixos logrotate[450]:   log /var/log/nanokvm/*.log does not exist -- skipping
+[   14.592148] nixos logrotate[450]: Creating new state
+[   14.598707] nixos systemd[1]: Starting Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)...
+[   14.666318] nixos systemd[1]: Started Leave the slot-B test: reboot after a bounded dwell.
+[   14.746045] nixos systemd[1]: Starting NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)...
+[   14.812557] nixos systemd[1]: Starting NanoKVM-Pro open video stack (capture + encoder modules)...
+[   14.893647] nixos systemd[1]: Starting Name Service Cache Daemon (nsncd)...
+[   14.902824] nixos nanokvm-slotb-deadman-start[454]: slotb-deadman: rebooting to slot A 900 s from now (uptime 14 s)
+[   14.902824] nixos nanokvm-slotb-deadman-start[454]:                unless /run/keepalive appears
+[   14.949534] nixos systemd[1]: Starting Post-Boot Actions...
+[   14.975590] nixos systemd[1]: Started Reset console on configuration changes.
+[   15.039457] nixos nanokvm-identity[453]: identity: uid=<uid-hi><uid-lo> mac=<redacted-mac> hostname=kvm-<derived>
+[   15.081583] nixos systemd[1]: Starting SSH Host Keys Generation...
+[   15.087728] nixos nanokvm-usb-start[460]: nanokvm-usb: STUB. The controller and the configfs function
+[   15.087728] nixos nanokvm-usb-start[460]:              drivers are here (#82), but usbdev.sh -- the script
+[   15.087728] nixos nanokvm-usb-start[460]:              that builds the gadget -- is vendor-only and not
+[   15.087728] nixos nanokvm-usb-start[460]:              captured yet: no keyboard, no mouse, no mass
+[   15.087728] nixos nanokvm-usb-start[460]:              storage, no NCM.
+[   15.097905] nixos systemd[1]: NanoKVM-Pro mini-display status screen skipped, unmet condition check ConditionPathExists=/dev/fb0
+[   15.103774] nixos nanokvm-video-start[469]: nanokvm-video: STUB. open_vin_csi2 / open_vin_capture /
+[   15.103774] nixos nanokvm-video-start[469]:                ax630c_venc_vcmd are not ported to this kernel yet
+[   15.103774] nixos nanokvm-video-start[469]:                (issue #83). No /dev/video0; the server will serve
+[   15.103774] nixos nanokvm-video-start[469]:                the UI but not a stream.
+[   15.159336] nixos systemd[1]: Finished Logrotate configuration check.
+[   15.205600] nixos systemd[1]: Finished NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half).
+[   15.229958] nixos systemd[1]: Finished NanoKVM-Pro open video stack (capture + encoder modules).
+[   15.249340] nixos systemd[1]: Finished Post-Boot Actions.
+[   15.281557] nixos systemd[1]: Finished Import lastlog data into lastlog2 database.
+[   15.330427] nixos systemd[1]: Started Name Service Cache Daemon (nsncd).
+[   15.336448] nixos nsncd[475]: Mar 17 19:56:00.138 INFO started, config: Config { ignored_request_types: {}, worker_count: 8, handoff_timeout: 10s }, path: "/var/run/nscd/socket"
+[   15.359010] nixos systemd[1]: Reached target Host and Network Name Lookups.
+[   15.372519] nixos systemd[1]: Reached target User and Group Name Lookups.
+[   15.416920] nixos systemd[1]: Starting D-Bus System Message Bus...
+[   15.469187] nixos systemd[1]: Starting User Login Management...
+[   15.504615] nixos avahi-daemon[448]: Found user 'avahi' (UID 999) and group 'avahi' (GID 999).
+[   15.518594] nixos avahi-daemon[448]: Successfully dropped root privileges.
+[   15.518845] nixos avahi-daemon[448]: avahi-daemon 0.8 starting up.
+[   15.826233] nixos dbus-broker-launch[516]: Looking up NSS group entry for 'netdev'...
+[   15.840723] nixos systemd[1]: Finished Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step).
+[   15.870402] nixos dbus-broker-launch[516]: NSS returned no entry for 'netdev'
+[   15.870402] nixos dbus-broker-launch[516]: Invalid group-name in /nix/store/5kh76sbl1kkrpncgkr29bqr7vgwk7z09-system-path/share/dbus-1/system.d/avahi-dbus.conf +24: group="netdev"
+[   15.896134] nixos dbus-broker-launch[516]: Looking up NSS group entry for 'wpa_supplicant'...
+[   15.899503] nixos dbus-broker-launch[516]: NSS returned no entry for 'wpa_supplicant'
+[   15.899837] nixos dbus-broker-launch[516]: Invalid group-name in /nix/store/5kh76sbl1kkrpncgkr29bqr7vgwk7z09-system-path/share/dbus-1/system.d/dbus-wpa_supplicant.conf +11: group="wpa_supplicant"
+[   15.922335] nixos systemd-logind[517]: New seat seat0.
+[   15.935856] nixos systemd[1]: Started User Login Management.
+[   15.941155] nixos dbus-broker-launch[516]: Invalid group-name in /nix/store/p12nspa1cgpss6rsffh5k8lcp1f6kvk6-avahi-0.8/share/dbus-1/system.d/avahi-dbus.conf +24: group="netdev"
+[   15.976462] nixos systemd[1]: Starting linger-users.service...
+[   15.985066] nixos systemd[1]: Started D-Bus System Message Bus.
+[   16.202978] nixos dbus-broker-launch[516]: Ready
+[   16.221645] nixos avahi-daemon[448]: No service file found in /etc/avahi/services.
+[   16.221882] nixos avahi-daemon[448]: *** WARNING: Detected another IPv4 mDNS stack running on this host. This makes mDNS unreliable and is thus not recommended. ***
+[   16.221999] nixos avahi-daemon[448]: *** WARNING: Detected another IPv6 mDNS stack running on this host. This makes mDNS unreliable and is thus not recommended. ***
+[   16.222387] nixos avahi-daemon[448]: Joining mDNS multicast group on interface lo.IPv6 with address ::1.
+[   16.222432] nixos avahi-daemon[448]: New relevant interface lo.IPv6 for mDNS.
+[   16.222447] nixos avahi-daemon[448]: Joining mDNS multicast group on interface lo.IPv4 with address 127.0.0.1.
+[   16.222484] nixos avahi-daemon[448]: New relevant interface lo.IPv4 for mDNS.
+[   16.225210] nixos systemd[1]: linger-users.service: Deactivated successfully.
+[   16.222498] nixos avahi-daemon[448]: Network interface enumeration completed.
+[   16.222522] nixos avahi-daemon[448]: Registering new address record for ::1 on lo.*.
+[   16.222629] nixos avahi-daemon[448]: Registering new address record for 127.0.0.1 on lo.IPv4.
+[   16.231557] nixos systemd[1]: Finished linger-users.service.
+[   16.284928] nixos systemd[1]: Started Avahi mDNS/DNS-SD Stack.
+[   16.332309] nixos systemd[1]: Starting Hostname Service...
+[   16.470532] nixos systemd[1]: Found device /dev/ttyS0.
+[   16.982172] kvm-<derived> systemd-hostnamed[541]: Hostname set to <kvm-<derived>> (transient)
+[   16.984651] kvm-<derived> systemd-resolved[366]: System hostname changed to 'kvm-<derived>'.
+[   17.037308] kvm-<derived> systemd[1]: Started Hostname Service.
+[   17.137460] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[   17.204088] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[   17.222850] kvm-<derived> avahi-daemon[448]: Server startup complete. Host name is nixos.local. Local service cookie is 1662657124.
+[   17.248377] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: No Safety Features support found
+[   17.249686] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: IEEE 1588-2008 Advanced Timestamp supported
+[   17.266328] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: registered PTP clock
+[   17.289692] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: configuring for phy/rgmii-id link mode
+[   17.363639] kvm-<derived> systemd[1]: Finished Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID).
+[   17.452885] kvm-<derived> systemd[1]: Found device /dev/mmcblk0p16.
+[   17.740939] kvm-<derived> systemd[1]: Reached target Preparation for Network.
+[   17.758361] kvm-<derived> systemd[1]: Listening on Network Management Resolve Hook Socket.
+[   17.797118] kvm-<derived> systemd[1]: Starting Generate the NanoKVM-Pro HTTPS certificate if absent...
+[   17.844281] kvm-<derived> systemd[1]: Starting File System Check on /dev/mmcblk0p16...
+[   17.928592] kvm-<derived> systemd[1]: Starting Network Management...
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: Generating public/private rsa key pair.
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: Your identification has been saved in /etc/ssh/ssh_host_rsa_key
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: Your public key has been saved in /etc/ssh/ssh_host_rsa_key.pub
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: The key fingerprint is:
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: SHA256:Y6knjuYGd+6fIwm+PsdKBzhu+C5O6QjkL38wbCHF0vU root@nixos
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: The key's randomart image is:
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: +---[RSA 4096]----+
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: |  o ..           |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: | . +  .          |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: |  o    E         |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: | . o     .       |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: | .= o   S        |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: |ooo*o..o .       |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: |o++++=+..        |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: |*+..==*o..       |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: |o==BB*ooo.       |
+[   18.140927] kvm-<derived> sshd-keygen-start[515]: +----[SHA256]-----+
+[   18.219130] kvm-<derived> systemd-fsck[556]: fsck.fat 4.2 (2021-01-31)
+[   18.219130] kvm-<derived> systemd-fsck[556]: /dev/mmcblk0p16: 4 files, 8/258078 clusters
+[   18.229830] kvm-<derived> systemd[1]: Finished File System Check on /dev/mmcblk0p16.
+[   18.286337] kvm-<derived> systemd[1]: Mounting /boot...
+[   18.316164] kvm-<derived> nanokvm-cert-start[554]: .+++++++++++++++++++++++++++++++++++++++*.+++++++++++++++++++++++++++++++++++++++*.+...........................+...........+...+......+.........+....+......+.................++++++
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: Generating public/private ed25519 key pair.
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: Your identification has been saved in /etc/ssh/ssh_host_ed25519_key
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: Your public key has been saved in /etc/ssh/ssh_host_ed25519_key.pub
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: The key fingerprint is:
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: SHA256:9NKeXan35/Crj7qTcUlIgZuh2c1lZJXZC8piG+TUFqA root@kvm-<derived>
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: The key's randomart image is:
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: +--[ED25519 256]--+
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |         .+o+o..+|
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |        .= +.+ o.|
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |       EO X = . .|
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |       + @ * . o |
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |        S * . +  |
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |         + + =   |
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |          o * o  |
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |           o ..+.|
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: |           o+oo+*|
+[   18.346865] kvm-<derived> sshd-keygen-start[564]: +----[SHA256]-----+
+[   18.360842] kvm-<derived> systemd[1]: sshd-keygen.service: Deactivated successfully.
+[   18.377694] kvm-<derived> systemd[1]: Finished SSH Host Keys Generation.
+[   18.392495] kvm-<derived> systemd[1]: sshd-keygen.service: Consumed 1.543s CPU time over 3.279s wall clock time, 3.9M memory peak, 1.8M read from disk.
+[   18.471249] kvm-<derived> systemd[1]: Mounted /boot.
+[   18.535546] kvm-<derived> systemd-timesyncd[367]: Network configuration changed, trying to establish connection.
+[   18.535930] kvm-<derived> systemd-timesyncd[367]: Network configuration changed, trying to establish connection.
+[   18.569173] kvm-<derived> systemd-networkd[549]: Failed to open nftables netlink socket. IPMasquerade= and NFTSet= settings will not be applied. Ignoring: Protocol not supported
+[   18.648571] kvm-<derived> systemd-networkd[549]: lo: Link UP
+[   18.648607] kvm-<derived> systemd-networkd[549]: lo: Gained carrier
+[   18.648730] kvm-<derived> systemd-networkd[549]: end0: Link UP
+[   18.660586] kvm-<derived> systemd[1]: Started Network Management.
+[   18.665823] kvm-<derived> systemd-networkd[549]: end0: Link DOWN
+[   18.678443] kvm-<derived> systemd-networkd[549]: end0: Link UP
+[   18.684178] kvm-<derived> systemd[1]: Reached target Network.
+[   18.702361] kvm-<derived> systemd-networkd[549]: end0: Configuring with /etc/systemd/network/99-ethernet-default-dhcp.network.
+[   18.718928] kvm-<derived> systemd[1]: Starting SSH Daemon...
+[   18.753156] kvm-<derived> systemd[1]: Starting Enable Persistent Storage in systemd-networkd...
+[   18.801366] kvm-<derived> systemd[1]: Starting Permit User Sessions...
+[   18.890861] kvm-<derived> sshd[570]: Server listening on 0.0.0.0 port 22.
+[   18.892983] kvm-<derived> sshd[570]: Server listening on :: port 22.
+[   18.896572] kvm-<derived> systemd[1]: Started SSH Daemon.
+[   18.971635] kvm-<derived> systemd[1]: Finished Enable Persistent Storage in systemd-networkd.
+[   18.990512] kvm-<derived> systemd[1]: Finished Permit User Sessions.
+[   19.030009] kvm-<derived> systemd[1]: Started Getty on tty1.
+[   19.084427] kvm-<derived> systemd[1]: Started Serial Getty on ttyS0.
+[   19.097844] kvm-<derived> systemd[1]: Reached target Login Prompts.
+[   19.692312] kvm-<derived> nanokvm-cert-start[554]: ..........+..+......+++++++++++++++++++++++++++++++++++++++*...+......+...+...+....+.....+.+............+++++++++++++++++++++++++++++++++++++++*..+...+........+......+......+.........+...+......+.+...+...+...............+...+...........+.+.........+...+..+.+.....+.......+..+.........+....+..+....+......+...+............+......+.....+.......+.....+.+.....+......+...+.......+.....+...+......+.+...+..+.+.................+.......+...+........+...+.+......+...+.....+.....................+....+..........................+.+.....+...................+...+......+............+..+...+............+.............+...+.....+.+..............+......+.+............+...+.................+......+....+...+.........+......+..+.......+......+..+...+.........+......+....+...+........+...................+...+.....+...+.......+.....+.+..+...+..........+.....+.+...........+.......+.....+............................+...+...............+......+...+........+....+...+..+..........+.....+.+.....+....+...+.....+...+....+......+........+............+.......+.....+.+.........+...+..+.......+...+...........+......+......+....+........+...+...............+.........+...+.+......+.....+.........+.+...+........+...+.+.....+..........+.....+......+.......+.....+......+....+......+...........+....+..+.........+..........+......+.....+....+...+.....+......+.......+..+......+.......+.....+...+.+...+...+...+.........+..+.+...+..+....+...+......+.................+.......+......+.....+......+.+..+.+..+....+.....+...................+..+.......+..+...++++++
+[   19.735122] kvm-<derived> nanokvm-cert-start[554]: -----
+[   19.793987] kvm-<derived> systemd[1]: Finished Generate the NanoKVM-Pro HTTPS certificate if absent.
+[   19.833380] kvm-<derived> systemd[1]: Started NanoKVM-Pro server (open stack).
+[   19.846170] kvm-<derived> systemd[1]: Reached target Multi-User System.
+[   19.889150] kvm-<derived> systemd[1]: Starting Record slot-B boot milestones in the A/B slot register...
+[   21.423219] kvm-<derived> systemd-networkd[549]: end0: Gained carrier
+[   21.432122] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+[   21.433391] kvm-<derived> kernel: axera-dwmac 104c0000.ethernet end0: Link is Up - 1Gbps/Full - flow control off
+[   22.046621] kvm-<derived> systemd[1]: Starting Virtual Console Setup...
+[   22.228235] kvm-<derived> systemd-vconsole-setup[608]: Configuration of first virtual console was skipped, ignoring remaining ones.
+[   22.233847] kvm-<derived> systemd[1]: Finished Virtual Console Setup.
+[   22.656266] kvm-<derived> avahi-daemon[448]: Joining mDNS multicast group on interface end0.IPv6 with address <redacted-ipv6-ll>.
+[   22.656674] kvm-<derived> systemd-networkd[549]: end0: Gained IPv6LL
+[   22.659256] kvm-<derived> avahi-daemon[448]: New relevant interface end0.IPv6 for mDNS.
+[   22.659361] kvm-<derived> avahi-daemon[448]: Registering new address record for <redacted-ipv6-ll> on end0.*.
+[   22.660469] kvm-<derived> systemd-timesyncd[367]: Network configuration changed, trying to establish connection.
+[   25.155833] kvm-<derived> systemd-networkd[549]: end0: DHCPv4 address <device-ip>/21, gateway <router> acquired from <router>
+[   25.176908] kvm-<derived> avahi-daemon[448]: Joining mDNS multicast group on interface end0.IPv4 with address <device-ip>.
+[   25.177062] kvm-<derived> avahi-daemon[448]: New relevant interface end0.IPv4 for mDNS.
+[   25.177796] kvm-<derived> systemd-networkd[549]: Could not set hostname: Access denied
+[   25.177145] kvm-<derived> avahi-daemon[448]: Registering new address record for <device-ip> on end0.IPv4.
+[   25.180290] kvm-<derived> systemd-timesyncd[367]: Network configuration changed, trying to establish connection.
+[   25.282587] kvm-<derived> systemd-timesyncd[367]: Contacted time server 170.187.142.180:123 (2.nixos.pool.ntp.org).
+[   25.282850] kvm-<derived> systemd-timesyncd[367]: Initial clock synchronization to Mon 2026-09-07 23:10:33.066665 UTC.
+[   25.283743] kvm-<derived> systemd-resolved[366]: Clock change detected. Flushing caches.
+[   25.302210] kvm-<derived> systemd[1]: Starting Discard unused blocks on filesystems from /etc/fstab...
+[   25.342481] kvm-<derived> systemd[1]: Starting Logrotate Service...
+[   25.708682] kvm-<derived> systemd[1]: logrotate.service: Deactivated successfully.
+[   25.709995] kvm-<derived> systemd[1]: Finished Logrotate Service.
+[   25.762641] kvm-<derived> fstrim[617]: /boot: 126 MiB (132131840 bytes) trimmed on /dev/mmcblk0p16
+[   25.762641] kvm-<derived> fstrim[617]: /: 534.6 MiB (560525312 bytes) trimmed on /dev/loop0
+[   25.767284] kvm-<derived> systemd[1]: fstrim.service: Deactivated successfully.
+[   25.768713] kvm-<derived> systemd[1]: Finished Discard unused blocks on filesystems from /etc/fstab.
+[   25.771110] kvm-<derived> systemd[1]: fstrim.service: Consumed 291ms CPU time over 465ms wall clock time, 2.7M memory peak, 1M read from disk.
+[   26.266461] kvm-<derived> nanokvm-slotb-milestones-start[592]: slotb-milestones: BACKUP0 now 0x0E000018
+[   26.269376] kvm-<derived> systemd[1]: Finished Record slot-B boot milestones in the A/B slot register.
+[   26.280307] kvm-<derived> systemd[1]: Startup finished in 7.144s (kernel) + 19.135s (userspace) = 26.280s.
+[   55.195394] kvm-<derived> systemd[1]: systemd-hostnamed.service: Deactivated successfully.
+[   75.360798] kvm-<derived> sshd-session[649]: banner exchange: Connection from <lan-host> port 40418: invalid format [preauth]
+[   80.635461] kvm-<derived> unix_chkpwd[654]: password check failed for user (root)
+[   80.636861] kvm-<derived> sshd-session[653]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[   82.827235] kvm-<derived> sshd-session[651]: error: PAM: Authentication failure for root from <lan-host>
+[   82.839241] kvm-<derived> sshd-session[651]: Connection closed by authenticating user root <lan-host> port 40422 [preauth]
+[   87.977453] kvm-<derived> sshd-session[656]: Accepted keyboard-interactive/pam for root from <lan-host> port 54652 ssh2
+[   88.000094] kvm-<derived> sshd-session[656]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[   88.088768] kvm-<derived> systemd-logind[517]: New session '1' of user 'root' with class 'user' and type 'tty'.
+[   88.111745] kvm-<derived> systemd[1]: Created slice Slice /user/0.
+[   88.121603] kvm-<derived> systemd[1]: Starting User Runtime Directory /run/user/0...
+[   88.202190] kvm-<derived> systemd[1]: Finished User Runtime Directory /run/user/0.
+[   88.215504] kvm-<derived> systemd[1]: Starting User Manager for UID 0...
+[   88.274226] kvm-<derived> (systemd)[663]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[   88.283943] kvm-<derived> systemd-logind[517]: New session '2' of user 'root' with class 'manager-early' and type 'unspecified'.
+[   90.371030] kvm-<derived> systemd[663]: Queued start job for default target Main User Target.
+[   90.388168] kvm-<derived> systemd[663]: Created slice User Application Slice.
+[   90.388424] kvm-<derived> systemd[663]: Started Daily Cleanup of User's Temporary Directories.
+[   90.388571] kvm-<derived> systemd[663]: Reached target Paths.
+[   90.388961] kvm-<derived> systemd[663]: Reached target Timers.
+[   90.393277] kvm-<derived> systemd[663]: Starting D-Bus User Message Bus Socket...
+[   90.397791] kvm-<derived> systemd[663]: Starting Create User Files and Directories...
+[   90.456217] kvm-<derived> systemd[663]: Finished Create User Files and Directories.
+[   90.583043] kvm-<derived> systemd[663]: Listening on D-Bus User Message Bus Socket.
+[   90.584832] kvm-<derived> systemd[663]: Reached target Sockets.
+[   90.585662] kvm-<derived> systemd[663]: Reached target Basic System.
+[   90.586614] kvm-<derived> systemd[663]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[   90.586825] kvm-<derived> systemd[1]: Started User Manager for UID 0.
+[   90.588908] kvm-<derived> systemd[663]: Reached target Main User Target.
+[   90.589219] kvm-<derived> systemd[663]: Startup finished in 2.270s.
+[   90.612734] kvm-<derived> systemd[1]: Started Session 1 of User root.
+[   91.473649] kvm-<derived> sshd-session[677]: Received disconnect from <lan-host> port 54652:11: disconnected by user
+[   91.474186] kvm-<derived> sshd-session[677]: Disconnected from user root <lan-host> port 54652
+[   91.476204] kvm-<derived> sshd-session[656]: pam_unix(sshd:session): session closed for user root
+[   91.482427] kvm-<derived> systemd[1]: session-1.scope: Deactivated successfully.
+[   91.483655] kvm-<derived> systemd[1]: session-1.scope: Consumed 575ms CPU time over 869ms wall clock time, 21.2M memory peak, 17.4M read from disk, 3.9K incoming IP traffic, 2.4K outgoing IP traffic.
+[   91.490081] kvm-<derived> systemd-logind[517]: Session 1 logged out. Waiting for processes to exit.
+[   91.493674] kvm-<derived> systemd-logind[517]: Removed session 1.
+[  101.718707] kvm-<derived> systemd[1]: Stopping User Manager for UID 0...
+[  101.731105] kvm-<derived> systemd[663]: Activating special unit Exit the Session...
+[  101.731567] kvm-<derived> systemd[663]: Stopped target Main User Target.
+[  101.731851] kvm-<derived> systemd[663]: Stopped target Basic System.
+[  101.733320] kvm-<derived> systemd[663]: Stopped target Paths.
+[  101.733643] kvm-<derived> systemd[663]: Stopped target Sockets.
+[  101.733924] kvm-<derived> systemd[663]: Stopped target Timers.
+[  101.734176] kvm-<derived> systemd[663]: Stopped Daily Cleanup of User's Temporary Directories.
+[  101.736084] kvm-<derived> systemd[663]: Closed D-Bus User Message Bus Socket.
+[  101.736675] kvm-<derived> systemd[663]: Stopped Create User Files and Directories.
+[  101.737996] kvm-<derived> systemd[663]: Removed slice User Application Slice.
+[  101.738253] kvm-<derived> systemd[663]: Reached target Shutdown.
+[  101.739822] kvm-<derived> systemd[663]: Finished Exit the Session.
+[  101.740410] kvm-<derived> systemd[663]: Reached target Exit the Session.
+[  101.754622] kvm-<derived> (sd-pam)[665]: pam_unix(systemd-user:session): session closed for user root
+[  101.754748] kvm-<derived> systemd-logind[517]: Removed session 2.
+[  101.766687] kvm-<derived> systemd[1]: user@0.service: Deactivated successfully.
+[  101.769285] kvm-<derived> systemd[1]: Stopped User Manager for UID 0.
+[  101.770890] kvm-<derived> systemd[1]: user@0.service: Consumed 2.222s CPU time over 13.551s wall clock time, 15.3M memory peak, 10.1M read from disk.
+[  101.871113] kvm-<derived> systemd[1]: Stopping User Runtime Directory /run/user/0...
+[  101.932616] kvm-<derived> systemd[1]: run-user-0.mount: Deactivated successfully.
+[  101.936254] kvm-<derived> systemd[1]: user-runtime-dir@0.service: Deactivated successfully.
+[  101.937453] kvm-<derived> systemd[1]: Stopped User Runtime Directory /run/user/0.
+[  105.788610] kvm-<derived> sshd-session[720]: banner exchange: Connection from <lan-host> port 60568: invalid format [preauth]
+[  110.648634] kvm-<derived> unix_chkpwd[725]: password check failed for user (root)
+[  110.649891] kvm-<derived> sshd-session[724]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[  112.826337] kvm-<derived> sshd-session[722]: error: PAM: Authentication failure for root from <lan-host>
+[  112.837652] kvm-<derived> sshd-session[722]: Connection closed by authenticating user root <lan-host> port 60570 [preauth]
+[  118.007759] kvm-<derived> sshd-session[727]: Accepted keyboard-interactive/pam for root from <lan-host> port 48270 ssh2
+[  118.025286] kvm-<derived> sshd-session[727]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  118.065512] kvm-<derived> systemd-logind[517]: New session '3' of user 'root' with class 'user' and type 'tty'.
+[  118.097339] kvm-<derived> systemd[1]: Starting User Runtime Directory /run/user/0...
+[  118.181018] kvm-<derived> systemd[1]: Finished User Runtime Directory /run/user/0.
+[  118.192698] kvm-<derived> systemd[1]: Starting User Manager for UID 0...
+[  118.252823] kvm-<derived> (systemd)[734]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[  118.262071] kvm-<derived> systemd-logind[517]: New session '4' of user 'root' with class 'manager-early' and type 'unspecified'.
+[  120.267170] kvm-<derived> systemd[734]: Queued start job for default target Main User Target.
+[  120.280569] kvm-<derived> systemd[734]: Created slice User Application Slice.
+[  120.280831] kvm-<derived> systemd[734]: Started Daily Cleanup of User's Temporary Directories.
+[  120.280978] kvm-<derived> systemd[734]: Reached target Paths.
+[  120.281847] kvm-<derived> systemd[734]: Reached target Timers.
+[  120.286559] kvm-<derived> systemd[734]: Starting D-Bus User Message Bus Socket...
+[  120.292459] kvm-<derived> systemd[734]: Starting Create User Files and Directories...
+[  120.351147] kvm-<derived> systemd[734]: Finished Create User Files and Directories.
+[  120.359599] kvm-<derived> systemd[734]: Listening on D-Bus User Message Bus Socket.
+[  120.360645] kvm-<derived> systemd[734]: Reached target Sockets.
+[  120.361545] kvm-<derived> systemd[734]: Reached target Basic System.
+[  120.362190] kvm-<derived> systemd[1]: Started User Manager for UID 0.
+[  120.364772] kvm-<derived> systemd[734]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[  120.365137] kvm-<derived> systemd[734]: Reached target Main User Target.
+[  120.365395] kvm-<derived> systemd[734]: Startup finished in 2.067s.
+[  120.384802] kvm-<derived> systemd[1]: Started Session 3 of User root.
+[  120.461478] kvm-<derived> sshd-session[748]: Received disconnect from <lan-host> port 48270:11: disconnected by user
+[  120.462009] kvm-<derived> sshd-session[748]: Disconnected from user root <lan-host> port 48270
+[  120.463944] kvm-<derived> sshd-session[727]: pam_unix(sshd:session): session closed for user root
+[  120.469887] kvm-<derived> systemd[1]: session-3.scope: Deactivated successfully.
+[  120.475735] kvm-<derived> systemd-logind[517]: Session 3 logged out. Waiting for processes to exit.
+[  120.479578] kvm-<derived> systemd-logind[517]: Removed session 3.
+[  124.527013] kvm-<derived> sshd-session[751]: banner exchange: Connection from <lan-host> port 48278: invalid format [preauth]
+[  129.676931] kvm-<derived> unix_chkpwd[756]: password check failed for user (root)
+[  129.678145] kvm-<derived> sshd-session[755]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[  130.719663] kvm-<derived> systemd[1]: Stopping User Manager for UID 0...
+[  130.728526] kvm-<derived> systemd[734]: Activating special unit Exit the Session...
+[  130.728957] kvm-<derived> systemd[734]: Stopped target Main User Target.
+[  130.729231] kvm-<derived> systemd[734]: Stopped target Basic System.
+[  130.729387] kvm-<derived> systemd[734]: Stopped target Paths.
+[  130.729550] kvm-<derived> systemd[734]: Stopped target Sockets.
+[  130.729767] kvm-<derived> systemd[734]: Stopped target Timers.
+[  130.729983] kvm-<derived> systemd[734]: Stopped Daily Cleanup of User's Temporary Directories.
+[  130.731976] kvm-<derived> systemd[734]: Closed D-Bus User Message Bus Socket.
+[  130.732611] kvm-<derived> systemd[734]: Stopped Create User Files and Directories.
+[  130.734057] kvm-<derived> systemd[734]: Removed slice User Application Slice.
+[  130.734315] kvm-<derived> systemd[734]: Reached target Shutdown.
+[  130.734947] kvm-<derived> systemd[734]: Finished Exit the Session.
+[  130.735290] kvm-<derived> systemd[734]: Reached target Exit the Session.
+[  130.749019] kvm-<derived> (sd-pam)[736]: pam_unix(systemd-user:session): session closed for user root
+[  130.749139] kvm-<derived> systemd-logind[517]: Removed session 4.
+[  130.758357] kvm-<derived> systemd[1]: user@0.service: Deactivated successfully.
+[  130.760488] kvm-<derived> systemd[1]: Stopped User Manager for UID 0.
+[  130.761401] kvm-<derived> systemd[1]: user@0.service: Consumed 2.178s CPU time over 12.566s wall clock time, 8.8M memory peak.
+[  130.874238] kvm-<derived> systemd[1]: Stopping User Runtime Directory /run/user/0...
+[  130.946313] kvm-<derived> systemd[1]: run-user-0.mount: Deactivated successfully.
+[  130.949503] kvm-<derived> systemd[1]: user-runtime-dir@0.service: Deactivated successfully.
+[  130.950713] kvm-<derived> systemd[1]: Stopped User Runtime Directory /run/user/0.
+[  131.784281] kvm-<derived> sshd-session[753]: error: PAM: Authentication failure for root from <lan-host>
+[  131.796398] kvm-<derived> sshd-session[753]: Connection closed by authenticating user root <lan-host> port 33204 [preauth]
+[  136.882734] kvm-<derived> sshd-session[765]: Accepted keyboard-interactive/pam for root from <lan-host> port 40196 ssh2
+[  136.900277] kvm-<derived> sshd-session[765]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  136.942431] kvm-<derived> systemd-logind[517]: New session '5' of user 'root' with class 'user' and type 'tty'.
+[  136.977254] kvm-<derived> systemd[1]: Starting User Runtime Directory /run/user/0...
+[  137.049647] kvm-<derived> systemd[1]: Finished User Runtime Directory /run/user/0.
+[  137.063192] kvm-<derived> systemd[1]: Starting User Manager for UID 0...
+[  137.125112] kvm-<derived> (systemd)[772]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[  137.134451] kvm-<derived> systemd-logind[517]: New session '6' of user 'root' with class 'manager-early' and type 'unspecified'.
+[  139.139058] kvm-<derived> systemd[772]: Queued start job for default target Main User Target.
+[  139.152475] kvm-<derived> systemd[772]: Created slice User Application Slice.
+[  139.152747] kvm-<derived> systemd[772]: Started Daily Cleanup of User's Temporary Directories.
+[  139.152904] kvm-<derived> systemd[772]: Reached target Paths.
+[  139.153870] kvm-<derived> systemd[772]: Reached target Timers.
+[  139.158525] kvm-<derived> systemd[772]: Starting D-Bus User Message Bus Socket...
+[  139.164463] kvm-<derived> systemd[772]: Starting Create User Files and Directories...
+[  139.223150] kvm-<derived> systemd[772]: Finished Create User Files and Directories.
+[  139.231486] kvm-<derived> systemd[772]: Listening on D-Bus User Message Bus Socket.
+[  139.232511] kvm-<derived> systemd[772]: Reached target Sockets.
+[  139.233432] kvm-<derived> systemd[772]: Reached target Basic System.
+[  139.234082] kvm-<derived> systemd[1]: Started User Manager for UID 0.
+[  139.236730] kvm-<derived> systemd[772]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[  139.237105] kvm-<derived> systemd[772]: Reached target Main User Target.
+[  139.237396] kvm-<derived> systemd[772]: Startup finished in 2.067s.
+[  139.256793] kvm-<derived> systemd[1]: Started Session 5 of User root.

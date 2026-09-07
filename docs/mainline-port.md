@@ -1427,6 +1427,80 @@ a rootfs image FILE dropped on the vendor rootfs and loop-mounted by stage 1, so
 the reversible slot-B harness stays reversible and rollback is `rm` plus a
 slot-B restore. Root-on-SD is still blocked on there being no card in the unit.
 
+### What exists now (#78, later the same day) — THE APPLIANCE BOOTS THE BOARD
+
+**A NixOS 26.11 system on mainline Linux 7.1.3 boots the AX630C with the
+device's own MAC, its own DHCP lease and its own derived hostname, zero failed
+units, and NanoKVM-Server serving HTTPS — in 26.3 s.** Six slot-B runs; root was
+an image FILE on the vendor rootfs throughout, so nothing on the eMMC was
+overwritten and slot A, the boot chain and `p16` were never written. Full
+account, including the four things that had to be fixed to get there:
+[reference/mainline/nixos-appliance-20260907/HARDWARE.md](reference/mainline/nixos-appliance-20260907/HARDWARE.md).
+
+**The eMMC is not reliably `mmcblk0`, and when it loses it has no partitions at
+all.** This is the headline, and it is not #78's alone — it affects every
+mainline boot of this board. The three SD4HC instances probe concurrently; the
+eMMC's layout comes from the `blkdevparts=mmcblk0:...` clause, which has no
+on-disk partition table behind it and binds the table to a device **name**. When
+the eMMC enumerates as `mmcblk1` the table is applied to `mmcblk0` — the empty
+SD slot — and the eMMC comes up with no partitions whatsoever:
+
+```
+lost:  mmcblk1: mmc1:0001 AT3SFB 29.1 GiB           (no pN children at all)
+won:   mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+        mmcblk0: p1(spl) p2(ddrinit) ... p16(boot) p17(rootfs)
+```
+
+Two boots in five lost it. #76 and #77 never saw it because they happened to
+win, and #75's bring-up init hid the depth of it by locating its partition by
+name out of `/proc/partitions` — which cannot help, because in the losing case
+nothing is named. The fix is three lines of `dts/ax630c.dtsi`: `aliases { mmc0 =
+&emmc; mmc1 = &sd; mmc2 = &sdio; }`, so `mmc_of_parse()` pins each host index.
+
+**A slot-B appliance needs its own way out, and both halves now have one.** The
+#75 `/init` always ended in `reboot(2)`; an appliance is supposed to stay up,
+and the kernel pets U-Boot's watchdog for as long as userspace does not open
+`/dev/watchdog`. So one earlier run came up without network and stranded the
+board until someone pulled power. `nixos/loop-test.nix` closes both halves and
+hardware exercised both: stage-1 `panicOnFail=1` turned a failed carrier mount
+into a panic and a slot-A boot 37 s later (NixOS stage 1's `fail()` is
+*interactive* — it blocks reading a console nobody can reach), and the userspace
+deadman fired at its full 900 s dwell and brought the board back unprompted.
+Nothing re-arms `SLOTB_BOOTABLE`, so every exit lands on slot A by itself.
+
+The deadman needed hardware to get right: its first version used `date +%s`, and
+the image boots with its clock at the build epoch until timesyncd jumps it
+months forward the moment DHCP lands — so the deadline was instantly in the past
+and it fired at 62 s. `/proc/uptime` now.
+
+**Identity is proven end to end**, and needed three fixes that each looked
+sufficient alone. `hostnamectl` must be `--transient` (the plain call writes
+`/etc/hostname`, a read-only store symlink); `networking.hostName` must be
+**empty**, because systemd-hostnamed refuses a transient hostname when a static
+one exists ("static hostname is already set, so the specified transient hostname
+will not be used") — the `--transient` fix by itself only turned an error into a
+polite refusal; and `dhcpV4Config.ClientIdentifier` must be `mac`, because the
+same MAC is *not* enough to get the same lease when networkd sends a DUID in
+option 61 and the vendor's udhcpc sent the MAC. With all three, the board comes
+up at the address, MAC and hostname it has always had, all derived from the SoC
+UID read through `/dev/mem` at physical `0x788`/`0x78c`.
+
+`/etc/fw_env.config` is confirmed by use rather than by hexdump: `fw_printenv`
+on the appliance read `bootsystem=B` out of the live U-Boot environment at the
+offset `nixos/emmc-partitions.nix` computed. The milestone channel survives the
+reboot (`0x0E000018` live, `0x0E000014` from slot A) — and the arming clear-mask
+is **`0xFFFF000`**, not `0x7FFF000`, which misses bit 27. #81's `nanokvm-gpio`
+ran on hardware for the first time, resolving all four ATX lines by device-tree
+name; no line was driven, because pressing `atx-power` presses a button on
+someone's machine.
+
+Not proven: video (#83), the USB gadget's policy half (#82), the mini-display
+(#84), and root on the `p17` partition itself — every run used the loop-image
+root, which is what kept them reversible. The `mmc` alias fix has one good boot
+behind it rather than a series; it is correct by construction, but the race it
+closes was only ever visible statistically.
+
+---
 ---
 
 ## 9. Device reads wanted

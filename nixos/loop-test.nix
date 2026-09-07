@@ -67,7 +67,7 @@
   #
   # Bits 12-24 belong to the bring-up initramfs (#75-#77, #82). 25-29 are
   # still free; this takes three of them. Clear them when arming slot B:
-  #   devmem 0x0239002C 32 0x7FFF000
+  #   devmem 0x0239002C 32 0xFFFF000
   # and read them back from slot A with `devmem 0x02390024`.
   #
   #   25 (0x2000000)  multi-user.target reached

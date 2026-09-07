@@ -25,6 +25,30 @@
 	#address-cells = <2>;
 	#size-cells = <2>;
 
+	/*
+	 * mmc aliases pin the MMC host indices, and on this board that is not
+	 * cosmetic -- it decides whether the eMMC has a partition table at all.
+	 *
+	 * The eMMC's layout comes from the `blkdevparts=mmcblk0:...` clause of
+	 * the U-Boot command line (there is no on-disk partition table), and
+	 * that clause binds the table to a device NAME. The three SD4HC
+	 * instances probe concurrently, so without aliases the eMMC is
+	 * sometimes mmc0 and sometimes mmc1 -- and when it loses, `mmcblk0` is
+	 * the empty SD slot, the table lands on nothing, and the eMMC comes up
+	 * with zero partitions. Measured on hardware during #78: two slot-B
+	 * boots out of five came up that way, and stage 1 could not find a
+	 * rootfs on a board whose rootfs was perfectly intact.
+	 *
+	 * With these, mmc_of_parse()'s alias id fixes each host's index, the
+	 * eMMC is always mmc0/mmcblk0, and the cmdline table always lands on
+	 * it. #76 saw the same silicon behave because it happened to win.
+	 */
+	aliases {
+		mmc0 = &emmc;
+		mmc1 = &sd;
+		mmc2 = &sdio;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;

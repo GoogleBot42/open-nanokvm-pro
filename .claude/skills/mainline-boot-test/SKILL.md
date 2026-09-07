@@ -287,9 +287,15 @@ Verify both restores from the medium against the step-2 md5s, and confirm
 
 # Variant: booting the NixOS appliance from slot B (#78)
 
-Same loop, three differences. The image under test is a whole operating system
-rather than a self-terminating probe, so it does not reboot itself and its
-oracle is an SSH shell rather than a register.
+Validated 2026-09-07 over six runs, the last of which booted a NixOS 26.11
+system on mainline 7.1.3 with the board's own MAC, lease and hostname
+(`docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`).
+
+Same loop, four differences. The image under test is a whole operating system
+rather than a self-terminating probe, so it does not reboot itself, its oracle
+is an SSH shell rather than a register, and **the clear-mask is `0xFFFF000`**
+because the appliance writes milestone bits 25-27 (`0x7FFF000` misses bit 27
+and leaves it stale).
 
 **Use the loop-image variant, never the partition one.** `.#nixos-appliance`
 puts root on `/dev/mmcblk0p17` — the vendor rootfs, which is the only way back

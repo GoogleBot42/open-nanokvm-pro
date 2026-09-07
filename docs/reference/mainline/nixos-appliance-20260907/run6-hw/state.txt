@@ -1,0 +1,67 @@
+### uname
+Linux kvm-<derived> 7.1.3-nanokvm #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970 aarch64 GNU/Linux
+### root filesystem
+/dev/loop0 ext4 rw,noatime
+/dev/loop0: [45841]:471 (/nanokvm-host/nixos-root.img)
+/dev/mmcblk0p17 /vendor-root rw,relatime
+### carrier chosen by stage 1
+Mar 17 19:55:56 nixos stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] nanokvm: loop-mounting /nixos-root.img off /dev/mmcblk0p17
+### identity
+device_key: <uid-hi><uid-lo>
+sha512(device_key)[0:16]: <uid-hash>
+kernel hostname: kvm-<derived>
+vendor rootfs hwaddress: hwaddress ether <redacted-mac>
+end0             UP             <redacted-mac> <BROADCAST,MULTICAST,UP,LOWER_UP> 
+end0             UP             <device-ip>/21 metric 1024 
+### identity journal
+Mar 17 19:55:59 nixos systemd[1]: Starting Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)...
+Mar 17 19:55:59 nixos nanokvm-identity[453]: identity: uid=<uid-hi><uid-lo> mac=<redacted-mac> hostname=kvm-<derived>
+Mar 17 19:56:02 kvm-<derived> systemd[1]: Finished Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID).
+### dhcp client id
+            Hardware Address: <redacted-mac> (Shenzhen Sipeed Technology Co., Ltd)
+                       Speed: 1Gbps
+                      Duplex: full
+                     Address: <device-ip> (DHCPv4 via <router>)
+            DHCPv4 Client ID: <redacted-mac>
+### milestone register
+0x0E000018
+### fw_env
+/dev/mmcblk0 0x4C0000 0x100000
+bootsystem=B
+### deadman
+● nanokvm-slotb-deadman.service - Leave the slot-B test: reboot after a bounded dwell
+     Loaded: loaded (/etc/systemd/system/nanokvm-slotb-deadman.service; enabled; preset: ignored)
+     Active: active (running) since Tue 2026-03-17 19:55:59 UTC; 5 months 21 days ago
+ Invocation: 12ef8810e2dc47c5a28e7ab036892b6d
+   Main PID: 454 (nanokvm-slotb-d)
+         IP: 0B in, 0B out
+Mar 17 19:55:59 nixos systemd[1]: Started Leave the slot-B test: reboot after a bounded dwell.
+Mar 17 19:55:59 nixos nanokvm-slotb-deadman-start[454]: slotb-deadman: rebooting to slot A 900 s from now (uptime 14 s)
+Mar 17 19:55:59 nixos nanokvm-slotb-deadman-start[454]:                unless /run/keepalive appears
+### milestones unit
+Mar 17 19:56:04 kvm-<derived> systemd[1]: Starting Record slot-B boot milestones in the A/B slot register...
+Sep 07 23:10:34 kvm-<derived> nanokvm-slotb-milestones-start[592]: slotb-milestones: BACKUP0 now 0x0E000018
+Sep 07 23:10:34 kvm-<derived> systemd[1]: Finished Record slot-B boot milestones in the A/B slot register.
+### failed units
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.
+### nanokvm units
+  nanokvm-appdir.service           loaded active exited  Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)
+  nanokvm-cert.service             loaded active exited  Generate the NanoKVM-Pro HTTPS certificate if absent
+  nanokvm-identity.service         loaded active exited  Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)
+  nanokvm-slotb-deadman.service    loaded active running Leave the slot-B test: reboot after a bounded dwell
+  nanokvm-slotb-milestones.service loaded active exited  Record slot-B boot milestones in the A/B slot register
+  nanokvm-usb.service              loaded active exited  NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)
+  nanokvm-video.service            loaded active exited  NanoKVM-Pro open video stack (capture + encoder modules)
+  nanokvm.service                  loaded active running NanoKVM-Pro server (open stack)
+### gpio
+atx-power      0
+atx-reset      0
+atx-power-led  0
+atx-hdd-led    0
+### boot time
+Startup finished in 7.144s (kernel) + 19.135s (userspace) = 26.280s 
+multi-user.target reached after 12.701s in userspace.
+### https
+local https status: 200
