@@ -146,22 +146,21 @@ static int ax630c_gpio_direction_output(struct gpio_chip *gc,
 }
 
 /*
- * An input reads the pad through EXT_PORT; an output reads back its own latch.
+ * Always the pad, through EXT_PORT -- never the output latch.
  *
- * Reading EXT_PORT for an output would be the more truthful answer if this
- * silicon loops a driven output back into it -- and whether it does is an open
- * question in the spec (section 3.3, GAP 3), not something to guess at in a
- * driver. Both vendor implementations answer from the latch, so this is also
- * what every consumer of this hardware has ever seen. A latch read proves
- * nothing about the ball; see the SW_PWR trap in docs/mini-display.md.
+ * Both vendor implementations answer from the DR bit whenever the line is an
+ * output, because whether EXT_PORT loops a driven output back was unknown
+ * (gpio-devmem-20260906.md section 3.3, GAP 3). It does: measured on the
+ * heartbeat LED, where driving the line high and low moves EXT_PORT bit 23 to
+ * match, evidence in reference/mainline/gpio-lt6911-20260907/run1/.
+ *
+ * So read the pad. A latch read proves nothing about the ball -- that is the
+ * whole shape of the SW_PWR trap in docs/mini-display.md, where a pad muxed
+ * away under a driver's feet went on reporting the value nobody was driving.
  */
 static int ax630c_gpio_get(struct gpio_chip *gc, unsigned int offset)
 {
 	struct ax630c_gpio *gpio = gpiochip_get_data(gc);
-	u32 line = ax630c_gpio_line_read(gpio, offset);
-
-	if (line & AX630C_GPIO_DDR)
-		return !!(line & AX630C_GPIO_DR);
 
 	return !!(readl(gpio->base + AX630C_GPIO_EXT_PORT) & BIT(offset));
 }
@@ -331,12 +330,50 @@ static void ax630c_gpio_irq_handler(struct irq_desc *desc)
 
 /* --- probe -------------------------------------------------------------- */
 
+/*
+ * Release one of the controller's two reset lines.
+ *
+ * Deassert is the only operation that is safe here. By the time Linux runs,
+ * lines on these blocks are already driving things that must not glitch --
+ * the host's ATX power button among them -- so a reset pulse at probe would be
+ * a keystroke nobody pressed.
+ *
+ * The status read is not decoration. It costs one register read and it is the
+ * only thing that would notice a reset provider addressing the wrong bit: a
+ * line firmware left released reads deasserted, and if one ever does not, that
+ * is either real (the block was held in reset and we are about to use it) or a
+ * mis-addressed bit, and both are worth a line in the log.
+ */
+static int ax630c_gpio_release_reset(struct device *dev, const char *name)
+{
+	struct reset_control *rst;
+	int ret;
+
+	rst = devm_reset_control_get_exclusive(dev, name);
+	if (IS_ERR(rst))
+		return dev_err_probe(dev, PTR_ERR(rst),
+				     "failed to get the %s reset\n", name);
+
+	ret = reset_control_status(rst);
+	if (ret < 0)
+		return dev_err_probe(dev, ret,
+				     "failed to read the %s reset\n", name);
+	if (ret)
+		dev_info(dev, "%s reset was asserted at probe\n", name);
+
+	ret = reset_control_deassert(rst);
+	if (ret)
+		return dev_err_probe(dev, ret,
+				     "failed to deassert the %s reset\n", name);
+
+	return 0;
+}
+
 static int ax630c_gpio_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct gpio_irq_chip *girq;
 	struct ax630c_gpio *gpio;
-	struct reset_control *rst;
 	struct clk *clk;
 	u32 mode;
 	int irq;
@@ -371,49 +408,13 @@ static int ax630c_gpio_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, PTR_ERR(clk),
 				     "failed to enable the GPIO clock\n");
 
-	/*
-	 * Two reset lines per controller, both left deasserted by firmware.
-	 * Deassert is the only operation that is safe to perform here: by the
-	 * time Linux runs, lines on this block are already driving things
-	 * that must not glitch -- the host's ATX power button among them --
-	 * so a reset pulse at probe would be a keystroke nobody pressed.
-	 *
-	 * The status read is not decoration. It is the cheapest possible
-	 * check that the reset provider addresses the bits it claims, and the
-	 * value is logged so a boot log is enough to tell "firmware left this
-	 * released" from "we released it".
-	 */
-	rst = devm_reset_control_get_exclusive(dev, "apb");
-	if (IS_ERR(rst))
-		return dev_err_probe(dev, PTR_ERR(rst),
-				     "failed to get the APB reset\n");
-
-	ret = reset_control_status(rst);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read the APB reset\n");
-	dev_dbg(dev, "APB reset was %s at probe\n",
-		ret ? "ASSERTED" : "deasserted");
-
-	ret = reset_control_deassert(rst);
+	ret = ax630c_gpio_release_reset(dev, "apb");
 	if (ret)
-		return dev_err_probe(dev, ret,
-				     "failed to deassert the APB reset\n");
+		return ret;
 
-	rst = devm_reset_control_get_exclusive(dev, "gpio");
-	if (IS_ERR(rst))
-		return dev_err_probe(dev, PTR_ERR(rst),
-				     "failed to get the GPIO reset\n");
-
-	ret = reset_control_status(rst);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read the GPIO reset\n");
-	dev_dbg(dev, "GPIO reset was %s at probe\n",
-		ret ? "ASSERTED" : "deasserted");
-
-	ret = reset_control_deassert(rst);
+	ret = ax630c_gpio_release_reset(dev, "gpio");
 	if (ret)
-		return dev_err_probe(dev, ret,
-				     "failed to deassert the GPIO reset\n");
+		return ret;
 
 	/*
 	 * Select the non-secure interrupt view, which is the one the handler
