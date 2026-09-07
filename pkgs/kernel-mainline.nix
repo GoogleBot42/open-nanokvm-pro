@@ -90,6 +90,13 @@ pkgs.stdenv.mkDerivation {
   # Kconfig block and a Makefile line.
   stmmacKconfig = ./kernel-mainline/stmmac.Kconfig;
 
+  # And again for the GPIO controller (#81): drivers/gpio is flat upstream, so
+  # one .c in treeGraft plus this Kconfig block and a Makefile line.
+  gpioKconfig = ./kernel-mainline/gpio.Kconfig;
+
+  # Same for the HDMI receiver's management driver (#81), in drivers/misc.
+  miscKconfig = ./kernel-mainline/misc.Kconfig;
+
   # And for the DWC3 glue (#82). drivers/usb/dwc3 is flat too.
   dwc3Kconfig = ./kernel-mainline/dwc3.Kconfig;
 
@@ -171,10 +178,54 @@ pkgs.stdenv.mkDerivation {
     grep -qF 'obj-$(CONFIG_DWMAC_AXERA)' "$stmmacK/Makefile" \
       || { echo "ERROR: could not hook dwmac-axera.o into $stmmacK/Makefile" >&2; exit 1; }
 
+    # --- graft the GPIO controller (#81) ---------------------------------
+    # gpio-ax630c.c was copied above; GPIO_AX630C sorts between GPIO_ATH79 and
+    # GPIO_BCM_KONA. Assert both hooks: a kernel with this driver missing
+    # binds no gpiochip, so the HDMI receiver never powers on and the ATX
+    # lines are never claimed -- and the DT would look perfectly correct.
+    awk -v snippet="$gpioKconfig" '
+      /^config GPIO_BCM_KONA$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/gpio/Kconfig > drivers/gpio/Kconfig.grafted
+    mv drivers/gpio/Kconfig.grafted drivers/gpio/Kconfig
+    grep -q '^config GPIO_AX630C$' drivers/gpio/Kconfig \
+      || { echo "ERROR: could not hook GPIO_AX630C into drivers/gpio/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_GPIO_ATH79)\t\t+= gpio-ath79.o$|&\nobj-$(CONFIG_GPIO_AX630C)\t\t+= gpio-ax630c.o|' \
+      drivers/gpio/Makefile
+    grep -qF 'obj-$(CONFIG_GPIO_AX630C)' drivers/gpio/Makefile \
+      || { echo "ERROR: could not hook gpio-ax630c.o into drivers/gpio/Makefile" >&2; exit 1; }
+
+    # --- graft the HDMI receiver's management driver (#81) ---------------
+    # drivers/misc is flat and unsorted upstream, so the anchors are simply
+    # two lines that exist exactly once. Assert both: without this driver the
+    # /proc interface libkvm reads for the source geometry does not exist, and
+    # capture has no way to learn what the attached machine is displaying.
+    awk -v snippet="$miscKconfig" '
+      /^config SRAM$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/misc/Kconfig > drivers/misc/Kconfig.grafted
+    mv drivers/misc/Kconfig.grafted drivers/misc/Kconfig
+    grep -q '^config LT6911_MANAGE$' drivers/misc/Kconfig \
+      || { echo "ERROR: could not hook LT6911_MANAGE into drivers/misc/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_SRAM)\t\t+= sram.o$|&\nobj-$(CONFIG_LT6911_MANAGE)\t+= lt6911-manage.o|' \
+      drivers/misc/Makefile
+    grep -qF 'obj-$(CONFIG_LT6911_MANAGE)' drivers/misc/Makefile \
+      || { echo "ERROR: could not hook lt6911-manage.o into drivers/misc/Makefile" >&2; exit 1; }
+
     # --- graft the DWC3 glue (#82) ---------------------------------------
     # dwc3-axera.c was copied above. drivers/usb/dwc3 is flat and, unlike the
-    # two files above, has NO alphabetical order to slot into -- upstream
-    # appends each new glue layer to the end of both lists. So the anchors are
+    # files above, has NO alphabetical order to slot into -- upstream appends
+    # each new glue layer to the end of both lists. So the anchors are
     # positional: the first glue entry in the Kconfig (USB_DWC3_OMAP) and the
     # dwc3-apple.o line in the Makefile. Assert both, as everywhere else: a
     # missed hook here builds a kernel whose USB node binds nothing, which on

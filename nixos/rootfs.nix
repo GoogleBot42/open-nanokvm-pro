@@ -8,7 +8,8 @@
 , vc8000-vcmd
 , open-vin-csi2
 , open-vin-capture
-, nanokvm-server
+, nanokvm-server # MUST be the gpioBackend = "libgpiod" build -- see flake.nix
+, nanokvm-gpio
 , nanokvm-web
 , nanokvm-display
 , libsns-dummy
@@ -66,7 +67,7 @@ let
 
   nanokvm = {
     inherit axera-libs ax-ko-blobs kernel kvm-encoder vc8000-vcmd open-vin-csi2 open-vin-capture
-      nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
+      nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display libsns-dummy version;
     # libkvm.so.0 DT_NEEDEDs libopus and libasound but its DT_RPATH is only
     # "/opt/lib:<axera-libs>"; NanoKVM-Server's DT_RUNPATH
     # ("$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib") carries no store path either.

@@ -404,15 +404,22 @@ propose SG2002 work without flagging this gap up front.
   then the GitHub `release.yml` run FAILED after 11.5 min in its first step,
   `nix build .#update-package`. No release object exists, so **devices are
   unaffected** — stable still serves 2.0.0 and the preview channel still
-  serves alpha.4. Ruled out locally: `.#update-package` builds green from the
-  exact tagged tree, and the pnpm FOD re-fetches clean against its pinned hash
-  (`--rebuild`). The runner log needs GitHub admin rights, which this
-  environment does not have, so the cause is undetermined — most likely runner
-  disk (the workflow frees space for a reason) or a transient fetch. **Next
-  step is to re-run the job from the GitHub Actions tab** (the docs say it is
-  idempotent); a second failure at the same step makes it deterministic and
-  worth real investigation. A GitHub token with actions read+write would let an
-  agent do both.
+  serves alpha.4. **Cause found and FIXED 2026-09-07 (`bc1ec0a`, branch
+  `fix/server-vendorhash`): `pkgs/nanokvm-server.nix` carried a `vendorHash`
+  stale since #71 (`f429b2a`, 2026-09-05).** That commit's `postPatch` step 11
+  drops the `github.com/gin-gonic/contrib/static` import; the go-modules
+  derivation inherits `postPatch`, and `go mod vendor` vendors only imported
+  packages, so that module left the vendor tree — the modules.txt diff is
+  exactly that one line. It stayed invisible because a fixed-output
+  derivation's store path comes from its hash alone: this build host already
+  held the July output and never re-fetched, so "`.#update-package` builds
+  green locally" was never evidence. `nix build --rebuild` on the go-modules
+  drv reproduces the runner's hash exactly. The `v2.1.0-alpha.5` tag still
+  points at the broken tree and stays where it is (never move tags).
+  **Superseded by `v2.1.0-alpha.6`, cut over the Gitea API and PUBLISHED on
+  GitHub 2026-09-07** (`8e26530`; same content plus the fix; the `preview`
+  manifest serves alpha.6, sha512 `l9GXB1Jk…`). Not yet applied on the device
+  — the alpha.6 OTA on hardware is the open checkbox.
 
 - **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
   `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
@@ -456,26 +463,41 @@ propose SG2002 work without flagging this gap up front.
   `sdhci-cadence`, no driver port; root-on-SD blocked on a missing card,
   `needs-human`); **#77 DONE, device-proven** (`tools/kvmssh` reaches the
   mainline kernel over Ethernet from the slot-B initramfs; PHY is a Realtek
-  RTL8211F, `phy-mode = rgmii-id`; milestone mask now `0x3FF000`; b2935d8);
+  RTL8211F, `phy-mode = rgmii-id`; milestone mask `0x3FF000` at the time, `0x1FFF000` since #82; b2935d8);
   **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
   watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
   `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states and the CPUPLL/
-  cpufreq model; **#82 DONE, device-proven** -- **a host enumerated a
-  mainline-kernel USB HID gadget from this board** (`0x01FFF014`, every bit;
-  gadget bound at t=12.63 s, host had it configured 1.0 s later at high speed;
-  `docs/reference/mainline/usb-gadget-20260907/`). `dwc3-axera.c` is a
-  ~200-line of-simple-class glue whose real content is the VBUSVALID bit no
-  generic glue can express; two DT nodes so the core takes the 24 MHz `ref`
-  clock and lands on the vendor's exact GFLADJ constants; three flash clock
-  rows and two reset lines -- the reset controller's FIRST real `.assert`;
-  the configfs gadget and all five `usbdev.sh` function drivers built in
-  (5 of 5 instantiated); milestone bits 22/23/24 and mask `0x1FFF000`.
-  All four issues stay open; only #74 is closed.
+  cpufreq model; **#81 DONE, device-proven 2026-09-07** (`gpio-ax630c.c` for
+  the four controllers, `lt6911-manage.c` replacing the vendor's 2907-line
+  driver with the 15-file `/proc` ABI intact, an i2c0 node, the PHY reset moved
+  to `reset-gpios`, `nanokvm-gpio` as a libgpiod program instead of a
+  sysfs-export unit, and 14 more clock rows; `0x003FF014`, evidence in
+  `docs/reference/mainline/gpio-lt6911-20260907/`). **The SW_PWR trap is fixed
+  at the root on mainline**: `gpio_request_enable()` got its first exercise on
+  silicon and four pad words measurably changed function because a driver
+  asked for the line. **#82 DONE, device-proven 2026-09-07** -- **a host
+  enumerated a mainline-kernel USB HID gadget from this board**
+  (`0x01FFF014`, every bit; gadget bound at t=12.63 s, host had it configured
+  1.0 s later at high speed; `docs/reference/mainline/usb-gadget-20260907/`).
+  `dwc3-axera.c` is a ~200-line of-simple-class glue whose real content is the
+  VBUSVALID bit no generic glue can express; two DT nodes so the core takes
+  the 24 MHz `ref` clock and lands on the vendor's exact GFLADJ constants;
+  three flash clock rows and two reset lines; the configfs gadget and all five
+  `usbdev.sh` function drivers built in (5 of 5 instantiated); milestone bits
+  22/23/24 and mask `0x1FFF000`. **#82 is also where the reset provider's
+  `.assert` finally ran on silicon** -- #81 only ever needed deassert, and
+  pulsing a GPIO block whose lines drive the host's power button was rightly
+  not done for coverage; the USB PHY reset needed a real pulse and got one.
+  With both branches merged the clock table is **282 rows** (265 + 14 + 3) and
+  the reset table 150. All these issues stay open on the forge; only #74 is
+  closed.
   Next: **#78** (NixOS appliance on mainline -- note the eth0 MAC is a
-  provisioning-time literal in `/etc/network/interfaces`, not UID-derived);
-  **#81** can start in parallel; **#85** (aic8800) still can start from source.
-  #82's leftovers are the gadget's *policy* (report descriptors, flag files,
-  the `udhcpd` instance) and running the other four functions -- both #78.
+  provisioning-time literal in `/etc/network/interfaces`, not UID-derived, and
+  it is the appliance that finally runs `nanokvm-gpio`, which has never
+  executed on hardware; it also owns the gadget's *policy* -- report
+  descriptors, flag files, the `udhcpd` instance -- and running the four USB
+  functions #82 only proved instantiate); **#83**/**#84** are unblocked by
+  #81; **#85** (aic8800) still can start from source.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

@@ -67,11 +67,18 @@
 #define AX630C_DWMAC_COMPAT		"axera,ax630c-dwmac"
 
 /*
- * USB (#82). Same shape again: the controller is a stock Synopsys DWC3 and the
- * mainline core node below it carries the plain "snps,dwc3". This compatible
- * is the OUTER glue node's -- an of-simple-class wrapper that owns the clocks,
- * the two software resets and VBUSVALID, all of which live in the flash syscon
- * outside the core's window.
+ * GPIO (#81). Not a DesignWare block despite borrowing its register names:
+ * one 32-bit word per line rather than one bit, so gpio-dwapb cannot bind and
+ * there is no generic compatible to fall back on.
+ */
+#define AX630C_GPIO_COMPAT		"axera,ax630c-gpio"
+
+/*
+ * USB (#82). Same shape as the two above: the controller is a stock Synopsys
+ * DWC3 and the mainline core node below it carries the plain "snps,dwc3". This
+ * compatible is the OUTER glue node's -- an of-simple-class wrapper that owns
+ * the clocks, the two software resets and VBUSVALID, all of which live in the
+ * flash syscon outside the core's window.
  */
 #define AX630C_DWC3_COMPAT		"axera,ax630c-dwc3"
 

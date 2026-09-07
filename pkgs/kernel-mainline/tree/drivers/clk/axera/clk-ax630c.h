@@ -45,7 +45,7 @@ enum ax630c_clk_type {
 };
 
 /*
- * One row per clock. The union keeps the 265-row tables readable; the
+ * One row per clock. The union keeps the 279-row tables readable; the
  * per-type initialisers below are what the tables actually use.
  */
 struct ax630c_clk {

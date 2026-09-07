@@ -6,10 +6,16 @@ to cut a version whose section is missing, and the GitHub release workflow
 lifts the section verbatim into the release description. Write the section
 before cutting. Older releases (through v2.1.0-alpha.3) predate this file.
 
-## v2.1.0-alpha.5
+## v2.1.0-alpha.6
 
 Blob-free H.265, real rate control on both codecs, and the web UI becomes our
-own.
+own. (v2.1.0-alpha.5 was tagged with this content but never published: its
+release build died on a Go vendor hash left stale by #71. alpha.6 is alpha.5
+plus that fix.)
+
+- **Release build fixed.** `nanokvm-server`'s `vendorHash` is regenerated; a
+  stale fixed-output hash is invisible on a host that already has the output,
+  so `docs/building.md` now carries the pre-release `--rebuild` check.
 
 - **H.265 (#64, #66).** The open encoder emits HEVC from source (VPS/SPS/PPS
   byte-identical to the vendor's, device-proven 1080p to 3840x2400) and the web UI

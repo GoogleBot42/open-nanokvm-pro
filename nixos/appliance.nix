@@ -402,24 +402,18 @@ in
     };
   };
 
-  # 5b. ATX target power/reset GPIOs. Straight port of nanokvm-gpio.service
-  # (pkgs/nanokvm-display.nix). The devmem write is the SW_PWR pinmux trap:
-  # gpio7 sits on the VI_D7 pad and sysfs export never programs the mux
-  # (docs/mini-display.md).
-  systemd.services.nanokvm-gpio = {
-    description = "NanoKVM-Pro ATX GPIO setup (target power/reset pins)";
-    wantedBy = [ "multi-user.target" ];
-    before = [ "nanokvm.service" "nanokvm-display.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = [
-        "${pkgs.busybox}/bin/devmem 0x02300060 32 0x00060003"
-        ''${pkgs.bash}/bin/sh -c 'cd /sys/class/gpio && for p in 7:low 35:low 74:in 75:in; do n=''${p%%:*} d=''${p##*:}; [ -d gpio$n ] || echo $n > export; echo $d > gpio$n/direction; done' ''
-      ];
-    };
-  };
-
+  # 5b. GONE (#81). There used to be a nanokvm-gpio.service here -- a port of
+  # the 4.19 image's unit (pkgs/nanokvm-display.nix, which still needs it) that
+  # exported gpio 7/35/74/75 through /sys/class/gpio and poked
+  # `devmem 0x02300060` to mux the VI_D7 pad by hand. Neither half has anything
+  # to do on mainline: there is nothing to export, because consumers address
+  # lines by their device-tree name (dts/ax630c-nanokvm-pro.dts: atx-power,
+  # atx-reset, atx-power-led, atx-hdd-led), and nothing to mux by hand, because
+  # requesting a line runs it through gpio-ranges -> gpio_request_enable and
+  # the pin controller programs the pad. The tool that does the requesting,
+  # nanokvm-gpio, is in environment.systemPackages below; the server calls it
+  # by absolute store path (pkgs/nanokvm-server.nix, gpioBackend = "libgpiod").
+  #
   # 5c. The KVM server. Mirrors the vendor service model: the app tree is
   # copied to tmpfs at boot and the binary runs from there (docs/architecture.md
   # "Runtime service model").
@@ -679,7 +673,12 @@ in
   # is the interactive/system-wide superset so an admin over SSH, and the vendor
   # scripts a human runs by hand, find the same tools. A missing entry is a
   # feature that silently stops working, not a build error.
-  environment.systemPackages = with pkgs; [
+  environment.systemPackages = [
+    # ATX power/reset/LED by device-tree line name (#81) -- the replacement for
+    # the deleted sysfs-export unit. On PATH so it can be driven by hand;
+    # the server reaches it by store path, not through PATH.
+    nanokvm.nanokvm-gpio
+  ] ++ (with pkgs; [
     busybox # devmem, udhcpd/udhcpc, and the shell tooling the scripts assume
     bash
     kmod # insmod / rmmod / lsmod
@@ -704,7 +703,7 @@ in
     python3
     pciutils
     usbutils
-  ];
+  ]);
 
   # Nothing here should ever try to build documentation into the image.
   documentation.enable = false;

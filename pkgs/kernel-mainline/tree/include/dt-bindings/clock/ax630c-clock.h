@@ -9,12 +9,13 @@
  * vendor's, deliberately: it is dense, already carved per controller, and
  * encodes a register/bit ordering worth preserving.
  *
- * 270 IDs of the 493 the vendor header declared, of which the driver registers
- * 268 -- the two SD/SDIO card muxes are named but deliberately left
- * unregistered, see the flash block below. 246 of the 268 are the set the
- * vendor CCF driver itself registered; the other 22 are IDs it declared and
- * never registered, because its own eMMC, SD, SDIO, watchdog and dwc3 drivers
- * programmed those windows by hand. The rest are listed in section 1.2 of the
+ * 284 IDs of the 493 the vendor header declared, of which the driver registers
+ * 282 -- the two SD/SDIO card muxes are named but deliberately left
+ * unregistered, see the flash block below. 246 of the 282 are the set the
+ * vendor CCF driver itself registered; the other 36 are IDs it declared and
+ * never registered, because its own eMMC, SD, SDIO, watchdog, I2C, GPIO and
+ * dwc3 drivers programmed those windows by hand. The rest are listed in
+ * section 1.2 of the
  * specification and can be added as their register positions are confirmed. The isp and ddr namespaces are gone entirely --
  * neither ever had an implementation -- as are AX620X_CPUPLL (common ID 2,
  * deliberately never registered) and the seven dead PLL cells.
@@ -299,6 +300,14 @@
 #define AX630C_CLK_WDT0_SEL			3
 #define AX630C_CLK_TIMER_SEL			8
 #define AX630C_CLK_I2S_REF0_SEL			12
+/*
+ * The I2C and GPIO ids below are #81's. Like the WDT ones they are declared by
+ * the vendor binding header and never registered by its CCF driver -- its I2C
+ * and GPIO drivers each mapped this window a second time and programmed their
+ * own source mux, block gate and per-instance gates by hand.
+ */
+#define AX630C_CLK_I2C_SEL			13
+#define AX630C_CLK_GPIO_SEL			14
 #define AX630C_SCLK_I2S_TDM_EB			16
 #define AX630C_SCLK_I2S_M_EB			17
 #define AX630C_CLK_WDT2_EB			18
@@ -306,13 +315,25 @@
 #define AX630C_CLK_TIMER_EB			24
 #define AX630C_CLK_I2S_REF0_EB			29
 #define AX630C_CLK_I2S_AUDIO_REF_EB		30
+#define AX630C_CLK_I2C_EB			31
+#define AX630C_CLK_GPIO_EB			32
 #define AX630C_CLK_TIMER0_EB			34
 #define AX630C_CLK_LPC_PERI_EB			47
+#define AX630C_CLK_I2C_MST0_EB			57
+#define AX630C_CLK_GPIO3_EB			58
+#define AX630C_CLK_GPIO2_EB			59
+#define AX630C_CLK_GPIO1_EB			60
+#define AX630C_CLK_GPIO0_EB			61
 #define AX630C_ACLK_AX_DMA_PER_EB		65
 #define AX630C_PCLK_I2S_TDM_S_EB		67
 #define AX630C_PCLK_I2S_TDM_M_EB		68
 #define AX630C_PCLK_I2S_S_EB			69
 #define AX630C_PCLK_I2S_M_EB			70
+#define AX630C_PCLK_I2C_MST0_EB			80
+#define AX630C_PCLK_GPIO3_EB			81
+#define AX630C_PCLK_GPIO2_EB			82
+#define AX630C_PCLK_GPIO1_EB			83
+#define AX630C_PCLK_GPIO0_EB			84
 #define AX630C_PCLK_AX_DMA_PER_EB		86
 #define AX630C_PCLK_WDT2_EB			98
 #define AX630C_PCLK_WDT0_EB			99
