@@ -452,9 +452,20 @@ propose SG2002 work without flagging this gap up front.
   that do not exist yet. #75 boot-tested both drivers on hardware: they probe,
   and the clock framework runs the tree to completion (`clk: Disabling unused
   clocks`).
-  Next: **#76** (eMMC/SD + reset driver -- the first child that needs a real
-  peripheral, and the one that turns the bring-up initramfs into a rootfs);
-  **#85** (aic8800) can still start from source in parallel, as can #81.
+  **2026-09-07 status of the queue:** **#76** eMMC half DONE (stock
+  `sdhci-cadence`, no driver port; root-on-SD blocked on a missing card,
+  `needs-human`); **#77 DONE, device-proven** (`tools/kvmssh` reaches the
+  mainline kernel over Ethernet from the slot-B initramfs; PHY is a Realtek
+  RTL8211F, `phy-mode = rgmii-id`; milestone mask now `0x3FF000`; b2935d8);
+  **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
+  watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
+  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states, the CPUPLL/
+  cpufreq model, and the first real exercise of `.assert`/`.reset` (rides #81
+  or #83). All three issues stay open; only #74 is closed.
+  Next: **#78** (NixOS appliance on mainline -- note the eth0 MAC is a
+  provisioning-time literal in `/etc/network/interfaces`, not UID-derived);
+  **#81** and **#82** can start in parallel now that #80's drivers are on
+  hardware; **#85** (aic8800) still can start from source.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing
