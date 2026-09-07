@@ -1,16 +1,40 @@
-{ pkgs, crossPkgs, initramfsMainline, ... }:
+{ pkgs
+, crossPkgs
+, initramfsMainline ? null
+  # The cpio embedded in the Image via CONFIG_INITRAMFS_SOURCE. Defaults to the
+  # #75 bring-up initramfs; #78 passes the NixOS stage-1 initrd instead, and
+  # that substitution is the whole difference between "a kernel that proves it
+  # booted" and "a kernel that boots the appliance". There is no other way to
+  # get an initrd onto this board: U-Boot's `booti` is called with `-` for the
+  # ramdisk argument and no partition holds one (docs/mainline-port.md § 5).
+, initramfsCpio ? "${initramfsMainline}/initramfs-mainline.cpio"
+  # NONE for the tiny bring-up cpio: a single *.cpio source is embedded byte
+  # for byte, which keeps the kernel reproducible and costs nothing at 100 KB.
+  # ZSTD for the NixOS initrd, which is tens of megabytes and shares a 64 MiB
+  # partition with the kernel.
+, initramfsCompression ? "NONE"
+  # Names the derivation and the slot image, so the two kernels never collide
+  # in a store path or in `nix build` output.
+, variant ? "bringup"
+, ...
+}:
 
 # ---------------------------------------------------------------------------
 # Mainline Linux for the AX630C / NanoKVM-Pro (#74, epic #26).
 #
-# This is SCAFFOLDING, not a bootable system. It builds an aarch64 `Image` from
-# an unmodified kernel.org tree plus our own config fragment, and nothing else:
-# no vendor SDK tree, no vendor defconfig, no vermagic contract, no prebuilt
-# .ko to stay ABI-compatible with. Booting it is #75, which adds the watchdog
-# driver and boot-contract shims and takes the first slot-B boot.
+# An aarch64 `Image` built from an unmodified kernel.org tree plus our own
+# config fragment, our own in-tree drivers and our own device tree: no vendor
+# SDK tree, no vendor defconfig, no vermagic contract, no prebuilt .ko to stay
+# ABI-compatible with. It has booted this silicon since #75.
+#
+# TWO VARIANTS, differing only in the initramfs baked into the Image:
+#   bringup   (#75-#77) -- a static musl /init that leaves boot evidence in the
+#                          A/B slot register and reserved DRAM, then reboots.
+#   appliance (#78)     -- the NixOS stage-1 initrd (nixos/rootfs.nix), which
+#                          mounts the real root and switch_roots into it.
 #
 # It exists ALONGSIDE pkgs/kernel.nix (Linux 4.19.125, still the shipped
-# kernel). Nothing in the firmware/rootfs/update outputs references this file.
+# kernel). No shipped firmware/rootfs/update output references this file yet.
 #
 # Version ceiling: 7.2. The out-of-tree aic8800 WiFi driver (#85) does not
 # build above it. WiFi is explicitly droppable (#26, #55) -- when that call is
@@ -45,7 +69,7 @@ assert lib.assertMsg (lib.versionOlder version "7.3")
   "kernel-mainline: ${kernelAttr} is ${version}, above the 7.2 aic8800 ceiling (#85). Either pin a lower kernel or record the WiFi drop decision first.";
 
 pkgs.stdenv.mkDerivation {
-  pname = "nanokvm-pro-kernel-mainline";
+  pname = "nanokvm-pro-kernel-mainline-${variant}";
   version = release;
 
   src = mainline.src;
@@ -183,19 +207,27 @@ pkgs.stdenv.mkDerivation {
     # what a bring-up must not lose.
     make O=build defconfig
 
-    # ---- Embedded bring-up initramfs (#75) -------------------------------
-    # The mainline kernel has no storage driver yet, so this cpio's /init is
-    # the ONLY userspace that can exist -- and proving userspace was reached is
-    # the whole point of the first boot. See pkgs/initramfs-mainline.nix.
+    # ---- Embedded initramfs (#75 bring-up, #78 appliance) ----------------
+    # For the bring-up variant this cpio's /init is the ONLY userspace that can
+    # exist (there is no rootfs to switch to) and proving userspace was reached
+    # is the whole point; for the appliance variant it is NixOS stage 1 and it
+    # is the only stage-1 the board has, because U-Boot passes no initrd.
     #
     # Set BEFORE the fragment is merged, on purpose: the
     # INITRAMFS_COMPRESSION_* choice is `depends on INITRAMFS_SOURCE != ""`, so
-    # merging COMPRESSION_NONE into a config with no source silently drops it
-    # and the next olddefconfig picks the choice's first member, gzip.
-    initramfsCpio="${initramfsMainline}/initramfs-mainline.cpio"
-    echo "bring-up initramfs: $(stat -c%s "$initramfsCpio") bytes ($initramfsCpio)"
+    # merging a compression choice into a config with no source silently drops
+    # it and the next olddefconfig picks the choice's first member, gzip.
+    initramfsCpio="${initramfsCpio}"
+    case "$initramfsCpio" in
+      *.cpio) ;;
+      *) echo "ERROR: INITRAMFS_SOURCE must end in .cpio -- usr/Makefile only" >&2
+         echo "       uses a single source verbatim when it does." >&2
+         exit 1 ;;
+    esac
+    echo "embedded initramfs (${variant}): $(stat -Lc%s "$initramfsCpio") bytes ($initramfsCpio)"
     ./scripts/config --file build/.config \
-      --set-str INITRAMFS_SOURCE "$initramfsCpio"
+      --set-str INITRAMFS_SOURCE "$initramfsCpio" \
+      --enable INITRAMFS_COMPRESSION_${initramfsCompression}
 
     ./scripts/kconfig/merge_config.sh -m -O build \
       build/.config "$configFragment"
@@ -246,6 +278,11 @@ pkgs.stdenv.mkDerivation {
     # died, and this is the only thing that tells the two apart.
     grep -q "^CONFIG_INITRAMFS_SOURCE=\"$initramfsCpio\"" build/.config \
       || { echo "ERROR: INITRAMFS_SOURCE is not our cpio" >&2; exit 1; }
+    # ...and with the compression we asked for. The choice's first member is
+    # GZIP, so a dropped selection is silent and only shows up as an Image that
+    # is the wrong size -- or, for a *.cpio source, as a double compression.
+    grep -q '^CONFIG_INITRAMFS_COMPRESSION_${initramfsCompression}=y' build/.config \
+      || { echo "ERROR: INITRAMFS_COMPRESSION_${initramfsCompression} did not survive olddefconfig" >&2; exit 1; }
     grep -q '^CONFIG_DEBUG_INFO_BTF=y' build/.config \
       && { echo "ERROR: BTF is on; the build will need pahole" >&2; exit 1; }
 
@@ -265,8 +302,9 @@ pkgs.stdenv.mkDerivation {
     runHook preBuild
     # Image only. `make dtbs` would build every arm64 vendor's dtbs; ours is
     # compiled from dts/ by pkgs/dtb-mainline.nix, out of tree, on purpose.
-    # Modules are not built yet -- there is no rootfs to install them into
-    # until #78, and no driver here needs them.
+    # No modules are built: every driver this board has is built in, so the
+    # appliance ships no /lib/modules tree at all. The first thing that needs
+    # one is the video stack (#83).
     make O=build -j$NIX_BUILD_CORES Image
     runHook postBuild
   '';
@@ -310,7 +348,7 @@ pkgs.stdenv.mkDerivation {
   dontPatchELF = true;
 
   meta = {
-    description = "Mainline Linux ${version} for the Axera AX630C (NanoKVM-Pro), scaffolding for #26";
+    description = "Mainline Linux ${version} for the Axera AX630C (NanoKVM-Pro), ${variant} variant (#26)";
     platforms = [ "x86_64-linux" ];
   };
 }

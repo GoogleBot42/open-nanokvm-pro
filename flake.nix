@@ -2,17 +2,15 @@
   description = "Self-built open firmware for the Sipeed NanoKVM-Pro (Axera AX630C): boot chain, kernel, and app layer from source; Axera's redistributable media libraries and ax_*.ko modules pinned as binary inputs";
 
   inputs = {
+    # ONE nixpkgs pin. There used to be a second, older one (nixos-24.11) for
+    # the NixOS rootfs alone, because systemd's declared minimum kernel had
+    # risen to 5.4 and then 5.10 while the ax_*.ko vermagic contract held this
+    # board on Linux 4.19.125. Both halves of that argument are gone -- the
+    # image has carried no vendor kernel module since #54, and the appliance
+    # boots pkgs/kernel-mainline (7.1.x) since #78 -- so the appliance is back
+    # on this pin and `nixpkgs-rootfs` is retired. docs/nixos-rootfs.md.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-
-    # SECOND nixpkgs pin, used ONLY by the pure-Nix rootfs scaffold
-    # (nixos/rootfs.nix, issue #26). It is deliberately older than the main
-    # pin: systemd declares a hard kernel floor and from v258 on that floor is
-    # 5.4, while this board is locked to a from-source Linux 4.19.125 by the
-    # ax_*.ko vermagic contract. nixos-24.11 ships systemd 256, the newest
-    # release whose systemd still lists 4.19 as above its RECOMMENDED
-    # baseline. Do not bump this without reading docs/nixos-rootfs.md.
-    nixpkgs-rootfs.url = "github:NixOS/nixpkgs/nixos-24.11";
 
     # Upstream Sipeed / Axera source repos, pinned by commit (`flake = false`
     # plain trees). No release tags exist upstream; these are main-branch
@@ -79,9 +77,9 @@
       # a release-asset namespace is flat, so the vendor's derived
       # `<stable>/preview` sub-path can never work on GitHub. docs/updates.md.
       previewUpdateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview";
-    in
-    flake-utils.lib.eachSystem supportedSystems (
-      localSystem:
+
+      perSystem = flake-utils.lib.eachSystem supportedSystems (
+        localSystem:
       let
         pkgs = import nixpkgs { system = localSystem; };
 
@@ -132,6 +130,12 @@
         # fragment, our own drivers grafted in, and our own device tree (dts/,
         # compiled by pkgs/dtb-mainline.nix). Additive: no image, rootfs or
         # update output references it, and the 4.19 outputs are untouched.
+        #
+        # This is the BRING-UP variant: it carries the #75 evidence initramfs
+        # and reboots itself. The appliance variant, which carries the NixOS
+        # stage-1 initrd instead, is defined below the appliance itself --
+        # a mainline kernel is the only place an initrd can live on this board
+        # (U-Boot passes none and no partition holds one).
         kernel-mainline = callPkg ./pkgs/kernel-mainline.nix {
           inherit initramfsMainline;
         };
@@ -357,16 +361,110 @@
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy edid version;
         };
 
-        # Pure-Nix rootfs (issue #26) -- a NixOS system closure packed into a
-        # rootless ext4, replacing the vendor Ubuntu base. SCAFFOLD: it builds,
-        # it has never booted. Evaluated against the SEPARATE nixpkgs-rootfs
-        # pin (systemd ceiling); see nixos/rootfs.nix + docs/nixos-rootfs.md.
-        nixos-rootfs = callPkg ./nixos/rootfs.nix {
-          nixpkgsRootfs = inputs.nixpkgs-rootfs;
-          inherit axera-libs ax-ko-blobs kernel kvm-encoder
-            vc8000-vcmd open-vin-csi2 open-vin-capture
-            nanokvm-server nanokvm-web nanokvm-display libsns-dummy version;
+        # The NixOS appliance (#78) -- nixos/appliance.nix evaluated into a
+        # system closure and packed into a rootless ext4, replacing the vendor
+        # Ubuntu base. It boots the MAINLINE kernel with a NixOS initrd; the
+        # vendor /init contract is gone. Same nixpkgs pin as everything else.
+        #
+        # Two variants, differing only in where root comes from:
+        #   nixos-appliance      root = the eMMC rootfs partition (p17). What
+        #                        ships, and what overwrites the vendor system.
+        #   nixos-appliance-loop root = a rootfs IMAGE FILE dropped on p17 and
+        #                        loop-mounted by stage 1. The REVERSIBLE
+        #                        hardware test: nothing is overwritten, and
+        #                        rolling back is `rm` plus a slot-B restore.
+        nixosApplianceArgs = {
+          # The SHIPPED video stack is fully open (#60): V4L2 libkvm over the
+          # open capture drivers + open VCMD encoder. The server links the ABI
+          # header only, so it keeps the plain kvm-encoder.
+          kvm-encoder = kvm-encoder-v4l2;
+          inherit nanokvm-server nanokvm-web nanokvm-display version;
         };
+        nixos-appliance = callPkg ./nixos/rootfs.nix nixosApplianceArgs;
+        nixos-appliance-loop = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+          variant = "loop-image";
+          applianceModules = [{ nanokvm.rootImage.enable = true; }];
+        });
+        # Third variant: the same appliance retargeted at `qemu-system-aarch64
+        # -M virt`, which is where the NixOS half of the boot is proven before
+        # anything is written to the device. See nixos/qemu-test.nix.
+        nixos-appliance-qemu = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+          variant = "qemu";
+          applianceModules = [ ./nixos/qemu-test.nix ];
+        });
+
+        # The mainline kernel with the appliance's stage-1 initrd baked into
+        # the Image, and the slot-B pair that flashes it. One kernel build per
+        # root variant, because the initrd differs.
+        mkApplianceKernel = appliance: variant:
+          callPkg ./pkgs/kernel-mainline.nix {
+            initramfsCpio = "${appliance.initrd}";
+            initramfsCompression = "ZSTD";
+            inherit variant;
+          };
+        kernel-mainline-appliance =
+          mkApplianceKernel nixos-appliance "appliance";
+        kernel-mainline-appliance-loop =
+          mkApplianceKernel nixos-appliance-loop "appliance-loop";
+        kernel-mainline-appliance-qemu =
+          mkApplianceKernel nixos-appliance-qemu "appliance-qemu";
+
+        # `nix run .#nixos-appliance-qemu-run` -- boots the appliance under
+        # qemu-system-aarch64 on a throwaway copy of the rootfs image. The one
+        # place the NixOS boot can be watched on a console, since the real
+        # board has none.
+        nixos-appliance-qemu-run = pkgs.writeShellApplication {
+          name = "nanokvm-appliance-qemu";
+          runtimeInputs = with pkgs; [ qemu coreutils e2fsprogs ];
+          text = ''
+            work=$(mktemp -d)
+            trap 'rm -rf "$work"' EXIT
+            cp ${nixos-appliance-qemu}/nixos_rootfs.ext4 "$work/root.img"
+            chmod u+w "$work/root.img"
+            # Room for the writes a first boot makes (machine-id, journal,
+            # /etc). make-ext4-fs shrinks the image to its contents.
+            truncate -s +512M "$work/root.img"
+            resize2fs "$work/root.img" >/dev/null
+
+            exec qemu-system-aarch64 \
+              -M virt -cpu cortex-a53 -smp 2 -m 1024 -nographic \
+              -kernel ${kernel-mainline-appliance-qemu}/Image \
+              -append "console=ttyAMA0,115200 loglevel=8 root=/dev/vda rw panic=10" \
+              -drive file="$work/root.img",format=raw,if=none,id=hd0 \
+              -device virtio-blk-device,drive=hd0 \
+              -netdev user,id=n0 -device virtio-net-device,netdev=n0 \
+              "$@"
+          '';
+        };
+
+        mkApplianceSlotImage = kern: variant: callPkg ./pkgs/slot-image.nix {
+          payload = "${kern}/Image";
+          pname = "nanokvm-pro-kernel-mainline-${variant}-slot-image";
+          version = "ax630c-kernel-mainline-${variant}-b";
+          artifact = "kernel_b.bin";
+          partSize = 64 * 1024 * 1024;
+          loadAddr = "0x40200000";
+          title = "mainline appliance kernel partition image (slot B, #78)";
+          flashNotes = ''
+            TARGET partition: kernel_b  (A/B slot B), 64M
+              eMMC device   : /dev/mmcblk0p15   (p14 = slot A / shipped 4.19 kernel)
+
+            Carries the NixOS stage-1 initrd inside the Image: U-Boot passes no
+            initrd address and no partition holds one, so this is the only way
+            an initrd reaches this board. Stage 1 mounts the root filesystem
+            and switch_roots to /init on it -- there is no `init=` on the
+            command line, because the command line comes from the U-Boot
+            environment, not from the device tree.
+
+            Flash together with the matching mainline dtb (p13). Reversible
+            slot-B test:
+              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync
+          '';
+        };
+        kernel-mainline-appliance-slot-image =
+          mkApplianceSlotImage kernel-mainline-appliance "appliance";
+        kernel-mainline-appliance-loop-slot-image =
+          mkApplianceSlotImage kernel-mainline-appliance-loop "appliance-loop";
 
         # Final flashable .axp: our dtb/kernel/boot-chain/rootfs member-swapped
         # into a copy of the base .axp (pure zip rewrite).
@@ -391,6 +489,11 @@
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
             initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-slot-image dtb-mainline-slot-image
+            kernel-mainline-appliance kernel-mainline-appliance-loop
+            kernel-mainline-appliance-qemu
+            kernel-mainline-appliance-slot-image
+            kernel-mainline-appliance-loop-slot-image
+            nixos-appliance-qemu nixos-appliance-qemu-run
             open-vin-csi2 open-vin-capture
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
@@ -398,7 +501,8 @@
             vcenc-geom-test vcenc-rc-test
             nanokvm-server nanokvm-web nanokvm-display libsns-dummy
             update-package
-            base-axp rootfs nixos-rootfs firmware-image sd-image
+            base-axp rootfs nixos-appliance nixos-appliance-loop
+            firmware-image sd-image
             edid axdl;
 
           default = firmware-image;
@@ -413,6 +517,19 @@
           # The mainline DT asserts its own boot contract (FDT slack, the
           # blkdevparts= clause, the ATF/OP-TEE reservations) -- #74.
           mainline-dtb = dtb-mainline;
+          # The eMMC partition map, parsed out of the blkdevparts= clause that
+          # defines it, with the root/boot partition numbers and the U-Boot
+          # environment offset asserted against the values docs record (#78).
+          # Pure evaluation -- it builds a text file.
+          emmc-partition-map =
+            let p = import ./nixos/emmc-partitions.nix { inherit (pkgs) lib; };
+            in pkgs.writeText "emmc-partition-map" (
+              pkgs.lib.concatMapStrings
+                (e: "p${toString e.number}\t${e.name}\t${p.hex e.offset}\t"
+                  + (if e.size == null then "(remainder)" else p.hex e.size) + "\n")
+                p.parts
+              + "\nfw_env.config: ${p.fwEnvConfig}"
+            );
         };
 
         # `nix run .#axdl -- --file result/*.axp --wait-for-device`
@@ -425,5 +542,18 @@
 
         formatter = pkgs.nixpkgs-fmt;
       }
-    );
+      );
+    in
+    perSystem // {
+      # The appliance as a first-class NixOS system (#78), so it can be
+      # inspected and switched with the ordinary tooling:
+      #   nix build .#nixosConfigurations.nanokvm-pro.config.system.build.toplevel
+      # It is built from the x86_64-linux instantiation because every flashable
+      # output of this flake is (pkgs/boot.nix's packer is x86-64-only); the
+      # SYSTEM it describes is aarch64-linux.
+      nixosConfigurations.nanokvm-pro =
+        perSystem.packages.x86_64-linux.nixos-appliance.eval;
+      nixosConfigurations.nanokvm-pro-loop =
+        perSystem.packages.x86_64-linux.nixos-appliance-loop.eval;
+    };
 }
