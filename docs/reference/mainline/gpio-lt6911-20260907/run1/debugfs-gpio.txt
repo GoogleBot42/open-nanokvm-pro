@@ -1,0 +1,20 @@
+gpiochip0: 32 GPIOs, parent: platform/4800000.gpio, 4800000.gpio:
+ gpio-5   (                    |power               ) out hi 
+ gpio-6   (                    |hdmi-power          ) out hi 
+ gpio-7   (atx-power           )
+ gpio-21  (                    |loopout             ) out lo ACTIVE LOW
+ gpio-23  (sys-heartbeat       |sys-heartbeat       ) out lo 
+
+gpiochip1: 32 GPIOs, parent: platform/4801000.gpio, 4801000.gpio:
+ gpio-3   (atx-reset           )
+ gpio-27  (                    |PHY reset           ) out hi ACTIVE LOW
+ gpio-28  (                    |interrupt           ) in  hi IRQ ACTIVE LOW
+
+gpiochip2: 32 GPIOs, parent: platform/6000000.gpio, 6000000.gpio:
+ gpio-10  (atx-hdd-led         )
+ gpio-11  (atx-power-led       )
+ gpio-17  (                    |loopout             ) out lo ACTIVE LOW
+ gpio-18  (                    |hdmi-rx-detect      ) in  lo IRQ ACTIVE LOW
+ gpio-19  (                    |hdmi-tx-detect      ) in  lo IRQ ACTIVE LOW
+
+gpiochip3: 32 GPIOs, parent: platform/6001000.gpio, 6001000.gpio:

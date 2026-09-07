@@ -66,4 +66,11 @@
  */
 #define AX630C_DWMAC_COMPAT		"axera,ax630c-dwmac"
 
+/*
+ * GPIO (#81). Not a DesignWare block despite borrowing its register names:
+ * one 32-bit word per line rather than one bit, so gpio-dwapb cannot bind and
+ * there is no generic compatible to fall back on.
+ */
+#define AX630C_GPIO_COMPAT		"axera,ax630c-gpio"
+
 #endif /* _DTS_AX630C_COMPAT_H */

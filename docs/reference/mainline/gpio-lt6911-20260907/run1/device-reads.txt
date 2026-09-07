@@ -1,0 +1,76 @@
+           CPU0       CPU1       
+ 11:      24273      21140 GIC-0  27 Level     arch_timer
+ 14:       1668          0 GIC-0 112 Level     eth0
+ 15:        149          0 GIC-0  41 Level     mmc0
+ 16:      10368          0 GIC-0 106 Level     mmc1
+ 17:       5054          0 GIC-0 167 Level     4850000.i2c
+ 22:          0          0 ax630c-gpio  18 Edge      lt6911-rx-detect
+ 23:          0          0 ax630c-gpio  19 Edge      lt6911-tx-detect
+ 28:          3          0 ax630c-gpio  28 Edge      lt6911-int
+IPI0:       130        177       Rescheduling interrupts
+IPI1:      1683       7235       Function call interrupts
+IPI2:         0          0       CPU stop interrupts
+IPI3:         0          0       CPU stop NMIs
+IPI4:         0          0       Timer broadcast interrupts
+IPI5:         5          6       IRQ work interrupts
+IPI6:         0          0       CPU backtrace interrupts
+IPI7:         0          0       KGDB roundup interrupts
+Err:          0
+=== clk gpio/i2c ===
+                clk_i2c_sel          0       0        0        208000000   0          0     50000      Y                  deviceless                      no_connection_id         
+                   clk_i2c_eb        0       0        0        208000000   0          0     50000      N                     deviceless                      no_connection_id         
+                      clk_i2c_mst0_eb 0       0        0        208000000   0          0     50000      N                        4850000.i2c                     no_connection_id         
+                   pclk_gpio0_eb     1       1        0        208000000   0          0     50000      Y                     4800000.gpio                    apb                      
+                   pclk_gpio1_eb     1       1        0        208000000   0          0     50000      Y                     4801000.gpio                    apb                      
+                   pclk_gpio2_eb     1       1        0        208000000   0          0     50000      Y                     6000000.gpio                    apb                      
+                   pclk_gpio3_eb     1       1        0        208000000   0          0     50000      Y                     6001000.gpio                    apb                      
+                   pclk_i2c_mst0_eb  0       0        0        208000000   0          0     50000      N                     4850000.i2c                     pclk                     
+    clk_gpio_sel                     1       1        0        32768       0          0     50000      Y      deviceless                      no_connection_id         
+       clk_gpio_eb                   4       4        0        32768       0          0     50000      Y         deviceless                      no_connection_id         
+          clk_gpio0_eb               1       1        0        32768       0          0     50000      Y            4800000.gpio                    gpio                     
+          clk_gpio1_eb               1       1        0        32768       0          0     50000      Y            4801000.gpio                    gpio                     
+          clk_gpio2_eb               1       1        0        32768       0          0     50000      Y            6000000.gpio                    gpio                     
+          clk_gpio3_eb               1       1        0        32768       0          0     50000      Y            6001000.gpio                    gpio                     
+=== syscon ===
+0x000FBF9A
+0x00007DE3
+0x7FFBFEFA
+0x87FDF7FF
+0x00000001
+=== pads ===
+0x00060083
+0x00060003
+0x00060003
+0x00060003
+0x00060003
+0x00060003
+0x00060003
+0x00060003
+0x00060003
+0x00060008
+=== gpio ids ===
+0x00000000
+0x41584552
+=== lt6911 ===
+lt6911uxc
+on
+on
+on
+new res
+4096
+2160
+29
+no hdcp
+0
+access
+access
+NanoKVM_Pro (Desk-A) NeaL00275
+=== edid ===
+000000 00 ff ff ff ff ff ff 00 39 76 80 10 36 10 36 00
+000010 28 24 01 03 80 a0 5a 78 02 00 00 00 00 00 00 00
+000020 00 00 00 20 00 00 81 c0 61 40 01 01 01 01 01 01
+000030 01 01 01 01 01 01 02 3a 80 18 71 38 2d 40 58 2c
+=== params ===
+-1
+-1
+-1

@@ -1,4 +1,15 @@
 { pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder, axera-libs
+, # How the server actuates the ATX power/reset lines.
+  #   "sysfs"    (default) -- upstream's /sys/class/gpio writes on the global
+  #               numbers 7/35/74/75, plus our per-press pinmux re-assert. This
+  #               is what the SHIPPED 4.19 image runs, and this build must stay
+  #               byte-identical, so every libgpiod-only step below is gated.
+  #   "libgpiod" -- shell out to nanokvm-gpio (pkgs/nanokvm-gpio) by device-tree
+  #               line name. For the mainline stack (#81), where global GPIO
+  #               numbers are not stable and the GPIO request programs the pad
+  #               mux by itself. Requires the `nanokvm-gpio` argument.
+  gpioBackend ? "sysfs"
+, nanokvm-gpio ? null
 , # Base URL the on-device updater fetches from: the public GitHub downstream
   # mirror's releases (`releases/latest/download` always resolves to the
   # newest release's assets; the Gitea source of truth is Tailscale-only and
@@ -24,7 +35,74 @@
 # links it and its full AX_VENC dependency graph.
 # ---------------------------------------------------------------------------
 
+assert builtins.elem gpioBackend [ "sysfs" "libgpiod" ];
+assert gpioBackend == "libgpiod" -> nanokvm-gpio != null;
+
 let
+  # postPatch below is written at 4-space indentation, and Nix strips NOTHING
+  # from it (it contains column-0 lines, so the common indent is zero). A step
+  # spliced in from up here must therefore re-indent itself to 4, or the sysfs
+  # build's script text -- and with it the shipped server's store path -- would
+  # move for no reason. That store path is a regression test: adding a backend
+  # option for the mainline appliance must not touch the shipped image.
+  step = s: pkgs.lib.replaceStrings [ "\n" ] [ "\n    " ] (pkgs.lib.removeSuffix "\n" s);
+
+  # ---- Step 6 of postPatch: the ATX GPIO backend ---------------------------
+  gpioPatch =
+    if gpioBackend == "libgpiod" then ''
+      # 6. ATX lines over libgpiod, by device-tree NAME (#81). Mainline has a
+      #    real GPIO driver and a pin controller, so both vendor-era
+      #    workarounds are deleted rather than ported: the boot-time
+      #    /sys/class/gpio export unit, and the per-press VI_D7 pinmux
+      #    re-assert that used to live in this step. Requesting a line is what
+      #    programs the pad now (gpio-ranges -> gpio_request_enable), and the
+      #    pin controller's strict mode keeps it that way.
+      #
+      #    hardware.go's four sysfs paths become the line names declared in
+      #    dts/ax630c-nanokvm-pro.dts, and gpio.go's writeGpio/readGpio become
+      #    nanokvm-gpio calls (pkgs/nanokvm-server/gpio-libgpiod.go.in). The
+      #    truncate-and-append is step 3's mechanism, guarded the same way:
+      #    writeGpio and readGpio are the LAST two declarations in gpio.go, so
+      #    a pin bump that adds a third must fail here rather than silently
+      #    delete it.
+      substituteInPlace config/hardware.go \
+        --replace-fail '"/sys/class/gpio/gpio7/value"' '"atx-power"' \
+        --replace-fail '"/sys/class/gpio/gpio35/value"' '"atx-reset"' \
+        --replace-fail '"/sys/class/gpio/gpio75/value"' '"atx-power-led"' \
+        --replace-fail '"/sys/class/gpio/gpio74/value"' '"atx-hdd-led"'
+
+      grep -q '^func writeGpio(device string, duration time.Duration) error {' service/vm/gpio.go \
+        || { echo "ERROR: writeGpio anchor not found in service/vm/gpio.go — upstream changed its signature" >&2; exit 1; }
+      [ "$(sed -n '/^func writeGpio(device string, duration time.Duration) error {/,$p' service/vm/gpio.go | grep -c '^func ')" = 2 ] \
+        || { echo "ERROR: gpio.go does not end in exactly writeGpio+readGpio — the truncation would drop other declarations" >&2; exit 1; }
+      sed -i '/^func writeGpio(device string, duration time.Duration) error {/,$d' service/vm/gpio.go
+      cat ${./nanokvm-server/gpio-libgpiod.go.in} >> service/vm/gpio.go
+
+      # The replacement shells out and touches no file, so "os" becomes an
+      # unused import -- a compile error in Go, not a warning. sed rather than
+      # substituteInPlace because the anchors are tab-indented import lines.
+      sed -i -e 's|^\t"os"$|\t"os/exec"|' \
+             -e 's|^\t"strconv"$|\t"strconv"\n\t"strings"|' service/vm/gpio.go
+      grep -q '"os/exec"' service/vm/gpio.go && grep -q '"strings"' service/vm/gpio.go \
+        || { echo "ERROR: import rewrite failed in service/vm/gpio.go" >&2; exit 1; }
+
+      substituteInPlace service/vm/gpio.go \
+        --replace-fail '@nanokvmGpio@' '${nanokvm-gpio}/bin/nanokvm-gpio'
+    '' else ''
+      # 6. Re-assert the SW_PWR pinmux before every power press. The closed
+      #    capture stack re-muxes the VI_D7 pad (= gpio7, the ATX power line)
+      #    back to camera-data function on every pipeline init (boot, restart,
+      #    idle resume), leaving the power button dead while reset works; the
+      #    vendor never muxed it correctly anywhere (their gpio.sh pokes the
+      #    wrong register). See pkgs/nanokvm-server/pinmux-power.go.in and
+      #    docs/mini-display.md ("ATX GPIO setup").
+      cp ${./nanokvm-server/pinmux-power.go.in} service/vm/pinmux_power.go
+      sed -i 's|device = conf.GPIOPower$|device = conf.GPIOPower\n\t\tmuxPowerPin()|' \
+        service/vm/gpio.go
+      grep -q 'muxPowerPin()' service/vm/gpio.go \
+        || { echo "ERROR: muxPowerPin hook failed to apply to service/vm/gpio.go" >&2; exit 1; }
+    '';
+
   # Cross buildGoModule: emits aarch64 binaries and wires the cross CC for cgo.
   # IMPORTANT: use crossPkgs' own `go` (cross-capable). Overriding it with a
   # native `pkgs.go_1_25` breaks the cross cgo setup (native go passes -m64 to
@@ -185,18 +263,7 @@ EOF
 'api.GET("/streamer/local", ui.GetStreamer)
 	api.POST("/streamer/preview", ui.PanelPreview)'
 
-    # 6. Re-assert the SW_PWR pinmux before every power press. The closed
-    #    capture stack re-muxes the VI_D7 pad (= gpio7, the ATX power line)
-    #    back to camera-data function on every pipeline init (boot, restart,
-    #    idle resume), leaving the power button dead while reset works; the
-    #    vendor never muxed it correctly anywhere (their gpio.sh pokes the
-    #    wrong register). See pkgs/nanokvm-server/pinmux-power.go.in and
-    #    docs/mini-display.md ("ATX GPIO setup").
-    cp ${./nanokvm-server/pinmux-power.go.in} service/vm/pinmux_power.go
-    sed -i 's|device = conf.GPIOPower$|device = conf.GPIOPower\n\t\tmuxPowerPin()|' \
-      service/vm/gpio.go
-    grep -q 'muxPowerPin()' service/vm/gpio.go \
-      || { echo "ERROR: muxPowerPin hook failed to apply to service/vm/gpio.go" >&2; exit 1; }
+    ${step gpioPatch}
 
     # 7. Backoff in the stream read loops. Upstream retries a failing
     #    ReadH264/ReadMjpeg with a bare `continue` on a 120 Hz ticker -- a wedged
