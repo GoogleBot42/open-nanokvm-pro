@@ -398,6 +398,22 @@ propose SG2002 work without flagging this gap up front.
   two consumers are connected one is necessarily starved — that is arbitration, not a
   bug, and the page already says "inconsistent video mode".
 
+- **2026-09-06 — v2.1.0-alpha.5 is CUT ON GITEA BUT NOT PUBLISHED.** The
+  `cut-release` workflow succeeded (commit `4e6cf0b` `release: 2.1.0-alpha.5`,
+  tag `v2.1.0-alpha.5`, `preview` tag moved), the mirror replicated it, and
+  then the GitHub `release.yml` run FAILED after 11.5 min in its first step,
+  `nix build .#update-package`. No release object exists, so **devices are
+  unaffected** — stable still serves 2.0.0 and the preview channel still
+  serves alpha.4. Ruled out locally: `.#update-package` builds green from the
+  exact tagged tree, and the pnpm FOD re-fetches clean against its pinned hash
+  (`--rebuild`). The runner log needs GitHub admin rights, which this
+  environment does not have, so the cause is undetermined — most likely runner
+  disk (the workflow frees space for a reason) or a transient fetch. **Next
+  step is to re-run the job from the GitHub Actions tab** (the docs say it is
+  idempotent); a second failure at the same step makes it deterministic and
+  worth real investigation. A GitHub token with actions read+write would let an
+  agent do both.
+
 - **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
   `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
   (index map is a comment on #26, and the doc's section 8 now carries the real
