@@ -140,21 +140,22 @@ which happens to cover exactly all of G2, G5 and G7 and nothing else (**V**).
 A mainline driver should carry this as a per-pad or per-group flag, not an
 address comparison.
 
-**Trap:** the DEMO table does not respect this. `0x0230500C` (MICP_L_D, group G7)
-gets `0x…83` — bit 7 set, bit 6 clear — which under the G7 EN/SE encoding is
-"pull disabled, select up", i.e. no pull at all, while the same bit pattern on a
-G1 pad means pull-up. Either the table generator is encoding-blind, or the EN/SE
-reading is wrong for G7 specifically.
 
-**Probed on hardware 2026-09-06 and still unresolved — this board cannot settle
-it** ([`device-reads-20260906/pull-and-alias-probe.md`](device-reads-20260906/pull-and-alias-probe.md)).
-A G7 pad (`MICN_L_D`) and a known one-hot pad (`VI_D2`) give identical readings
-across all four bias codes, which is consistent with one-hot but proves nothing:
-both sit on external pull-ups, where "internal pull-up" and "no pull" read alike.
-Deciding it needs a pad that floats *low*, and every G2/G5/G7 pad here is either
-externally pulled up or held low hard enough that no internal pull moves it. The
-driver keeps the EN/SE reading and the per-pad flag; a meter on a pad, not
-another register experiment, is what would change that.
+**RESOLVED on hardware 2026-09-06: the EN/SE reading is correct**
+([`device-reads-20260906/pull-encoding-adc/README.md`](device-reads-20260906/pull-encoding-adc/README.md)).
+Measured on `THM_AIN3` (G2) with the on-chip ADC as an analog oracle rather than
+a GPIO input, because that pad floats mid-scale and so separates pull-up,
+pull-down and no-pull into three distinguishable voltages. `0x80` reads 662/1023,
+identical to no-pull's 662, when one-hot requires it to be a pull-up and read
+high; and `0xC0` reads 1018, when one-hot makes it up-plus-down contention that
+could never exceed pure pull-up. All four codes match EN/SE.
+
+So the table generator IS encoding-blind for this group: the DEMO's `0x…83` on
+`MICP_L_D` really is *no pull*, harmless only because that pad has an external
+pull-up. Hardware proof covers G2; G5 and G7 have no ADC channel and are carried
+on the vendor driver's single offset test plus digital readings consistent with
+EN/SE. The driver's per-pad `pull_enc` flag and written values were already
+right -- this confirms them rather than changing anything.
 
 ### 1.5 Group MISC words
 
@@ -1196,18 +1197,17 @@ Rules for the generator:
 ## 9. Open questions and gaps
 
 Ranked by how much they can hurt the driver author:
-
-1. **Does the vendor capture stack re-mux `VI_D7`?** Unverifiable from source —
+1. **Does the vendor capture stack re-mux `VI_D7`?** Unverifiable from source --
    `ax_proton.ko` is the only artifact (**V** on the absence). It does not block
    the mainline driver (nothing closed will be loaded), but it means the trap's
    *mechanism* is still an inference. If mainline's own CSI driver ever writes
    pad words, this comes straight back.
-2. **The G2/G5/G7 pull encoding.** The driver says EN/SE, the DEMO table writes
-   one-hot values into those groups anyway (§1.4). **Probed 2026-09-06 and still
-   open:** a G7 pad and a known one-hot pad read identically across all four bias
-   codes, but every G-group pad on this board is externally pulled up or hard-tied
-   low, so "pull-up" and "no pull" cannot be told apart here. Needs a meter, not
-   another register experiment.
+2. ~~**The G2/G5/G7 pull encoding.**~~ **ANSWERED 2026-09-06: EN/SE, as the
+   driver source says.** Measured on `THM_AIN3` (G2) with the on-chip ADC as an
+   analog oracle: `0x80` is *no pull* (662/1023, same as bias-disable) and `0xC0`
+   is pull-up (1018), which refutes one-hot twice over. G5/G7 have no ADC channel
+   and ride on the vendor driver's single offset test. §1.4 and
+   `device-reads-20260906/pull-encoding-adc/README.md`.
 3. ~~**Do per-pad SET/CLR aliases work?**~~ **ANSWERED 2026-09-06: yes**, on
    ordinary pad words as well as the group MISC word, in both directions and for
    multi-bit fields; the alias words are write-only. The driver has no lock.

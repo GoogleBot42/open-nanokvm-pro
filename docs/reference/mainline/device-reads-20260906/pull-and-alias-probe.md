@@ -22,7 +22,27 @@ pads do not contend with each other. The cost is that a multi-bit field passes
 briefly through the value with those bits cleared; that is acceptable because
 `.strict = true` means nothing else holds the pad during a mux change.
 
-## 2. G2/G5/G7 pull encoding — STILL UNRESOLVED, and this board cannot settle it
+## 2. G2/G5/G7 pull encoding — SETTLED LATER THE SAME DAY: EN/SE
+
+**This section records a null result that was superseded within hours.** The
+digital probe below could not separate the two readings; switching oracle from
+the GPIO input register to the on-chip **ADC** did, on the first pad tried.
+The answer is EN/SE — bit 6 enables, bit 7 selects — confirming the driver as
+written. See [`pull-encoding-adc/README.md`](pull-encoding-adc/README.md).
+
+Two corrections to what is written below, both worth keeping because they are
+easy mistakes to repeat:
+
+- **"pull-up beats pull-down in contention on this silicon" is unsupported.**
+  It was inferred from `VI_D2` reading high at `0xC0`, but `VI_D2` has an
+  external pull-up, so that reading says nothing about contention. Struck.
+- The reason a digital read could not settle this is not only the external
+  pull-ups: `THM_AIN3` floats at ~65% of full scale, a level the GPIO input
+  buffer does not resolve usefully, while the ADC reads it directly.
+
+The original null result follows, unedited apart from those strikes.
+
+### The digital probe (superseded)
 
 The question: on the analog-capable groups, is bit 6 a pull *enable* with bit 7
 selecting up/down (the `pinctrl-axera.c` reading), or is it one-hot like every
@@ -41,8 +61,8 @@ Sweeping all four bias codes on `MICN_L_D` (G7, `gpio-37`, unclaimed):
 `0x40` pulling the pad to 0 proves the pull circuit works and is stronger than
 whatever holds the pad high. But **`VI_D2` (`0x2300024`, `gpio-2`), a pad
 outside the G ranges and therefore known one-hot, produces an identical table**
-— including `0xC0` reading 1, which tells us pull-up beats pull-down in
-contention on this silicon. So the G7 pad is indistinguishable from a known
+— including `0xC0` reading 1 (which I wrongly read as "pull-up beats pull-down in
+contention" -- see the correction above). So the G7 pad is indistinguishable from a known
 one-hot pad, which is consistent with one-hot but is not proof: the pad sits on
 an external pull-up, and "internal pull-up" and "no pull" both read 1 there.
 

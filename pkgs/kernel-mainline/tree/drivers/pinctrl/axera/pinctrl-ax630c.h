@@ -29,6 +29,14 @@
  * enable and bit 7 as the direction select. Both agree on pull-down (0x40) and
  * on disabled (0x00), and differ only for pull-up.
  *
+ * Confirmed on hardware 2026-09-06, which matters because the SoC's own
+ * boot-time pad table writes one-hot values into these groups and so looks like
+ * evidence against it. Measured on THM_AIN3 with the on-chip ADC rather than a
+ * GPIO input -- that pad floats mid-scale, so pull-up, pull-down and no-pull are
+ * three separable voltages: 0x80 reads the same as bias-disable (no pull, not a
+ * pull-up) and 0xC0 pulls to the rail. See
+ * docs/reference/mainline/device-reads-20260906/pull-encoding-adc/README.md.
+ *
  * The vendor picks the encoding by comparing the pad's numeric offset against
  * two ranges. That is carried here as a per-pad flag instead.
  */
