@@ -7,15 +7,17 @@
  * reconciled clock by clock against a running device. Issue #80. Section
  * numbers in the comments below refer to that document.
  *
- * 265 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
- * 53 muxes, 23 dividers, 99 gates. Per controller: common 135, mm 40, flash
- * 30, periph 27, dispc 14, cpu 11, vpu 7, pllc 1.
+ * 279 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
+ * 55 muxes, 23 dividers, 111 gates. Per controller: common 135, mm 40, flash
+ * 30, periph 41, dispc 14, cpu 11, vpu 7, pllc 1. Counted out of the compiled
+ * tables in vmlinux, and confirmed a third time by clk_summary on the running
+ * kernel, which lists 280 distinct names -- these plus the DT fixed-clock.
  *
- * 246 of those are the set the vendor CCF driver registers. The other 19 are
+ * 246 of those are the set the vendor CCF driver registers. The other 33 are
  * ids it declares and leaves unregistered because its own drivers programmed
- * those windows by hand: thirteen for eMMC/SD/SDIO (#76) and six for the two
- * watchdogs (#75). Anything that calls clk_get() on a block the vendor drove
- * by hand needs the same treatment.
+ * those windows by hand: thirteen for eMMC/SD/SDIO (#76), six for the two
+ * watchdogs (#75) and fourteen for I2C and GPIO (#81). Anything that calls
+ * clk_get() on a block the vendor drove by hand needs the same treatment.
  *
  * Two deliberate departures from the vendor table, both argued in section 6 of
  * the specification:

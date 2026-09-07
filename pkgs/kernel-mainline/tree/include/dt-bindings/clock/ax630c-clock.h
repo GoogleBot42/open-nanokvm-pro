@@ -9,12 +9,12 @@
  * vendor's, deliberately: it is dense, already carved per controller, and
  * encodes a register/bit ordering worth preserving.
  *
- * 267 IDs of the 493 the vendor header declared, of which the driver registers
- * 265 -- the two SD/SDIO card muxes are named but deliberately left
- * unregistered, see the flash block below. 246 of the 265 are the set the
- * vendor CCF driver itself registered; the other 19 are IDs it declared and
- * never registered, because its own eMMC, SD, SDIO and watchdog drivers
- * programmed those windows by hand. The rest are listed in section 1.2 of the
+ * 281 IDs of the 493 the vendor header declared, of which the driver registers
+ * 279 -- the two SD/SDIO card muxes are named but deliberately left
+ * unregistered, see the flash block below. 246 of the 279 are the set the
+ * vendor CCF driver itself registered; the other 33 are IDs it declared and
+ * never registered, because its own eMMC, SD, SDIO, watchdog, I2C and GPIO
+ * drivers programmed those windows by hand. The rest are listed in section 1.2 of the
  * specification and can be added as their register positions are confirmed. The isp and ddr namespaces are gone entirely --
  * neither ever had an implementation -- as are AX620X_CPUPLL (common ID 2,
  * deliberately never registered) and the seven dead PLL cells.

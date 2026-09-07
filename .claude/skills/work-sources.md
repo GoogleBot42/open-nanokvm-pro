@@ -459,13 +459,25 @@ propose SG2002 work without flagging this gap up front.
   RTL8211F, `phy-mode = rgmii-id`; milestone mask now `0x3FF000`; b2935d8);
   **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
   watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
-  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states, the CPUPLL/
-  cpufreq model, and the first real exercise of `.assert`/`.reset` (rides #81
-  or #83). All three issues stay open; only #74 is closed.
+  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states and the CPUPLL/
+  cpufreq model; **#81 DONE, device-proven 2026-09-07** (`gpio-ax630c.c` for
+  the four controllers, `lt6911-manage.c` replacing the vendor's 2907-line
+  driver with the 15-file `/proc` ABI intact, an i2c0 node, the PHY reset moved
+  to `reset-gpios`, `nanokvm-gpio` as a libgpiod program instead of a
+  sysfs-export unit, and 14 more clock rows so 279 not 265; `0x003FF014`,
+  evidence in `docs/reference/mainline/gpio-lt6911-20260907/`). **The SW_PWR
+  trap is fixed at the root on mainline**: `gpio_request_enable()` got its
+  first exercise on silicon and four pad words measurably changed function
+  because a driver asked for the line. `.assert`/`.reset` on the reset
+  provider are STILL untested and now ride #83/#84 -- #81 only ever needed
+  deassert, and pulsing a GPIO block whose lines drive the host's power button
+  is not something to do for coverage. All these issues stay open on the forge;
+  only #74 is closed.
   Next: **#78** (NixOS appliance on mainline -- note the eth0 MAC is a
-  provisioning-time literal in `/etc/network/interfaces`, not UID-derived);
-  **#81** and **#82** can start in parallel now that #80's drivers are on
-  hardware; **#85** (aic8800) still can start from source.
+  provisioning-time literal in `/etc/network/interfaces`, not UID-derived, and
+  it is the appliance that finally runs `nanokvm-gpio`, which has never
+  executed on hardware); **#82** can start now; **#83**/**#84** are unblocked
+  by #81; **#85** (aic8800) still can start from source.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

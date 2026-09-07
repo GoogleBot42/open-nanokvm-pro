@@ -8,12 +8,10 @@
  * numbers and the 24 MHz timer rate are taken verbatim from that source; the
  * bindings are mainline ones.
  *
- * DELIBERATELY MINIMAL. This describes what an arm64 SMP kernel needs to reach
- * userspace and nothing else. Clocks, resets, pinctrl, GPIO, storage, network,
- * USB, video and audio all arrive with the child issues that port their
- * drivers (#76 storage, #77 net, #80 clk/pinctrl, #81 GPIO, #82 USB, #83
- * video, #84 display/audio). Adding a node here before its driver exists only
- * creates a DT that lies.
+ * DELIBERATELY MINIMAL. A node arrives with the child issue that ports its
+ * driver, because a node whose driver does not exist is a DT that lies. So far
+ * that is #76 storage, #77 net, #80 clk/pinctrl and #81 GPIO/I2C; USB (#82),
+ * video (#83) and display/audio (#84) are still absent.
  */
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
@@ -123,7 +121,7 @@
 		 * reconciled clock by clock against a running device.
 		 *
 		 * Every window is 64 KiB and every one is also a syscon. The
-		 * eight here register 265 clocks between them; the vendor's
+		 * eight here register 279 clocks between them; the vendor's
 		 * ninth ("isp") is omitted because no driver has ever
 		 * implemented it, as is the whole ddr namespace.
 		 *
@@ -173,11 +171,14 @@
 		 *    mA mapping is not known for this SoC.
 		 *
 		 * axera,dphytx-reset / axera,dphytx-mipien are deliberately
-		 * absent. The six CDTX_* pads need the D-PHY transmitter parked
-		 * before they can be muxed off function 0, and the syscon that
-		 * holds the MIPI-enable bit has no node until the video stack
-		 * lands (#83). Until then the driver refuses those six pads
-		 * rather than half-programming them.
+		 * absent, and the syscon holding the MIPI-enable bit has no node
+		 * until the video stack lands (#83). That gates set_mux() only:
+		 * a CDTX_* pad cannot be moved off function 0 by a pinctrl state
+		 * without parking the transmitter first. gpio_request_enable()
+		 * does not park, and #81 muxes three of those pads to GPIO
+		 * through it on every boot -- which is exactly what the vendor's
+		 * own LT6911 driver has always done with a raw register write,
+		 * so it is the proven path rather than a shortcut.
 		 */
 		pinctrl: pinctrl@2300000 {
 			compatible = "axera,ax630c-pinctrl";
