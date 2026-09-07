@@ -1,0 +1,70 @@
+// ATX GPIO backend for the mainline stack (#81). nanokvm-server.nix truncates
+// service/vm/gpio.go at writeGpio()'s signature and appends this file, so it
+// replaces BOTH tail functions (writeGpio, readGpio) and adds no imports of
+// its own beyond the ones the .nix rewrites into the header (os/exec, strconv,
+// strings; "os" goes, nothing here touches the filesystem).
+//
+// Upstream drives the lines through /sys/class/gpio: a boot-time unit exports
+// the global numbers 7/35/74/75 and these two functions write and read
+// .../gpioN/value. Mainline makes that wrong twice over -- global numbers move
+// whenever a gpiochip probes in a different order, and the legacy sysfs
+// interface never programs the pad mux, which is the SW_PWR trap this project
+// paid for once already (docs/mini-display.md). So both functions shell out to
+// nanokvm-gpio (pkgs/nanokvm-gpio), which resolves a line by its device-tree
+// name and whose REQUEST is what muxes the pad. `device` is therefore a line
+// name -- "atx-power", "atx-reset", "atx-power-led" -- not a path;
+// config/hardware.go is patched to match.
+//
+// This is also why the per-press pinmux re-assert (pinmux-power.go.in, step 6
+// of nanokvm-server.nix) is skipped in this build: there is nothing left for
+// it to fix.
+//
+// POLARITY -- the one thing here that is easy to get backwards. The power-LED
+// sense is inverted in HARDWARE, and dts/ax630c-nanokvm-pro.dts declares
+// atx-power-led as GPIO_ACTIVE_LOW. libgpiod hands back LOGICAL values, so the
+// kernel has already done the inversion and 1 means "host is on". Upstream's
+// `return value == 0` was the software half of that same inversion; keeping it
+// would invert twice and report every powered host as off.
+
+// gpioTool runs nanokvm-gpio and returns its trimmed stdout.
+func gpioTool(args ...string) (string, error) {
+	out, err := exec.Command("@nanokvmGpio@", args...).Output()
+	if err != nil {
+		log.Errorf("nanokvm-gpio %v failed: %s", args, err)
+		return "", err
+	}
+
+	return strings.TrimSpace(string(out)), nil
+}
+
+// writeGpio presses `device` (a DT line name): drive it active for `duration`,
+// then release. Active-high pulse with the caller's millisecond duration --
+// the same contract the sysfs path had. nanokvm-gpio holds the line for the
+// whole press and rejects durations over 60 s.
+func writeGpio(device string, duration time.Duration) error {
+	ms := int(duration / time.Millisecond)
+	if ms < 1 {
+		ms = 1
+	}
+
+	_, err := gpioTool("pulse", device, strconv.Itoa(ms))
+	return err
+}
+
+// readGpio reports whether `device` (a DT line name) reads asserted. For
+// atx-power-led that means "the host is on" -- see the polarity note above; do
+// not add an inversion here.
+func readGpio(device string) (bool, error) {
+	out, err := gpioTool("get", device)
+	if err != nil {
+		return false, err
+	}
+
+	value, err := strconv.Atoi(out)
+	if err != nil {
+		log.Errorf("invalid gpio value from nanokvm-gpio: %q", out)
+		return false, nil
+	}
+
+	return value == 1, nil
+}
