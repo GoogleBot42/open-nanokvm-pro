@@ -306,6 +306,51 @@ chip reset (`COMM_ABORT_CFG` = `0x023400A8` bit 0), and the whole boot chain
    on B across reboots. Return with `/etc/init.d/S99checkboot systemA` +
    `reboot`, and restore p15's content if you wrote a scratch kernel.
 
+### Testing a MAINLINE kernel on slot B (proven 2026-09-06, #75)
+
+The procedure above assumes a vendor-derived kernel that reaches a rootfs and
+an SSH server. A mainline kernel does not — it has no storage driver until #76
+— so two things change.
+
+**Flash BOTH slots-B partitions.** A mainline kernel needs its own device tree:
+`dtb_b` = `/dev/mmcblk0p13` as well as `kernel_b` = p15. Back up both first
+(`dd` to `/root/`), and hash-verify each from the medium after `drop_caches`.
+Read back with `head -c <exact image size> /dev/mmcblk0pN | md5sum` and take
+the size from `stat -c%s` on the image you just built — the image size changes
+between builds, and reusing a previous byte count silently compares the wrong
+range.
+
+**`bootsystem` cannot be the oracle.** Reaching a shell to read it means being
+on slot A, and a kernel that re-armed `SLOTB_BOOTABLE` to prove it lived would
+strand the board on a slot with no rootfs. So: do **not** re-arm. The SPL
+consumed the bit on the way in, which means every exit path — clean reboot,
+panic, hang, watchdog reset — returns the next boot to slot A on its own, and
+the whole run is unattended.
+
+The evidence comes back in memory instead. `.#kernel-mainline`'s bring-up
+initramfs writes milestone bits 12–15 of `TOP_CHIPMODE_GLB_BACKUP0`, a verbatim
+kernel log at `0x480e8000`, and a ramoops console zone at `0x480e0000` — all
+three read from slot A afterwards, all three described in
+[mainline-port.md](mainline-port.md#what-exists-now-75-2026-09-06--booted).
+
+```
+# clear stale milestone bits, arm slot B, go
+devmem 0x0239002C 32 0xF000
+/etc/init.d/S99checkboot systemB
+reboot
+# ~3 min later, back on slot A:
+devmem 0x02390024                                   # expect 0x0000f014
+dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=8 | tail -c +33
+dd if=/dev/mem bs=4096 skip=$((0x480e4000/4096)) count=4 | tail -c +13
+```
+
+`0xf014` is all four milestones plus slot A re-armed. Fewer bits set says how
+far it got; no bits at all means it never reached userspace, and the ramoops
+console zone is then the thing to read.
+
+**Put slot B back when you are done.** Restore p13 and p15 from the backups and
+hash-verify, so the board keeps a bootable rescue slot.
+
 `kernel_b` (p15) currently holds the boot-proven current default kernel, so
 slot B is a valid rescue/test slot at rest.
 

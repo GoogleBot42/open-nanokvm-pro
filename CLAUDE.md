@@ -114,6 +114,17 @@ that is arbitration, not a bug.
   directory entries with inode 0** — filter `$2 != "0"` in every enumeration and
   post-purge count, or the "still present" assertion trips on entries that are not
   files (#54, cost a rebuild). Pattern + helpers: `pkgs/rootfs.nix` step 5d2.
+- A kernel with no rootfs is invisible unless you plan for it. The mainline
+  bring-up channel (#75, reusable for every #26 child) is: milestone bits 12-15
+  of the A/B slot register `0x02390024` (spare in every boot-chain stage; they
+  survive a warm reboot AND a raw chip reset), plus ramoops and a verbatim
+  kernel-log copy in the 64 KiB TAIL of the vendor pstore window. Two traps
+  inside that: the vendor kernel **zaps every pstore zone it owns ~1.5 s into
+  the boot that would read yours**, so never put a log at `0x48000000`; and
+  `/dev/kmsg` writes are ratelimited to ten records per five seconds per fd
+  unless `printk_devkmsg` is `on` (systemd sets it, an initramfs does not) --
+  which silently eats everything past the tenth line.
+  `docs/mainline-port.md` section 8; `pkgs/kernel-mainline/initramfs/`.
 
 ## Hardware tripwires
 
@@ -145,7 +156,7 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 | Open-encoder driver bring-up / #49 resolution (CMA = blob ABI break; no-flash coherent carveout) | `docs/vcmd-cma-unblock.md` |
 | Slot-B kernel boot-testing (proven A/B harness) | `docs/flashing-and-recovery.md` |
 | Pure-Nix / NixOS rootfs (feasibility + scaffold, #26) | `docs/nixos-rootfs.md` |
-| Mainline port (#26): driver inventory, boot/rollback contract, proposed child issues | `docs/mainline-port.md` |
+| Mainline port (#26): driver inventory, boot/rollback contract, child issues #74-#87, and how a serial-less first boot is made observable | `docs/mainline-port.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
 
 ## Working with Jeremy

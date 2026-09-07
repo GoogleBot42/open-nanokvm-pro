@@ -30,6 +30,9 @@ public:
   TRUNCATES the target to 0 bytes before `set -e` aborts (2026-09-03). Land the
   file, `sha256sum` it on the device, then install it in a separate command.
   (Repeated 2026-09-04 — the `root@…:` prefix mistake again. Read the usage line.)
+  **It can also exit 0 having copied nothing** (2026-09-06: a leading bare
+  `:` on the remote path). Never treat `kvmscp`'s exit status as proof —
+  always `md5sum` the landed file against the local one.
 - **Pulling a file from the device:** `kvmscp` is push-only. Use
   `tools/kvmssh 'cat /path/on/device' > local-file` — binary-safe, works for
   register dumps and `.ko`s alike.
