@@ -7,15 +7,17 @@
  * reconciled clock by clock against a running device. Issue #80. Section
  * numbers in the comments below refer to that document.
  *
- * 265 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
- * 53 muxes, 23 dividers, 99 gates. Per controller: common 135, mm 40, flash
- * 30, periph 27, dispc 14, cpu 11, vpu 7, pllc 1.
+ * 279 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
+ * 55 muxes, 23 dividers, 111 gates. Per controller: common 135, mm 40, flash
+ * 30, periph 41, dispc 14, cpu 11, vpu 7, pllc 1. Counted out of the compiled
+ * tables in vmlinux, and confirmed a third time by clk_summary on the running
+ * kernel, which lists 280 distinct names -- these plus the DT fixed-clock.
  *
- * 246 of those are the set the vendor CCF driver registers. The other 19 are
+ * 246 of those are the set the vendor CCF driver registers. The other 33 are
  * ids it declares and leaves unregistered because its own drivers programmed
- * those windows by hand: thirteen for eMMC/SD/SDIO (#76) and six for the two
- * watchdogs (#75). Anything that calls clk_get() on a block the vendor drove
- * by hand needs the same treatment.
+ * those windows by hand: thirteen for eMMC/SD/SDIO (#76), six for the two
+ * watchdogs (#75) and fourteen for I2C and GPIO (#81). Anything that calls
+ * clk_get() on a block the vendor drove by hand needs the same treatment.
  *
  * Two deliberate departures from the vendor table, both argued in section 6 of
  * the specification:
@@ -841,6 +843,33 @@ static const char * const ax630c_clk_wdt_sel_parents[] = {
 	"rtc_out_32k", "cpll_24m",
 };
 
+/*
+ * The I2C blocks' shared source, MUX0 [4:3]. The four values are named by the
+ * vendor I2C driver's own comment on the register it programs
+ * ("00 24m, 01 50m, 10 156m, 11 208m"); it then hard-codes 208 MHz as the
+ * timing input. Registering the mux is what lets mainline's i2c-designware
+ * compute HCNT/LCNT from clk_get_rate() instead of a constant, so a board
+ * whose firmware selected a different source still gets a correct bus.
+ */
+static const char * const ax630c_clk_i2c_sel_parents[] = {
+	"cpll_24m", "epll_50m", "cpll_156m", "cpll_208m",
+};
+
+/*
+ * The GPIO blocks' shared source, MUX0 bit 2, likewise named by the vendor
+ * GPIO driver's comment on it ("0 32k, 1 24m"). It clocks the per-line
+ * debounce filter and the interrupt synchroniser, not the register file --
+ * that runs off the APB clock, which is why the SDK's U-Boot drives GPIO0
+ * lines without touching either of these.
+ *
+ * Not to be confused with clk_dbc_gpio_sel, which is a different mux in a
+ * different controller and belongs to the low-power debounce GPIO block at
+ * 0x2340000.
+ */
+static const char * const ax630c_clk_gpio_sel_parents[] = {
+	"rtc_out_32k", "cpll_24m",
+};
+
 static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_MUX_C(AX630C_SCLK_I2S_TDM_SEL, "sclk_i2s_tdm_sel", ax630c_i2s_sclk_parents, 0x00, 23, 2),
 	AX630C_MUX_C(AX630C_SCLK_I2S_M_SEL, "sclk_i2s_m_sel", ax630c_i2s_sclk_parents, 0x00, 21, 2),
@@ -850,6 +879,23 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	/* Watchdog (#75). Six IDs the vendor CCF declares and never registers. */
 	AX630C_MUX_C(AX630C_CLK_WDT2_SEL, "clk_wdt2_sel", ax630c_clk_wdt_sel_parents, 0x00, 20, 1),
 	AX630C_MUX_C(AX630C_CLK_WDT0_SEL, "clk_wdt0_sel", ax630c_clk_wdt_sel_parents, 0x00, 19, 1),
+
+	/*
+	 * I2C and GPIO (#81), fourteen more IDs in the same category. Each
+	 * block is a three-stage chain -- a chip-wide source mux, one gate for
+	 * the whole class of blocks, then one gate per instance -- and the
+	 * per-instance rows exist only for instances a DT node names.
+	 *
+	 * Every field below sits where the header's descending-bit enumeration
+	 * puts it, and each word is anchored by a clock the vendor CCF does
+	 * register: EB0 bit 0 is clk_ce_cnt_eb (id 33, cited from the vendor
+	 * crypto driver), so ids 32 and 31 are bits 1 and 2; EB1's ids 34 and
+	 * 65 bracket bits 31 and 0, putting clk_gpio0_eb (61) at bit 4 and
+	 * clk_i2c_mst0_eb (57) at bit 8 -- both of which the vendor GPIO and
+	 * I2C drivers independently confirm by writing exactly those bits.
+	 */
+	AX630C_MUX_C(AX630C_CLK_I2C_SEL, "clk_i2c_sel", ax630c_clk_i2c_sel_parents, 0x00, 3, 2),
+	AX630C_MUX_C(AX630C_CLK_GPIO_SEL, "clk_gpio_sel", ax630c_clk_gpio_sel_parents, 0x00, 2, 1),
 
 	/* pclk_top_sel below lives in common_clk; parents resolve by name. */
 	AX630C_GATE_C(AX630C_SCLK_I2S_TDM_EB, "sclk_i2s_tdm_eb", "sclk_i2s_tdm_divn", 0x04, 17, CLK_SET_RATE_PARENT),
@@ -865,13 +911,39 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	 */
 	AX630C_GATE_C(AX630C_CLK_WDT2_EB, "clk_wdt2_eb", "clk_wdt2_sel", 0x04, 15, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_WDT0_EB, "clk_wdt0_eb", "clk_wdt0_sel", 0x04, 14, CLK_SET_RATE_PARENT),
+	/* The class gates (#81), one level above the per-instance ones. */
+	AX630C_GATE_C(AX630C_CLK_I2C_EB, "clk_i2c_eb", "clk_i2c_sel", 0x04, 2, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_GPIO_EB, "clk_gpio_eb", "clk_gpio_sel", 0x04, 1, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_TIMER0_EB, "clk_timer0_eb", "clk_timer_sel", 0x08, 31, CLK_SET_RATE_PARENT),
+	/*
+	 * Per-instance functional gates (#81). All four GPIO controllers get
+	 * one because all four have DT nodes; of the eight I2C masters only
+	 * i2c0 does, and the rest arrive with the nodes that need them.
+	 */
+	AX630C_GATE_C(AX630C_CLK_I2C_MST0_EB, "clk_i2c_mst0_eb", "clk_i2c_eb", 0x08, 8, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_GPIO3_EB, "clk_gpio3_eb", "clk_gpio_eb", 0x08, 7, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_GPIO2_EB, "clk_gpio2_eb", "clk_gpio_eb", 0x08, 6, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_GPIO1_EB, "clk_gpio1_eb", "clk_gpio_eb", 0x08, 5, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_GPIO0_EB, "clk_gpio0_eb", "clk_gpio_eb", 0x08, 4, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_LPC_PERI_EB, "clk_lpc_peri_eb", "cpll_24m", 0x08, 18, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_ACLK_AX_DMA_PER_EB, "aclk_ax_dma_per_eb", "pclk_top_sel", 0x08, 0, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_TDM_S_EB, "pclk_i2s_tdm_s_eb", "pclk_top_sel", 0x0c, 30, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_TDM_M_EB, "pclk_i2s_tdm_m_eb", "pclk_top_sel", 0x0c, 29, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_S_EB, "pclk_i2s_s_eb", "pclk_top_sel", 0x0c, 28, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_M_EB, "pclk_i2s_m_eb", "pclk_top_sel", 0x0c, 27, CLK_SET_RATE_PARENT),
+	/*
+	 * The APB gates of the same blocks (#81). Unlike #76's mmc bus gates,
+	 * none of these needs CLK_IS_CRITICAL: every one has a consumer that
+	 * names it, so clk_disable_unused() leaves them alone because they are
+	 * not unused. i2c-designware asks for its timing input unnamed and its
+	 * APB gate as "pclk", which works together because a NULL clk_get()
+	 * ignores clock-names and takes index 0.
+	 */
+	AX630C_GATE_C(AX630C_PCLK_I2C_MST0_EB, "pclk_i2c_mst0_eb", "pclk_top_sel", 0x0c, 17, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_GPIO3_EB, "pclk_gpio3_eb", "pclk_top_sel", 0x0c, 16, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_GPIO2_EB, "pclk_gpio2_eb", "pclk_top_sel", 0x0c, 15, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_GPIO1_EB, "pclk_gpio1_eb", "pclk_top_sel", 0x0c, 14, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_GPIO0_EB, "pclk_gpio0_eb", "pclk_top_sel", 0x0c, 13, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_AX_DMA_PER_EB, "pclk_ax_dma_per_eb", "pclk_top_sel", 0x0c, 11, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_TIMER0_EB, "pclk_timer0_eb", "pclk_top_sel", 0x10, 5, CLK_SET_RATE_PARENT),
 	/* The APB gates of the same two blocks. */

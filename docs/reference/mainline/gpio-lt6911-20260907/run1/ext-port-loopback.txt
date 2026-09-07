@@ -1,0 +1,35 @@
+EXT_PORT loopback on a driven output -- gpio-devmem-20260906.md GAP 3, closed.
+
+Run 1, on the mainline kernel, over the initramfs SSH. GPIO0 line 23
+(sys-heartbeat, pad SD_PWR_EN) is an output owned by leds-gpio; the only writes
+are through its brightness file, and the kernel puts it back where it was.
+
+  0x04800060 = line 23's control word   (bit 0 = DR, bit 1 = DDR)
+  0x0480008c = EXT_PORT                 (bit n = level of line n)
+
+  # brightness 0
+  0x04800060 = 0x00000002    DDR=1 DR=0     driving low
+  0x0480008c = 0x08440060    bit 23 = 0
+
+  # brightness 1
+  0x04800060 = 0x00000003    DDR=1 DR=1     driving high
+  0x0480008c = 0x08C40060    bit 23 = 1
+
+  # brightness 0
+  0x04800060 = 0x00000002
+  0x0480008c = 0x08440060    bit 23 = 0
+
+EXT_PORT tracks a driven output. Both vendor implementations answer .get() from
+the DR latch when DDR is set and never read EXT_PORT for an output, so this was
+open; it is now measured, and gpio-ax630c.c reads EXT_PORT unconditionally. The
+difference matters exactly where it should: a pad muxed away from GPIO under a
+driver's feet reads its real level rather than the latch that no longer reaches
+it, which is the failure mode that hid the SW_PWR trap for the life of the
+product.
+
+Two identity words read at the same time, which the same spec left open (GAP 2):
+
+  0x04800090  ID_CODE      = 0x00000000
+  0x04800098  VER_ID_CODE  = 0x41584552   -- ASCII, "AXER" little-endian
+
+So ID_CODE is not a liveness oracle on this silicon; VER_ID_CODE is.

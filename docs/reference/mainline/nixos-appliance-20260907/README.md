@@ -23,7 +23,7 @@ rather than a login prompt.
 | File | What it is |
 |---|---|
 | `qemu-boot-no-dev-console.log` | Run 1. The failure this whole harness earned its keep on. |
-| `qemu-boot-selftest.log` | Run 2. A clean boot plus the self-test dump. |
+| `qemu-boot-selftest.log` | Run 2. A clean boot plus the self-test dump. Re-taken after #81 merged, so it covers the merged tree. |
 
 ## Run 1 — the missing `/dev/console`
 
@@ -67,11 +67,13 @@ bits would read `0x00000014`, the same value a dead kernel leaves.
 --- identity ---
 hostname: nanokvm
 device_key: (none -- no SoC UID here)
+--- nanokvm-gpio (#81) ---
+/nix/store/…-nanokvm-gpio-1.0/bin/nanokvm-gpio
+nanokvm-gpio: no gpiochip names line 'atx-power'
 --- nanokvm units ---
   nanokvm-appdir.service      loaded active exited   Copy /kvmapp to tmpfs
   nanokvm-cert.service        loaded active exited   Generate the HTTPS certificate if absent
   nanokvm-checkboot.service   loaded active exited   Confirm the active A/B boot slot
-  nanokvm-gpio.service        loaded active exited   ATX GPIO setup (stub -- #81)
   nanokvm-identity.service    loaded active exited   MAC and hostname from the SoC UID
   nanokvm-usb.service         loaded active exited   USB HID/storage gadget (stub -- #82)
   nanokvm-video.service       loaded active exited   open video stack (stub -- #83)
@@ -121,10 +123,28 @@ scaffold and would have fired on hardware:
    only in the vendor rootfs. `nanokvm-cert.service` now generates a self-signed
    per-device cert if absent, and the server runs.
 
-**The three hardware stubs behave.** `nanokvm-video`, `nanokvm-gpio` and
-`nanokvm-usb` succeed and say which issue owns the hardware they cannot touch
-(#83, #81, #82). They exist so the ordering edges are real and so a boot log
-names the missing pipeline instead of leaving a silent black stream.
+**The two hardware stubs behave.** `nanokvm-video` and `nanokvm-usb` succeed and
+say which issue owns the hardware they cannot touch (#83, #82). They exist so
+the ordering edges are real and so a boot log names the missing pipeline instead
+of leaving a silent black stream.
+
+**#81 is wired in, and there is no GPIO stub.** This run was re-taken after #81
+merged. There is no `nanokvm-gpio.service` at all — nothing to export and
+nothing to mux by hand, because a GPIO request now runs through `gpio-ranges` →
+`gpio_request_enable()` and the pin controller programs the pad. Instead the
+appliance takes the `gpioBackend = "libgpiod"` server build and carries the
+`nanokvm-gpio` tool on the system PATH, which the self-test resolves and runs:
+
+```
+/nix/store/…-nanokvm-gpio-1.0/bin/nanokvm-gpio
+nanokvm-gpio: no gpiochip names line 'atx-power'
+```
+
+That error is the correct QEMU answer and is the point of the probe — the tool
+addresses lines by their device-tree name, so "no gpiochip names line" says the
+binary is present and looking, which is a different fact from the binary being
+absent. Driving an ATX line is hardware-only, and pressing `atx-power` presses a
+button on someone's machine.
 
 ## What this does NOT prove
 

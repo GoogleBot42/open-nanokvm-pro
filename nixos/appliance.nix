@@ -548,30 +548,19 @@ in
         '';
     };
 
-    # 5b. ATX target power/reset GPIOs -- STUB.
+    # 5b. NO ATX GPIO UNIT AT ALL, and that is the #81 result rather than a
+    # gap. The 4.19 image had one: it poked the VI_D7 pad mux with `devmem` and
+    # exported gpio 7/35/74/75 through /sys/class/gpio (the SW_PWR pinmux trap,
+    # docs/mini-display.md). Neither half has anything to do here. There is
+    # nothing to export, because consumers address lines by their device-tree
+    # name (dts/ax630c-nanokvm-pro.dts: atx-power, atx-reset, atx-power-led,
+    # atx-hdd-led); and nothing to mux by hand, because requesting a line runs
+    # through gpio-ranges -> gpio_request_enable() and the pin controller
+    # programs the pad. The tool that does the requesting is `nanokvm-gpio` in
+    # environment.systemPackages below, and the server reaches it by absolute
+    # store path (pkgs/nanokvm-server.nix, gpioBackend = "libgpiod").
     #
-    # The 4.19 version of this poked the VI_D7 pad mux with devmem and then
-    # exported gpio7/35/74/75 through sysfs (the SW_PWR pinmux trap,
-    # docs/mini-display.md). None of that transfers: this kernel has a real
-    # pinctrl driver whose gpio_request_enable() programs the mux, but no GPIO
-    # driver to request a line from -- axera,ax-apb-gpio is #81. A blind devmem
-    # write against a pad table the pinctrl driver also owns is exactly the
-    # kind of poke that turns into a week of debugging.
-    systemd.services.nanokvm-gpio = {
-      description = "NanoKVM-Pro ATX GPIO setup (stub -- #81)";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "nanokvm.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        echo "nanokvm-gpio: STUB. No GPIO controller driver on this kernel yet"
-        echo "              (issue #81), so ATX power/reset do nothing. The"
-        echo "              pinmux is owned by pinctrl-ax630c now, not by a"
-        echo "              devmem write."
-      '';
-    };
+    # This module therefore stubs #82 and #83, and no longer stubs #81.
 
     # 5c. USB gadget -- STUB. #82 owns dwc3 glue, extcon-usb-gpio and the
     # configfs gadget; the vendor usbdev.sh contract is gap 2 in
@@ -841,7 +830,12 @@ in
     # Login shells and any unit without its own `path=`. The unit PATH contract
     # lives in `serverPath`; this is the interactive superset, so an admin over
     # SSH finds the same tools.
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = [
+      # ATX power/reset/LED by device-tree line name (#81) -- the replacement
+      # for the deleted sysfs-export unit. On PATH so it can be driven by hand;
+      # the server reaches it by store path, not through PATH.
+      nanokvm.nanokvm-gpio
+    ] ++ (with pkgs; [
       busybox # devmem, udhcpd/udhcpc
       bash
       kmod
@@ -866,7 +860,7 @@ in
       python3
       pciutils
       usbutils
-    ];
+    ]);
 
     # No nix on the appliance: the rootfs is a fixed closure produced by the
     # build host, which is also what keeps the image small. An update is a new

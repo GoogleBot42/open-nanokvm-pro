@@ -314,6 +314,22 @@
         # trajectory replay + closed-loop simulation. See pkgs/vcenc-rc-test.nix.
         vcenc-rc-test = callPkg ./pkgs/vcenc-rc-test.nix { };
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
+
+        # ATX power/reset/LED tool for the mainline stack (#81): resolves a
+        # line by its dts/ gpio-line-names entry over libgpiod v2, and the
+        # request programs the pad mux. Replaces the legacy-sysfs export unit,
+        # the devmem pad poke and the server's per-press pinmux re-assert.
+        nanokvm-gpio = callPkg ./pkgs/nanokvm-gpio.nix { };
+
+        # Same server source, ATX lines driven through nanokvm-gpio instead of
+        # /sys/class/gpio -- global GPIO numbers are not stable on mainline, so
+        # the NixOS appliance gets this build and the shipped 4.19 image keeps
+        # the sysfs one above (which stays byte-identical).
+        nanokvm-server-libgpiod = callPkg ./pkgs/nanokvm-server.nix {
+          inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl nanokvm-gpio;
+          gpioBackend = "libgpiod";
+        };
+
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { inherit version; };
 
         # Mini-display status daemon (pure Python + build-time-generated fonts;
@@ -378,7 +394,12 @@
           # open capture drivers + open VCMD encoder. The server links the ABI
           # header only, so it keeps the plain kvm-encoder.
           kvm-encoder = kvm-encoder-v4l2;
-          inherit nanokvm-server nanokvm-web nanokvm-display version;
+          # The appliance runs the mainline stack, so it takes the libgpiod
+          # server and ships nanokvm-gpio beside it (#81) -- global GPIO
+          # numbers are not stable on mainline, so the sysfs build cannot come
+          # here. The shipped 4.19 image keeps the sysfs one, byte-identical.
+          nanokvm-server = nanokvm-server-libgpiod;
+          inherit nanokvm-gpio nanokvm-web nanokvm-display version;
         };
         nixos-appliance = callPkg ./nixos/rootfs.nix nixosApplianceArgs;
         nixos-appliance-loop = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
@@ -499,7 +520,8 @@
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
             vcenc-geom-test vcenc-rc-test
-            nanokvm-server nanokvm-web nanokvm-display libsns-dummy
+            nanokvm-server nanokvm-server-libgpiod nanokvm-gpio
+            nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-appliance nixos-appliance-loop
             firmware-image sd-image

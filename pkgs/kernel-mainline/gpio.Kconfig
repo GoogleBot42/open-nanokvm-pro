@@ -1,0 +1,15 @@
+config GPIO_AX630C
+	bool "Axera AX630C (AX620E) GPIO support"
+	depends on ARM64 || COMPILE_TEST
+	depends on OF
+	select GPIOLIB_IRQCHIP
+	help
+	  GPIO controllers of the Axera AX630C and the rest of the AX620E
+	  family: four blocks of 32 lines that borrow DesignWare register
+	  names but give every line its own 32-bit control word, so GPIO_DWAPB
+	  cannot drive them.
+
+	  Say Y if you are building a kernel for an AX620E-family SoC. There is
+	  no module option: on these boards the HDMI receiver's power rails,
+	  the Ethernet PHY reset and the host's ATX power lines are all GPIO
+	  consumers that probe long before a module could be loaded.

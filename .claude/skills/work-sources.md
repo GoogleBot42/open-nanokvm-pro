@@ -404,15 +404,22 @@ propose SG2002 work without flagging this gap up front.
   then the GitHub `release.yml` run FAILED after 11.5 min in its first step,
   `nix build .#update-package`. No release object exists, so **devices are
   unaffected** — stable still serves 2.0.0 and the preview channel still
-  serves alpha.4. Ruled out locally: `.#update-package` builds green from the
-  exact tagged tree, and the pnpm FOD re-fetches clean against its pinned hash
-  (`--rebuild`). The runner log needs GitHub admin rights, which this
-  environment does not have, so the cause is undetermined — most likely runner
-  disk (the workflow frees space for a reason) or a transient fetch. **Next
-  step is to re-run the job from the GitHub Actions tab** (the docs say it is
-  idempotent); a second failure at the same step makes it deterministic and
-  worth real investigation. A GitHub token with actions read+write would let an
-  agent do both.
+  serves alpha.4. **Cause found and FIXED 2026-09-07 (`bc1ec0a`, branch
+  `fix/server-vendorhash`): `pkgs/nanokvm-server.nix` carried a `vendorHash`
+  stale since #71 (`f429b2a`, 2026-09-05).** That commit's `postPatch` step 11
+  drops the `github.com/gin-gonic/contrib/static` import; the go-modules
+  derivation inherits `postPatch`, and `go mod vendor` vendors only imported
+  packages, so that module left the vendor tree — the modules.txt diff is
+  exactly that one line. It stayed invisible because a fixed-output
+  derivation's store path comes from its hash alone: this build host already
+  held the July output and never re-fetched, so "`.#update-package` builds
+  green locally" was never evidence. `nix build --rebuild` on the go-modules
+  drv reproduces the runner's hash exactly. The `v2.1.0-alpha.5` tag still
+  points at the broken tree and stays where it is (never move tags).
+  **Superseded by `v2.1.0-alpha.6`, cut over the Gitea API and PUBLISHED on
+  GitHub 2026-09-07** (`8e26530`; same content plus the fix; the `preview`
+  manifest serves alpha.6, sha512 `l9GXB1Jk…`). Not yet applied on the device
+  — the alpha.6 OTA on hardware is the open checkbox.
 
 - **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
   `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
@@ -459,22 +466,34 @@ propose SG2002 work without flagging this gap up front.
   RTL8211F, `phy-mode = rgmii-id`; milestone mask now `0x3FF000`; b2935d8);
   **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
   watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
-  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states, the CPUPLL/
-  cpufreq model, and the first real exercise of `.assert`/`.reset` (rides #81
-  or #83). All three issues stay open; only #74 is closed.
+  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states and the CPUPLL/
+  cpufreq model; **#81 DONE, device-proven 2026-09-07** (`gpio-ax630c.c` for
+  the four controllers, `lt6911-manage.c` replacing the vendor's 2907-line
+  driver with the 15-file `/proc` ABI intact, an i2c0 node, the PHY reset moved
+  to `reset-gpios`, `nanokvm-gpio` as a libgpiod program instead of a
+  sysfs-export unit, and 14 more clock rows so 279 not 265; `0x003FF014`,
+  evidence in `docs/reference/mainline/gpio-lt6911-20260907/`). **The SW_PWR
+  trap is fixed at the root on mainline**: `gpio_request_enable()` got its
+  first exercise on silicon and four pad words measurably changed function
+  because a driver asked for the line. `.assert`/`.reset` on the reset
+  provider are STILL untested and now ride #83/#84 -- #81 only ever needed
+  deassert, and pulsing a GPIO block whose lines drive the host's power button
+  is not something to do for coverage. All these issues stay open on the forge;
+  only #74 is closed.
   **#78 offline half DONE** (the NixOS appliance is off the vendor kernel and
   off the second nixpkgs pin -- `nixpkgs-rootfs` deleted -- boots to multi-user
   under `qemu-system-aarch64` with zero failed units and the server on :80/:443;
-  `nix run .#nixos-appliance-qemu-run`). Its hardware half is a reversible
-  loop-image slot-B boot and is waiting on the device.
+  `nix run .#nixos-appliance-qemu-run`). It takes #81's `gpioBackend =
+  "libgpiod"` server and ships `nanokvm-gpio`, so it is also what will finally
+  run that tool on hardware. Its hardware half is a reversible loop-image
+  slot-B boot and is waiting on the device.
   Two corrections it produced: the eth0 MAC is **not** a provisioning-time
   literal -- the vendor `/init` recomputes it from `/proc/ax_proc/uid` on every
   boot and rewrites `/etc/network/interfaces`, so that file is a cache; and
   IRAM0 is at physical 0, so `misc_info` really is at physical `0x740`
   (`uid_l` `0x788`, `uid_h` `0x78c`).
-  **#81** and **#82** can start in parallel now that #80's drivers are on
-  hardware; **#85** (aic8800) still can start from source; **#79** is unblocked
-  by #78.
+  Next: **#82** can start now; **#83**/**#84** are unblocked by #81; **#79** is
+  unblocked by #78; **#85** (aic8800) still can start from source.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

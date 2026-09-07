@@ -57,7 +57,7 @@ The costs that remain:
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [gap 2](#known-gaps). |
 | **WiFi** | `aic8800_*.ko` + `/opt/firmware/aic8800/*.bin`. Needs its own build against the mainline kernel — #85. |
 | **The `rc.local` glue** | `S99checkboot` is now a unit and is live (below). `axemac.sh`, `npu_set_bw_limiter.sh` and a bare `devmem` poke are not. |
-| **No hardware yet** | Video (#83), GPIO/ATX (#81) and USB HID (#82) are stubs on this kernel, and the mini-display (#84) has no framebuffer to draw on. The appliance boots, serves the web UI and answers SSH; it is not yet a working KVM. |
+| **No hardware yet** | Video (#83) and USB HID (#82) are stubs on this kernel, and the mini-display (#84) has no framebuffer to draw on. ATX works in principle — #81 landed, and the appliance ships `nanokvm-gpio` and the libgpiod server build — but has never been exercised on the board. The appliance boots, serves the web UI and answers SSH; it is not yet a working KVM. |
 | **Boot risk** | The rootfs is the one thing between U-Boot and a working device, `bootdelay=0` means there is no serial break-in, and recovery is physical AXDL. |
 
 ---
@@ -341,11 +341,23 @@ What survives on the appliance:
 
 The units the appliance actually declares: `nanokvm-appdir`, `nanokvm-cert`,
 `nanokvm`, `nanokvm-identity`, `nanokvm-checkboot`, `nanokvm-display`, and the
-three hardware stubs `nanokvm-video` (#83), `nanokvm-gpio` (#81), `nanokvm-usb`
-(#82), plus `sshd`, `avahi`, `systemd-networkd`, `timesyncd` and `logrotate`.
-The stubs succeed and name the issue that owns the hardware they cannot touch —
-so the ordering edges stay real and a boot log says which pipeline is missing
-instead of leaving a silent black stream.
+two hardware stubs `nanokvm-video` (#83) and `nanokvm-usb` (#82), plus `sshd`,
+`avahi`, `systemd-networkd`, `timesyncd` and `logrotate`. The stubs succeed and
+name the issue that owns the hardware they cannot touch — so the ordering edges
+stay real and a boot log says which pipeline is missing instead of leaving a
+silent black stream.
+
+**There is deliberately no GPIO unit** (#81, landed 2026-09-07). The 4.19 image
+had one: it poked the VI_D7 pad mux with `devmem` and exported gpio 7/35/74/75
+through `/sys/class/gpio`. Neither half has anything to do here. Nothing to
+export, because consumers address lines by their device-tree name (`atx-power`,
+`atx-reset`, `atx-power-led`, `atx-hdd-led`); nothing to mux, because
+requesting a line runs through `gpio-ranges` → `gpio_request_enable()` and the
+pin controller programs the pad — the SW_PWR trap fixed at the root. The
+appliance instead takes the `gpioBackend = "libgpiod"` server build
+(`nanokvm-server-libgpiod`, because global GPIO numbers are not stable on
+mainline) and carries `nanokvm-gpio` in `environment.systemPackages`; the server
+reaches it by absolute store path, not through `PATH`.
 
 **Dead weight deleted rather than ported**, all present and mostly enabled on
 the vendor rootfs: `sysdev.service` (a 14-line no-op sleep loop),
@@ -731,16 +743,19 @@ number, so closed gaps keep their slot and new ones are appended.
     while a modules tree is spliced into the system closure by hand — nixpkgs'
     `kmod` is patched to search `/run/booted-system/kernel-modules/lib/modules`,
     not `/lib/modules`, so it cannot simply be dropped into the filesystem.
-12. **The three hardware stubs, and what each costs the product.**
+12. **The two hardware stubs, and what each costs the product.**
     `nanokvm-video` (**#83**) — no `/dev/video0`: the web UI loads and streams
     nothing. The three open drivers are 4.19 out-of-tree code and need porting to
-    current V4L2/dma APIs. `nanokvm-gpio` (**#81**) — ATX power and reset do
-    nothing; the 4.19 version poked the VI_D7 pad mux with `devmem`, which is now
-    wrong as well as blind, because this kernel has a real pinctrl driver that
-    owns the mux and no GPIO driver to request a line from. `nanokvm-usb`
-    (**#82**) — no keyboard, no mouse, no mass storage, no NCM. The mini-display
-    daemon (**#84**) is `ConditionPathExists=/dev/fb0` and simply does not run.
-    All three stubs exit 0 and print which issue owns them.
+    current V4L2/dma APIs. `nanokvm-usb` (**#82**) — no keyboard, no mouse, no
+    mass storage, no NCM. The mini-display daemon (**#84**) is
+    `ConditionPathExists=/dev/fb0` and simply does not run. Both stubs exit 0 and
+    print which issue owns them. ATX is **not** on this list any more: #81 landed
+    and the appliance drives it through `nanokvm-gpio` — but that tool has still
+    never executed on hardware, because it targets this appliance and #81's own
+    runs had no mainline userspace. QEMU gets as far as proving it is on the
+    system PATH and resolving lines by name (`no gpiochip names line
+    'atx-power'`); the pulse itself is hardware-only, and pressing `atx-power`
+    presses a button on someone's machine.
 13. **The identity path is unproven on hardware.** The `/dev/mem` read of
     `misc_info` at physical `0x740`, the `sha512sum` derivation and the
     `ip link set … address` write have never run on the board. QEMU took the "no

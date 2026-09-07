@@ -178,7 +178,7 @@ have / can be dropped).
 | Clocks | 9 provider nodes `axera,ax620x-{cpu,common,dispc,flash,isp,mm,periph,vpu,pllc}-clk` + `syscon` (`0x1900000`, `0x2340000`, `0x4600000`, `0x10030000`, `0x2500000`, `0x4430000`, `0x4870000`, `0x4030000`, `0x2210000`); 493 IDs in `dt-bindings/clock/ax620e-clock.h`, **246 registered** (the 247th `clk_summary` row is `sysclk`, an unrelated DT `fixed-clock` -- corrected 2026-09-06 by clk-model-20260906.md) | `drivers/clk/axera/clk-ax620e.c` 572 + `clk.c` 668 LOC (`clk.c` is a rename-fork of `drivers/clk/hisilicon/clk.c`) | Axera-custom: 86 gates (all one flag → `clk_hw_register_gate`), muxes/dividers, **one** runtime-programmed fractional-N PLL (CPUPLL); the other PLLs are bootloader-set and modelled as `fixed_factor` (V) | **new driver** (table-driven CCF, ~1.5–2 kLOC); a gate-only subset is enough for bring-up because the vendor peripheral drivers each gate their own clock via the periph syscon — mainline drivers will expect `clocks =` instead | M | boot |
 | Resets | 18 provider nodes `axera,axera_reset_match` + `syscon`, `#reset-cells` = 3 (`<bit reg polarity>`), 4 (`<set_bit set_reg clr_bit clr_reg>`) or 10 (4-cell + a clock gate closed across the reset) — all data in consumer phandle args | `drivers/reset/axera_reset/axera_reset.c` 298 LOC | Axera-custom SET/CLR reset controller (V) | **new driver**; mainline wants `#reset-cells = <1>` + an in-driver table harvested from the ~60 consumers (`reset-simple` cannot express the vendor specifier) | S–M | boot |
 | Pinctrl / pinmux | `axera,ax620e-pinctrl` @`0x2300000` (+`0x104f0000`); 6855-line `AX620E_pinctrl.dtsi` = 111 pins × 551 single-group functions / 563 states. **The board relies on a replayed table, not DT states:** `drivers/soc/axera/pinmux/ax_pinmux.c` self-registers at `arch_initcall` and writes the SDK `AX630C_DEMO_pinmux.h` `<addr,value>` pairs (**133 writes** -- 22 group-MISC plus exactly one per pad; corrected 2026-09-06 by pinctrl-model-20260906.md -- incl. `0x02300060 = 0x00060003` VI_D7 → GPIO0_A7); U-Boot applies the same table first. The board dts `/delete-property/`s `pinctrl-0` on every I2C node | `drivers/pinctrl/axera/pinctrl-ax620e.c` 728 + `ax_pinmux.c` 225 LOC | Axera-custom, one word per pad, stride `0xC`, function `[18:16]`, pull `[7:6]`, drive `[3:0]` (V) | **new driver + remodelled DT** (**56** real multi-group functions, regenerated dtsi, I2C states restored). Not needed for first boot (U-Boot's table pass persists). This is also the **root of the SW_PWR trap**: the DEMO table muxes VI_D7 to GPIO at init, capture re-muxes it, nothing re-applies; `gpio-axera` overrides `chip.request` with a no-op so `pinctrl_gpio_request()` never runs — a correct mainline pinctrl+GPIO pair fixes it for free | **L** (data model) | KVM |
-| GPIO | `axera,ax-apb-gpio` ×4 (`0x4800000`, `0x4801000`, `0x6000000`, `0x6001000`, SPI 114–117), **97** `gpio-ranges` (not 128; corrected 2026-09-06) | `drivers/gpio/gpio-axera.c` 538 LOC (defconfig also has `GPIO_DWAPB=y`, unused) | DesignWare *names* only: **one 32-bit register per GPIO** at `base + (n+1)*4` with DR/DDR/INTEN/… as bit fields, relocated port regs (`EXT_PORTA 0x8c`, secure/non-secure INTSTATUS `0x84/0xa4`), raw clock pokes at `0x4870000` (V) | **new driver** (~500 LOC); `gpio-dwapb` cannot bind | S–M | KVM (ATX, panel, LT6911 pins) |
+| GPIO | `axera,ax-apb-gpio` ×4 (`0x4800000`, `0x4801000`, `0x6000000`, `0x6001000`, SPI 114–117), **97** `gpio-ranges` (not 128; corrected 2026-09-06) | `drivers/gpio/gpio-axera.c` 538 LOC (defconfig also has `GPIO_DWAPB=y`, unused) | DesignWare *names* only: **one 32-bit register per GPIO** at `base + (n+1)*4` with DR/DDR/INTEN/… as bit fields, relocated port regs (`EXT_PORTA 0x8c`, secure/non-secure INTSTATUS `0x84/0xa4`), raw clock pokes at `0x4870000` (V) | **DONE (#81)**: `drivers/gpio/gpio-ax630c.c`, ~470 lines, four controllers with 97 `gpio-ranges`, an irqchip, and clocks and resets from DT rather than a private syscon mapping. `gpio-dwapb` cannot bind | S–M | KVM (ATX, panel, LT6911 pins) |
 | Watchdog | `axera,ax-wdt` @`0x4840000` (wdt0) + `0x6040000` (wdt2) | `drivers/watchdog/ax_wdt.c` 514 LOC (`CONFIG_AX_WATCHDOG=y`, `NOWAYOUT=y`) | **not** DesignWare: EN `+0x00`, TORR `+0x0c`, start `+0x18`, count `+0x24`, kick `+0x30` magic `0x61696370` (V) | **new driver, mandatory**: U-Boot arms wdt0 for 30 s before `booti`; the vendor kernel pets it from the WDT's own ISR and reboots through `ax_wdt_restart()` because PSCI reset is absent | S | **boot** |
 | Thermal + ADC | `axera,ax620e-tsensor` @`0x2000000` (trips 80/105/120 °C) and `axera,ax620e-adc` (no `reg`; the driver `ioremap`s the *same* `0x2000000` block — one analog-monitor IP). `in_voltage0_raw` is the **board-id** the loader turns into DRAM size / pool geometry | `drivers/thermal/axera_thermal.c` 487 + `drivers/iio/adc/axera_adc.c` 307 LOC | Axera-custom 10-bit sensor block (V). **Thermal is decorative today**: no `cooling-maps` anywhere, `CPU_THERMAL` off, the 120 °C trip is typed `passive` — the SoC neither throttles nor shuts down | one new driver exposing `#thermal-sensor-cells` + `#io-channel-cells` (~200 LOC); DRAM size becomes a per-board DT fact | S | opt |
 | UID / identity | `ax,ax_hwinfo` → `/proc/ax_proc/uid`, read by the initramfs for `device_key` → MAC + hostname | `drivers/soc/axera/ax_hwinfo/ax_hwinfo.c` 261 LOC | **not an efuse peripheral**: it `memcpy`s the `misc_info_t` the bootloader leaves in IRAM0 at `0x740` (`uid_l/uid_h` at `+0x48/+0x4c`; `include/linux/soc/axera/ax_boardinfo.h`) (V) | **DONE (#78), with no kernel driver at all.** IRAM0 is at physical 0 — the vendor probe ioremaps the bare `0x740` with no base added — so `nanokvm-identity.service` reads `uid_l`/`uid_h` at `0x788`/`0x78c` through `/dev/mem` and reproduces the vendor MAC arithmetic exactly. A tiny `nvmem` node over that window, or a U-Boot `ethaddr` fixup feeding `fdt_fixup_ethernet()`, remain the upstreamable forms | S | KVM (identity) |
@@ -205,8 +205,8 @@ have / can be dropped).
 | Block | DT | Vendor driver | IP / mainline | Port needs | Effort | Gates |
 |---|---|---|---|---|---|---|
 | UART0/1/2 | `axera,ax-apb-uart` @`0x4880000/0x4881000/0x4882000`, `reg-shift = 2`, `reg-io-width = 4`, 208 MHz | `drivers/tty/serial/8250/8250_axera.c` 542 LOC (a `8250_dw.c` fork) | **Synopsys DW APB UART** (V; `earlycon=uart8250,mmio32` already works) | `snps,dw-apb-uart` + `8250_dw`, `clock-frequency = <208000000>` | S | boot (debug only — hidden pads) |
-| I2C0, I2C7 | `snps,designware-i2c` @`0x4850000`, `0x4857000` | mainline `i2c-designware` (unmodified compatible) | DW (V) | DT only. **I2C0 carries the LT6911UXC at `0x2b`** (hard-coded in `lt6911_manage.h`, no DT node); I2C7 carries the hynitron touch | S | KVM |
-| HDMI-RX bridge | Lontium LT6911UXC — no DT node; `lt6911_manage.c` (2907 LOC, ours from source) opens I2C bus 0 @`0x2b` and raw GPIOs 60 (INT), 5 (PWR), 6, 82, 83, 21, 81; exposes `/proc/lt6911_info/*` | `drivers/misc/lt6911_manage.c` (`CONFIG_LT6911_MANAGE=m`) | mainline has `lt6911uxe` (6.14+) — a different chip, V4L2-subdev shaped | keep our driver out-of-tree with a DT node (`lontium,lt6911uxc`, i2c child of `i2c0`, GPIO phandles) and the `/proc` ABI libkvm reads; a V4L2-subdev rewrite is an upstreaming nicety, not a port need | S–M | KVM |
+| I2C0, I2C7 | `snps,designware-i2c` @`0x4850000`, `0x4857000` | mainline `i2c-designware` (unmodified compatible) | DW (V) | DT only. **i2c0 DONE (#81)**, carrying the LT6911UXC at `0x2b` as a DT child rather than the hard-coded bus and address of `lt6911_manage.h`; its APB gate is *named* `pclk` rather than marked critical, because a NULL `clk_get()` takes index 0 regardless of `clock-names`. i2c7 (hynitron touch) arrives with the touch panel | S | KVM |
+| HDMI-RX bridge | Lontium LT6911UXC — no DT node; `lt6911_manage.c` (2907 LOC, ours from source) opens I2C bus 0 @`0x2b` and raw GPIOs 60 (INT), 5 (PWR), 6, 82, 83, 21, 81; exposes `/proc/lt6911_info/*` | `drivers/misc/lt6911_manage.c` (`CONFIG_LT6911_MANAGE=m`) | mainline has `lt6911uxe` (6.14+) — a different chip, V4L2-subdev shaped | **DONE (#81)**: `drivers/misc/lt6911-manage.c`, ~2400 lines, an i2c driver on `lontium,lt6911uxc` as a child of `i2c0` with GPIO descriptors and the `/proc` ABI intact, scoped to the UXC. A V4L2-subdev rewrite is an upstreaming nicety, not a port need | S–M | KVM |
 | SPI2 + panel | `snps,dw-apb-ssi` @`0x6072000`; `jadard,jd9853` @cs1, 80 MHz, dc/reset/te GPIOs | `spi-dw-mmio` (mainline) + `drivers/staging/fbtft/fb_jd9853.c` (GPL, in the SDK tree) | DW SSI (V); fbtft has no JD9853 upstream | DT only for SPI; port `fb_jd9853` onto current staging fbtft (S) or write a `drm/tiny` panel (M) | S–M | opt (mini-display) |
 | Backlight | `pwm-backlight` ← `axera,ax620e-pwm` @`0x6060000` | `drivers/pwm/pwm-axera.c` 527 LOC | DW APB timer in PWM mode — offsets match mainline `pwm-dwc.h` (V per §1 research; `PWM_TIMERN_MODE 0x1E`) | `pwm-dwc-core` + platform/OF glue (mainline's `pwm-dwc` front-end is PCI; check whether the target kernel already has an OF variant) | S | opt |
 | Knob / button / LED | `rotary-encoder`, `gpio-keys`, `gpio-leds` (heartbeat GPIO0_A23) | mainline | standard | DT only (needs GPIO) | S | opt |
@@ -269,9 +269,12 @@ concrete deltas, from the sources:
   U-Boot (and then the kernel's `ax_pinmux` `arch_initcall`) replay the SDK
   DEMO pad table. On mainline only U-Boot's pass remains until pinctrl exists,
   at which point the pads move into DT `pinctrl-0` states.
-- `lt6911_manage.c` also **writes pinmux registers directly**
-  (`0x104F006C`, `0x02300048`, `0x02300054`) — the same trap class as SW_PWR;
-  those become pinctrl states too.
+- `lt6911_manage.c` also **writes pinmux registers directly** — the same trap
+  class as SW_PWR. **Seven pads, not the three this line used to name**
+  (corrected 2026-09-07 by #81): `0x104F006C` EPHY_LED0, `0x02300048` VI_D5,
+  `0x02300054` VI_D6, `0x0230A06C` CDTX_L4N, `0x0230A078` CDTX_L4P,
+  `0x02302090` TMS, `0x0230A060` CDTX_L3P. On mainline none of them is a
+  pinctrl state: claiming the GPIO programs the mux (§8, #81).
 - `lt6911_manage.c` is the fourth driver to carry: 4.19 legacy GPIO numbers and
   `i2c_get_adapter(0)` → DT node with GPIO descriptors; `/proc/lt6911_info`
   ABI kept (libkvm and the display daemon read it).
@@ -517,10 +520,10 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 ## 8. Child issues
 
 Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
-lives as a comment on #26. **#74, #75, #76 and #77 are done** (see "What exists
-now" at the end of this section), #80's source half is written and boot-proven,
-and **#78 builds and boots in QEMU** with its hardware half outstanding;
-everything else is open.
+lives as a comment on #26. **#74, #75, #76, #77, #80 and #81 are done** (see
+"What exists now" at the end of this section), and **#78 builds and boots in
+QEMU** with its hardware half outstanding; everything else is open. What #80
+still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
 
 1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
@@ -574,11 +577,16 @@ everything else is open.
    I2C `pinctrl-0` states the board dts deletes and turning the DEMO pad
    table into DT states; `gpio_request_enable` wired (kills the SW_PWR mux
    trap at the root). Depends on: #77 (can start in parallel).
-8. **#81 GPIO + ATX + LT6911 on mainline** — New ~500-LOC driver for
-   `axera,ax-apb-gpio` (one register per line; `gpio-dwapb` cannot bind);
-   `lt6911_manage` gets a DT node (I2C0 @0x2b, GPIO descriptors, its three
-   pinmux pokes as pinctrl states) and keeps its `/proc` ABI; `nanokvm-gpio`
-   moves to libgpiod/DT names. Depends on: #80.
+8. **#81 GPIO + ATX + LT6911 on mainline** — DONE 2026-09-07, device-proven.
+   `gpio-ax630c.c` for the four controllers, `lt6911-manage.c` replacing the
+   vendor's 2907-line driver with the `/proc` ABI intact, an i2c0 node, the
+   Ethernet PHY reset as `reset-gpios`, and `nanokvm-gpio` as a libgpiod
+   program rather than the name of a sysfs-export unit. `gpio_request_enable()`
+   got its first exercise on silicon and moved four pads the vendor re-muxed by
+   hand. The filed scope said the LT6911 driver writes *three* pinmux
+   registers; it writes seven, and on mainline none of them is a pinctrl state
+   — claiming the GPIO programs the pad. See "What exists now" at the end of
+   this section. Depends on: #80.
 9. **#82 USB: dwc3 glue + gadget HID** — `dwc3-of-simple`-class glue (one
    PHY reset bit + clocks), `extcon-usb-gpio`, configfs `hid/mass_storage/ncm/
    uac2` as today (`usbdev.sh` contract from nixos-rootfs.md gap 2).
@@ -1009,13 +1017,106 @@ third artifact by the boot run: `clk_summary` on the running kernel lists 265
 clocks. #77 added no clock rows -- it converted one mux to the rate-changing
 flavour and used rows the vendor table already had.
 
+### What exists now (#81, 2026-09-07) — GPIO, ATX AND THE HDMI RECEIVER
+
+**Boot-tested on hardware, milestone register `0x003FF014` on return.** Two
+slot-B runs; evidence, including the pad words that prove the pin controller
+moved them:
+[reference/mainline/gpio-lt6911-20260907/](reference/mainline/gpio-lt6911-20260907/).
+
+`drivers/gpio/gpio-ax630c.c` drives the four 32-line controllers — DesignWare
+in its register names only, one 32-bit word per line at `base + (n + 1) * 4`,
+so `gpio-dwapb` cannot bind. The whole point of it is `chip.request`: with the
+97 `gpio-ranges` in DT, a GPIO claim reaches #80's `gpio_request_enable()`,
+which programs the pad's mux, and strict mux enforcement then stops a
+peripheral state taking the pad back. **That is the SW_PWR trap fixed at the
+root**, and it is measured rather than argued — four pad words differ from what
+the boot chain's own table writes, in the mux field, because a driver asked for
+those lines: `EPHY_LED0` `0x00000083` → `0x00060083`, and the three `CDTX_*`
+pads `0x00000003` → `0x00060003`. Those four are exactly the pads the vendor's
+LT6911 driver re-muxed by hand with a raw `iowrite32`.
+
+The ranges are the vendor DT's 97 single-line entries collapsed into runs. The
+mapping is not an identity — a lazy `<&pinctrl 0 0 32>` would mux the wrong
+pads — so the build asserts the compiled blob still covers 97, and the run-for-
+run expansion was diffed against the vendor source pair for pair.
+
+`drivers/misc/lt6911-manage.c` replaces the vendor's 2907-line
+`lt6911_manage.c`: an i2c driver bound as a child of i2c0 at `0x2b` instead of
+`i2c_get_adapter(0)`, GPIO descriptors instead of seven global line numbers,
+and nothing at all instead of seven blind pad-mux pokes. It is scoped to the
+UXC — the vendor file also carries LT6911C and LT6911D register maps and an
+AX-Pi pin set behind a board check its own header compiles to a constant.
+`/proc/lt6911_info` keeps all fifteen files and every payload string, because
+libkvm, the Go server and the display daemon all parse them; on the running
+mainline kernel it reports the attached host at 4096×2160@29, `access`,
+`no hdcp`, and a `version` string carrying the `Desk` token and device number
+the server looks for.
+
+Five vendor bugs did not survive the port: a write handler that `strncmp`s a
+`__user` pointer, user-controlled VLAs that made `dd bs=1M of=…/edid` a kernel
+stack overflow, a bank cache never invalidated across the chip power cycles its
+own EDID paths perform, a snapshot buffer every read clobbered the first nine
+bytes of, and no locking anywhere. Only the last of those is visible to a
+consumer, and only as `edid_snapshot` now returning the EDID it holds.
+
+Four more things landed with it.
+
+- **Fourteen clock rows**, so 279 clocks rather than 265: an I2C and a GPIO
+  source mux, their class gates, and one gate per instance. Every field sits
+  where the binding header's descending-bit enumeration puts it, and each word
+  is anchored by a clock the vendor CCF does register. The proof they address
+  the right bits is a diff against #80's boot: `CLK_EB0` reads `0x00007DE3`
+  where that run read `0x00007DE7`, and the single differing bit is the one
+  newly registered as `clk_i2c_eb`.
+- **i2c0 exists**, stock `snps,designware-i2c`, with the pin state #80 declared
+  and could not attach. Its APB gate is *named* rather than marked
+  `CLK_IS_CRITICAL` the way #76's mmc bus gates had to be: a NULL `clk_get()`
+  ignores `clock-names` and takes index 0, so a binding that wants one unnamed
+  clock and one called `pclk` can have both. The vendor's "gpio" bus-recovery
+  state is deliberately not carried — it claimed GPIOs while its own pin states
+  left the pads on the controller, so it bit-banged pads it did not own.
+- **#77's raw PHY-reset poke is gone.** `EPHY_RSTN` is `reset-gpios` on the PHY
+  node and the MDIO core pulses it, with the same 15 ms assert and 75 ms
+  settle, before it reads the PHY's ID.
+- **`nanokvm-gpio` is a program now**, not the name of a systemd unit that
+  exported four global numbers through `/sys/class/gpio` and poked a pad
+  register with `devmem`. It resolves a line by its DT name over libgpiod, and
+  the request is what programs the mux. `nanokvm-server` gains a `gpioBackend`
+  argument defaulting to `sysfs`, whose build is byte-identical to before — the
+  shipped 4.19 image does not move — while the NixOS appliance takes the
+  `libgpiod` build and drops the unit.
+
+**The reset provider's `.status` got its first real use** and reports what the
+syscon says: `SW_RST0` = `0x00000001`, every GPIO reset bit clear. `.assert`
+and `.reset` are still untested on silicon, and deliberately so — lines on
+these blocks drive the host's ATX power button and the HDMI receiver's rails,
+so a reset pulse at probe would be a keystroke nobody pressed. The first
+consumer that needs one will be #83 or #84.
+
+Two gaps in `gpio-devmem-20260906.md` closed on the way. **EXT_PORT does loop
+back a driven output** (measured on the heartbeat LED), so `.get()` reads the
+pad rather than the output latch — the vendor answers from the latch, which is
+precisely the read that hid the SW_PWR trap. And the identity words: `ID_CODE`
+is 0 on this silicon, `VER_ID_CODE` is `0x41584552`, ASCII.
+
+Still owed: `nanokvm-gpio` has never run on hardware — it targets the NixOS
+appliance and there is no mainline userspace yet, so the ATX pulse is proven
+kernel-side and not end to end. No ATX line was driven, because pressing
+`atx-power` presses a button on someone's machine. The `edid` and `version`
+write paths program the bridge's flash and are transcribed but untested. And
+the eMMC's card reset stays a TODO on the mmc node: `cap-mmc-hw-reset` plus
+`reset-gpios = <&gpio2 23 GPIO_ACTIVE_LOW>` would work now that a GPIO
+controller exists, but the vendor DT calls that line active *high* and getting
+the polarity wrong holds the rootfs device in reset.
+
 ### What exists now (#78, 2026-09-07) — APPLIANCE BUILDS AND BOOTS, IN QEMU
 
 **The NixOS appliance is off the vendor kernel and off the second nixpkgs pin,
 and it boots to multi-user with zero failed units and NanoKVM-Server listening
 on :80 and :443.** Under `qemu-system-aarch64 -M virt`, not on the board — the
-device belongs to #81 as this is written. Evidence, both runs and the two
-defects the first one found:
+device was #81's while this was written and is #82's now. Evidence, both runs
+and the two defects the first one found:
 [reference/mainline/nixos-appliance-20260907/](reference/mainline/nixos-appliance-20260907/).
 
 `nixpkgs-rootfs` is deleted from `flake.nix`. It existed only because systemd's
@@ -1131,11 +1232,15 @@ libjpeg.so.8.
 
 Still absent, by design: there is no `/lib/modules` tree at all, because every
 driver this board has is built in — the first thing that needs one is #83.
-`nanokvm-video` (#83), `nanokvm-gpio` (#81) and `nanokvm-usb` (#82) are stubs
-that succeed and name the issue owning the hardware they cannot touch, so the
-ordering edges stay real and a boot log explains the missing pipeline instead of
-leaving a silent black stream. In product terms this appliance serves the web UI
-and nothing behind it: no video, no keyboard, no mouse, no ATX.
+`nanokvm-video` (#83) and `nanokvm-usb` (#82) are stubs that succeed and name
+the issue owning the hardware they cannot touch, so the ordering edges stay real
+and a boot log explains the missing pipeline instead of leaving a silent black
+stream. There is no GPIO stub, and no GPIO unit at all: #81 landed while this
+was being written, so the appliance ships `nanokvm-gpio` on PATH and takes the
+`gpioBackend = "libgpiod"` server build, and the ATX lines are addressed by
+their device-tree names rather than exported through sysfs. In product terms
+this appliance serves the web UI and ATX, and nothing else behind it: no video,
+no keyboard, no mouse.
 
 Not proven: anything about the AX630C. QEMU supplied the device tree, the
 clocks, the block device and the console. The hardware half is the loop-image

@@ -45,7 +45,11 @@
       StandardOutput = "journal+console";
       StandardError = "journal+console";
     };
-    path = with pkgs; [ systemd coreutils util-linux ];
+    # config.environment.systemPackages, not a hand-picked list: the point of
+    # the nanokvm-gpio probe below is that the appliance's own system PATH
+    # carries it, so borrowing that PATH is the honest test.
+    path = config.environment.systemPackages
+      ++ (with pkgs; [ systemd coreutils util-linux ]);
     script = ''
       echo "=== nanokvm appliance self-test (#78) ==="
       echo "--- root filesystem ---"
@@ -57,6 +61,13 @@
       echo "--- identity ---"
       echo "hostname: $(cat /proc/sys/kernel/hostname)"
       echo "device_key: $(cat /device_key 2>/dev/null || echo '(none -- no SoC UID here)')"
+      echo "--- nanokvm-gpio (#81) ---"
+      # On PATH, and it resolves lines by DT name -- so with no gpiochip in
+      # QEMU the expected answer is a clean "no gpiochip names line", not a
+      # missing binary. That distinguishes "#81 is wired into the appliance"
+      # from "#81's tool is absent".
+      command -v nanokvm-gpio || echo "MISSING from PATH"
+      nanokvm-gpio get atx-power 2>&1 || true
       echo "--- app tree ---"
       ls -l /kvmapp/server/ /opt/lib/ 2>&1 | head -30
       echo "--- nanokvm units ---"

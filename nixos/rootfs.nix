@@ -2,7 +2,8 @@
 , crossPkgs
 , inputs
 , kvm-encoder
-, nanokvm-server
+, nanokvm-server # MUST be the gpioBackend = "libgpiod" build -- see flake.nix
+, nanokvm-gpio
 , nanokvm-web
 , nanokvm-display
 , version ? "0.0.0-dev"
@@ -50,7 +51,8 @@ let
   nixpkgs = inputs.nixpkgs;
 
   nanokvm = {
-    inherit kvm-encoder nanokvm-server nanokvm-web nanokvm-display version;
+    inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
+      version;
     # The three open libraries libkvm DT_NEEDEDs, taken from crossPkgs -- the
     # exact builds it was compiled and linked against (pkgs/kvm-encoder.nix),
     # so there is no skew between what was linked and what is loaded.

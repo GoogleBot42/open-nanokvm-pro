@@ -1,0 +1,32 @@
+Pinmux settings per pin
+Format: pin (name): mux_owner|gpio_owner (strict) hog?
+pin 5 (VI_D5): GPIO 4800000.gpio:517
+pin 6 (VI_D6): GPIO 4800000.gpio:518
+pin 11 (I2C0_SCL): device 4850000.i2c function i2c0 group I2C0_SCL
+pin 12 (I2C0_SDA): device 4850000.i2c function i2c0 group I2C0_SDA
+pin 15 (UART0_TXD): device 4880000.serial function uart0 group UART0_TXD
+pin 16 (UART0_RXD): device 4880000.serial function uart0 group UART0_RXD
+pin 30 (EPHY_RSTN): GPIO 4801000.gpio:571
+pin 31 (EPHY_LED0): GPIO 4801000.gpio:572
+pin 45 (SD_DAT0): device 104e0000.mmc function sd group SD_DAT0
+pin 46 (SD_DAT1): device 104e0000.mmc function sd group SD_DAT1
+pin 47 (SD_CLK): device 104e0000.mmc function sd group SD_CLK
+pin 48 (SD_CMD): device 104e0000.mmc function sd group SD_CMD
+pin 49 (SD_DAT2): device 104e0000.mmc function sd group SD_DAT2
+pin 50 (SD_DAT3): device 104e0000.mmc function sd group SD_DAT3
+pin 51 (EMMC_DAT5): device 1b40000.mmc function emmc group EMMC_DAT5
+pin 53 (EMMC_DAT4): device 1b40000.mmc function emmc group EMMC_DAT4
+pin 54 (EMMC_DAT6): device 1b40000.mmc function emmc group EMMC_DAT6
+pin 55 (EMMC_DS): device 1b40000.mmc function emmc group EMMC_DS
+pin 56 (EMMC_DAT7): device 1b40000.mmc function emmc group EMMC_DAT7
+pin 57 (EMMC_DAT3): device 1b40000.mmc function emmc group EMMC_DAT3
+pin 58 (EMMC_DAT2): device 1b40000.mmc function emmc group EMMC_DAT2
+pin 59 (EMMC_CLK): device 1b40000.mmc function emmc group EMMC_CLK
+pin 60 (EMMC_DAT0): device 1b40000.mmc function emmc group EMMC_DAT0
+pin 61 (EMMC_CMD): device 1b40000.mmc function emmc group EMMC_CMD
+pin 62 (EMMC_DAT1): device 1b40000.mmc function emmc group EMMC_DAT1
+pin 76 (CDTX_L3P): GPIO 6000000.gpio:593
+pin 77 (CDTX_L4N): GPIO 6000000.gpio:594
+pin 78 (CDTX_L4P): GPIO 6000000.gpio:595
+pin 92 (TMS): GPIO 4800000.gpio:533
+pin 94 (SD_PWR_EN): GPIO 4800000.gpio:535

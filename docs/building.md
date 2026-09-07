@@ -109,11 +109,35 @@ field to `pkgs.lib.fakeHash`, rebuild, paste the printed hash back):
 
 | Where | Field | Regenerate when |
 |---|---|---|
-| `pkgs/nanokvm-server.nix` | `vendorHash` | `server/go.mod` / `go.sum` change |
+| `pkgs/nanokvm-server.nix` | `vendorHash` | `server/go.mod` / `go.sum` change, **or `postPatch` changes a Go import** |
 | `pkgs/nanokvm-web.nix` | `pnpmDeps.hash` | `web/pnpm-lock.yaml` changes |
 
 The `base-axp` FOD hash changes only if you re-pin a different vendor release
 (`pkgs/base-axp.nix`, `version = "1.0.15"`).
+
+`buildGoModule`'s go-modules derivation inherits `postPatch`, so every patch that
+adds or removes an import moves `vendorHash` — not just a `go.mod` bump. `go mod
+vendor` vendors only the packages the main module actually imports.
+
+**A stale FOD hash is invisible on any host that already has the output.** A
+fixed-output derivation's store path comes from its hash alone, so a machine that
+once realised that path reuses it and never re-runs the fetch: the build stays
+green locally while a fresh runner refetches, gets different content, and dies
+with `hash mismatch`. That killed the v2.1.0-alpha.5 release build — the
+`vendorHash` had been stale since #71 (2026-09-05) dropped the
+`github.com/gin-gonic/contrib/static` import in `postPatch`, and every local
+build since had been reusing the July vendor tree.
+
+So validate the release-critical FODs honestly before cutting a release:
+
+```sh
+nix build --rebuild "$(nix derivation show .#nanokvm-server \
+  | grep -o '/nix/store/[a-z0-9]*-[^"]*-go-modules-[^"]*\.drv')^out"
+```
+
+`--rebuild` re-runs the fetch and compares, so drift fails here instead of on the
+runner. Setting the field to `pkgs.lib.fakeHash` and rebuilding gets the same
+answer.
 
 ---
 

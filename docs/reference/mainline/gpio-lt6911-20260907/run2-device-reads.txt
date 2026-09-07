@@ -1,0 +1,71 @@
+gpiochip0: 32 GPIOs, parent: platform/4800000.gpio, 4800000.gpio:
+ gpio-5   (                    |power               ) out hi 
+ gpio-6   (                    |hdmi-power          ) out hi 
+ gpio-7   (atx-power           )
+ gpio-21  (                    |loopout             ) out lo ACTIVE LOW
+ gpio-23  (sys-heartbeat       |sys-heartbeat       ) out lo 
+
+gpiochip1: 32 GPIOs, parent: platform/4801000.gpio, 4801000.gpio:
+ gpio-3   (atx-reset           )
+ gpio-27  (                    |PHY reset           ) out hi ACTIVE LOW
+ gpio-28  (                    |interrupt           ) in  hi IRQ ACTIVE LOW
+
+gpiochip2: 32 GPIOs, parent: platform/6000000.gpio, 6000000.gpio:
+ gpio-10  (atx-hdd-led         )
+ gpio-11  (atx-power-led       )
+ gpio-17  (                    |loopout             ) out lo ACTIVE LOW
+ gpio-18  (                    |hdmi-rx-detect      ) in  lo IRQ ACTIVE LOW
+ gpio-19  (                    |hdmi-tx-detect      ) in  lo IRQ ACTIVE LOW
+
+gpiochip3: 32 GPIOs, parent: platform/6001000.gpio, 6001000.gpio:
+=== pinmux ===
+Pinmux settings per pin
+Format: pin (name): mux_owner|gpio_owner (strict) hog?
+pin 5 (VI_D5): GPIO 4800000.gpio:517
+pin 6 (VI_D6): GPIO 4800000.gpio:518
+pin 11 (I2C0_SCL): device 4850000.i2c function i2c0 group I2C0_SCL
+pin 12 (I2C0_SDA): device 4850000.i2c function i2c0 group I2C0_SDA
+pin 15 (UART0_TXD): device 4880000.serial function uart0 group UART0_TXD
+pin 16 (UART0_RXD): device 4880000.serial function uart0 group UART0_RXD
+pin 30 (EPHY_RSTN): GPIO 4801000.gpio:571
+pin 31 (EPHY_LED0): GPIO 4801000.gpio:572
+pin 45 (SD_DAT0): device 104e0000.mmc function sd group SD_DAT0
+pin 46 (SD_DAT1): device 104e0000.mmc function sd group SD_DAT1
+pin 47 (SD_CLK): device 104e0000.mmc function sd group SD_CLK
+pin 48 (SD_CMD): device 104e0000.mmc function sd group SD_CMD
+pin 49 (SD_DAT2): device 104e0000.mmc function sd group SD_DAT2
+pin 50 (SD_DAT3): device 104e0000.mmc function sd group SD_DAT3
+pin 51 (EMMC_DAT5): device 1b40000.mmc function emmc group EMMC_DAT5
+pin 53 (EMMC_DAT4): device 1b40000.mmc function emmc group EMMC_DAT4
+pin 54 (EMMC_DAT6): device 1b40000.mmc function emmc group EMMC_DAT6
+pin 55 (EMMC_DS): device 1b40000.mmc function emmc group EMMC_DS
+pin 56 (EMMC_DAT7): device 1b40000.mmc function emmc group EMMC_DAT7
+pin 57 (EMMC_DAT3): device 1b40000.mmc function emmc group EMMC_DAT3
+pin 58 (EMMC_DAT2): device 1b40000.mmc function emmc group EMMC_DAT2
+pin 59 (EMMC_CLK): device 1b40000.mmc function emmc group EMMC_CLK
+pin 60 (EMMC_DAT0): device 1b40000.mmc function emmc group EMMC_DAT0
+pin 61 (EMMC_CMD): device 1b40000.mmc function emmc group EMMC_CMD
+pin 62 (EMMC_DAT1): device 1b40000.mmc function emmc group EMMC_DAT1
+pin 76 (CDTX_L3P): GPIO 6000000.gpio:593
+pin 77 (CDTX_L4N): GPIO 6000000.gpio:594
+pin 78 (CDTX_L4P): GPIO 6000000.gpio:595
+pin 92 (TMS): GPIO 4800000.gpio:533
+pin 94 (SD_PWR_EN): GPIO 4800000.gpio:535
+=== lt6911 ===
+lt6911uxc
+new res
+4096
+2160
+29
+access
+NanoKVM_Pro (Desk-A) NeaL00275
+=== reset word ===
+0x00000001
+=== dmesg grep ===
+[    0.000000] Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    0.000000] Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 logomode=vo0@dsi_dpi_video", will be passed to user space.
+[    1.531173] lt6911-manage 0-002b: LT6911UXC found
+[    1.766342] lt6911-manage 0-002b: ready
+[    1.780395] Warning: unable to open an initial console.
+[    1.810219]     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[    1.826723] openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
