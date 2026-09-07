@@ -414,10 +414,12 @@ propose SG2002 work without flagging this gap up front.
   derivation's store path comes from its hash alone: this build host already
   held the July output and never re-fetched, so "`.#update-package` builds
   green locally" was never evidence. `nix build --rebuild` on the go-modules
-  drv reproduces the runner's hash exactly. **The `v2.1.0-alpha.5` tag still
-  points at the broken tree**, so re-running the GitHub job cannot help —
-  publishing needs a fresh cut (alpha.6) from a `main` that carries the fix.
-  Do not move tags.
+  drv reproduces the runner's hash exactly. The `v2.1.0-alpha.5` tag still
+  points at the broken tree and stays where it is (never move tags).
+  **Superseded by `v2.1.0-alpha.6`, cut over the Gitea API and PUBLISHED on
+  GitHub 2026-09-07** (`8e26530`; same content plus the fix; the `preview`
+  manifest serves alpha.6, sha512 `l9GXB1Jk…`). Not yet applied on the device
+  — the alpha.6 OTA on hardware is the open checkbox.
 
 - **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
   `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
