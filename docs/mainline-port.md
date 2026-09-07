@@ -657,10 +657,12 @@ sees tracked paths, so a new driver that is merely written on disk fails
 evaluation with "Path … is not tracked by Git" rather than being silently
 skipped. Every later child issue that grafts a driver hits this.
 
-`drivers/clk/axera/` registers **246** clocks over eight controllers (one
-driver, match data selects the table). It takes the syscon regmap rather than a
-private `ioremap`, so it shares a lock with the reset driver #76 will add to the
-same windows. **CPUPLL is read-only**: firmware leaves it at 1.2 GHz, this
+`drivers/clk/axera/` registers **265** clocks over eight controllers (one
+driver, match data selects the table) — 246 the vendor CCF registers, plus 19
+it declares and leaves to its own drivers to poke by hand: thirteen for
+eMMC/SD/SDIO (#76) and six for the watchdogs. It takes the syscon regmap rather
+than a private `ioremap`, so the reset half of the same driver shares its lock.
+**CPUPLL is read-only**: firmware leaves it at 1.2 GHz, this
 part's ceiling, and with it fixed all five CPU OPPs are pure mux switches — which
 removes the one real hazard in the tree, since relocking that PLL can stop the
 clock feeding the running core and the silicon has no interlock.
@@ -671,15 +673,9 @@ the pad does not implement (the vendor writes mux 0 and returns success, and 337
 of 888 slots are unpopulated), and `gpio_request_enable()` programs the mux,
 which is the root fix for the SW_PWR trap.
 
-**No pin states are declared in the DT yet, on purpose.** The bootloader
-programs every pad before Linux starts, so a state that merely restates that is
-a second source of truth. The states this issue still owes — the I2C ones the
-vendor board dts deletes, and the 40 DEMO-table entries whose electrical config
-no DT state carries — attach to nodes that do not exist until #76 (I2C) and #81
-(GPIO), so they land with those.
-
 Not booted at the time of writing; #75 booted it later the same day and both
-drivers came up (see below).
+drivers came up (see below). Pin states and the reset provider landed after
+that — see "What exists now (#80, later)".
 
 ### What exists now (#75, 2026-09-06) — BOOTED
 
@@ -785,7 +781,9 @@ passed a first boot and failed later:
 Clocks were the hidden dependency. #80 registered the 246 clocks the *vendor*
 CCF registered, and the vendor CCF models none of eMMC, SD, SDIO or UART — its
 own drivers programmed those windows by hand. `sdhci-cadence` calls `clk_get()`,
-so #76 added fifteen rows. The bus gates cannot be named in DT (the binding
+so #76 added thirteen rows (counted out of the compiled table; the "fifteen"
+this paragraph used to claim counted two IDs that are declared in the binding
+header and deliberately never registered). The bus gates cannot be named in DT (the binding
 allows one clock per node) and are `CLK_IS_CRITICAL` instead; `clk: Disabling
 unused clocks` runs before the card enumerates and leaves them alone, which is
 that marking working. **This generalises: anything calling `clk_get()` on a
@@ -906,6 +904,75 @@ the device), but whoever does root-on-SD should check it first.
 
 Not proven: PTP, wake-on-LAN, suspend/resume, and any MAC that is not harvested
 from the vendor rootfs.
+### What exists now (#80, later on 2026-09-06) — resets, WDT clocks, pin states
+
+The three things #75 and #76 left owed to this issue, now that the nodes they
+attach to exist.
+
+**A reset controller**, in `drivers/clk/axera/reset-ax630c.c`, registered by the
+clock driver's own probe. The reset lines are bits in the words next to the
+clock gates in the same eight syscon windows, so the seven clock-controller
+nodes carry `#reset-cells = <1>` and there are no `reset-controller@` nodes: a
+second DT node over one window means a second regmap and a second lock over
+registers the clock half read-modify-writes. That is also upstream's house
+style for this hardware shape (Rockchip CRU, sunxi CCU, Amlogic, MediaTek).
+
+**148 lines** — the 144 the vendor DT binds to a consumer somewhere (cpu 4,
+comm 5, vpu 3, mm 23, dispc 10, periph 82, flash 17) plus the four periph
+`SW_RST3` lines the watchdog uses and no vendor DT node names. Active high, not
+self-clearing; nothing is programmed at probe, because these are the resets of
+blocks that are already running. The 10-cell "async" variant's clock cycle
+around the release edge is deliberately absent: no current consumer needs it,
+and it is a read-modify-write across two regmap operations that would race a
+concurrent `clk_enable()`. It arrives with #83/#84 and the lock that makes it
+safe.
+
+**The watchdog no longer touches the syscon.** Its counter clock, APB clock,
+two resets and counter-source mux are DT phandles now, and it takes its rate
+from `clk_get_rate()` rather than a constant — so the timeout arithmetic is
+right whichever source is selected, and a board whose firmware differs still
+gets correct numbers. Six clock IDs made that possible: `CLK_WDT0/2_SEL`
+(`CLK_MUX0` bits 19/20, one bit each, parents `rtc_out_32k` and `cpll_24m` —
+both rates *measured*, 32.79 kHz and 24.007 MHz), `CLK_WDT0/2_EB` and
+`PCLK_WDT0/2_EB`.
+
+One ordering fact to keep: `assigned-clock-parents` is applied by the driver
+core *before* probe, while U-Boot's dog is still armed and counting. Selecting a
+faster source there would drain the remaining count 732× faster and reset the
+board mid-boot. It is safe here because U-Boot already leaves the 24 MHz source
+selected and `clk_set_parent()` is a no-op when the parent matches — nothing is
+written at all. Never point that property at a source faster than firmware's.
+
+**Pin states**, transcribed from the boot chain's own 133-write pad table:
+`emmc`, `sd`, `sdio`, `uart0`, `uart1` attached to their nodes, and `i2c0` /
+`i2c7` — the two the vendor board dts `/delete-property/`s — declared but
+unreferenced until an I2C controller node exists. They are no-ops in value on
+this board; the point is ownership, so a pad cannot be re-muxed out from under a
+driver and a second claimant gets `-EBUSY` instead of a corrupted bus.
+
+Three rules for anyone adding one:
+
+- **Config properties must name `pins`, never `groups`.** The driver implements
+  `pin_config_set` and not `pin_config_group_set`, and the core fails the whole
+  state — taking the consumer's probe with it. On `&emmc` that is the rootfs.
+- **The multi-pad groups are wider than they look.** `uart0` includes two RGMII
+  pads as CTS/RTS; `uart1` includes `EMMC_PWR_EN` and `BOND2`, which this board
+  uses for other things. Spell the pads out.
+- **`drive-strength` is the pad's raw 4-bit code, not mA.** The mA mapping is
+  not known for this SoC.
+
+The §1.4 pull-encoding trap does not touch any of these states: all 27 pads are
+one-hot-encoded. It applies to exactly one pad in the whole boot table —
+`MICP_L_D`, whose `0x…83` is *no pull* in its group's EN/SE encoding, not the
+pull-up a blind reading gives. That pad belongs to #81.
+
+**A count this work corrected.** The clock driver registers **265** clocks, not
+the 246 every comment in the tree claimed: #76 added thirteen rows for storage
+and serial and left the counts behind. Measured out of the compiled tables in
+`vmlinux`, not re-read from the source that generated them; per controller
+common 135, mm 40, flash 30, periph 27, dispc 14, cpu 11, vpu 7, pllc 1. The
+binding header names 267 IDs, two of which (the SD and SDIO card muxes) are
+declared and deliberately never registered.
 
 ---
 
