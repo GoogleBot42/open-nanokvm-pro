@@ -904,7 +904,15 @@ the device), but whoever does root-on-SD should check it first.
 
 Not proven: PTP, wake-on-LAN, suspend/resume, and any MAC that is not harvested
 from the vendor rootfs.
-### What exists now (#80, later on 2026-09-06) — resets, WDT clocks, pin states
+
+### What exists now (#80, later) — resets, WDT clocks, pin states — BOOTED
+
+**Boot-tested on 2026-09-07** (slot B, kernel `7.1.3-nanokvm`): the watchdog
+resolves 24 MHz through CCF, is petted steadily across a 3600 s dwell, the pin
+states apply and their pads are owned by their drivers, and eMMC and Ethernet
+are unaffected. Evidence, including the peripheral-syscon words read back from
+the running mainline kernel:
+[reference/mainline/wdt-clocks-20260906/](reference/mainline/wdt-clocks-20260906/).
 
 The three things #75 and #76 left owed to this issue, now that the nodes they
 attach to exist.
@@ -966,13 +974,23 @@ one-hot-encoded. It applies to exactly one pad in the whole boot table —
 `MICP_L_D`, whose `0x…83` is *no pull* in its group's EN/SE encoding, not the
 pull-up a blind reading gives. That pad belongs to #81.
 
+On the boot run 19 of those pads came back claimed by their drivers (11 eMMC, 6
+SD, 2 UART0) with the bias and drive code the boot table specifies; the SDIO and
+UART1 states are attached to disabled nodes and are correctly not applied.
+`gmac` has no `pinctrl-0` yet — the node arrived with #77, after this was
+written. Its RGMII pads are in the boot table, but a wrong state there takes out
+the SSH path that makes a boot test readable, so it is a deliberate follow-up.
+
 **A count this work corrected.** The clock driver registers **265** clocks, not
 the 246 every comment in the tree claimed: #76 added thirteen rows for storage
 and serial and left the counts behind. Measured out of the compiled tables in
 `vmlinux`, not re-read from the source that generated them; per controller
 common 135, mm 40, flash 30, periph 27, dispc 14, cpu 11, vpu 7, pllc 1. The
 binding header names 267 IDs, two of which (the SD and SDIO card muxes) are
-declared and deliberately never registered.
+declared and deliberately never registered. The number is confirmed from a
+third artifact by the boot run: `clk_summary` on the running kernel lists 265
+clocks. #77 added no clock rows -- it converted one mux to the rate-changing
+flavour and used rows the vendor table already had.
 
 ---
 
