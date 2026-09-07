@@ -40,8 +40,12 @@ buildGoModule {
   src = nanokvm-pro-src;
   sourceRoot = "source/server";
 
-  # Pinned from the go-modules FOD (2026-07-17); regenerate if go.mod changes.
-  vendorHash = "sha256-cPh//bSTnvibkCRqeIwxjWaRI7YQHOK42PZGMcoJhiY=";
+  # Pinned from the go-modules FOD (2026-09-07). The vendor tree depends on
+  # postPatch too, not just go.mod: `go mod vendor` only vendors packages the
+  # main module actually imports, so a patch that drops an import drops its
+  # module. Regenerate with `nix build --rebuild` on the go-modules drv (a stale
+  # pin is invisible on a host that already has the output — see docs/building.md).
+  vendorHash = "sha256-jvtP0rk43UvYAosNfQN03aEh1EusZmDT+cTj0ui6Y0M=";
 
   # ---- Redirect application updates from Sipeed's CDN to OUR host -----------
   # So the web UI "update" button pulls firmware/app updates we publish, not
