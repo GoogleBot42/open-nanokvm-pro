@@ -100,8 +100,30 @@ previous byte count compares the wrong range and reports a spurious mismatch
 tools/kvmssh 'devmem 0x0239002C 32 0x3F000
   /etc/init.d/S99checkboot systemB
   sync'
-tools/kvmssh 'nohup sh -c "sleep 2; reboot" >/dev/null 2>&1 &'
+tools/kvmssh 'sync; reboot'
 ```
+
+**Reboot in the foreground.** An earlier version of this skill used
+`nohup sh -c "sleep 2; reboot" >/dev/null 2>&1 &`, and it is a race: the
+backgrounded shell has to survive session teardown for two seconds, which it
+did on 2026-09-06 for one run and did not for the next. The failure is
+expensive to read, because a board that never rebooted looks exactly like a
+board that rebooted and hung — same unreachable SSH, same absent milestones.
+`reboot` signals init and returns, so the foreground form is deterministic; the
+connection drops underneath it and a non-zero exit is normal.
+
+**If a run comes back with no milestone bits, prove the board actually
+rebooted before debugging the kernel.** Three independent checks, any one of
+which settles it:
+
+```
+tools/kvmssh 'cut -d" " -f1 /proc/uptime'   # less than the test round trip?
+tools/kvmssh 'dmesg | tail -5'              # anything after your drop_caches?
+tools/kvmssh 'devmem 0x02390024'            # still 0x38 = armed, never consumed
+```
+
+A slot register still reading `0x00000038` means the SPL never consumed
+`SLOTB_BOOTABLE` — that is "no reboot happened", not "the kernel failed".
 
 The first write clears milestone bits 12–17 from any previous run — **skip it
 and you will read a stale result and believe it**. `S99checkboot systemB` is
@@ -121,11 +143,28 @@ is logged (`found after ms:`) precisely so a creeping delay is visible rather
 than absorbed. Wait with a background until-loop, not a sleep:
 
 ```
-until timeout 20 tools/kvmssh 'true' >/dev/null 2>&1; do sleep 5; done
+until timeout 60 tools/kvmssh 'true' >/dev/null 2>&1; do sleep 5; done
 ```
 
-If SSH does not return within ~4 minutes, the board is hung with the watchdog
-disarmed — that needs Jeremy to power-cycle it. It has never happened.
+**Give each attempt at least 60 s.** `kvmssh` tries the Tailscale IP before the
+LAN IP, and when the Tailscale route is dead the connect has to time out before
+the fallback is even attempted. A 20 s budget kills `kvmssh` mid-fallback, so
+every iteration fails and a perfectly healthy board looks hung — which cost a
+diagnosis on 2026-09-06, when the device turned out to have no `tailscale`
+binary at all. Check the route directly before believing the loop:
+
+```
+source ~/.config/nanokvm/device.env
+for ip in "$KVM_IP_TAILSCALE" "$KVM_IP_LAN"; do
+  printf '%-18s ' "$ip"
+  timeout 5 bash -c "cat < /dev/null > /dev/tcp/$ip/22" 2>/dev/null \
+    && echo "port 22 OPEN" || echo "no route"
+done
+```
+
+If SSH really does not return, the board is hung with the watchdog disarmed —
+that needs Jeremy to power-cycle it. It has not happened yet; both apparent
+cases so far were this timeout artefact or a reboot that never fired.
 
 ## 5. Read the result
 
