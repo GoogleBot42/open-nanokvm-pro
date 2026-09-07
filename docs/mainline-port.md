@@ -907,12 +907,21 @@ from the vendor rootfs.
 
 ### What exists now (#80, later) — resets, WDT clocks, pin states — BOOTED
 
-**Boot-tested on 2026-09-07** (slot B, kernel `7.1.3-nanokvm`): the watchdog
-resolves 24 MHz through CCF, is petted steadily across a 3600 s dwell, the pin
-states apply and their pads are owned by their drivers, and eMMC and Ethernet
-are unaffected. Evidence, including the peripheral-syscon words read back from
-the running mainline kernel:
+**Boot-tested on 2026-09-07** (slot B, kernel `7.1.3-nanokvm`, milestone register
+`0x003FF014` on return — every bit). The watchdog resolved 24 MHz through CCF
+with no fallback, was petted for a 3600 s dwell with `timeleft` never trending
+down, and the board rebooted itself back to slot A; the pin states applied and
+their pads came back owned by their drivers; eMMC and Ethernet were unaffected.
+Evidence, including the peripheral-syscon words read back from the running
+mainline kernel:
 [reference/mainline/wdt-clocks-20260906/](reference/mainline/wdt-clocks-20260906/).
+
+Two register words are the proof that the new rows address the bits they claim,
+because they differ from what the **vendor** kernel leaves: `CLK_MUX0` bit 19 is
+set because `assigned-clock-parents` asked for the 24 MHz source (the vendor
+driver selects the slow one at probe), and `CLK_EB0` bit 15 is clear because
+`clk_disable_unused()` gated wdt2's counter (the vendor leaves it running). Both
+were predicted in the table comments before the boot.
 
 The three things #75 and #76 left owed to this issue, now that the nodes they
 attach to exist.

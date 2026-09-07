@@ -1,0 +1,472 @@
+6,72,28178,-;Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+6,73,35602,-;Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+6,74,43781,-;VFS: Finished mounting rootfs on nullfs
+6,75,50596,-;rcu: Hierarchical SRCU implementation.
+6,76,55458,-;rcu: \x09Max phase no-delay instances is 1000.
+6,77,60914,-;Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+6,78,69652,-;EFI services will not be available.
+6,79,74429,-;smp: Bringing up secondary CPUs ...
+6,80,79579,-;Detected VIPT I-cache on CPU1
+6,81,79712,-;CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+6,82,79876,-;smp: Brought up 1 node, 2 CPUs
+6,83,94583,-;SMP: Total of 2 processors activated.
+6,84,99299,-;CPU: All CPU(s) started at EL1
+6,85,103453,-;CPU features: detected: 32-bit EL0 Support
+6,86,108609,-;CPU features: detected: 32-bit EL1 Support
+6,87,113774,-;CPU features: detected: CRC32 instructions
+6,88,118937,-;CPU features: detected: PMUv3
+6,89,123008,-;alternatives: applying system-wide alternatives
+6,90,130229,-;Memory: 708944K/843776K available (19456K kernel code, 5246K rwdata, 14632K rodata, 5952K init, 718K bss, 99056K reserved, 32768K cma-reserved)
+6,91,145104,-;devtmpfs: initialized
+6,92,151914,-;clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+6,93,161750,-;posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+6,94,169203,-;futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+6,95,178412,-;21200 pages in range for non-PLT usage
+6,96,178433,-;512720 pages in range for PLT usage
+6,97,185305,-;DMI: not present or invalid.
+6,98,196407,-;NET: Registered PF_NETLINK/PF_ROUTE protocol family
+6,99,203739,-;DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+6,100,211705,-;audit: initializing netlink subsys (disabled)
+5,101,217454,-;audit: type=2000 audit(0.136:1): state=initialized audit_enabled=0 res=1
+6,102,218707,-;thermal_sys: Registered thermal governor 'step_wise'
+6,103,225236,-;thermal_sys: Registered thermal governor 'power_allocator'
+6,104,231355,-;cpuidle: using governor menu
+6,105,242175,-;hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+6,106,249066,-;ASID allocator initialised with 65536 entries
+6,107,256942,-;Serial: AMBA PL011 UART driver
+6,108,262463,-;pstore: Using crash dump compression: deflate
+6,109,267928,-;printk: legacy console [ramoops-1] enabled
+6,110,273433,-;pstore: Registered ramoops as persistent store backend
+6,111,279629,-;ramoops: using 0x8000@0x480e0000, ecc: 0
+6,112,298347,-;HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+6,113,305198,-;HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+6,114,311486,-;HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+6,115,318290,-;HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+6,116,324574,-;HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+6,117,331378,-;HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+6,118,337661,-;HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+6,119,344464,-;HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+6,120,353197,-;ACPI: Interpreter disabled.
+6,121,359205,-;iommu: Default domain type: Translated
+6,122,364044,-;iommu: DMA domain TLB invalidation policy: strict mode
+5,123,370648,-;SCSI subsystem initialized
+7,124,374693,-;libata version 3.00 loaded.
+6,125,378827,-;usbcore: registered new interface driver usbfs
+6,126,384370,-;usbcore: registered new interface driver hub
+6,127,389734,-;usbcore: registered new device driver usb
+6,128,395467,-;pps_core: LinuxPPS API ver. 1 registered
+6,129,400464,-;pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+6,130,409637,-;PTP clock support registered
+6,131,413723,-;EDAC MC: Ver: 3.0.0
+6,132,417402,-;scmi_core: SCMI protocol bus registered
+6,133,423350,-;FPGA manager framework
+6,134,428143,-;vgaarb: loaded
+6,135,431560,-;clocksource: Switched to clocksource arch_sys_counter
+5,136,438013,-;VFS: Disk quotas dquot_6.6.0
+6,137,441994,-;VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+6,138,449468,-;pnp: PnP ACPI: disabled
+6,139,459879,-;NET: Registered PF_INET protocol family
+6,140,464990,-;IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+6,141,473410,-;tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+6,142,481838,-;Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+6,143,489613,-;TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+6,144,497440,-;TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+6,145,504890,-;TCP: Hash tables configured (established 8192 bind 8192)
+6,146,511414,-;UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+6,147,518269,-;NET: Registered PF_UNIX/PF_LOCAL protocol family
+6,148,524524,-;RPC: Registered named UNIX socket transport module.
+6,149,530504,-;RPC: Registered udp transport module.
+6,150,535225,-;RPC: Registered tcp transport module.
+6,151,539944,-;RPC: Registered tcp-with-tls transport module.
+6,152,545448,-;RPC: Registered tcp NFSv4.1 backchannel transport module.
+6,153,551919,-;PCI: CLS 0 bytes, default 64
+6,154,556195,-;kvm [1]: HYP mode not available
+5,155,562061,-;Initialise system trusted keyrings
+6,156,567034,-;workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+6,157,576145,-;squashfs: version 4.0 (2009/01/31) Phillip Lougher
+5,158,582536,-;NFS: Registering the id_resolver key type
+5,159,587686,-;Key type id_resolver registered
+5,160,591891,-;Key type id_legacy registered
+6,161,595957,-;nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+6,162,602681,-;nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+6,163,610430,-;9p: Installing v9fs 9p2000 file system support
+5,164,616231,-;Key type asymmetric registered
+5,165,620373,-;Asymmetric key parser 'x509' registered
+6,166,625346,-;Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+6,167,632769,-;io scheduler mq-deadline registered
+6,168,637317,-;io scheduler kyber registered
+6,169,641387,-;io scheduler bfq registered
+6,170,655748,-;ledtrig-cpu: registered to indicate activity on CPUs
+6,171,692272,-;Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+6,172,702463,-;printk: legacy console [ttyS0] disabled
+6,173,707809,-;4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+6,174,716706,-;printk: legacy console [ttyS0] enabled
+6,175,726377,-;printk: legacy bootconsole [uart8250] disabled
+6,176,740173,-;msm_serial: driver initialized
+6,177,745073,-;SuperH (H)SCI(F) driver initialized
+6,178,749889,-;STM32 USART driver initialized
+6,179,763149,-;loop: module loaded
+6,180,767736,-;megasas: 07.734.00.00-rc1
+6,181,778597,-;tun: Universal TUN/TAP device driver, 1.6
+6,182,784986,-;thunder_xcv, ver 1.0
+6,183,788374,-;thunder_bgx, ver 1.0
+6,184,791671,-;nicpf, ver 1.0
+6,185,796168,-;e1000: Intel(R) PRO/1000 Network Driver
+6,186,801104,-;e1000: Copyright (c) 1999-2006 Intel Corporation.
+6,187,806917,-;e1000e: Intel(R) PRO/1000 Network Driver
+6,188,811905,-;e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+6,189,817877,-;igb: Intel(R) Gigabit Ethernet Network Driver
+6,190,823292,-;igb: Copyright (c) 2007-2014 Intel Corporation.
+6,191,828928,-;igbvf: Intel(R) Gigabit Virtual Function Network Driver
+6,192,835209,-;igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+6,193,841715,-;sky2: driver version 1.30
+6,194,846731,-;axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,195,853238,-;axera-dwmac 104c0000.ethernet: IRQ sfty not found
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,196,963866,-;axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,197,970900,-;axera-dwmac 104c0000.ethernet: \x09DWMAC4/5
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,198,975928,-;axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,199,983253,-;axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,200,990143,-;axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,201,997466,-;axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,202,1004354,-;axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,203,1010721,-;axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,204,1018587,-;axera-dwmac 104c0000.ethernet: device MAC address REDACTED_MAC
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,205,1025915,-;axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,206,1032897,-;axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,207,1039886,-;axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,208,1047644,-;axera-dwmac 104c0000.ethernet: TSO supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,209,1052970,-;axera-dwmac 104c0000.ethernet: TSO feature enabled
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,210,1058817,-;axera-dwmac 104c0000.ethernet: SPH feature enabled
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,211,1064664,-;axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,212,1079256,-;VFIO - User Level meta-driver version: 0.3
+6,213,1088818,-;usbcore: registered new interface driver usb-storage
+6,214,1099195,-;i2c_dev: i2c /dev entries driver
+6,215,1110283,-;ax630c-wdt 4840000.watchdog: counter at 24000000 Hz, timeout 60s, max 357s
+ SUBSYSTEM=platform
+ DEVICE=+platform:4840000.watchdog
+6,216,1132696,-;SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+6,217,1140853,-;usbcore: registered new interface driver usbhid
+6,218,1146493,-;usbhid: USB HID core driver
+6,219,1157983,-;optee: probing for conduit method.
+6,220,1159682,-;mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+6,221,1162585,-;optee: revision 3.21
+6,222,1170008,-;mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+6,223,1171960,-;optee: initialized driver
+6,224,1187969,-;NET: Registered PF_INET6 protocol family
+6,225,1194209,-;Segment Routing with IPv6
+6,226,1197982,-;In-situ OAM (IOAM) with IPv6
+6,227,1201992,-;NET: Registered PF_PACKET protocol family
+6,228,1207168,-;9pnet: Installing 9P2000 support
+5,229,1211569,-;Key type dns_resolver registered
+6,230,1229197,-;registered taskstats version 1
+5,231,1233489,-;Loading compiled-in X.509 certificates
+6,232,1249140,-;Demotion targets for Node 0: null
+6,233,1265991,-;clk: Disabling unused clocks
+6,234,1270274,-;PM: genpd: Disabling unused power domains
+3,235,1275417,-;Warning: unable to open an initial console.
+6,236,1283322,-;Freeing unused kernel memory: 5952K
+6,237,1288082,-;Run /init as init process
+7,238,1291775,-;  with arguments:
+7,239,1294746,-;    /init
+7,240,1297032,-;  with environment:
+7,241,1300184,-;    HOME=/
+7,242,1302547,-;    TERM=linux
+7,243,1305264,-;    board_id=0x5,boot_reason=0x04,initcall_debug=0
+7,244,1311110,-;    logomode=vo0@dsi_dpi_video
+12,245,1316133,-;openkvm: mainline bring-up init (#75) running
+12,246,1321860,-;openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+12,247,1366453,-;openkvm: /proc/version: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+12,248,1383945,-;openkvm: BACKUP0 after milestone 1: 0x00001018
+12,249,1390425,-;openkvm: kernel log stashed, bytes: 0x00004520
+4,250,1390786,-;mmc0: invalid driver type, default to driver type B
+4,251,1402699,-;mmc0: invalid driver type, default to driver type B
+4,252,1421094,-;mmc0: invalid driver type, default to driver type B
+4,253,1427037,-;mmc0: invalid driver type, default to driver type B
+4,254,1432989,-;mmc0: invalid driver type, default to driver type B
+6,255,2454595,-;mmc0: new HS200 MMC card at address 0001
+6,256,2460393,-;mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+6,257,2466348,-; mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+6,258,2486776,-;mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+6,259,2493915,-;mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+6,260,2501026,-;mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (511:0)
+12,261,2596866,-;openkvm: part:major minor  #blocks  name
+12,262,2601887,-;openkvm: part: 179        0   30539776 mmcblk0
+12,263,2607389,-;openkvm: part: 179        1        768 mmcblk0p1
+12,264,2613063,-;openkvm: part: 179        2        512 mmcblk0p2
+12,265,2618736,-;openkvm: part: 179        3        256 mmcblk0p3
+12,266,2624408,-;openkvm: part: 179        4        256 mmcblk0p4
+12,267,2630081,-;openkvm: part: 179        5       1536 mmcblk0p5
+12,268,2635755,-;openkvm: part: 179        6       1536 mmcblk0p6
+12,269,2641427,-;openkvm: part: 179        7       1024 mmcblk0p7
+12,270,2647101,-;openkvm: part: 179        8       6144 mmcblk0p8
+12,271,2652774,-;openkvm: part: 179        9       6144 mmcblk0p9
+12,272,2658446,-;openkvm: part: 179       10       1024 mmcblk0p10
+12,273,2664205,-;openkvm: part: 179       11       1024 mmcblk0p11
+12,274,2669964,-;openkvm: part: 179       12       1024 mmcblk0p12
+12,275,2675724,-;openkvm: part: 179       13       1024 mmcblk0p13
+12,276,2681483,-;openkvm: part: 179       14      65536 mmcblk0p14
+12,277,2687243,-;openkvm: part: 179       15      65536 mmcblk0p15
+12,278,2693002,-;openkvm: part: 179       16     131072 mmcblk0p16
+12,279,2698763,-;openkvm: part: 179       17   30255360 mmcblk0p17
+12,280,2704527,-;openkvm: part: 179       32       4096 mmcblk0boot0
+12,281,2710460,-;openkvm: part: 179       64       4096 mmcblk0boot1
+12,282,2716496,-;openkvm: storage: mmcblk0p17 found after ms: 0x000004b0
+12,283,2722780,-;openkvm: storage: major: 0x000000b3
+12,284,2727325,-;openkvm: storage: minor: 0x00000011
+6,285,2743216,-;EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b ro with ordered data mode. Quota mode: none.
+12,286,2756200,-;openkvm: storage: OK -- root entries: 0x00000022
+12,287,2766313,-;openkvm: net: harvested MAC, length: 0x00000011
+12,288,2775303,-;openkvm: net: harvested root shadow entry, length: 0x00000062
+6,289,2782473,-;EXT4-fs (mmcblk0p17): unmounting filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b.
+6,290,2793271,-;axera-dwmac 104c0000.ethernet eth0: Register MEM_TYPE_PAGE_POOL RxQ-0
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,291,2827590,-;axera-dwmac 104c0000.ethernet eth0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,292,2849704,-;axera-dwmac 104c0000.ethernet eth0: No Safety Features support found
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,293,2857639,-;axera-dwmac 104c0000.ethernet eth0: IEEE 1588-2008 Advanced Timestamp supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,294,2866301,-;axera-dwmac 104c0000.ethernet eth0: registered PTP clock
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,295,2872700,-;axera-dwmac 104c0000.ethernet eth0: configuring for phy/rgmii-id link mode
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,296,5972939,-;axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,297,5982235,-;axera-dwmac 104c0000.ethernet eth0: Link is Up - 1Gbps/Full - flow control off
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+12,298,6109952,-;openkvm: net: carrier up after ms: 0x00000c80
+12,299,6115539,-;openkvm: net: link 1000 Mbit/s full duplex
+12,300,6122705,-;udhcpc: started, v1.37.0
+12,301,6147639,-;udhcpc: broadcasting discover
+12,302,8181753,-;udhcpc: broadcasting discover
+12,303,10544389,-;udhcpc: broadcasting discover
+12,304,10567731,-;udhcpc: broadcasting select for DEVICE_IP, server REDACTED_IP
+12,305,10607606,-;udhcpc: lease of DEVICE_IP obtained from REDACTED_IP, lease time 43200
+12,306,10623212,-;openkvm: net: lease (address netmask router): DEVICE_IP REDACTED_MASK REDACTED_IP
+12,307,10633399,-;PING REDACTED_IP (REDACTED_IP): 56 data bytes
+12,308,10639893,-;64 bytes from REDACTED_IP: seq=0 ttl=64 time=0.778 ms
+12,309,11639715,-;64 bytes from REDACTED_IP: seq=1 ttl=64 time=0.419 ms
+12,310,12639835,-;64 bytes from REDACTED_IP: seq=2 ttl=64 time=0.399 ms
+12,311,12646010,-;\x0a--- REDACTED_IP ping statistics ---\x0a3 packets transmitted, 3 packets received, 0% packet loss\x0around-trip min/avg/max = 0.399/0.532/0.778 ms
+12,312,12664255,-;openkvm: net: ping the router, exit: 0x00000000
+12,313,12671056,-;Waiting for kernel randomness to be initialised...
+5,314,14379571,-;random: crng init done
+12,315,14384354,-;Generating 256 bit ed25519 key, this may take a while...
+12,316,14407130,-;Public key portion is:
+12,317,14410823,-;ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMo0FG3vBhn7VqnLvS4FzPvvHOITZ7nazcm4a0hQXQd6 root@(none)\x0aFingerprint: SHA256:Liuo3sbzo8c/0cEH1SjG3Mcj17q6GEGf5Vt6WHruD9s
+12,318,14429879,-;openkvm: sshd: dropbear exit: 0x00000000
+12,319,14430400,-;[83] Jan 01 00:00:14 Running in background
+12,320,14436180,-;openkvm: kernel log re-stashed, bytes: 0x00005b8b
+12,321,14446162,-;openkvm: alive 0s/300s, watchdog0 state=inactive timeleft=26
+12,322,16284604,-;[84] Jan 01 00:00:16 Child connection from REDACTED_IP:33034
+12,323,16291915,-;[84] Jan 01 00:00:16 Exit before auth from <REDACTED_IP:33034>: Exited normally
+12,324,21171716,-;[85] Jan 01 00:00:21 Child connection from REDACTED_IP:33038
+12,325,21384212,-;[85] Jan 01 00:00:21 Bad password attempt for 'root' from REDACTED_IP:33038
+12,326,21522355,-;[85] Jan 01 00:00:21 Exit before auth from <REDACTED_IP:33038>: (user 'root', 1 fails): Exited normally
+12,327,21522378,-;
+12,328,24459528,-;openkvm: alive 10s/300s, watchdog0 state=inactive timeleft=26
+12,329,26213930,-;[86] Jan 01 00:00:26 Child connection from REDACTED_IP:57650
+12,330,26425975,-;[86] Jan 01 00:00:26 Password auth succeeded for 'root' from REDACTED_IP:57650
+12,331,26441727,-;[86] Jan 01 00:00:26 Exit (root) from <REDACTED_IP:57650>: Disconnect received
+12,332,34322800,-;[88] Jan 01 00:00:34 Child connection from REDACTED_IP:45954
+12,333,34330104,-;[88] Jan 01 00:00:34 Exit before auth from <REDACTED_IP:45954>: Exited normally
+12,334,34469419,-;openkvm: alive 20s/300s, watchdog0 state=inactive timeleft=26
+12,335,38828391,-;[89] Jan 01 00:00:38 Child connection from REDACTED_IP:45968
+12,336,39042271,-;[89] Jan 01 00:00:38 Bad password attempt for 'root' from REDACTED_IP:45968
+12,337,39201610,-;[89] Jan 01 00:00:39 Exit before auth from <REDACTED_IP:45968>: (user 'root', 1 fails): Exited normally
+12,338,39201634,-;
+12,339,43901553,-;[90] Jan 01 00:00:43 Child connection from REDACTED_IP:60532
+12,340,44114064,-;[90] Jan 01 00:00:43 Password auth succeeded for 'root' from REDACTED_IP:60532
+12,341,44134031,-;[90] Jan 01 00:00:44 Exit (root) from <REDACTED_IP:60532>: Disconnect received
+12,342,44479398,-;openkvm: alive 30s/300s, watchdog0 state=inactive timeleft=26
+12,343,52790446,-;[94] Jan 01 00:00:52 Child connection from REDACTED_IP:36136
+12,344,52797727,-;[94] Jan 01 00:00:52 Exit before auth from <REDACTED_IP:36136>: Exited normally
+12,345,54489319,-;openkvm: alive 40s/300s, watchdog0 state=inactive timeleft=26
+12,346,57454032,-;[95] Jan 01 00:00:57 Child connection from REDACTED_IP:36138
+12,347,57666132,-;[95] Jan 01 00:00:57 Bad password attempt for 'root' from REDACTED_IP:36138
+12,348,57849644,-;[95] Jan 01 00:00:57 Exit before auth from <REDACTED_IP:36138>: (user 'root', 1 fails): Exited normally
+12,349,57849667,-;
+12,350,62718629,-;[96] Jan 01 00:01:02 Child connection from REDACTED_IP:35564
+12,351,62932643,-;[96] Jan 01 00:01:02 Password auth succeeded for 'root' from REDACTED_IP:35564
+12,352,62964265,-;[96] Jan 01 00:01:02 Exit (root) from <REDACTED_IP:35564>: Disconnect received
+12,353,64499119,-;openkvm: dwell extended to the cap by /run/keepalive
+12,354,64505346,-;openkvm: alive 50s/3600s, watchdog0 state=inactive timeleft=26
+12,355,72027331,-;[102] Jan 01 00:01:11 Child connection from REDACTED_IP:57492
+12,356,72034702,-;[102] Jan 01 00:01:11 Exit before auth from <REDACTED_IP:57492>: Exited normally
+12,357,74515077,-;openkvm: alive 60s/3600s, watchdog0 state=inactive timeleft=26
+12,358,76939666,-;[103] Jan 01 00:01:16 Child connection from REDACTED_IP:57498
+12,359,77152110,-;[103] Jan 01 00:01:17 Bad password attempt for 'root' from REDACTED_IP:57498
+12,360,77355825,-;[103] Jan 01 00:01:17 Exit before auth from <REDACTED_IP:57498>: (user 'root', 1 fails): Exited normally
+12,361,77355848,-;
+12,362,82609199,-;[104] Jan 01 00:01:22 Child connection from REDACTED_IP:42200
+12,363,82821362,-;[104] Jan 01 00:01:22 Password auth succeeded for 'root' from REDACTED_IP:42200
+12,364,82860301,-;[104] Jan 01 00:01:22 Exit (root) from <REDACTED_IP:42200>: Disconnect received
+12,365,84528847,-;openkvm: alive 70s/3600s, watchdog0 state=inactive timeleft=26
+12,366,94252480,-;[109] Jan 01 00:01:34 Child connection from REDACTED_IP:50580
+12,367,94259878,-;[109] Jan 01 00:01:34 Exit before auth from <REDACTED_IP:50580>: Exited normally
+12,368,94538621,-;openkvm: alive 80s/3600s, watchdog0 state=inactive timeleft=26
+12,369,98634388,-;[110] Jan 01 00:01:38 Child connection from REDACTED_IP:50594
+12,370,98847068,-;[110] Jan 01 00:01:38 Bad password attempt for 'root' from REDACTED_IP:50594
+12,371,99070942,-;[110] Jan 01 00:01:38 Exit before auth from <REDACTED_IP:50594>: (user 'root', 1 fails): Exited normally
+12,372,99070965,-;
+12,373,103308047,-;[111] Jan 01 00:01:43 Child connection from REDACTED_IP:37730
+12,374,103517229,-;[111] Jan 01 00:01:43 Password auth succeeded for 'root' from REDACTED_IP:37730
+12,375,103544586,-;[111] Jan 01 00:01:43 Exit (root) from <REDACTED_IP:37730>: Disconnect received
+12,376,104548584,-;openkvm: alive 90s/3600s, watchdog0 state=inactive timeleft=26
+12,377,114558334,-;openkvm: alive 100s/3600s, watchdog0 state=inactive timeleft=26
+12,378,115067409,-;[117] Jan 01 00:01:54 Child connection from REDACTED_IP:53614
+12,379,115074780,-;[117] Jan 01 00:01:54 Exit before auth from <REDACTED_IP:53614>: Exited normally
+12,380,119700436,-;[118] Jan 01 00:01:59 Child connection from REDACTED_IP:53618
+12,381,119909792,-;[118] Jan 01 00:01:59 Bad password attempt for 'root' from REDACTED_IP:53618
+12,382,120070560,-;[118] Jan 01 00:01:59 Exit before auth from <REDACTED_IP:53618>: (user 'root', 1 fails): Exited normally
+12,383,120070584,-;
+12,384,124568245,-;openkvm: alive 110s/3600s, watchdog0 state=inactive timeleft=26
+12,385,124685225,-;[119] Jan 01 00:02:04 Child connection from REDACTED_IP:42878
+12,386,124897872,-;[119] Jan 01 00:02:04 Password auth succeeded for 'root' from REDACTED_IP:42878
+12,387,124929306,-;[119] Jan 01 00:02:04 Exit (root) from <REDACTED_IP:42878>: Disconnect received
+12,388,132955033,-;[122] Jan 01 00:02:12 Child connection from REDACTED_IP:52376
+12,389,132962424,-;[122] Jan 01 00:02:12 Exit before auth from <REDACTED_IP:52376>: Exited normally
+12,390,134578216,-;openkvm: alive 120s/3600s, watchdog0 state=inactive timeleft=26
+12,391,137810282,-;[123] Jan 01 00:02:17 Child connection from REDACTED_IP:52378
+12,392,138022020,-;[123] Jan 01 00:02:17 Bad password attempt for 'root' from REDACTED_IP:52378
+12,393,138161804,-;[123] Jan 01 00:02:18 Exit before auth from <REDACTED_IP:52378>: (user 'root', 1 fails): Exited normally
+12,394,138161827,-;
+12,395,143201335,-;[124] Jan 01 00:02:23 Child connection from REDACTED_IP:50500
+12,396,143414766,-;[124] Jan 01 00:02:23 Password auth succeeded for 'root' from REDACTED_IP:50500
+12,397,143462539,-;[124] Jan 01 00:02:23 Exit (root) from <REDACTED_IP:50500>: Disconnect received
+12,398,144588095,-;openkvm: alive 130s/3600s, watchdog0 state=inactive timeleft=26
+12,399,154597932,-;openkvm: alive 140s/3600s, watchdog0 state=inactive timeleft=26
+12,400,164607747,-;openkvm: alive 150s/3600s, watchdog0 state=inactive timeleft=26
+12,401,174617608,-;openkvm: alive 160s/3600s, watchdog0 state=inactive timeleft=26
+12,402,184627461,-;openkvm: alive 170s/3600s, watchdog0 state=inactive timeleft=26
+12,403,192269353,-;[126] Jan 01 00:03:12 Child connection from REDACTED_IP:36006
+12,404,192276720,-;[126] Jan 01 00:03:12 Exit before auth from <REDACTED_IP:36006>: Exited normally
+12,405,194637354,-;openkvm: alive 180s/3600s, watchdog0 state=inactive timeleft=26
+12,406,197150542,-;[127] Jan 01 00:03:17 Child connection from REDACTED_IP:36014
+12,407,197362559,-;[127] Jan 01 00:03:17 Bad password attempt for 'root' from REDACTED_IP:36014
+12,408,197554488,-;[127] Jan 01 00:03:17 Exit before auth from <REDACTED_IP:36014>: (user 'root', 1 fails): Exited normally
+12,409,197554511,-;
+12,410,202562688,-;[128] Jan 01 00:03:22 Child connection from REDACTED_IP:49414
+12,411,202773714,-;[128] Jan 01 00:03:22 Password auth succeeded for 'root' from REDACTED_IP:49414
+12,412,202792705,-;[128] Jan 01 00:03:22 Exit (root) from <REDACTED_IP:49414>: Disconnect received
+12,413,204647420,-;openkvm: alive 190s/3600s, watchdog0 state=inactive timeleft=26
+12,414,210762319,-;[130] Jan 01 00:03:30 Child connection from REDACTED_IP:49424
+12,415,210769737,-;[130] Jan 01 00:03:30 Exit before auth from <REDACTED_IP:49424>: Exited normally
+12,416,214657269,-;openkvm: alive 200s/3600s, watchdog0 state=inactive timeleft=26
+12,417,215296020,-;[131] Jan 01 00:03:35 Child connection from REDACTED_IP:35890
+12,418,215505816,-;[131] Jan 01 00:03:35 Bad password attempt for 'root' from REDACTED_IP:35890
+12,419,215666799,-;[131] Jan 01 00:03:35 Exit before auth from <REDACTED_IP:35890>: (user 'root', 1 fails): Exited normally
+12,420,215666824,-;
+12,421,220324122,-;[132] Jan 01 00:03:40 Child connection from REDACTED_IP:35898
+12,422,220538225,-;[132] Jan 01 00:03:40 Password auth succeeded for 'root' from REDACTED_IP:35898
+12,423,220560220,-;[132] Jan 01 00:03:40 Exit (root) from <REDACTED_IP:35898>: Disconnect received
+12,424,224579366,-;[134] Jan 01 00:03:44 Child connection from REDACTED_IP:55850
+12,425,224586731,-;[134] Jan 01 00:03:44 Exit before auth from <REDACTED_IP:55850>: Exited normally
+12,426,224667236,-;openkvm: alive 210s/3600s, watchdog0 state=inactive timeleft=26
+12,427,229012202,-;[135] Jan 01 00:03:48 Child connection from REDACTED_IP:55852
+12,428,229221594,-;[135] Jan 01 00:03:49 Bad password attempt for 'root' from REDACTED_IP:55852
+12,429,229387535,-;[135] Jan 01 00:03:49 Exit before auth from <REDACTED_IP:55852>: (user 'root', 1 fails): Exited normally
+12,430,229387602,-;
+12,431,234046135,-;[136] Jan 01 00:03:53 Child connection from REDACTED_IP:36534
+12,432,234257450,-;[136] Jan 01 00:03:54 Password auth succeeded for 'root' from REDACTED_IP:36534
+12,433,234273494,-;[136] Jan 01 00:03:54 Exit (root) from <REDACTED_IP:36534>: Disconnect received
+12,434,234679715,-;openkvm: alive 220s/3600s, watchdog0 state=inactive timeleft=26
+12,435,244689548,-;openkvm: alive 230s/3600s, watchdog0 state=inactive timeleft=26
+12,436,254699373,-;openkvm: alive 240s/3600s, watchdog0 state=inactive timeleft=26
+12,437,260156691,-;[138] Jan 01 00:04:20 Child connection from REDACTED_IP:48912
+12,438,260164061,-;[138] Jan 01 00:04:20 Exit before auth from <REDACTED_IP:48912>: Exited normally
+12,439,264709238,-;openkvm: alive 250s/3600s, watchdog0 state=inactive timeleft=26
+12,440,265591649,-;[139] Jan 01 00:04:25 Child connection from REDACTED_IP:44828
+12,441,265801702,-;[139] Jan 01 00:04:25 Bad password attempt for 'root' from REDACTED_IP:44828
+12,442,265994217,-;[139] Jan 01 00:04:25 Exit before auth from <REDACTED_IP:44828>: (user 'root', 1 fails): Exited normally
+12,443,265994241,-;
+12,444,271200834,-;[140] Jan 01 00:04:31 Child connection from REDACTED_IP:44836
+12,445,271414136,-;[140] Jan 01 00:04:31 Password auth succeeded for 'root' from REDACTED_IP:44836
+12,446,271439436,-;[140] Jan 01 00:04:31 Exit (root) from <REDACTED_IP:44836>: Disconnect received
+12,447,274719245,-;openkvm: alive 260s/3600s, watchdog0 state=inactive timeleft=26
+12,448,283900632,-;[142] Jan 01 00:04:43 Child connection from REDACTED_IP:50232
+12,449,283907998,-;[142] Jan 01 00:04:43 Exit before auth from <REDACTED_IP:50232>: Exited normally
+12,450,284729084,-;openkvm: alive 270s/3600s, watchdog0 state=inactive timeleft=26
+12,451,287337891,-;[143] Jan 01 00:04:47 Child connection from REDACTED_IP:50248
+12,452,287550187,-;[143] Jan 01 00:04:47 Bad password attempt for 'root' from REDACTED_IP:50248
+12,453,287766950,-;[143] Jan 01 00:04:47 Exit before auth from <REDACTED_IP:50248>: (user 'root', 1 fails): Exited normally
+12,454,287766973,-;
+12,455,291857537,-;[144] Jan 01 00:04:51 Child connection from REDACTED_IP:34206
+12,456,292069520,-;[144] Jan 01 00:04:51 Password auth succeeded for 'root' from REDACTED_IP:34206
+12,457,292096323,-;[144] Jan 01 00:04:51 Exit (root) from <REDACTED_IP:34206>: Disconnect received
+12,458,294739109,-;openkvm: alive 280s/3600s, watchdog0 state=inactive timeleft=26
+12,459,296116476,-;[146] Jan 01 00:04:56 Child connection from REDACTED_IP:34218
+12,460,296123866,-;[146] Jan 01 00:04:56 Exit before auth from <REDACTED_IP:34218>: Exited normally
+12,461,300636937,-;[147] Jan 01 00:05:00 Child connection from REDACTED_IP:34232
+12,462,300851468,-;[147] Jan 01 00:05:00 Bad password attempt for 'root' from REDACTED_IP:34232
+12,463,301018184,-;[147] Jan 01 00:05:00 Exit before auth from <REDACTED_IP:34232>: (user 'root', 1 fails): Exited normally
+12,464,301018208,-;
+12,465,304749047,-;openkvm: alive 290s/3600s, watchdog0 state=inactive timeleft=26
+12,466,305734726,-;[148] Jan 01 00:05:05 Child connection from REDACTED_IP:56362
+12,467,305945802,-;[148] Jan 01 00:05:05 Password auth succeeded for 'root' from REDACTED_IP:56362
+12,468,314758946,-;openkvm: alive 300s/3600s, watchdog0 state=inactive timeleft=26
+12,469,321003636,-;[148] Jan 01 00:05:20 Exit (root) from <REDACTED_IP:56362>: Disconnect received
+12,470,324768829,-;openkvm: alive 310s/3600s, watchdog0 state=inactive timeleft=26
+12,471,334510322,-;[176] Jan 01 00:05:34 Child connection from REDACTED_IP:53476
+12,472,334517700,-;[176] Jan 01 00:05:34 Exit before auth from <REDACTED_IP:53476>: Exited normally
+12,473,334778653,-;openkvm: alive 320s/3600s, watchdog0 state=inactive timeleft=26
+12,474,338954205,-;[177] Jan 01 00:05:38 Child connection from REDACTED_IP:53484
+12,475,339164698,-;[177] Jan 01 00:05:39 Bad password attempt for 'root' from REDACTED_IP:53484
+12,476,339349489,-;[177] Jan 01 00:05:39 Exit before auth from <REDACTED_IP:53484>: (user 'root', 1 fails): Exited normally
+12,477,339349512,-;
+12,478,343741490,-;[179] Jan 01 00:05:43 Child connection from REDACTED_IP:45010
+12,479,343953467,-;[179] Jan 01 00:05:43 Password auth succeeded for 'root' from REDACTED_IP:45010
+12,480,343996072,-;[179] Jan 01 00:05:43 Exit (root) from <REDACTED_IP:45010>: Disconnect received
+12,481,344788577,-;openkvm: alive 330s/3600s, watchdog0 state=inactive timeleft=26
+12,482,352148020,-;[186] Jan 01 00:05:52 Child connection from REDACTED_IP:41276
+12,483,352155417,-;[186] Jan 01 00:05:52 Exit before auth from <REDACTED_IP:41276>: Exited normally
+12,484,354798425,-;openkvm: alive 340s/3600s, watchdog0 state=inactive timeleft=26
+12,485,356532845,-;[187] Jan 01 00:05:56 Child connection from REDACTED_IP:41286
+12,486,356742820,-;[187] Jan 01 00:05:56 Bad password attempt for 'root' from REDACTED_IP:41286
+12,487,356931073,-;[187] Jan 01 00:05:56 Exit before auth from <REDACTED_IP:41286>: (user 'root', 1 fails): Exited normally
+12,488,356931098,-;
+12,489,360801869,-;[188] Jan 01 00:06:00 Chil

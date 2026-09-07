@@ -1,0 +1,201 @@
+n 01 00:57:24 Exit before auth from <REDACTED_IP:59288>: Exited normally
+[ 3447.908433] openkvm: alive 3430s/3600s, watchdog0 state=inactive timeleft=28
+[ 3448.619492] [683] Jan 01 00:57:28 Child connection from REDACTED_IP:59302
+[ 3448.829319] [683] Jan 01 00:57:28 Bad password attempt for 'root' from REDACTED_IP:59302
+[ 3449.031829] [683] Jan 01 00:57:28 Exit before auth from <REDACTED_IP:59302>: (user 'root', 1 fails): Exited normally
+[ 3449.031852] 
+[ 3454.104447] [684] Jan 01 00:57:33 Child connection from REDACTED_IP:51664
+[ 3454.313712] [684] Jan 01 00:57:34 Password auth succeeded for 'root' from REDACTED_IP:51664
+[ 3454.330693] [684] Jan 01 00:57:34 Exit (root) from <REDACTED_IP:51664>: Disconnect received
+[ 3456.924733] [687] Jan 01 00:57:36 Child connection from REDACTED_IP:51672
+[ 3456.932178] [687] Jan 01 00:57:36 Exit before auth from <REDACTED_IP:51672>: Exited normally
+[ 3457.920224] openkvm: alive 3440s/3600s, watchdog0 state=inactive timeleft=28
+[ 3462.402460] [688] Jan 01 00:57:42 Child connection from REDACTED_IP:38618
+[ 3462.614428] [688] Jan 01 00:57:42 Bad password attempt for 'root' from REDACTED_IP:38618
+[ 3462.758564] [688] Jan 01 00:57:42 Exit before auth from <REDACTED_IP:38618>: (user 'root', 1 fails): Exited normally
+[ 3462.758587] 
+[ 3467.930209] openkvm: alive 3450s/3600s, watchdog0 state=inactive timeleft=28
+[ 3468.198447] [689] Jan 01 00:57:48 Child connection from REDACTED_IP:38634
+[ 3468.409852] [689] Jan 01 00:57:48 Password auth succeeded for 'root' from REDACTED_IP:38634
+[ 3468.426379] [689] Jan 01 00:57:48 Exit (root) from <REDACTED_IP:38634>: Disconnect received
+[ 3477.940310] openkvm: alive 3460s/3600s, watchdog0 state=inactive timeleft=28
+[ 3487.950222] openkvm: alive 3470s/3600s, watchdog0 state=inactive timeleft=28
+[ 3488.467729] [691] Jan 01 00:58:08 Child connection from REDACTED_IP:53264
+[ 3488.475108] [691] Jan 01 00:58:08 Exit before auth from <REDACTED_IP:53264>: Exited normally
+[ 3493.296172] [692] Jan 01 00:58:13 Child connection from REDACTED_IP:38376
+[ 3493.505524] [692] Jan 01 00:58:13 Bad password attempt for 'root' from REDACTED_IP:38376
+[ 3493.713895] [692] Jan 01 00:58:13 Exit before auth from <REDACTED_IP:38376>: (user 'root', 1 fails): Exited normally
+[ 3493.713918] 
+[ 3497.960229] openkvm: alive 3480s/3600s, watchdog0 state=inactive timeleft=28
+[ 3498.542443] [693] Jan 01 00:58:18 Child connection from REDACTED_IP:38382
+[ 3498.754309] [693] Jan 01 00:58:18 Password auth succeeded for 'root' from REDACTED_IP:38382
+[ 3498.771770] [693] Jan 01 00:58:18 Exit (root) from <REDACTED_IP:38382>: Disconnect received
+[ 3503.356771] [696] Jan 01 00:58:23 Child connection from REDACTED_IP:54654
+[ 3503.364155] [696] Jan 01 00:58:23 Exit before auth from <REDACTED_IP:54654>: Exited normally
+[ 3507.970313] openkvm: alive 3490s/3600s, watchdog0 state=inactive timeleft=28
+[ 3507.983837] [697] Jan 01 00:58:27 Child connection from REDACTED_IP:54656
+[ 3508.193516] [697] Jan 01 00:58:28 Bad password attempt for 'root' from REDACTED_IP:54656
+[ 3508.384893] [697] Jan 01 00:58:28 Exit before auth from <REDACTED_IP:54656>: (user 'root', 1 fails): Exited normally
+[ 3508.384918] 
+[ 3512.449061] [698] Jan 01 00:58:32 Child connection from REDACTED_IP:56412
+[ 3512.456441] [698] Jan 01 00:58:32 Exit before auth from <REDACTED_IP:56412>: Exited normally
+[ 3512.718339] [699] Jan 01 00:58:32 Child connection from REDACTED_IP:56422
+[ 3512.928818] [699] Jan 01 00:58:32 Password auth succeeded for 'root' from REDACTED_IP:56422
+[ 3512.945298] [699] Jan 01 00:58:32 Exit (root) from <REDACTED_IP:56422>: Disconnect received
+[ 3516.945831] [703] Jan 01 00:58:36 Child connection from REDACTED_IP:56436
+[ 3517.159030] [703] Jan 01 00:58:37 Bad password attempt for 'root' from REDACTED_IP:56436
+[ 3517.295797] [703] Jan 01 00:58:37 Exit before auth from <REDACTED_IP:56436>: (user 'root', 1 fails): Exited normally
+[ 3517.295822] 
+[ 3517.980529] openkvm: alive 3500s/3600s, watchdog0 state=inactive timeleft=28
+[ 3521.817368] [704] Jan 01 00:58:41 Child connection from REDACTED_IP:33724
+[ 3522.029568] [704] Jan 01 00:58:41 Password auth succeeded for 'root' from REDACTED_IP:33724
+[ 3522.046429] [704] Jan 01 00:58:41 Exit (root) from <REDACTED_IP:33724>: Disconnect received
+[ 3527.990547] openkvm: alive 3510s/3600s, watchdog0 state=inactive timeleft=28
+[ 3538.000459] openkvm: alive 3520s/3600s, watchdog0 state=inactive timeleft=28
+[ 3547.798196] [706] Jan 01 00:59:07 Child connection from REDACTED_IP:42774
+[ 3547.805604] [706] Jan 01 00:59:07 Exit before auth from <REDACTED_IP:42774>: Exited normally
+[ 3548.010390] openkvm: alive 3530s/3600s, watchdog0 state=inactive timeleft=28
+[ 3552.808854] [707] Jan 01 00:59:12 Child connection from REDACTED_IP:57252
+[ 3553.022542] [707] Jan 01 00:59:12 Bad password attempt for 'root' from REDACTED_IP:57252
+[ 3553.229658] [707] Jan 01 00:59:13 Exit before auth from <REDACTED_IP:57252>: (user 'root', 1 fails): Exited normally
+[ 3553.229682] 
+[ 3558.020345] openkvm: alive 3540s/3600s, watchdog0 state=inactive timeleft=28
+[ 3558.410665] [708] Jan 01 00:59:18 Child connection from REDACTED_IP:57258
+[ 3558.620810] [708] Jan 01 00:59:18 Password auth succeeded for 'root' from REDACTED_IP:57258
+[ 3558.638429] [708] Jan 01 00:59:18 Exit (root) from <REDACTED_IP:57258>: Disconnect received
+[ 3561.969005] [711] Jan 01 00:59:21 Child connection from REDACTED_IP:39224
+[ 3561.976421] [711] Jan 01 00:59:21 Exit before auth from <REDACTED_IP:39224>: Exited normally
+[ 3566.070617] [712] Jan 01 00:59:25 Child connection from REDACTED_IP:39228
+[ 3566.078049] [712] Jan 01 00:59:25 Exit before auth from <REDACTED_IP:39228>: Exited normally
+[ 3567.389091] [713] Jan 01 00:59:27 Child connection from REDACTED_IP:39240
+[ 3567.602093] [713] Jan 01 00:59:27 Bad password attempt for 'root' from REDACTED_IP:39240
+[ 3567.810517] [713] Jan 01 00:59:27 Exit before auth from <REDACTED_IP:39240>: (user 'root', 1 fails): Exited normally
+[ 3567.810542] 
+[ 3568.030507] openkvm: alive 3550s/3600s, watchdog0 state=inactive timeleft=28
+[ 3571.740543] [714] Jan 01 00:59:31 Child connection from REDACTED_IP:37278
+[ 3571.953195] [714] Jan 01 00:59:31 Bad password attempt for 'root' from REDACTED_IP:37278
+[ 3572.098329] [714] Jan 01 00:59:31 Exit before auth from <REDACTED_IP:37278>: (user 'root', 1 fails): Exited normally
+[ 3572.098354] 
+[ 3573.455399] [715] Jan 01 00:59:33 Child connection from REDACTED_IP:37288
+[ 3573.664494] [715] Jan 01 00:59:33 Password auth succeeded for 'root' from REDACTED_IP:37288
+[ 3573.681530] [715] Jan 01 00:59:33 Exit (root) from <REDACTED_IP:37288>: Disconnect received
+[ 3576.581830] [718] Jan 01 00:59:36 Child connection from REDACTED_IP:37304
+[ 3576.792973] [718] Jan 01 00:59:36 Password auth succeeded for 'root' from REDACTED_IP:37304
+[ 3576.808834] [718] Jan 01 00:59:36 Exit (root) from <REDACTED_IP:37304>: Disconnect received
+[ 3578.040707] openkvm: alive 3560s/3600s, watchdog0 state=inactive timeleft=28
+[ 3588.050639] openkvm: alive 3570s/3600s, watchdog0 state=inactive timeleft=28
+[ 3598.060539] openkvm: alive 3580s/3600s, watchdog0 state=inactive timeleft=28
+[ 3607.666407] [720] Jan 01 01:00:07 Child connection from REDACTED_IP:54366
+[ 3607.673842] [720] Jan 01 01:00:07 Exit before auth from <REDACTED_IP:54366>: Exited normally
+[ 3608.070470] openkvm: alive 3590s/3600s, watchdog0 state=inactive timeleft=28
+[ 3612.234850] [721] Jan 01 01:00:12 Child connection from REDACTED_IP:49026
+[ 3612.449107] [721] Jan 01 01:00:12 Bad password attempt for 'root' from REDACTED_IP:49026
+[ 3612.612159] [721] Jan 01 01:00:12 Exit before auth from <REDACTED_IP:49026>: (user 'root', 1 fails): Exited normally
+[ 3612.612184] 
+[ 3617.010019] [722] Jan 01 01:00:16 Child connection from REDACTED_IP:49032
+[ 3617.222008] [722] Jan 01 01:00:17 Password auth succeeded for 'root' from REDACTED_IP:49032
+[ 3617.239900] [722] Jan 01 01:00:17 Exit (root) from <REDACTED_IP:49032>: Disconnect received
+[ 3618.081950] openkvm: kernel log final stash, bytes: 0x00007fe0
+[ 3618.087891] openkvm: rebooting via the restart handler
+[ 3619.124014] reboot: Restarting system
+266.461823] [638] Jan 01 00:54:26 Child connection from REDACTED_IP:46300
+[ 3266.469213] [638] Jan 01 00:54:26 Exit before auth from <REDACTED_IP:46300>: Exited normally
+[ 3267.728572] openkvm: alive 3250s/3600s, watchdog0 state=inactive timeleft=28
+[ 3270.894877] [639] Jan 01 00:54:30 Child connection from REDACTED_IP:46306
+[ 3271.104822] [639] Jan 01 00:54:30 Bad password attempt for 'root' from REDACTED_IP:46306
+[ 3271.253379] [639] Jan 01 00:54:31 Exit before auth from <REDACTED_IP:46306>: (user 'root', 1 fails): Exited normally
+[ 3271.253403] 
+[ 3275.810428] [640] Jan 01 00:54:35 Child connection from REDACTED_IP:36292
+[ 3276.021223] [640] Jan 01 00:54:35 Password auth succeeded for 'root' from REDACTED_IP:36292
+[ 3276.037814] [640] Jan 01 00:54:35 Exit (root) from <REDACTED_IP:36292>: Disconnect received
+[ 3277.738601] openkvm: alive 3260s/3600s, watchdog0 state=inactive timeleft=28
+[ 3287.748485] openkvm: alive 3270s/3600s, watchdog0 state=inactive timeleft=28
+[ 3296.085027] [643] Jan 01 00:54:55 Child connection from REDACTED_IP:50482
+[ 3296.092436] [643] Jan 01 00:54:55 Exit before auth from <REDACTED_IP:50482>: Exited normally
+[ 3297.758419] openkvm: alive 3280s/3600s, watchdog0 state=inactive timeleft=28
+[ 3300.610157] [644] Jan 01 00:55:00 Child connection from REDACTED_IP:50490
+[ 3300.820730] [644] Jan 01 00:55:00 Bad password attempt for 'root' from REDACTED_IP:50490
+[ 3301.037398] [644] Jan 01 00:55:00 Exit before auth from <REDACTED_IP:50490>: (user 'root', 1 fails): Exited normally
+[ 3301.037422] 
+[ 3305.394345] [645] Jan 01 00:55:05 Child connection from REDACTED_IP:49368
+[ 3305.605746] [645] Jan 01 00:55:05 Password auth succeeded for 'root' from REDACTED_IP:49368
+[ 3305.622181] [645] Jan 01 00:55:05 Exit (root) from <REDACTED_IP:49368>: Disconnect received
+[ 3307.768370] openkvm: alive 3290s/3600s, watchdog0 state=inactive timeleft=28
+[ 3310.850173] [647] Jan 01 00:55:10 Child connection from REDACTED_IP:49376
+[ 3310.857573] [647] Jan 01 00:55:10 Exit before auth from <REDACTED_IP:49376>: Exited normally
+[ 3316.123483] [649] Jan 01 00:55:16 Child connection from REDACTED_IP:54688
+[ 3316.333285] [649] Jan 01 00:55:16 Bad password attempt for 'root' from REDACTED_IP:54688
+[ 3316.464179] [649] Jan 01 00:55:16 Exit before auth from <REDACTED_IP:54688>: (user 'root', 1 fails): Exited normally
+[ 3316.464201] 
+[ 3317.778338] openkvm: alive 3300s/3600s, watchdog0 state=inactive timeleft=28
+[ 3322.018556] [650] Jan 01 00:55:21 Child connection from REDACTED_IP:33238
+[ 3322.229296] [650] Jan 01 00:55:22 Password auth succeeded for 'root' from REDACTED_IP:33238
+[ 3322.246777] [650] Jan 01 00:55:22 Exit (root) from <REDACTED_IP:33238>: Disconnect received
+[ 3325.061091] [653] Jan 01 00:55:24 Child connection from REDACTED_IP:33254
+[ 3325.068529] [653] Jan 01 00:55:24 Exit before auth from <REDACTED_IP:33254>: Exited normally
+[ 3327.788400] openkvm: alive 3310s/3600s, watchdog0 state=inactive timeleft=28
+[ 3329.769653] [654] Jan 01 00:55:29 Child connection from REDACTED_IP:33258
+[ 3329.981409] [654] Jan 01 00:55:29 Bad password attempt for 'root' from REDACTED_IP:33258
+[ 3330.201148] [654] Jan 01 00:55:30 Exit before auth from <REDACTED_IP:33258>: (user 'root', 1 fails): Exited normally
+[ 3330.201171] 
+[ 3335.027645] [655] Jan 01 00:55:34 Child connection from REDACTED_IP:55818
+[ 3335.237132] [655] Jan 01 00:55:35 Password auth succeeded for 'root' from REDACTED_IP:55818
+[ 3335.254472] [655] Jan 01 00:55:35 Exit (root) from <REDACTED_IP:55818>: Disconnect received
+[ 3337.798459] openkvm: alive 3320s/3600s, watchdog0 state=inactive timeleft=28
+[ 3347.808409] openkvm: alive 3330s/3600s, watchdog0 state=inactive timeleft=28
+[ 3349.647209] [659] Jan 01 00:55:49 Child connection from REDACTED_IP:54160
+[ 3349.654601] [659] Jan 01 00:55:49 Exit before auth from <REDACTED_IP:54160>: Exited normally
+[ 3354.095401] [660] Jan 01 00:55:53 Child connection from REDACTED_IP:47058
+[ 3354.305809] [660] Jan 01 00:55:54 Bad password attempt for 'root' from REDACTED_IP:47058
+[ 3354.436136] [660] Jan 01 00:55:54 Exit before auth from <REDACTED_IP:47058>: (user 'root', 1 fails): Exited normally
+[ 3354.436160] 
+[ 3357.818464] openkvm: alive 3340s/3600s, watchdog0 state=inactive timeleft=28
+[ 3358.882000] [661] Jan 01 00:55:58 Child connection from REDACTED_IP:47068
+[ 3359.094858] [661] Jan 01 00:55:58 Password auth succeeded for 'root' from REDACTED_IP:47068
+[ 3359.110587] [661] Jan 01 00:55:58 Exit (root) from <REDACTED_IP:47068>: Disconnect received
+[ 3367.828400] openkvm: alive 3350s/3600s, watchdog0 state=inactive timeleft=28
+[ 3371.270520] [663] Jan 01 00:56:11 Child connection from REDACTED_IP:45150
+[ 3371.277920] [663] Jan 01 00:56:11 Exit before auth from <REDACTED_IP:45150>: Exited normally
+[ 3375.728735] [664] Jan 01 00:56:15 Child connection from REDACTED_IP:54426
+[ 3375.941352] [664] Jan 01 00:56:15 Bad password attempt for 'root' from REDACTED_IP:54426
+[ 3376.096517] [664] Jan 01 00:56:15 Exit before auth from <REDACTED_IP:54426>: (user 'root', 1 fails): Exited normally
+[ 3376.096541] 
+[ 3377.838396] openkvm: alive 3360s/3600s, watchdog0 state=inactive timeleft=28
+[ 3380.587759] [665] Jan 01 00:56:20 Child connection from REDACTED_IP:54440
+[ 3380.796486] [665] Jan 01 00:56:20 Password auth succeeded for 'root' from REDACTED_IP:54440
+[ 3380.813130] [665] Jan 01 00:56:20 Exit (root) from <REDACTED_IP:54440>: Disconnect received
+[ 3384.276736] [668] Jan 01 00:56:24 Child connection from REDACTED_IP:58288
+[ 3384.284143] [668] Jan 01 00:56:24 Exit before auth from <REDACTED_IP:58288>: Exited normally
+[ 3387.848460] openkvm: alive 3370s/3600s, watchdog0 state=inactive timeleft=28
+[ 3389.366204] [669] Jan 01 00:56:29 Child connection from REDACTED_IP:58294
+[ 3389.576983] [669] Jan 01 00:56:29 Bad password attempt for 'root' from REDACTED_IP:58294
+[ 3389.729704] [669] Jan 01 00:56:29 Exit before auth from <REDACTED_IP:58294>: (user 'root', 1 fails): Exited normally
+[ 3389.729727] 
+[ 3394.898083] [670] Jan 01 00:56:34 Child connection from REDACTED_IP:50860
+[ 3395.108501] [670] Jan 01 00:56:34 Password auth succeeded for 'root' from REDACTED_IP:50860
+[ 3395.124971] [670] Jan 01 00:56:35 Exit (root) from <REDACTED_IP:50860>: Disconnect received
+[ 3397.858455] openkvm: alive 3380s/3600s, watchdog0 state=inactive timeleft=28
+[ 3403.134978] [673] Jan 01 00:56:43 Child connection from REDACTED_IP:44422
+[ 3403.142393] [673] Jan 01 00:56:43 Exit before auth from <REDACTED_IP:44422>: Exited normally
+[ 3407.724317] [674] Jan 01 00:56:47 Child connection from REDACTED_IP:44436
+[ 3407.868481] openkvm: alive 3390s/3600s, watchdog0 state=inactive timeleft=28
+[ 3407.933612] [674] Jan 01 00:56:47 Bad password attempt for 'root' from REDACTED_IP:44436
+[ 3408.122202] [674] Jan 01 00:56:48 Exit before auth from <REDACTED_IP:44436>: (user 'root', 1 fails): Exited normally
+[ 3408.122223] 
+[ 3412.675449] [675] Jan 01 00:56:52 Child connection from REDACTED_IP:49994
+[ 3412.885327] [675] Jan 01 00:56:52 Password auth succeeded for 'root' from REDACTED_IP:49994
+[ 3412.900751] [675] Jan 01 00:56:52 Exit (root) from <REDACTED_IP:49994>: Disconnect received
+[ 3417.878531] openkvm: alive 3400s/3600s, watchdog0 state=inactive timeleft=28
+[ 3427.888442] openkvm: alive 3410s/3600s, watchdog0 state=inactive timeleft=28
+[ 3429.837935] [677] Jan 01 00:57:09 Child connection from REDACTED_IP:40586
+[ 3429.845334] [677] Jan 01 00:57:09 Exit before auth from <REDACTED_IP:40586>: Exited normally
+[ 3434.369526] [678] Jan 01 00:57:14 Child connection from REDACTED_IP:47190
+[ 3434.581168] [678] Jan 01 00:57:14 Bad password attempt for 'root' from REDACTED_IP:47190
+[ 3434.711954] [678] Jan 01 00:57:14 Exit before auth from <REDACTED_IP:47190>: (user 'root', 1 fails): Exited normally
+[ 3434.711977] 
+[ 3437.898458] openkvm: alive 3420s/3600s, watchdog0 state=inactive timeleft=28
+[ 3439.214658] [679] Jan 01 00:57:19 Child connection from REDACTED_IP:47198
+[ 3439.424450] [679] Jan 01 00:57:19 Password auth succeeded for 'root' from REDACTED_IP:47198
+[ 3439.441995] [679] Jan 01 00:57:19 Exit (root) from <REDACTED_IP:47198>: Disconnect received
+[ 3444.148527] [682] Jan 01 00:57:24 Child connection from REDACTED_IP:59288
+[ 3444.155942] [682] Ja

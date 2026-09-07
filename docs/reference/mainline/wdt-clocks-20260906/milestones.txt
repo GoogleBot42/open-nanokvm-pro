@@ -1,0 +1,21 @@
+Milestone register 0x02390024 (TOP_CHIPMODE_GLB_BACKUP0), this run.
+
+before arming, slot A steady state      0x00000014
+after `S99checkboot systemB`            0x00000038   SLOTB + SLOTB_BOOTABLE
+mid-dwell, read from the mainline
+kernel itself at uptime 2354 s          0x003F3018   bits 12,13,16..21 set;
+                                                     bit 5 consumed by the SPL,
+                                                     so the low byte is 0x18
+after the dwell and self-reboot,
+read from slot A                        0x003FF014   every milestone, slot A re-armed
+
+bit 12  /init running, /dev/mem works
+bit 13  kernel log stashed
+bit 14  dwell completed          <- the watchdog proof
+bit 15  reboot(2) called
+bit 16  eMMC gave a partitioned block device      (#76)
+bit 17  ext4 on it mounted read-only and was read (#76)
+bit 18  eth0 exists, PHY negotiated carrier       (#77)
+bit 19  DHCP lease taken and configured           (#77)
+bit 20  ICMP round trip to another LAN host       (#77)
+bit 21  dropbear started                          (#77)

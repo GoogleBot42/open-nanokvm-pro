@@ -13,7 +13,8 @@ What this run had to prove, and did:
 | The watchdog resolves its counter rate through CCF, not a constant | `dmesg-mainline.txt:216` — `ax630c-wdt 4840000.watchdog: counter at 24000000 Hz, timeout 60s, max 357s`, and no `counter clock reports no rate` warning anywhere |
 | The six WDT clock IDs address the right bits | `clk_summary.txt`: `clk_wdt0_sel` under `cpll_24m` at 24 MHz, `clk_wdt0_eb` consumed by `4840000.watchdog` as `wdt`, `pclk_wdt0_eb` as `apb`; `periph-registers.txt` shows the matching hardware bits |
 | The reset lines are released through the new provider | probe reached `devm_clk_get_enabled()` at all, which only happens after both `reset_control_deassert()` calls returned; `SW_RST3` reads `0x00000000` |
-| The dog is petted, not merely armed | `watchdog-samples.txt` and the `openkvm: alive …` lines: `timeleft` oscillates 25–29 s and never trends down, across a 3600 s dwell |
+| The dog is petted, not merely armed | `watchdog-samples.txt`, `ramoops-console.txt` and the `openkvm: alive …` lines: `timeleft` holds 26–29 s across a 3600 s dwell and never trends down, then the board reboots itself |
+| The board comes back on its own | `milestones.txt` — `0x003FF014` read from slot A afterwards, every bit 12–21 |
 | The pin states apply and the pads are owned | `pinmux-pins.txt` — 19 pins claimed by `1b40000.mmc`, `104e0000.mmc` and `4880000.serial`; `pinconf-claimed.txt` — every pad's bias and drive code matches the boot table |
 | eMMC still enumerates with a state applied | `dmesg-mainline.txt` — HS200, all 17 partitions, ext4 mounted and read |
 | Ethernet still comes up (#77 unbroken) | `dmesg-mainline.txt` — RGMII, 1000 Mbit/s full duplex, DHCP lease, dropbear |
@@ -65,9 +66,12 @@ serial and left every comment behind.
 | `pinmux-pins.txt` | every pad and its owner; 19 claimed, the rest `UNCLAIMED` |
 | `pinconf-claimed.txt` | bias and drive code read back per claimed pad |
 | `watchdog-samples.txt` | five `timeleft` samples three seconds apart, mid-dwell |
+| `ramoops-console.txt` | the ramoops console zone, read back from slot A: covers the end of the dwell and the reboot |
+| `stash-dmesg.txt` | the log stash `/init` wrote at `0x480e8000`, read back from slot A |
+| `milestones.txt` | the milestone register at each step, and what each bit means |
 | `periph-registers.txt` | the six peripheral syscon words the WDT clocks and resets live in |
 
-Device IPs, the netmask and the interface MAC are redacted as `DEVICE_IP`,
+Device IPs, the netmask and the interface MAC are redacted in every file as `DEVICE_IP`,
 `REDACTED_IP`, `REDACTED_MASK` and `REDACTED_MAC`, matching
 `../ethernet-boot-20260906/`.
 
@@ -86,3 +90,27 @@ Device IPs, the netmask and the interface MAC are redacted as `DEVICE_IP`,
   written, and has no `pinctrl-0`. Adding one is a follow-up: the pads are in
   the boot table, but getting them wrong takes out the SSH path that makes this
   test readable.
+
+## How the run ended
+
+The dwell was extended to the 3600 s hard cap by `touch /run/keepalive` from the
+SSH session, so the watchdog was petted continuously for an hour against a 60 s
+timeout — 120 stage boundaries, none of which fired. The last lines of the
+ramoops console zone:
+
+```
+[ 3608.070470] openkvm: alive 3590s/3600s, watchdog0 state=inactive timeleft=28
+[ 3618.087891] openkvm: rebooting via the restart handler
+[ 3619.124014] reboot: Restarting system
+```
+
+`timeleft` reads 28 in **all 35** heartbeat lines the console zone holds, and 26
+in every line of the earlier stash. It never once trended toward zero.
+
+The board rebooted itself back to slot A, and the milestone register read
+`0x003FF014` — every bit 12–21 — from the vendor system afterwards
+(`milestones.txt`). Slot B was then restored to the vendor kernel and dtb, both
+verified from the medium against the backups taken before the run
+(`0a19b720189baad4aec9375931ad9c95` for p13, `e3b8750012fab3dbd8201a818459987a`
+for p15), the milestone bits cleared with the current `0x3FF000` mask, the slot
+register confirmed at `0x00000014`, `nanokvm.service` active and the web UI 200.
