@@ -404,15 +404,20 @@ propose SG2002 work without flagging this gap up front.
   then the GitHub `release.yml` run FAILED after 11.5 min in its first step,
   `nix build .#update-package`. No release object exists, so **devices are
   unaffected** — stable still serves 2.0.0 and the preview channel still
-  serves alpha.4. Ruled out locally: `.#update-package` builds green from the
-  exact tagged tree, and the pnpm FOD re-fetches clean against its pinned hash
-  (`--rebuild`). The runner log needs GitHub admin rights, which this
-  environment does not have, so the cause is undetermined — most likely runner
-  disk (the workflow frees space for a reason) or a transient fetch. **Next
-  step is to re-run the job from the GitHub Actions tab** (the docs say it is
-  idempotent); a second failure at the same step makes it deterministic and
-  worth real investigation. A GitHub token with actions read+write would let an
-  agent do both.
+  serves alpha.4. **Cause found and FIXED 2026-09-07 (`bc1ec0a`, branch
+  `fix/server-vendorhash`): `pkgs/nanokvm-server.nix` carried a `vendorHash`
+  stale since #71 (`f429b2a`, 2026-09-05).** That commit's `postPatch` step 11
+  drops the `github.com/gin-gonic/contrib/static` import; the go-modules
+  derivation inherits `postPatch`, and `go mod vendor` vendors only imported
+  packages, so that module left the vendor tree — the modules.txt diff is
+  exactly that one line. It stayed invisible because a fixed-output
+  derivation's store path comes from its hash alone: this build host already
+  held the July output and never re-fetched, so "`.#update-package` builds
+  green locally" was never evidence. `nix build --rebuild` on the go-modules
+  drv reproduces the runner's hash exactly. **The `v2.1.0-alpha.5` tag still
+  points at the broken tree**, so re-running the GitHub job cannot help —
+  publishing needs a fresh cut (alpha.6) from a `main` that carries the fix.
+  Do not move tags.
 
 - **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
   `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
