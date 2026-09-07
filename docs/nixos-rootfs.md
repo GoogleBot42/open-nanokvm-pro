@@ -563,6 +563,13 @@ Ordered by how much they block a boot-test.
    Either vendor the script (small, auditable, still vendor-derived text) or
    reimplement the configfs setup from source.
 
+   The KERNEL half of this is no longer a gap: since #82 the mainline config
+   (`pkgs/kernel-mainline/ax630c.config`) builds `USB_CONFIGFS` in along with
+   all five function drivers the script needs — HID, mass storage, NCM, UAC2
+   and ACM — and the bring-up initramfs proves each one instantiates. What is
+   still missing is the script's *policy*: the report descriptors, the flag
+   files, the Microsoft OS descriptors and the `udhcpd` instance.
+
    > **TODO (device capture, HID-critical).** The whole `/kvmapp/scripts/`
    > directory is vendor-only and absent from our `kvmapp` derivation — this
    > also blocks the `nanokvm.sh`/`nanokvm_pre.sh` supervisor (gap 1). Capture

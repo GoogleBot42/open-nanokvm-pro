@@ -97,13 +97,13 @@ previous byte count compares the wrong range and reports a spurious mismatch
 ## 4. Arm slot B and go
 
 ```
-tools/kvmssh 'devmem 0x0239002C 32 0x3FF000
+tools/kvmssh 'devmem 0x0239002C 32 0x1FFF000
   /etc/init.d/S99checkboot systemB
   sync'
 tools/kvmssh 'sync; reboot'
 ```
 
-The first write clears milestone bits 12–17 from any previous run — **skip it
+The first write clears every milestone bit from any previous run — **skip it
 and you will read a stale result and believe it**. `S99checkboot systemB` is
 mandatory: a raw `SLOTB` poke leaves `SLOTB_BOOTABLE` clear and the SPL falls
 straight back to A. Expect `0x00000038` after arming.
@@ -131,16 +131,17 @@ A slot register still reading `0x00000038` means the SPL never consumed
 `SLOTB_BOOTABLE` — that is "no reboot happened", not "the kernel failed".
 
 **The mask grows as milestones are added.** It was `0xF000` for #75's four bits
-and is `0x3FF000` since #76 added two and #77 four more. The register's bits 12–29 are all
+and is `0x1FFF000` since #76 added two, #77 four and #82 three more. The register's bits 12–29 are all
 free (nothing in the SPL, ATF, U-Boot, the RISC-V companion or the vendor
 kernel writes them), so there is room — but a stale mask silently leaves old
 bits set, which reads as a success that did not happen.
 
-Then wait. Round trip is roughly `20 s + the storage probe + the initramfs
-dwell` (120 s as shipped) — about 3 min. The storage probe adds anything from a
-fraction of a second to its 10 s partition-wait timeout, and the elapsed figure
-is logged (`found after ms:`) precisely so a creeping delay is visible rather
-than absorbed. Wait with a background until-loop, not a sleep:
+Then wait. Round trip is roughly `20 s + the storage probe + the network and
+USB probes + the initramfs dwell` (300 s as shipped) — about 6 min. The storage
+probe adds anything from a fraction of a second to its 10 s partition-wait
+timeout and logs the elapsed figure (`found after ms:`) precisely so a creeping
+delay is visible rather than absorbed; the USB step adds up to 15 s more when
+no host answers. Wait with a background until-loop, not a sleep:
 
 ```
 until timeout 60 tools/kvmssh 'true' >/dev/null 2>&1; do sleep 5; done
@@ -176,7 +177,7 @@ tools/kvmssh 'devmem 0x02390024'
 
 | Value | Meaning |
 |---|---|
-| `0x003ff014` | every milestone + slot A re-armed — full success |
+| `0x01fff014` | every milestone + slot A re-armed — full success |
 | `0x00???014` with fewer bits | got that far and died; see the table below |
 | `0x00000014` | never reached userspace — go straight to the ramoops console |
 
@@ -192,11 +193,21 @@ tools/kvmssh 'devmem 0x02390024'
 | 19 | a DHCP lease was taken and configured (#77) |
 | 20 | an ICMP round trip to another host on the LAN succeeded (#77) |
 | 21 | dropbear started (#77) |
+| 22 | a USB device controller registered — the dwc3 glue and core bound (#82) |
+| 23 | all five gadget function drivers present, HID keyboard gadget bound to the UDC (#82) |
+| 24 | the UDC reached state `configured` — a host enumerated us (#82) |
 
-Note the storage and network bits are set *before* the dwell, so `0x003f3014` —
-everything up to the network good, dwell and reboot missing — means the board
-died during the dwell, which is a watchdog problem, not a storage or network
-one. The questions are independent by construction.
+**Bit 24 is the only one that depends on a cable.** 22 and 23 set with 24
+clear means the port works and the physical link does not — that unit's USB
+link has been unreliable since 2026-09-05 (#42 was a physical fault). Check it
+from the bench host the KVM's USB-C is plugged into: `lsusb -d 1d6b:0104`
+should show "NanoKVM-Pro mainline bring-up", and a `hidraw`/`input` device
+should appear in its `dmesg`.
+
+Note the storage, network and USB bits are all set *before* the dwell, so
+`0x01ff3014` — everything up to USB good, dwell and reboot missing — means the
+board died during the dwell, which is a watchdog problem and not a storage,
+network or USB one. The questions are independent by construction.
 
 Since #77 the board is also **reachable while it dwells**: `/init` gives eth0
 the MAC it reads out of the vendor rootfs, so DHCP hands back the same lease
@@ -250,7 +261,7 @@ tools/kvmssh 'cd /root/pre75
   dd if=p13-dtb_b.bak    of=/dev/mmcblk0p13 bs=1M conv=fsync
   dd if=p15-kernel_b.bak of=/dev/mmcblk0p15 bs=1M conv=fsync
   sync; echo 3 > /proc/sys/vm/drop_caches'
-tools/kvmssh 'devmem 0x0239002C 32 0x3FF000'  # clear the milestone bits
+tools/kvmssh 'devmem 0x0239002C 32 0x1FFF000'  # clear the milestone bits
 ```
 
 Verify both restores from the medium against the step-2 md5s, and confirm
@@ -273,5 +284,9 @@ no shell. Reuse it; extend it rather than replacing it.
   vendor kernel zaps every zone it owns about 1.5 s into the boot that would
   have read yours. The 64 KiB tail at `0x480e0000` works because it lies inside
   the *data* area of the vendor's ftrace zone, which nothing writes.
-- New milestone bits: 16–29 are still free. 0–11 and 30–31 belong to the boot
+- New milestone bits: 25–29 are still free. 0–11 and 30–31 belong to the boot
   chain.
+- **Split a step into bits that fail for different reasons.** #82 uses three
+  (UDC registered / gadget bound / host enumerated) because only the last one
+  can be taken away by a bad cable, and one combined bit would have made every
+  cable fault look like a driver fault.

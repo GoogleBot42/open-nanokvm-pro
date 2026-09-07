@@ -198,7 +198,7 @@ have / can be dropped).
 | Ethernet MAC | `axera,dwmac-4.10a` @`0x104C0000`, 5 clocks, 3 resets, `phy-mode = "rgmii"`, `snps,dwmac-mdio` | `drivers/net/ethernet/stmicro/stmmac/dwmac-axera-plat.c` 187 LOC glue over stmmac | **Synopsys DWMAC 4.10a** (V) | **DONE (#77)**: `dwmac-axera.c`, ~230 lines over mainline stmmac — four of the five clocks, the PHY-interface select and block reset as flash-syscon bits, an RGMII tx-clock hook, and a register poke for PHY reset GPIO1_A27 until #81 | S–M | **boot** (SSH) |
 | Ethernet PHY | `ethernet-phy-id937c.4030` (JLSemi **JL2101**), 20 `jl2xxx,*` tuning props | `drivers/net/phy/jlsemi.c` 561 + `jlsemi-core.c` 3043 LOC | **The part is a Realtek RTL8211F, not a JL2101** — PHYID 0x001cc916 read over MDIO 2026-09-06 (V). The vendor DT's `ethernet-phy-id*` compatible forces the MDIO core to skip the bus read, so the JLSemi driver binds to a Realtek chip and works only because it programs almost nothing | **DONE (#77)**: mainline's own realtek driver, with `phy-mode = "rgmii-id"` — the RTL8211F's two 2 ns delays are pin-strapped on and mainline's driver *writes* them to match phy-mode. No JLSemi driver is needed or wanted | S | **boot** (SSH) |
 | WiFi/BT | `aicsemi,aic_bsp` (reset GPIO1_A29) + SDIO | `drivers/net/wireless/aic8800/` (`aic8800_bsp/btlpm/fdrv`, `=m`) | out-of-tree vendor GPL driver, see §1 | carry `radxa-pkg/aic8800` on a ≤ 7.2 kernel + the firmware blob; or drop | M | opt |
-| USB | `axera,dwc3` glue → `snps,dwc3` @`0x8000000`, `dr_mode = "otg"`, `extcon` = `linux,extcon-usb-gpio` (GPIO1_A4), `phy_type = "utmi"`, high-speed only | `drivers/usb/dwc3/dwc3-axera.c` 531 LOC ("DesignWare USB3 OF Simple Glue Layer"); PHY handling is one `USB2_PHY_SW_RST` bit (V) | **Synopsys DWC3** (V) | `dwc3` + `dwc3-of-simple`-class glue (one reset bit + clocks); gadget functions the app uses (`hid`, `mass_storage`, `ncm`, `uac2`, `acm`) are all mainline configfs — only `f_udisp` (USB display) is vendor and unused | M | KVM (HID) |
+| USB | `axera,dwc3` glue → `snps,dwc3` @`0x8000000`, `dr_mode = "otg"`, `extcon` = `linux,extcon-usb-gpio` (GPIO1_A4), `phy_type = "utmi"`, high-speed only | `drivers/usb/dwc3/dwc3-axera.c` 531 LOC ("DesignWare USB3 OF Simple Glue Layer"); PHY handling is one `USB2_PHY_SW_RST` bit (V) | **Synopsys DWC3** (V) | **DONE (#82)**: `dwc3-axera.c`, ~210 lines of of-simple-class glue over the mainline core — three flash-syscon clock gates, the two software resets, and VBUSVALID, which is the one thing no generic glue can express. Gadget functions (`hid`, `mass_storage`, `ncm`, `uac2`, `acm`) are all mainline configfs and are built in; only `f_udisp` (USB display) is vendor and unused. `dr_mode = "peripheral"` until #81 gives OTG ID detection a GPIO | M | KVM (HID) |
 
 ### Board peripherals
 
@@ -514,8 +514,8 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 
 Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
 lives as a comment on #26. **#74, #75, #76 and #77 are done** (see "What exists
-now" at the end of this section), and #80's source half is written and
-boot-proven; everything else is open.
+now" at the end of this section), #80 is written and boot-proven, and #82's
+source half is written but not yet booted; everything else is open.
 
 1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
@@ -574,9 +574,14 @@ boot-proven; everything else is open.
    `lt6911_manage` gets a DT node (I2C0 @0x2b, GPIO descriptors, its three
    pinmux pokes as pinctrl states) and keeps its `/proc` ABI; `nanokvm-gpio`
    moves to libgpiod/DT names. Depends on: #80.
-9. **#82 USB: dwc3 glue + gadget HID** — `dwc3-of-simple`-class glue (one
-   PHY reset bit + clocks), `extcon-usb-gpio`, configfs `hid/mass_storage/ncm/
-   uac2` as today (`usbdev.sh` contract from nixos-rootfs.md gap 2).
+9. **#82 USB: dwc3 glue + gadget HID** — source half DONE 2026-09-07 (see
+   "What exists now (#82)" at the end of this section): `dwc3-axera.c` over
+   the mainline dwc3 core, three new flash clock rows and two reset lines,
+   the configfs gadget and all five `usbdev.sh` function drivers built in,
+   and three new milestone bits that make enumeration readable without a
+   serial console. `extcon-usb-gpio` is deliberately deferred: OTG ID
+   detection is a raw GPIO and there is no GPIO controller until #81, and
+   the appliance is a peripheral in every mode it ships in.
    Depends on: #80.
 10. **#83 Video stack on mainline (fwnode graph, syscon, reserved-memory)** —
     Port `open_vin_csi2`, `open_vin_capture`, `vc8000-vcmd` glue to the
@@ -1000,6 +1005,135 @@ declared and deliberately never registered. The number is confirmed from a
 third artifact by the boot run: `clk_summary` on the running kernel lists 265
 clocks. #77 added no clock rows -- it converted one mux to the rate-changing
 flavour and used rows the vendor table already had.
+
+(#82 has since taken the tree to **268** clocks and **150** reset lines --
+three USB gates and the two USB software resets, all in the flash window.
+Both figures were re-derived the same way, from the table sizes in the
+compiled `vmlinux` rather than from the source that generated them.)
+
+### What exists now (#82, 2026-09-07) — USB, SOURCE HALF, NOT YET BOOTED
+
+**Not hardware-proven.** Everything below builds and asserts itself; the
+slot-B boot test is queued behind another agent's use of the device. The
+procedure and the two oracles it turns on are at the end of this section.
+
+The controller needed no reverse engineering either. It is a stock Synopsys
+DWC3 in a high-speed-only configuration, mainline's dwc3 core drives it, and
+`drivers/usb/dwc3/dwc3-axera.c` is ~210 lines whose whole job lives outside
+the core's own window, in the flash syscon at `0x1003_0000`: the gates at
+`+0x04` bits 12/14 and `+0x08` bit 5, the two software resets at `+0x14` bits
+24/25, and `+0x40` bit 6.
+
+**That last bit is the only reason a glue driver exists.** `+0x40` bit 6 is
+VBUSVALID, and this integration has no VBUS comparator wired to the
+controller: software tells the core whether VBUS is present. In peripheral
+mode the bit must be **set** or the gadget never pulls up D+ and the host
+never sees a device; in host mode it must be **clear**, because then the port
+drives VBUS itself. Neither the dwc3 core nor `dwc3-of-simple` can express
+that, and getting it wrong produces a controller that probes perfectly, logs
+nothing wrong, and enumerates nothing.
+
+**Two nodes, and the split is not cosmetic.** The outer node is the glue and
+holds the clocks, the resets and the syscon phandle; the inner one is the
+core, `compatible = "snps,dwc3"`, and it names the 24 MHz reference as `ref`.
+Mainline's `dwc3_ref_clk_period()` derives `GUCTL.REFCLKPER`,
+`GFLADJ.REFCLK_FLADJ` and `GFLADJ.240MHZDECR` from `clk_get_rate()` on that
+clock, and rate == 24000000 exactly reproduces the three constants the vendor
+glue hardcodes: `0x29`, `0x7f0`, `0xa`. Handing the core
+`snps,ref-clock-period-ns = <41>` instead sets the period right and the
+frequency adjustment to **zero**, because 10⁹/41 is 24.39 MHz and the core
+would conclude no adjustment is needed. Same register, silently 1.6 % off.
+
+**Three clock rows and two reset lines, confirmed by two artifacts that
+agree.** The flash window's id-to-bit relation is arithmetic — every
+registered id in the `0x04` word sits at bit `25 - id` and every one in `0x08`
+at bit `45 - id` — and the vendor dwc3 glue independently names exactly the
+`BIT()` positions that arithmetic predicts for the three ids the vendor clock
+binding header declares (11, 13, 40). `bus_clk_usb_eb` hangs off
+`clk_flash_glb_sel`, the AXI bus clock the whole flash domain shares with the
+EMAC and both SD hosts, and is deliberately **not** `CLK_SET_RATE_PARENT`: the
+vendor glue sets that mux to 312 MHz at USB probe, firmware already leaves it
+there, and a rate request propagating from here would move the eMMC's and the
+MAC's bus clock as a side effect. `usb_ref_alt_clk_eb` gets a NULL parent for
+the reason #76's SD bus gates do — its source is not established in any
+artifact we have.
+
+**This is the reset controller's first real `.assert`.** #80 shipped the
+provider and programmed nothing at probe, because every line it described
+belonged to a block already running. These two do not: they are active high,
+not self-clearing, and firmware leaves them released, so the glue asserts,
+waits 2 µs and releases. A deassert-only bring-up — which is all the dwc3
+core itself would do — never resets the PHY at all. Whether the pulse behaves
+is the first thing the boot test reports.
+
+**`dr_mode = "peripheral"`, not the vendor's `"otg"`.** OTG on this board is
+ID detection on a raw GPIO (GPIO1_A4) through `linux,extcon-usb-gpio`, and
+there is no GPIO controller node until #81 — the same wall #77 hit with the
+PHY reset line and #76 with the eMMC card reset. It is also what the appliance
+actually wants: nothing is ever plugged *into* this port. The kernel keeps
+`USB_DWC3_DUAL_ROLE`, so #81 turns this back on with a DT change and not a
+rebuild. The TODO with the exact node text is in `dts/ax630c.dtsi`.
+
+**No pin state, deliberately.** The pin controller's only `usb` group is
+MICN_R_D / MICP_R_D muxed to USB_OVRCUR / USB_POWER_EN — host-side
+overcurrent and VBUS-enable signals. The vendor board dts never claims them,
+this board is a peripheral, and both pads use the EN/SE pull encoding of the
+§1.4 trap. The data pads are analog and are in no pinmux table at all.
+
+**The gadget is now a kernel config fact.** `USB_CONFIGFS` is built in (arm64
+defconfig makes it a module, and there is no module path on this board until
+#78) along with all five function drivers `/kvmapp/scripts/usbdev.sh` needs:
+HID, mass storage, NCM, UAC2 and ACM. `SOUND` and `SND` come with UAC2, which
+is a bool that `depends on SND` and cannot be satisfied by the modular
+default; that is the only reason the sound core is compiled in, and the
+board's real audio path is still #84.
+
+**Three new milestone bits, and they fail independently.** Bit 22 is a UDC
+registered — the glue probed and the core bound, pure kernel side. Bit 23 is
+every one of the five function drivers present (each probed by a `mkdir` under
+`functions/` that instantiates it, then removed) *and* a HID boot-keyboard
+gadget assembled through configfs and bound by writing the controller's name
+to `g0/UDC`, which is what starts the gadget and pulls up D+. Bit 24 is the
+UDC reaching state `configured`: a host on the other end enumerated us and
+selected a configuration.
+
+Only bit 24 depends on anything outside the board, and the physical USB link
+on this unit has been unreliable since 2026-09-05 (#42 was a physical fault).
+So **22 and 23 set with 24 clear means "look at the cable", not "USB is
+broken"** — that separation is the whole point of using three bits rather than
+one. The clear-mask is now **`0x1FFF000`** and a fully successful run reads
+`0x01FFF014`.
+
+The gadget identifies itself as Linux Foundation `1d6b:0104` with product
+string `NanoKVM-Pro mainline bring-up`. Deliberately not a Sipeed id: this
+gadget is not the vendor's and must not claim to be, and the string makes it
+unmistakable in `lsusb` on the attached bench host. Its report descriptor is
+the boot-protocol keyboard one from `Documentation/usb/gadget_hid.rst` — the
+same shape as `usbdev.sh`'s `hid.GS0` because there is only one shape a boot
+keyboard can have, but copied from the kernel's own documentation.
+
+#### The hardware test, when the device is free
+
+Standard slot-B loop (`.claude/skills/mainline-boot-test`), with the mask at
+`0x1FFF000`. Two oracles, and they answer different questions:
+
+- **Device-side, no host needed.** From the mainline shell during the dwell:
+  `ls /sys/class/udc` names the controller, `cat /sys/class/udc/*/state` says
+  how far enumeration got, and `ls /sys/kernel/config/usb_gadget/g0/functions`
+  shows the bound gadget. `dmesg | grep -i -e dwc3 -e axera-dwc3` carries the
+  glue's own `VBUSVALID set (peripheral mode)` line and the core's
+  `dwc3 8000000.usb: Configuration mismatch` style complaints if the ref clock
+  is wrong. Milestone bits 22 and 23 record the same facts for a run nobody
+  watches.
+- **Host-side, on the bench machine the KVM's USB-C is plugged into.**
+  `lsusb -d 1d6b:0104` and `dmesg | tail` around the boot; a `hidraw` node and
+  an `input` device should appear. This is the only check that proves the
+  cable and the pullup, and it is the one to distrust first when bit 24 is
+  clear.
+
+Not proven, and not attempted: mass storage, NCM, UAC2 and ACM as *running*
+functions (only their drivers' presence is checked), any transfer, suspend and
+resume, and host mode.
 
 ---
 

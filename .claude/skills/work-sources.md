@@ -459,13 +459,19 @@ propose SG2002 work without flagging this gap up front.
   RTL8211F, `phy-mode = rgmii-id`; milestone mask now `0x3FF000`; b2935d8);
   **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
   watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
-  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states, the CPUPLL/
-  cpufreq model, and the first real exercise of `.assert`/`.reset` (rides #81
-  or #83). All three issues stay open; only #74 is closed.
+  `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states and the CPUPLL/
+  cpufreq model; **#82 SOURCE HALF DONE, NOT YET BOOTED** (`dwc3-axera.c`, a
+  ~210-line of-simple-class glue whose real content is the VBUSVALID bit no
+  generic glue can express; two DT nodes so the core can take the 24 MHz `ref`
+  clock and land on the vendor's exact GFLADJ constants; three flash clock rows
+  and two reset lines -- the reset controller's FIRST real `.assert`; the
+  configfs gadget and all five `usbdev.sh` function drivers built in; milestone
+  bits 22/23/24 and mask `0x1FFF000`; 1235543). All four issues stay open; only
+  #74 is closed.
   Next: **#78** (NixOS appliance on mainline -- note the eth0 MAC is a
   provisioning-time literal in `/etc/network/interfaces`, not UID-derived);
-  **#81** and **#82** can start in parallel now that #80's drivers are on
-  hardware; **#85** (aic8800) still can start from source.
+  **#81** can start in parallel, and **#82** needs one slot-B boot with the
+  bench host's USB-C attached; **#85** (aic8800) still can start from source.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing
