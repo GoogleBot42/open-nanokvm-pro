@@ -238,24 +238,57 @@
 		};
 
 		/*
-		 * Watchdog 0. Disabled here because the driver is #75; the node
-		 * is present so that issue is a driver change and not a DT
-		 * change. Two windows: the WDT itself, then the peripheral
-		 * clock/reset syscon the vendor driver pokes directly (it
-		 * predates any clk provider for this block).
+		 * Watchdog 0. Boot-critical, and the reason a mainline kernel
+		 * can boot this board at all: U-Boot arms this block for 30 s
+		 * immediately before `booti`, so a kernel that does not pet it
+		 * is hard-reset about a minute in, with no console to say why.
 		 *
-		 * That second window is now periph_clk's, and #80 made it a
-		 * syscon. #75 must NOT ioremap it a second time -- overlapping
-		 * request_mem_region()s fail. Take a syscon phandle to
-		 * &periph_clk (or, better, a clocks/resets phandle now that a
-		 * provider exists) and drop the second reg entry.
+		 * One reg window, not two. The vendor node's second window is
+		 * the peripheral syscon, which the clock controller above
+		 * already owns -- two request_mem_region()s over one window
+		 * cannot both succeed. The driver reaches this block's gates,
+		 * resets and clock-source mux through that syscon instead, with
+		 * the phandle's cell naming the instance (0 or 2; there is no
+		 * wdt1). TODO(#80): becomes clocks/resets/assigned-clock-parents
+		 * once the clock driver registers the six WDT clock IDs.
+		 *
+		 * The interrupt is described because the hardware raises it at
+		 * the first of the block's two expiry stages, but the driver
+		 * does not claim it: a pretimeout structurally fixed at
+		 * timeout/2 is not something the watchdog core can express.
 		 */
 		wdt0: watchdog@4840000 {
 			compatible = AX630C_WDT_COMPAT;
-			reg = <0x0 0x4840000 0x0 0x400>,
-			      <0x0 0x4870000 0x0 0x400>;
+			reg = <0x0 0x4840000 0x0 0x400>;
 			interrupts = <GIC_SPI 149 IRQ_TYPE_LEVEL_HIGH>;
-			status = "disabled";
+			axera,periph-syscon = <&periph_clk 0>;
+			status = "okay";
 		};
+	};
+
+	/*
+	 * Reboot. PSCI on this TF-A implements no SYSTEM_RESET -- psci_sys_reset
+	 * still registers at priority 129, makes one SMC that returns
+	 * NOT_SUPPORTED, and falls through -- so the chip reset has to come from
+	 * somewhere else. CHIP_RST_SW is bit 0 of COMM_ABORT_CFG in the common
+	 * syscon, which is what the vendor U-Boot's own reboot uses; poking it
+	 * from the running vendor system resets the SoC through the whole boot
+	 * chain and leaves the A/B slot register intact (verified on hardware
+	 * 2026-09-06).
+	 *
+	 * mask and value are both given so the driver does a read-modify-write.
+	 * With mask alone it writes the whole word, which would clear the wdt0
+	 * and wdt2 reset enables in bits 7 and 9 -- disarming the fallback on
+	 * the way out.
+	 *
+	 * Priority 192 by default, ahead of PSCI's 129; the watchdog's own
+	 * restart handler sits behind both at 128.
+	 */
+	reboot {
+		compatible = "syscon-reboot";
+		regmap = <&common_clk>;
+		offset = <0xa8>;
+		mask = <0x1>;
+		value = <0x1>;
 	};
 };

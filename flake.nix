@@ -121,12 +121,20 @@
 
         kernel = callPkg ./pkgs/kernel.nix { inherit initramfs; };
 
-        # Mainline kernel scaffolding for epic #26 (issue #74). Built from the
-        # kernel.org tree our nixpkgs pin carries, with our own config fragment
-        # and our own device tree (dts/, compiled by pkgs/dtb-mainline.nix).
-        # Additive: no image, rootfs or update output references it, and the
-        # 4.19 outputs are untouched. Booting it is #75.
-        kernel-mainline = callPkg ./pkgs/kernel-mainline.nix { };
+        # Bring-up initramfs for the mainline kernel (#75): one static init
+        # whose only job is to leave evidence that userspace ran, in places the
+        # vendor system can read back on the next boot. Distinct from
+        # `initramfs` above, which is the shipping 4.19 one.
+        initramfsMainline = callPkg ./pkgs/initramfs-mainline.nix { };
+
+        # Mainline kernel for epic #26 (#74 scaffolding, #75 first boot). Built
+        # from the kernel.org tree our nixpkgs pin carries, with our own config
+        # fragment, our own drivers grafted in, and our own device tree (dts/,
+        # compiled by pkgs/dtb-mainline.nix). Additive: no image, rootfs or
+        # update output references it, and the 4.19 outputs are untouched.
+        kernel-mainline = callPkg ./pkgs/kernel-mainline.nix {
+          inherit initramfsMainline;
+        };
 
         # NOTE (#49, resolved 2026-08-30): there is deliberately NO CMA kernel
         # variant. CONFIG_CMA/CONFIG_DMA_CMA are vermagic-invisible but ABI-
@@ -372,7 +380,7 @@
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
-            kernel-mainline dtb-mainline
+            initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-slot-image dtb-mainline-slot-image
             open-vin-csi2 open-vin-capture
             kernel-slot-image

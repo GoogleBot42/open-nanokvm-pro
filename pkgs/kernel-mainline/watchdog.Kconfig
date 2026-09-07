@@ -1,0 +1,17 @@
+config AX630C_WATCHDOG
+	bool "Axera AX630C (AX620E) watchdog"
+	depends on ARM64 || COMPILE_TEST
+	depends on OF
+	select MFD_SYSCON
+	select WATCHDOG_CORE
+	help
+	  Watchdog driver for the Axera AX630C and the rest of the AX620E
+	  family. The block interrupts on its first expiry and resets the SoC
+	  on the second; its counter clock, gates and resets live in the
+	  peripheral syscon rather than in the block itself.
+
+	  On these SoCs the firmware implements no PSCI SYSTEM_RESET, so this
+	  block is also the last-resort reboot path, and the bootloader arms it
+	  before entering the kernel. Say Y if you are building a kernel for an
+	  AX620E-family SoC: there is no module option, because a kernel that
+	  reaches modprobe later than the bootloader's timeout never gets there.

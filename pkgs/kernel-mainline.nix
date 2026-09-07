@@ -1,4 +1,4 @@
-{ pkgs, crossPkgs, ... }:
+{ pkgs, crossPkgs, initramfsMainline, ... }:
 
 # ---------------------------------------------------------------------------
 # Mainline Linux for the AX630C / NanoKVM-Pro (#74, epic #26).
@@ -71,6 +71,11 @@ pkgs.stdenv.mkDerivation {
   # a pinctrl driver are needed long before there is a rootfs to load a .ko from.
   treeGraft = ./kernel-mainline/tree;
 
+  # drivers/watchdog has no per-vendor subdirectories upstream, so the watchdog
+  # driver (#75) is a flat file in treeGraft plus this Kconfig block, inserted
+  # below where it belongs alphabetically.
+  watchdogKconfig = ./kernel-mainline/watchdog.Kconfig;
+
   postPatch = ''
     patchShebangs scripts
 
@@ -100,6 +105,30 @@ pkgs.stdenv.mkDerivation {
 
     graft_into clk     aspeed "$(printf '\t\t\t\t\t')"
     graft_into pinctrl aspeed "$(printf '\t\t\t\t')"
+
+    # --- graft the flat watchdog driver (#75) ----------------------------
+    # Not a directory graft: drivers/watchdog is flat upstream, so this is one
+    # .c (already copied above) plus a Kconfig block and a Makefile line, each
+    # inserted at the alphabetical slot upstream would use. Both anchors are
+    # unique in their file; assert the insertions, because a silently missed
+    # hook here builds a kernel with no watchdog driver -- which on this board
+    # means U-Boot's 30 s dog resets it mid-boot, forever, with no console.
+    awk -v snippet="$watchdogKconfig" '
+      /^config CADENCE_WATCHDOG$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/watchdog/Kconfig > drivers/watchdog/Kconfig.grafted
+    mv drivers/watchdog/Kconfig.grafted drivers/watchdog/Kconfig
+    grep -q '^config AX630C_WATCHDOG$' drivers/watchdog/Kconfig \
+      || { echo "ERROR: could not hook AX630C_WATCHDOG into drivers/watchdog/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_AT91SAM9X_WATCHDOG) += at91sam9_wdt.o$|&\nobj-$(CONFIG_AX630C_WATCHDOG) += ax630c_wdt.o|' \
+      drivers/watchdog/Makefile
+    grep -qF 'obj-$(CONFIG_AX630C_WATCHDOG) += ax630c_wdt.o' drivers/watchdog/Makefile \
+      || { echo "ERROR: could not hook ax630c_wdt.o into drivers/watchdog/Makefile" >&2; exit 1; }
   '';
 
   configurePhase = ''
@@ -115,19 +144,51 @@ pkgs.stdenv.mkDerivation {
     # carries this SoC's core drivers. Our fragment (see the file) only pins
     # what a bring-up must not lose.
     make O=build defconfig
+
+    # ---- Embedded bring-up initramfs (#75) -------------------------------
+    # The mainline kernel has no storage driver yet, so this cpio's /init is
+    # the ONLY userspace that can exist -- and proving userspace was reached is
+    # the whole point of the first boot. See pkgs/initramfs-mainline.nix.
+    #
+    # Set BEFORE the fragment is merged, on purpose: the
+    # INITRAMFS_COMPRESSION_* choice is `depends on INITRAMFS_SOURCE != ""`, so
+    # merging COMPRESSION_NONE into a config with no source silently drops it
+    # and the next olddefconfig picks the choice's first member, gzip.
+    initramfsCpio="${initramfsMainline}/initramfs-mainline.cpio"
+    echo "bring-up initramfs: $(stat -c%s "$initramfsCpio") bytes ($initramfsCpio)"
+    ./scripts/config --file build/.config \
+      --set-str INITRAMFS_SOURCE "$initramfsCpio"
+
     ./scripts/kconfig/merge_config.sh -m -O build \
       build/.config "$configFragment"
     make O=build olddefconfig
 
     # --- assert the fragment survived olddefconfig ------------------------
     for opt in CONFIG_BLK_DEV_INITRD CONFIG_SERIAL_8250_DW CONFIG_WATCHDOG \
-               CONFIG_PSTORE_RAM CONFIG_DMA_CMA CONFIG_NAMESPACES \
+               CONFIG_PSTORE CONFIG_PSTORE_RAM CONFIG_PSTORE_CONSOLE \
+               CONFIG_DMA_CMA CONFIG_NAMESPACES \
                CONFIG_OVERLAY_FS CONFIG_TMPFS_XATTR \
                CONFIG_COMMON_CLK_AX630C CONFIG_PINCTRL_AX630C \
+               CONFIG_AX630C_WATCHDOG CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED \
+               CONFIG_POWER_RESET_SYSCON CONFIG_DEVMEM \
+               CONFIG_INITRAMFS_COMPRESSION_NONE \
                CONFIG_MFD_SYSCON; do
       grep -q "^$opt=y" build/.config \
         || { echo "ERROR: $opt did not survive olddefconfig" >&2; exit 1; }
     done
+
+    # --- assert the things whose ABSENCE is load-bearing ------------------
+    # STRICT_DEVMEM would let the bring-up init map the two MMIO windows but
+    # not its log stash, which is reserved-but-mapped System RAM -- and it
+    # would fail at runtime, on the one boot that matters, with no console.
+    grep -q '^CONFIG_STRICT_DEVMEM=y' build/.config \
+      && { echo "ERROR: STRICT_DEVMEM blocks the bring-up init's log stash" >&2; exit 1; }
+
+    # --- assert the embedded initramfs actually landed --------------------
+    # A kernel that boots to no userspace looks exactly like a kernel that
+    # died, and this is the only thing that tells the two apart.
+    grep -q "^CONFIG_INITRAMFS_SOURCE=\"$initramfsCpio\"" build/.config \
+      || { echo "ERROR: INITRAMFS_SOURCE is not our cpio" >&2; exit 1; }
     grep -q '^CONFIG_DEBUG_INFO_BTF=y' build/.config \
       && { echo "ERROR: BTF is on; the build will need pahole" >&2; exit 1; }
 

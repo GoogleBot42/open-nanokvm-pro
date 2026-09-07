@@ -77,16 +77,58 @@
 		};
 
 		/*
-		 * Deliberately mapped (no `no-map`): pstore needs it in the
-		 * linear map. With no serial on this unit, ramoops is how a
-		 * panic gets read back after the reboot.
+		 * The vendor kernel's pstore zones. Kept reserved, and untouched,
+		 * so that a mainline excursion on slot B does not destroy the
+		 * crash history of the slot-A system that has to diagnose it.
+		 * The vendor DT declares one ramoops region here, 0xf0000 long,
+		 * whose zones only reach 0x480e0000 -- everything past that is
+		 * reserved on both sides and used by neither, which is why the
+		 * two regions below can live there.
 		 */
-		ramoops@48000000 {
+		vendor-pstore@48000000 {
+			reg = <0x0 0x48000000 0x0 0xe0000>;
+			no-map;
+		};
+
+		/*
+		 * Our ramoops, deliberately NOT at the head of the window: the
+		 * vendor kernel's own ramoops zaps every zone it owns at its
+		 * probe, about 1.5 s into the boot that would read ours. A log
+		 * written at 0x48000000 is destroyed by the very kernel meant to
+		 * recover it (measured 2026-09-06).
+		 *
+		 * mem-type 1 is uncached. On a board whose only reset is a
+		 * watchdog or a raw chip reset, neither of which writes back
+		 * dirty cache lines, a cacheable pstore zone is a log that
+		 * evaporates in exactly the case it exists for.
+		 *
+		 * This is the only channel that survives when userspace never
+		 * runs: the console zone holds the boot log from the first
+		 * printk (pstore's console registers with CON_PRINTBUFFER, so
+		 * the buffered log is replayed into it), and the dump zone holds
+		 * the panic.
+		 */
+		ramoops@480e0000 {
 			compatible = "ramoops";
-			reg = <0x0 0x48000000 0x0 0xf0000>;
-			record-size = <0x40000>;
-			console-size = <0x80000>;
-			ftrace-size = <0x20000>;
+			reg = <0x0 0x480e0000 0x0 0x8000>;
+			console-size = <0x6000>;
+			record-size = <0x2000>;
+			mem-type = <1>;
+		};
+
+		/*
+		 * The bring-up initramfs's kernel-log stash
+		 * (pkgs/kernel-mainline/initramfs/bringup-init.c). Mapped, not
+		 * no-map, and written through an O_SYNC /dev/mem mapping, which
+		 * arm64 makes write-combining -- so it reaches DRAM without
+		 * depending on a cache flush that no reset on this SoC performs.
+		 *
+		 * Read it back from the vendor system after the excursion:
+		 *   dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=8
+		 * The first 32 bytes are a magic string and a u32 length at +24.
+		 */
+		bringup-log@480e8000 {
+			reg = <0x0 0x480e8000 0x0 0x8000>;
 		};
 	};
 };
