@@ -81,26 +81,37 @@
       Type = "oneshot";
       RemainAfterExit = true;
     };
-    path = with pkgs; [ busybox coreutils iproute2 ];
+    path = with pkgs; [ coreutils ];
     script = ''
+      # Every tool by ABSOLUTE STORE PATH, and that is not fastidiousness.
+      # Run 3 put busybox first on this unit's PATH, so `ip` resolved to
+      # busybox's applet, which has no `-br` -- the journal recorded
+      # "Usage: ip [OPTIONS] address|route|..." and bit 26 stayed clear on a
+      # boot that had a perfectly good DHCP lease. A milestone that silently
+      # measures nothing is worse than no milestone, because it is read back
+      # as evidence.
+      devmem=${pkgs.busybox}/bin/devmem
+      ip=${pkgs.iproute2}/bin/ip
+      ss=${pkgs.iproute2}/bin/ss
+
       # +0x4 is the write-1-to-set alias, so a milestone never needs a
       # read-modify-write and can never disturb the slot bits themselves.
-      devmem 0x02390028 32 0x2000000
+      "$devmem" 0x02390028 32 0x2000000
       for _ in $(seq 1 60); do
-        if ip -4 -br addr show scope global | grep -q .; then
-          devmem 0x02390028 32 0x4000000
+        if "$ip" -4 -br addr show scope global | grep -q .; then
+          "$devmem" 0x02390028 32 0x4000000
           break
         fi
         sleep 2
       done
       for _ in $(seq 1 30); do
-        if ss -ltn 2>/dev/null | grep -q ':22 '; then
-          devmem 0x02390028 32 0x8000000
+        if "$ss" -ltn 2>/dev/null | grep -q ':22 '; then
+          "$devmem" 0x02390028 32 0x8000000
           break
         fi
         sleep 2
       done
-      echo "slotb-milestones: BACKUP0 now $(devmem 0x02390024)"
+      echo "slotb-milestones: BACKUP0 now $("$devmem" 0x02390024)"
     '';
   };
 
@@ -146,18 +157,30 @@
     };
     path = with pkgs; [ coreutils systemd ];
     script = ''
+      # MONOTONIC, not wall clock. `date +%s` was wrong here in a way that only
+      # hardware could show: the image boots with the clock at its build-time
+      # epoch, timesyncd then jumps it months forward the moment DHCP lands
+      # ("Initial clock synchronization to ..." at t=48 s in run 3), and a
+      # deadline computed as `date +%s + 900` was instantly in the past. The
+      # deadman fired at 62 s instead of 900 -- which happened to prove it
+      # works, and would have been a mystery on any run that did not.
+      # /proc/uptime is CLOCK_MONOTONIC and no clock jump can touch it.
+      now () { cut -d. -f1 < /proc/uptime; }
+
       dwell=900
-      deadline=$(( $(date +%s) + dwell ))
-      echo "slotb-deadman: rebooting to slot A in $dwell s unless /run/keepalive appears"
-      while [ "$(date +%s)" -lt "$deadline" ]; do
+      deadline=$(( $(now) + dwell ))
+      echo "slotb-deadman: rebooting to slot A $dwell s from now (uptime $(now) s)"
+      echo "               unless /run/keepalive appears"
+      while [ "$(now)" -lt "$deadline" ]; do
         sleep 15
         if [ -e /run/keepalive ]; then
           rm -f /run/keepalive
-          deadline=$(( $(date +%s) + 3600 ))
+          deadline=$(( $(now) + 3600 ))
           echo "slotb-deadman: keepalive taken, one hour more"
         fi
       done
-      echo "slotb-deadman: dwell expired, rebooting -- nothing re-armed slot B"
+      echo "slotb-deadman: dwell expired at uptime $(now) s, rebooting --"
+      echo "               nothing re-armed slot B, so this lands on slot A"
       systemctl --no-block reboot
     '';
   };
