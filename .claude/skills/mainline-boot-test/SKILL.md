@@ -131,7 +131,7 @@ A slot register still reading `0x00000038` means the SPL never consumed
 `SLOTB_BOOTABLE` — that is "no reboot happened", not "the kernel failed".
 
 **The mask grows as milestones are added.** It was `0xF000` for #75's four bits
-and is `0x3F000` since #76 added two more. The register's bits 12–29 are all
+and is `0x3FF000` since #76 added two and #77 four more. The register's bits 12–29 are all
 free (nothing in the SPL, ATF, U-Boot, the RISC-V companion or the vendor
 kernel writes them), so there is room — but a stale mask silently leaves old
 bits set, which reads as a success that did not happen.
@@ -203,7 +203,10 @@ the MAC it reads out of the vendor rootfs, so DHCP hands back the same lease
 and `tools/kvmssh` works unchanged. `uname -r` is the oracle for which slot
 answered — `7.1.3-nanokvm` is the mainline kernel, `4.19.125` is slot A. The
 dwell is 300 s; `touch /run/keepalive` from that shell extends it to a
-one-hour cap, and nothing extends it past that.
+one-hour cap, and nothing extends it past that. **That extension is one-way**:
+`/init` latches the limit the first time it sees the file, so deleting the file
+does not shorten the dwell — touch it only if you are willing to wait out the
+full hour, or to end the run yourself from the mainline shell.
 
 ```
 # the whole kernel log, verbatim, as /init copied it (record format)
