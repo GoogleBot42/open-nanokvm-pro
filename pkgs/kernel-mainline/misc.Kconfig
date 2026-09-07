@@ -1,0 +1,19 @@
+config LT6911_MANAGE
+	tristate "Lontium LT6911UXC HDMI receiver management"
+	depends on I2C && GPIOLIB && OF
+	depends on PROC_FS
+	help
+	  Management driver for the Lontium LT6911UXC HDMI-to-MIPI bridge as
+	  wired on the Sipeed NanoKVM-Pro: power sequencing for the bridge and
+	  the LT86102UXE loop-out splitter, cable presence, the incoming
+	  video mode and audio sample rate, and EDID and firmware-string
+	  programming through the bridge's SPI flash.
+
+	  It is not a V4L2 subdev. The bridge's video data path is a MIPI
+	  CSI-2 stream that the SoC's own receiver handles; what is left is a
+	  /proc interface that userspace polls for the source's geometry, and
+	  that interface is an ABI here.
+
+	  Say Y if you are building a kernel for a NanoKVM-Pro. Built in
+	  rather than modular means the bridge is powered before anything
+	  tries to capture from it.

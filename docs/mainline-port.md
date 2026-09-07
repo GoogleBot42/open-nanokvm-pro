@@ -269,9 +269,12 @@ concrete deltas, from the sources:
   U-Boot (and then the kernel's `ax_pinmux` `arch_initcall`) replay the SDK
   DEMO pad table. On mainline only U-Boot's pass remains until pinctrl exists,
   at which point the pads move into DT `pinctrl-0` states.
-- `lt6911_manage.c` also **writes pinmux registers directly**
-  (`0x104F006C`, `0x02300048`, `0x02300054`) — the same trap class as SW_PWR;
-  those become pinctrl states too.
+- `lt6911_manage.c` also **writes pinmux registers directly** — the same trap
+  class as SW_PWR. **Seven pads, not the three this line used to name**
+  (corrected 2026-09-07 by #81): `0x104F006C` EPHY_LED0, `0x02300048` VI_D5,
+  `0x02300054` VI_D6, `0x0230A06C` CDTX_L4N, `0x0230A078` CDTX_L4P,
+  `0x02302090` TMS, `0x0230A060` CDTX_L3P. On mainline none of them is a
+  pinctrl state: claiming the GPIO programs the mux (§8, #81).
 - `lt6911_manage.c` is the fourth driver to carry: 4.19 legacy GPIO numbers and
   `i2c_get_adapter(0)` → DT node with GPIO descriptors; `/proc/lt6911_info`
   ABI kept (libkvm and the display daemon read it).

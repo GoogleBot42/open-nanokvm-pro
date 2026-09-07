@@ -94,6 +94,9 @@ pkgs.stdenv.mkDerivation {
   # one .c in treeGraft plus this Kconfig block and a Makefile line.
   gpioKconfig = ./kernel-mainline/gpio.Kconfig;
 
+  # Same for the HDMI receiver's management driver (#81), in drivers/misc.
+  miscKconfig = ./kernel-mainline/misc.Kconfig;
+
   postPatch = ''
     patchShebangs scripts
 
@@ -193,6 +196,28 @@ pkgs.stdenv.mkDerivation {
       drivers/gpio/Makefile
     grep -qF 'obj-$(CONFIG_GPIO_AX630C)' drivers/gpio/Makefile \
       || { echo "ERROR: could not hook gpio-ax630c.o into drivers/gpio/Makefile" >&2; exit 1; }
+
+    # --- graft the HDMI receiver's management driver (#81) ---------------
+    # drivers/misc is flat and unsorted upstream, so the anchors are simply
+    # two lines that exist exactly once. Assert both: without this driver the
+    # /proc interface libkvm reads for the source geometry does not exist, and
+    # capture has no way to learn what the attached machine is displaying.
+    awk -v snippet="$miscKconfig" '
+      /^config SRAM$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/misc/Kconfig > drivers/misc/Kconfig.grafted
+    mv drivers/misc/Kconfig.grafted drivers/misc/Kconfig
+    grep -q '^config LT6911_MANAGE$' drivers/misc/Kconfig \
+      || { echo "ERROR: could not hook LT6911_MANAGE into drivers/misc/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_SRAM)\t\t+= sram.o$|&\nobj-$(CONFIG_LT6911_MANAGE)\t+= lt6911-manage.o|' \
+      drivers/misc/Makefile
+    grep -qF 'obj-$(CONFIG_LT6911_MANAGE)' drivers/misc/Makefile \
+      || { echo "ERROR: could not hook lt6911-manage.o into drivers/misc/Makefile" >&2; exit 1; }
   '';
 
   configurePhase = ''
