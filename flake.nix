@@ -406,6 +406,25 @@
           variant = "loop-image";
           applianceModules = [ ./nixos/loop-test.nix ];
         });
+        # The same loop-image test with the two identity fixes REVERTED to the
+        # behaviour of the first hardware run -- the static `hostnamectl` call
+        # and networkd's own DHCP client identifier. It exists to attribute a
+        # failure, not to ship: run 3 boots this to prove the exit machinery
+        # brings the board back on a boot known to reach the LAN, and run 4
+        # boots the variant above so the two differ in exactly those two
+        # properties. Stage 1 is byte-identical between them -- both changes are
+        # stage-2 only -- so the two runs share one kernel and one slot-B flash,
+        # and swapping runs is swapping the rootfs image file.
+        nixos-appliance-loop-nofixes = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+          variant = "loop-image-nofixes";
+          applianceModules = [
+            ./nixos/loop-test.nix
+            {
+              nanokvm.identity.useTransientHostname = false;
+              nanokvm.dhcp.clientIdentifier = "duid";
+            }
+          ];
+        });
         # Third variant: the same appliance retargeted at `qemu-system-aarch64
         # -M virt`, which is where the NixOS half of the boot is proven before
         # anything is written to the device. See nixos/qemu-test.nix.
@@ -523,7 +542,7 @@
             nanokvm-server nanokvm-server-libgpiod nanokvm-gpio
             nanokvm-web nanokvm-display libsns-dummy
             update-package
-            base-axp rootfs nixos-appliance nixos-appliance-loop
+            base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             firmware-image sd-image
             edid axdl;
 

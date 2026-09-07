@@ -220,8 +220,12 @@ let
       # write-into-a-store-symlink trap the vendor's own sed hits, reproduced by
       # its replacement. The transient hostname is what gethostname(2), the
       # server, mDNS and the DHCP client all actually read.
-      if ! hostnamectl --transient set-hostname "$host"; then
-        echo "identity: WARNING could not set the transient hostname" >&2
+      #
+      # The option exists so a hardware run can put the ORIGINAL, broken call
+      # back and isolate which of the two run-2 changes cost what. Nothing but
+      # a deliberate bisect should ever set it false.
+      if ! hostnamectl ${lib.optionalString cfg.identity.useTransientHostname "--transient "}set-hostname "$host"; then
+        echo "identity: WARNING could not set the hostname" >&2
       fi
 
       for d in /sys/class/net/*; do
@@ -380,6 +384,32 @@ in
         default = "kvm-";
         description = "Hostname prefix; the derived two bytes are appended.";
       };
+      useTransientHostname = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Set the TRANSIENT hostname rather than the static one.
+
+          Must stay true on any real image. `hostnamectl set-hostname` writes
+          the static hostname, which means writing /etc/hostname -- a read-only
+          store symlink -- and it fails; the transient hostname is what
+          gethostname(2), the server, mDNS and the DHCP client read. False
+          exists only so a hardware run can reproduce the original failure and
+          attribute it.
+        '';
+      };
+    };
+
+    dhcp.clientIdentifier = lib.mkOption {
+      type = lib.types.enum [ "mac" "duid" ];
+      default = "mac";
+      description = ''
+        DHCP option 61 for the wired link. `mac` is what the vendor's udhcpc
+        sends and what this device's lease has always been keyed on;
+        systemd-networkd's own default, `duid`, reads as a new client and gets
+        a new address. `duid` exists only so a hardware run can reproduce that
+        and attribute it.
+      '';
     };
   };
 
@@ -820,11 +850,14 @@ in
     # a DHCP server keys its reservation on whatever option 61 says. The vendor
     # stack runs udhcpc through ifupdown, which sends the MAC. So the first
     # hardware boot of this appliance came up with the correct derived MAC and
-    # a BRAND NEW ADDRESS -- .225 where the unit has always been .224 -- which
-    # on a board reached only over the network is most of the way to invisible.
+    # a BRAND NEW ADDRESS, not the one the unit has always had -- which on a
+    # board reached only over the network is most of the way to invisible.
     # `mac` restores option 61 to what every previous boot of this device sent.
+    #
+    # Settable so a hardware run can put the default back and isolate which of
+    # the two run-2 changes cost what.
     systemd.network.networks."99-ethernet-default-dhcp".dhcpV4Config.ClientIdentifier =
-      "mac";
+      cfg.dhcp.clientIdentifier;
     networking.firewall.enable = false; # appliance on a trusted LAN, ports 22/80/443
 
     users.mutableUsers = true;

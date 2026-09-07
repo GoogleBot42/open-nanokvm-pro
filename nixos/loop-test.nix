@@ -146,7 +146,7 @@
     };
     path = with pkgs; [ coreutils systemd ];
     script = ''
-      dwell=1800
+      dwell=900
       deadline=$(( $(date +%s) + dwell ))
       echo "slotb-deadman: rebooting to slot A in $dwell s unless /run/keepalive appears"
       while [ "$(date +%s)" -lt "$deadline" ]; do
