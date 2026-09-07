@@ -181,7 +181,7 @@ have / can be dropped).
 | GPIO | `axera,ax-apb-gpio` ×4 (`0x4800000`, `0x4801000`, `0x6000000`, `0x6001000`, SPI 114–117), **97** `gpio-ranges` (not 128; corrected 2026-09-06) | `drivers/gpio/gpio-axera.c` 538 LOC (defconfig also has `GPIO_DWAPB=y`, unused) | DesignWare *names* only: **one 32-bit register per GPIO** at `base + (n+1)*4` with DR/DDR/INTEN/… as bit fields, relocated port regs (`EXT_PORTA 0x8c`, secure/non-secure INTSTATUS `0x84/0xa4`), raw clock pokes at `0x4870000` (V) | **new driver** (~500 LOC); `gpio-dwapb` cannot bind | S–M | KVM (ATX, panel, LT6911 pins) |
 | Watchdog | `axera,ax-wdt` @`0x4840000` (wdt0) + `0x6040000` (wdt2) | `drivers/watchdog/ax_wdt.c` 514 LOC (`CONFIG_AX_WATCHDOG=y`, `NOWAYOUT=y`) | **not** DesignWare: EN `+0x00`, TORR `+0x0c`, start `+0x18`, count `+0x24`, kick `+0x30` magic `0x61696370` (V) | **new driver, mandatory**: U-Boot arms wdt0 for 30 s before `booti`; the vendor kernel pets it from the WDT's own ISR and reboots through `ax_wdt_restart()` because PSCI reset is absent | S | **boot** |
 | Thermal + ADC | `axera,ax620e-tsensor` @`0x2000000` (trips 80/105/120 °C) and `axera,ax620e-adc` (no `reg`; the driver `ioremap`s the *same* `0x2000000` block — one analog-monitor IP). `in_voltage0_raw` is the **board-id** the loader turns into DRAM size / pool geometry | `drivers/thermal/axera_thermal.c` 487 + `drivers/iio/adc/axera_adc.c` 307 LOC | Axera-custom 10-bit sensor block (V). **Thermal is decorative today**: no `cooling-maps` anywhere, `CPU_THERMAL` off, the 120 °C trip is typed `passive` — the SoC neither throttles nor shuts down | one new driver exposing `#thermal-sensor-cells` + `#io-channel-cells` (~200 LOC); DRAM size becomes a per-board DT fact | S | opt |
-| UID / identity | `ax,ax_hwinfo` → `/proc/ax_proc/uid`, read by the initramfs for `device_key` → MAC + hostname | `drivers/soc/axera/ax_hwinfo/ax_hwinfo.c` 261 LOC | **not an efuse peripheral**: it `memcpy`s the `misc_info_t` the bootloader leaves in IRAM0 at `0x740` (`uid_l/uid_h` at `+0x48/+0x4c`; `include/linux/soc/axera/ax_boardinfo.h`) (V) | tiny `nvmem` (or `syscon`) over that IRAM window, **or** have our U-Boot derive `ethaddr` from the UID and let its existing `fdt_fixup_ethernet()` write `local-mac-address` (no kernel driver at all). Without either, every unit gets the same MAC | S | KVM (identity) |
+| UID / identity | `ax,ax_hwinfo` → `/proc/ax_proc/uid`, read by the initramfs for `device_key` → MAC + hostname | `drivers/soc/axera/ax_hwinfo/ax_hwinfo.c` 261 LOC | **not an efuse peripheral**: it `memcpy`s the `misc_info_t` the bootloader leaves in IRAM0 at `0x740` (`uid_l/uid_h` at `+0x48/+0x4c`; `include/linux/soc/axera/ax_boardinfo.h`) (V) | **DONE (#78), with no kernel driver at all.** IRAM0 is at physical 0 — the vendor probe ioremaps the bare `0x740` with no base added — so `nanokvm-identity.service` reads `uid_l`/`uid_h` at `0x788`/`0x78c` through `/dev/mem` and reproduces the vendor MAC arithmetic exactly. A tiny `nvmem` node over that window, or a U-Boot `ethaddr` fixup feeding `fdt_fixup_ethernet()`, remain the upstreamable forms | S | KVM (identity) |
 | RTC | `axera,axi-top-rtc` | `drivers/rtc/rtc-axera.c` 479 LOC ("DesignWare Real Time Clock Driver", password `0x61696370`) | DW-*named*, no mainline DW RTC exists (V) | new driver, or none (no battery is known on the board) | S | opt |
 | cpufreq | `AXERA_CPUFREQ=y`, `AX620E_opptable.dtsi` | `drivers/cpufreq/axera-cpufreq.c` | `cpufreq-dt` once the clk driver exists | DT + clk | S | opt |
 | DMA | `axera,axi-dma-1.01a` @`0x48b0000` (SPI 113); **`axera,dma-per` @`0x48a0000`** (SPI 112, 16 ch); `axera,dma` @`0x10460000` | `drivers/dma/axera-axi-dmac/` 1547 LOC (**not built**; Synopsys/Paltsev header verbatim); `drivers/dma/axera-dma-per/` 1317 LOC (`=y`, custom); `soc/axera/dma/dma.c` has no Makefile entry (dead node) | AXI DMAC = stock `dw-axi-dmac` (V, header); **`dma_per` is Axera-custom and is the engine behind every UART/SPI/I2S DMA channel — incl. `i2s_slv0` 16/17 = HDMI audio** | AXI DMAC: rename the compatible. **`dma_per`: new dmaengine driver** if I2S audio must use DMA (designware-i2s has a PIO mode; try that first) | S / M | opt (audio) |
@@ -368,16 +368,18 @@ honouring it or carry a correct memory node and ignore it (§4).
 **Initramfs contract.** The vendor `/init`
 (`[SDK]/build/projects/…/initramfs/init`, carried verbatim by
 `pkgs/initramfs.nix`) is documented in
-[nixos-rootfs.md](nixos-rootfs.md#the-rootfs-contract). Mainline-specific
+[nixos-rootfs.md](nixos-rootfs.md#the-boot-contract). Mainline-specific
 additions: it reads **`/proc/ax_proc/uid`** for `device_key` (a vendor
-`ax_hwinfo` proc node — absent on mainline, so the derived MAC degenerates to
-one constant for every unit); it greps `dmesg` for an ext4 message text; it
-hard-codes `mmcblk0p17` for the resize check; `boot_key=` recovery is dead
-code (nothing sets it; `/boot/rec` is the live trigger). NixOS brings its own
-initrd (`boot.initrd.systemd`), so the vendor script is replaced, not ported —
-but `/boot` (p16, vfat) must stay mounted and writable (the server writes
-`usb.*` flag files there) and the identity derivation moves to an nvmem-backed
-service.
+`ax_hwinfo` proc node, absent on mainline); it greps `dmesg` for an ext4 message
+text; it hard-codes `mmcblk0p17` for the resize check; `boot_key=` recovery is
+dead code (nothing sets it; `/boot/rec` is the live trigger). NixOS brings its
+own initrd, so the vendor script is replaced, not ported — but `/boot` (p16,
+vfat) must stay mounted and writable (the server writes `usb.*` flag files
+there). **Settled in #78:** the initrd is the classic script stage 1, not
+`boot.initrd.systemd`, and it is embedded in the kernel Image because `booti`
+is called with no ramdisk and no partition holds one; the identity derivation
+reads the UID out of `misc_info` at physical `0x740` through `/dev/mem` rather
+than through an nvmem node, so the MAC does not degenerate to one constant.
 
 **ATF as a BL33 host for a future mainline U-Boot:** BL33 is entered at EL1
 with `x0 = hw_config`, standard TF-A `bl_params_t`, no signature check
@@ -422,7 +424,9 @@ Three properties that shape the NixOS design:
    `/dev/mmcblk0 0x4C0000 0x100000`. Verify with a hexdump before the first
    `fw_setenv`. Note U-Boot rewrites the env **twice per boot**
    (`set_slot_ab`, `update_cmdline`), so userspace `fw_setenv` must not race a
-   reboot.
+   reboot. **Shipped in #78**, and not as a transcribed constant:
+   `nixos/emmc-partitions.nix` computes that sum from the `blkdevparts=` clause
+   itself and asserts it, so the file cannot drift from the layout U-Boot reads.
 
 **Recommendation: keep the vendor A/B for kernel+dtb; NixOS generations own
 userspace; health-gated re-arm makes rollback automatic.** Reasons:
@@ -514,8 +518,9 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 
 Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
 lives as a comment on #26. **#74, #75, #76 and #77 are done** (see "What exists
-now" at the end of this section), and #80's source half is written and
-boot-proven; everything else is open.
+now" at the end of this section), #80's source half is written and boot-proven,
+and **#78 builds and boots in QEMU** with its hardware half outstanding;
+everything else is open.
 
 1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
@@ -879,9 +884,12 @@ two facts off it**: the MAC out of `/etc/network/interfaces` and root's password
 hash out of `/etc/shadow`. Same MAC means the same DHCP lease, so the mainline
 system answers on the address `tools/kvmssh` already knows; same hash means it
 answers to the same password. No credential is built into the image, the Nix
-store or this repository. (The eth0 MAC is a provisioning-time literal in that
-file — it is *not* derived from the SoC UID at boot, whatever the vendor's
-USB-gadget scripts do for their own NCM addresses. Deriving it properly is #78.)
+store or this repository. (**Corrected by #78:** this entry originally called
+the eth0 MAC a provisioning-time literal in that file. It is not — the vendor
+`/init` recomputes it from `/proc/ax_proc/uid` on every boot and rewrites the
+line. Harvesting the file still works, and is still the right thing for a
+bring-up initramfs with no `/dev/mem` arithmetic in it, but the file is a cache
+rather than the source.)
 Static dropbear pulls in libxcrypt, which is what makes this work at all: the
 vendor hashes root's password with yescrypt and musl's own `crypt()` cannot
 verify that.
@@ -1001,6 +1009,141 @@ third artifact by the boot run: `clk_summary` on the running kernel lists 265
 clocks. #77 added no clock rows -- it converted one mux to the rate-changing
 flavour and used rows the vendor table already had.
 
+### What exists now (#78, 2026-09-07) — APPLIANCE BUILDS AND BOOTS, IN QEMU
+
+**The NixOS appliance is off the vendor kernel and off the second nixpkgs pin,
+and it boots to multi-user with zero failed units and NanoKVM-Server listening
+on :80 and :443.** Under `qemu-system-aarch64 -M virt`, not on the board — the
+device belongs to #81 as this is written. Evidence, both runs and the two
+defects the first one found:
+[reference/mainline/nixos-appliance-20260907/](reference/mainline/nixos-appliance-20260907/).
+
+`nixpkgs-rootfs` is deleted from `flake.nix`. It existed only because systemd's
+declared minimum kernel rose to 5.4 and then 5.10 while the `ax_*.ko` vermagic
+contract held this board on 4.19.125; the image has carried no vendor kernel
+module since #54 and the appliance now runs 7.1.3, so the pin, its EOL-security
+cost and the "two glibcs, one loader" hazard go with it. So do the runtime
+consequences of the vendor defconfig: user namespaces exist here, `PrivateUsers=`
+works, and `pkgs.buildFHSEnv` is no longer impossible.
+
+**The initrd rides inside the kernel Image, and that is not a shortcut.**
+U-Boot's `do_axera_boot()` calls `booti` with `-` for the ramdisk argument and
+there is no partition holding one, so `CONFIG_INITRAMFS_SOURCE` is the only
+route an initrd has onto this board. `pkgs/kernel-mainline.nix` takes the cpio
+as a parameter and builds two variants: `bringup` (the #75 evidence init,
+uncompressed, byte-for-byte reproducible) and `appliance` (NixOS stage 1, zstd).
+25 MB of cpio becomes 6.8 MB; the Image is 50.6 MB and the signed slot-B image
+23.5 MB, against a 64 MiB partition. `boot.initrd.compressor = "cat"` on the
+NixOS side, because a `*.cpio` source is embedded verbatim and then compressed
+once — compressing it twice only makes the Image bigger.
+
+**There is no `init=` on the command line, and there cannot be.** The cmdline
+comes from the U-Boot environment, which `fdt_chosen()` writes over `/chosen`
+at `booti` (trap 2, section 5) — the device tree's string is a documented
+default, not the authority. NixOS stage 1 therefore falls back to its built-in
+`stage2Init=/init`, so the image ships `/init` as a symlink to
+`/nix/var/nix/profiles/system/init`. Updating that profile is the entire
+generation switch: no bootloader, no config file, no partition write.
+`boot.loader.external` owns "install" and is inert until #79 puts a health gate
+in front of an A/B slot flip.
+
+**The `/dev/console` trap, which only exists because the initrd is embedded.**
+The kernel ALWAYS unpacks a built-in initramfs; with `INITRAMFS_SOURCE` empty it
+unpacks `usr/default_cpio_list`, whose whole content is `/dev`, `/dev/console`
+and `/root`. Setting `INITRAMFS_SOURCE` **replaces** that list — and a NixOS
+initrd carries no device nodes, because on a machine where the bootloader hands
+the initrd over separately it has never had to. PID 1 then starts with fd 0/1/2
+closed and stage 1 dies on its first `exec 8>&1`, printing nothing. Read through
+the #75 milestone channel that is `0x00000014`: exactly what a kernel that never
+reached userspace leaves. `nixos/rootfs.nix` appends a three-entry cpio built
+under `fakeroot`; the unpacker resets at each `TRAILER!!!`, which is how
+concatenated initramfs images have always been supported.
+
+**Identity, and the IRAM0 base this closes.** Section 2 recorded the `0x740`
+offset as verified and the IRAM0 base as inferred. The vendor GPL driver settles
+it: `ax_hwinfo_probe()` does `ioremap(MISC_INFO_ADDR, sizeof(misc_info_t))` with
+`#define MISC_INFO_ADDR 0x740` and no base added, so IRAM0 is at physical 0 and
+`misc_info` is at physical `0x740` — `uid_l` at `0x788`, `uid_h` at `0x78c`.
+
+The derivation itself also needs correcting. #77's entry says the eth0 MAC is a
+provisioning-time literal in `/etc/network/interfaces`. It is not: the vendor
+`/init` (carried verbatim by `pkgs/initramfs.nix`, extractable from
+`.#initramfs`) recomputes it from `/proc/ax_proc/uid` on **every** boot and
+sed-writes that line. The file is a cache, not the source. The full chain, which
+`nanokvm-identity.service` now reproduces byte for byte:
+
+```
+device_key = field 2 of /proc/ax_proc/uid, "0x" stripped, written with a newline
+HHLL       = first 4 hex chars of sha512sum(/device_key)     # the hash is OF THE FILE
+MAC        = 48:da:35:6d:HH:LL          hostname = kvm-HHLL
+```
+
+so a mainline boot keeps the MAC, the DHCP lease and the hostname the unit has
+always had. The service prefers `/proc/ax_proc/uid` when it exists — which is
+also how the arithmetic gets validated against a vendor boot — and otherwise
+reads the two words with `busybox devmem`. `read(2)` on `/dev/mem` cannot reach
+them: `xlate_dev_mem_ptr()` is a linear-map translation and `0x740` is not
+System RAM, so it has to be an `mmap()`. That, `nanokvm-checkboot`'s slot-register
+write and the whole vendor script layer are why `CONFIG_DEVMEM` stays on and
+`STRICT_DEVMEM` stays off in the appliance — recorded as a decision, not an
+inheritance. **Unproven on hardware.**
+
+**`/etc/fw_env.config` ships, derived rather than captured.** The TODO in
+`nixos-rootfs.md` asked for a device read. It was not needed:
+`nixos/emmc-partitions.nix` parses the `blkdevparts=mmcblk0:` clause out of
+`dts/ax630c-nanokvm-pro.dts` — the string U-Boot itself parses, and the only
+definition this eMMC has of its own layout — sums the six partitions before
+`env`, and asserts `/dev/mmcblk0 0x4C0000 0x100000` against the value section 6
+derives independently. The same parse supplies p16, p17 and the A/B slot
+partition numbers, so three hand-copied numbers collapse into one source, and
+`nix flake check` gains `emmc-partition-map`, which prints all seventeen with
+their offsets. That printout also settles the discrepancy section 10 flags —
+`optee` is **p10/p11** at `0x11C0000`/`0x12C0000` and p8/p9 are `logo`/`logo_b`
+— and narrows it: `pkgs/image.nix` was already right, and the two wrong places
+were `pkgs/boot.nix`'s header (`p8 optee`) and `docs/updates.md`'s coverage
+table (`logo (p10/11)`, inverted). Both fixed.
+`nanokvm-checkboot` is live for the first time as a result — it was inert for
+want of this file — and a hexdump check against the real environment is the one
+thing still owed before the first `fw_setenv`.
+
+**Two defects QEMU found that a build never would**, both inherited from the
+4.19 scaffold and both certain to have fired on the device: `nanokvm.service`
+had the tmpfs copy as an `ExecStartPre` under
+`WorkingDirectory=/dev/shm/kvmapp/server`, and systemd applies `WorkingDirectory`
+to every `Exec*` line — so the command that CREATES the directory was chdir'd
+into it first and died `200/CHDIR` on every boot. With that split into
+`nanokvm-appdir.service`, `NanoKVM-Server` wrote its default config, bound both
+ports, and exited 1 on `open /etc/kvm/server.crt: no such file or directory`.
+That was gap 1 in `nixos-rootfs.md` — the cert half of the vendor `nanokvm.sh`
+supervisor, which exists only in the vendor rootfs. `nanokvm-cert.service`
+generates a self-signed per-device pair if absent, and the server runs.
+
+**Nothing closed, and the build proves it.** `nixos/rootfs.nix` fails if any
+path in the system closure is `axera-libs`, `ax-ko-blobs` or `libsns-dummy`, and
+it fired the first time: `pkgs/kvm-encoder.nix` sets libkvm's DT_RPATH to
+`/opt/lib:<axera-libs>/lib` so one artifact serves both encoder configurations,
+and on an overlay rootfs that store path is a dead string — in a Nix closure it
+is a reference, and it dragged the entire closed library set into an image
+meant to contain none of it. The appliance re-RPATHs **both** `libkvm.so` and
+`libkvm.so.0` (two real files, not a symlink pair) at the three open libraries
+it actually needs, and `/opt/lib` now holds only libopus, libasound and
+libjpeg.so.8.
+
+Still absent, by design: there is no `/lib/modules` tree at all, because every
+driver this board has is built in — the first thing that needs one is #83.
+`nanokvm-video` (#83), `nanokvm-gpio` (#81) and `nanokvm-usb` (#82) are stubs
+that succeed and name the issue owning the hardware they cannot touch, so the
+ordering edges stay real and a boot log explains the missing pipeline instead of
+leaving a silent black stream. In product terms this appliance serves the web UI
+and nothing behind it: no video, no keyboard, no mouse, no ATX.
+
+Not proven: anything about the AX630C. QEMU supplied the device tree, the
+clocks, the block device and the console. The hardware half is the loop-image
+root — `.#nixos-appliance-loop` plus `.#kernel-mainline-appliance-loop-slot-image`,
+a rootfs image FILE dropped on the vendor rootfs and loop-mounted by stage 1, so
+the reversible slot-B harness stays reversible and rollback is `rm` plus a
+slot-B restore. Root-on-SD is still blocked on there being no card in the unit.
+
 ---
 
 ## 9. Device reads wanted
@@ -1068,8 +1211,11 @@ offsets compared, OF glue status on the target kernel unchecked); that the
 CSI-2 controller is Cadence CSI2RX-derived (blob symbol names + two register
 offsets); that designware-i2s PIO is enough for HDMI audio without a `dma_per`
 driver; the `fdt_chosen` space trap (well-grounded reading of `booti`'s state
-mask, untested); the IRAM physical address of `misc_info` (`0x740` offset is
-verified, the IRAM0 base is not).
+mask, untested); ~~the IRAM physical address of `misc_info` (`0x740` offset is
+verified, the IRAM0 base is not)~~ — **settled from source, #78, 2026-09-07**:
+`ax_hwinfo_probe()` ioremaps the bare constant `MISC_INFO_ADDR` (`0x740`) with
+no base added, so IRAM0 is at physical 0 and `misc_info` is at physical `0x740`
+(`uid_l` `0x788`, `uid_h` `0x78c`). Still unread on hardware.
 
 **Loose ends found while mining `[K]`** (none block the port; recorded so they
 are not re-derived): the board dts spells `status = "disable"` eight times
@@ -1091,10 +1237,16 @@ explanation (unclocked MM domain) stands.
   the kernel, so env bootargs did not override chosen" is stale — the env does
   override (`pkgs/sd-image.nix` records the live SD cmdline verbatim). Baking
   `root=` into the DT is still harmless.
-- `docs/updates.md` ("OP-TEE (p8/p9)"), `pkgs/boot.nix` and `pkgs/image.nix`
-  comments: OP-TEE is **p10/p11**; p8/p9 are `logo`/`logo_b`
-  (`partition_ab.mak`; the table in flashing-and-recovery.md is already right).
-- `docs/nixos-rootfs.md` gap 3: the `fw_env.config` TODO is closeable —
+- ~~`docs/updates.md` ("OP-TEE (p8/p9)"), `pkgs/boot.nix` and `pkgs/image.nix`
+  comments: OP-TEE is **p10/p11**; p8/p9 are `logo`/`logo_b`~~ — **applied,
+  #78**, and the sweep narrowed it: `pkgs/image.nix` was already right, the two
+  wrong places were `pkgs/boot.nix`'s header (`p8 optee`) and `updates.md`'s
+  coverage table (`logo (p10/11)`, inverted). Both fixed; the map now comes from
+  `nixos/emmc-partitions.nix`, which parses it out of the `blkdevparts=` clause.
+- ~~`docs/nixos-rootfs.md` gap 3: the `fw_env.config` TODO is closeable —
   `/dev/mmcblk0 0x4C0000 0x100000` (verify by hexdump first). Its rootfs
-  contract should also name `/proc/ax_proc/uid` as a mainline blocker.
+  contract should also name `/proc/ax_proc/uid` as a mainline blocker.~~ —
+  **applied, #78**. The file ships, computed and asserted rather than
+  transcribed; the hexdump check is still owed. `/proc/ax_proc/uid` is named in
+  the boot contract, along with the `/dev/mem` path that replaces it.
 - CLAUDE.md docs index: add this file (coordinator's job per the task brief).

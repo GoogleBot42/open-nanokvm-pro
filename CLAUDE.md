@@ -164,7 +164,7 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 | Full deblob epic (#55): capture-stack replacement plan + scoping | `docs/deblob-capture.md` |
 | Open-encoder driver bring-up / #49 resolution (CMA = blob ABI break; no-flash coherent carveout) | `docs/vcmd-cma-unblock.md` |
 | Slot-B kernel boot-testing (proven A/B harness) | `docs/flashing-and-recovery.md` |
-| Pure-Nix / NixOS rootfs (feasibility + scaffold, #26) | `docs/nixos-rootfs.md` |
+| NixOS appliance / pure-Nix rootfs: boot contract, identity, gaps (#26, #78) | `docs/nixos-rootfs.md` |
 | Mainline port (#26): driver inventory, boot/rollback contract, child issues #74-#87, and how a serial-less first boot is made observable | `docs/mainline-port.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
 

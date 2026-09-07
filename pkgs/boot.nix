@@ -23,8 +23,10 @@
 #   p4  atf_b      -> atf_b_bl31_signed.bin
 #   p5  uboot      -> u-boot_signed.bin
 #   p6  uboot_b    -> u-boot_b_signed.bin
-#   p8  optee      -> optee_signed.bin  (image layer copies to optee + optee_b)
-#   p9  optee_b    -> optee_signed.bin
+#   p10 optee      -> optee_signed.bin  (image layer copies to optee + optee_b)
+#   p11 optee_b    -> optee_signed.bin
+#     (p8/p9 are logo/logo_b -- this header said p8/p9 until #78 derived the
+#      whole map from the blkdevparts= clause; nixos/emmc-partitions.nix)
 # plus the AXDL download agents (not stored partitions, used by the host
 # flasher): fdl_<project>_signed.bin (FDL1) and fdl2_signed.bin (FDL2 = u-boot).
 #

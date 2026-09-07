@@ -462,10 +462,19 @@ propose SG2002 work without flagging this gap up front.
   `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states, the CPUPLL/
   cpufreq model, and the first real exercise of `.assert`/`.reset` (rides #81
   or #83). All three issues stay open; only #74 is closed.
-  Next: **#78** (NixOS appliance on mainline -- note the eth0 MAC is a
-  provisioning-time literal in `/etc/network/interfaces`, not UID-derived);
+  **#78 offline half DONE** (the NixOS appliance is off the vendor kernel and
+  off the second nixpkgs pin -- `nixpkgs-rootfs` deleted -- boots to multi-user
+  under `qemu-system-aarch64` with zero failed units and the server on :80/:443;
+  `nix run .#nixos-appliance-qemu-run`). Its hardware half is a reversible
+  loop-image slot-B boot and is waiting on the device.
+  Two corrections it produced: the eth0 MAC is **not** a provisioning-time
+  literal -- the vendor `/init` recomputes it from `/proc/ax_proc/uid` on every
+  boot and rewrites `/etc/network/interfaces`, so that file is a cache; and
+  IRAM0 is at physical 0, so `misc_info` really is at physical `0x740`
+  (`uid_l` `0x788`, `uid_h` `0x78c`).
   **#81** and **#82** can start in parallel now that #80's drivers are on
-  hardware; **#85** (aic8800) still can start from source.
+  hardware; **#85** (aic8800) still can start from source; **#79** is unblocked
+  by #78.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

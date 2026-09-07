@@ -193,7 +193,7 @@ web UI           ─► reconnects after the restart / reboot
 | Shipped by OTA (`rootfs/` + `partitions/`) | AXDL-only (re-flash the `.axp`) |
 |---|---|
 | app server, web UI, `libkvm.so{,.0}` | SPL (p1), ddrinit (p2) |
-| `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d) | env (p7), logo (p10/11) |
+| `/lib/modules/4.19.125/` (from-source modules only, pre-`depmod`'d) | env (p7), logo (p8/p9) |
 | `/soc/scripts/auto_load_all_drv.sh` — our `/soc/ko` loader (three from-source modules, zero vendor blobs, #55 M3; no rollback copies ship any more, #54) **and** the three modules themselves (`ax630c_venc_vcmd.ko`, `open_vin_csi2.ko`, `open_vin_capture.ko`); takes effect on the **next reboot** — the installer forces one when the loader changed | **deletions** — the #54 purge of the vendor `/soc/ko` blobs, `libsns_*.so`, NPU model data and ISP tuning set |
 | `/opt/scripts/wifi.sh` — the vendor script with its `insmod`/`rmmod /soc/ko/aic8800_*.ko` lines rewritten to `modprobe`/`modprobe -r` (#54) | |
 | kernel (p14/p15), dtb (p12/p13) | base Ubuntu rootfs (p17) |
