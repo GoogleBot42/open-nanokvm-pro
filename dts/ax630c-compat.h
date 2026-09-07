@@ -46,4 +46,14 @@
 #define AX630C_PERIPH_CLK_COMPAT	"axera,ax630c-periph-clk"
 #define AX630C_VPU_CLK_COMPAT		"axera,ax630c-vpu-clk"
 
+/*
+ * SD/eMMC host (#76). The IP is a stock Cadence SD4HC, so the SECOND
+ * compatible is the real one and mainline sdhci-cadence is the driver; the
+ * vendor-prefixed entry exists only to select SDHCI_QUIRK2_PRESET_VALUE_BROKEN
+ * (pkgs/kernel-mainline/patches/0001-mmc-sdhci-cadence-add-axera-ax630c.patch).
+ * A kernel without that patch still binds these nodes on "cdns,sd4hc" alone --
+ * it just applies the controller's bogus presets.
+ */
+#define AX630C_SDHCI_COMPAT		"axera,ax630c-sd4hc"
+
 #endif /* _DTS_AX630C_COMPAT_H */

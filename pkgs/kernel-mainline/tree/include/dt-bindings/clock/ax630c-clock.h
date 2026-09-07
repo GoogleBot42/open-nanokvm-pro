@@ -23,14 +23,24 @@
 /* pllc clk -- axera,ax630c-pllc-clk */
 #define AX630C_PLL_CPUPLL			1
 
-/* cpu clk -- axera,ax630c-cpu-clk */
+/*
+ * cpu clk -- axera,ax630c-cpu-clk
+ *
+ * The four EMMC ids are #76's, not #80's: the vendor CCF driver declares them
+ * and registers none, because its own mmc driver programmed this window by
+ * hand. Mainline sdhci-cadence calls clk_get(), so they have to exist.
+ */
 #define AX630C_CLK_H_SSI_SEL			0
+#define AX630C_CLK_EMMC_CARD_SEL		1
 #define AX630C_CLK_CPU_SEL			2
 #define AX630C_CLK_BUS_FLASH_SEL		3
 #define AX630C_CLK_H_SSI_EB			4
+#define AX630C_CLK_EMMC_CARD_EB			5
 #define AX630C_CLK_CPU_24M_EB			6
+#define AX630C_CLK_EMMC_EB			14
 #define AX630C_CLK_CS_APB_EB			15
 #define AX630C_CLK_H_SSI_DIVN			19
+#define AX630C_CLK_EMMC_CARD_DIVN		20
 
 /* common clk -- axera,ax630c-common-clk */
 #define AX630C_REF24M				0
@@ -185,8 +195,15 @@
 #define AX630C_CLK_DPHY2CSI_HS_EB		12
 #define AX630C_CLK_CSI_TX_ESC_EB		13
 
-/* flash clk -- axera,ax630c-flash-clk */
+/*
+ * flash clk -- axera,ax630c-flash-clk
+ *
+ * The SD/SDIO ids (2, 3, 15, 16, 27, 28, 41, 42, 46, 51) and the pinmux APB
+ * gate (29) are #76's, for the same reason as the cpu EMMC ids above.
+ */
 #define AX630C_RGMII_EPHY_CLK_SEL		0
+#define AX630C_CLK_SDIO_M_CARD_SEL		2
+#define AX630C_CLK_SD_CARD_SEL			3
 #define AX630C_CLK_NX_VO1_SEL			4
 #define AX630C_CLK_NX_VO0_SEL			5
 #define AX630C_CLK_FLASH_GLB_SEL		7
@@ -194,6 +211,8 @@
 #define AX630C_CLK_1X_VO1_SEL			9
 #define AX630C_CLK_1X_VO0_SEL			10
 #define AX630C_EPHY_CLK_EB			12
+#define AX630C_CLK_SDIO_M_CARD_EB		15
+#define AX630C_CLK_SD_CARD_EB			16
 #define AX630C_CLK_NX_VO1_EB			17
 #define AX630C_CLK_NX_VO0_EB			18
 #define AX630C_CLK_EMAC_RMII_PHY_EB		21
@@ -201,12 +220,19 @@
 #define AX630C_CLK_EMAC_PTP_REF_EB		23
 #define AX630C_CLK_1X_VO1_EB			24
 #define AX630C_CLK_1X_VO0_EB			25
+#define AX630C_PCLK_SDIO_M_EB			27
+#define AX630C_PCLK_SD_M_EB			28
+#define AX630C_PCLK_PINMUX_EB			29
 #define AX630C_CLK_LPC_FLASH_EB			34
+#define AX630C_ACLK_SDIO_M_EB			41
+#define AX630C_ACLK_SD_M_EB			42
 #define AX630C_ACLK_EMAC_EB			43
+#define AX630C_CLK_SD_CARD_DIVN			46
 #define AX630C_CLK_NX_VO1_DIVN_FLASH		47
 #define AX630C_CLK_NX_VO0_DIVN_FLASH		48
 #define AX630C_CLK_1X_VO1_DIVN_FLASH		49
 #define AX630C_CLK_1X_VO0_DIVN_FLASH		50
+#define AX630C_CLK_SDIO_M_CARD_DIVN		51
 
 /* mm clk -- axera,ax630c-mm-clk */
 #define AX630C_CLK_VPP_SRC_SEL			0

@@ -102,22 +102,53 @@ static const char * const ax630c_clk_bus_flash_sel_parents[] = {
 	"cpll_24m", "epll_125m", "cpll_208m", "cpll_312m",
 };
 
+/*
+ * eMMC card-clock mux, 0x00[6:5] (V). No vendor *source* names values 0-2 --
+ * the vendor CCF skips this clock entirely and every writer hardcodes 3 -- but
+ * the SDK's own "AX SDK 使用说明" manual documents the field in full
+ * (section 12.3, "clk_emmc_card mux select"), and the same document's
+ * clk_bus_flash table matches ax630c_clk_bus_flash_sel_parents[] below entry
+ * for entry, which is what makes it trustworthy here. Hardware reads 3
+ * (0x01900000 = 0x00000073, measured 2026-09-06).
+ *
+ * The SD and SDIO card muxes are NOT registered: that manual covers eMMC only,
+ * and no artifact names their values 0-2. Their dividers parent straight onto
+ * npll_400m instead -- see the flash table.
+ */
+static const char * const ax630c_clk_emmc_card_sel_parents[] = {
+	"cpll_24m", "cpll_312m", "epll_375m", "npll_400m",
+};
+
 static const struct ax630c_clk ax630c_cpu_clks[] = {
 	AX630C_MUX_C(AX630C_CLK_H_SSI_SEL, "clk_h_ssi_sel", ax630c_clk_h_ssi_sel_parents, 0x00, 7, 3),
 	AX630C_MUX_C(AX630C_CLK_CPU_SEL, "clk_cpu_sel", ax630c_clk_cpu_sel_parents, 0x00, 2, 3),
 	AX630C_MUX_C(AX630C_CLK_BUS_FLASH_SEL, "clk_bus_flash_sel", ax630c_clk_bus_flash_sel_parents, 0x00, 0, 2),
+	AX630C_MUX_C(AX630C_CLK_EMMC_CARD_SEL, "clk_emmc_card_sel", ax630c_clk_emmc_card_sel_parents, 0x00, 5, 2),
 
 	AX630C_GATE_C(AX630C_CLK_H_SSI_EB, "clk_h_ssi_eb", "clk_h_ssi_divn", 0x04, 3, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_CPU_24M_EB, "clk_cpu_24m_eb", "cpll_24m", 0x04, 1, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_CS_APB_EB, "clk_cs_apb_eb", "cpll_24m", 0x08, 3, CLK_SET_RATE_PARENT),
 
+	/* eMMC (#76). The card clock is what the mmc node names. */
+	AX630C_GATE_C(AX630C_CLK_EMMC_CARD_EB, "clk_emmc_card_eb", "clk_emmc_card_divn", 0x04, 2, CLK_SET_RATE_PARENT),
+	/*
+	 * The controller's own bus gate. It cannot be named in DT -- the
+	 * cdns,sd4hc binding allows exactly one clock and that slot is the card
+	 * clock -- so it must be CLK_IS_CRITICAL or clk_disable_unused() turns
+	 * the boot device off at late_initcall. NULL parent: the source is
+	 * genuinely unknown, and nothing reads this clock's rate.
+	 */
+	AX630C_GATE_C(AX630C_CLK_EMMC_EB, "clk_emmc_eb", NULL, 0x08, 4, CLK_IS_CRITICAL),
+
 	AX630C_DIV_C(AX630C_CLK_H_SSI_DIVN, "clk_h_ssi_divn", "clk_h_ssi_sel", 0x0c, 7, 4, 11),
+	/* Reads 1 -> divide by 2 -> 400/2 = 200 MHz, matching CAPS[15:8] (V). */
+	AX630C_DIV_C(AX630C_CLK_EMMC_CARD_DIVN, "clk_emmc_card_divn", "clk_emmc_card_sel", 0x0c, 0, 6, 6),
 };
 
 const struct ax630c_clk_desc ax630c_cpu_desc = {
 	.clks = ax630c_cpu_clks,
 	.num_clks = ARRAY_SIZE(ax630c_cpu_clks),
-	.max_id = AX630C_CLK_H_SSI_DIVN,
+	.max_id = AX630C_CLK_EMMC_CARD_DIVN,
 	/* V, spec 1.3 (sdhci-axera.c) */
 	.alias = { .has_alias = true, .set_stride = 0x1000, .clr_stride = 0x2000 },
 };
@@ -434,16 +465,54 @@ static const struct ax630c_clk ax630c_flash_clks[] = {
 	AX630C_GATE_C(AX630C_CLK_LPC_FLASH_EB, "clk_lpc_flash_eb", "cpll_24m", 0x08, 11, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_ACLK_EMAC_EB, "aclk_emac_eb", "clk_flash_glb_sel", 0x08, 2, CLK_SET_RATE_PARENT),
 
+	/*
+	 * SD and SDIO (#76). Card clocks are what the two mmc nodes name; the
+	 * APB/AXI gates below cannot be named (one clock per cdns,sd4hc node)
+	 * and so are CLK_IS_CRITICAL, exactly as clk_emmc_eb is. NULL parents
+	 * for the bus gates: their sources are not established in any artifact
+	 * we have, nothing reads their rates, and a plausible-looking guess
+	 * here would be indistinguishable from a measured fact later.
+	 *
+	 * The two card muxes at 0x00[17:16] and [19:18] are NOT registered.
+	 * Both read 3 = npll_400m (V, measured 2026-09-06, 0x10030000 =
+	 * 0x003F0B60) and every writer in the vendor SDK hardcodes 3, but
+	 * nothing names values 0-2: the vendor CCF skips both clocks, and the
+	 * SDK manual that documents the eMMC mux (see the cpu table) covers
+	 * eMMC only. CCF cannot register a 2-bit mux without all four parents,
+	 * and a plausible-looking invented name would be indistinguishable
+	 * from a measured one later -- so the dividers parent straight onto
+	 * npll_400m, which is a complete description of every state this
+	 * hardware is ever in. Register the muxes when someone can name 0-2.
+	 */
+	AX630C_GATE_C(AX630C_CLK_SD_CARD_EB, "clk_sd_card_eb", "clk_sd_card_divn", 0x04, 9, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_SDIO_M_CARD_EB, "clk_sdio_m_card_eb", "clk_sdio_m_card_divn", 0x04, 10, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_ACLK_SD_M_EB, "aclk_sd_m_eb", NULL, 0x08, 3, CLK_IS_CRITICAL),
+	AX630C_GATE_C(AX630C_ACLK_SDIO_M_EB, "aclk_sdio_m_eb", NULL, 0x08, 4, CLK_IS_CRITICAL),
+	AX630C_GATE_C(AX630C_PCLK_SD_M_EB, "pclk_sd_m_eb", NULL, 0x08, 17, CLK_IS_CRITICAL),
+	AX630C_GATE_C(AX630C_PCLK_SDIO_M_EB, "pclk_sdio_m_eb", NULL, 0x08, 18, CLK_IS_CRITICAL),
+	/*
+	 * The pinmux block's APB gate. No consumer names it yet -- the SD
+	 * pad-voltage switch that needs it is deferred (the SD node carries
+	 * no-1-8-v) and #80's pinctrl reaches its own window through a syscon
+	 * regmap -- but it is on now and turning it off is not something a
+	 * board with no console should discover the hard way. Critical until a
+	 * consumer claims it.
+	 */
+	AX630C_GATE_C(AX630C_PCLK_PINMUX_EB, "pclk_pinmux_eb", NULL, 0x08, 16, CLK_IS_CRITICAL),
+
 	AX630C_DIV_C(AX630C_CLK_NX_VO1_DIVN_FLASH, "clk_nx_vo1_divn_flash", "clk_nx_vo1_sel", 0x0c, 15, 4, 19),
 	AX630C_DIV_C(AX630C_CLK_NX_VO0_DIVN_FLASH, "clk_nx_vo0_divn_flash", "clk_nx_vo0_sel", 0x0c, 10, 4, 14),
 	AX630C_DIV_C(AX630C_CLK_1X_VO1_DIVN_FLASH, "clk_1x_vo1_divn_flash", "clk_1x_vo1_sel", 0x0c, 5, 4, 9),
 	AX630C_DIV_C(AX630C_CLK_1X_VO0_DIVN_FLASH, "clk_1x_vo0_divn_flash", "clk_1x_vo0_sel", 0x0c, 0, 4, 4),
+	/* Both read 1 -> divide by 2 -> 200 MHz (V). */
+	AX630C_DIV_C(AX630C_CLK_SD_CARD_DIVN, "clk_sd_card_divn", "npll_400m", 0x0c, 20, 6, 26),
+	AX630C_DIV_C(AX630C_CLK_SDIO_M_CARD_DIVN, "clk_sdio_m_card_divn", "npll_400m", 0x10, 0, 6, 6),
 };
 
 const struct ax630c_clk_desc ax630c_flash_desc = {
 	.clks = ax630c_flash_clks,
 	.num_clks = ARRAY_SIZE(ax630c_flash_clks),
-	.max_id = AX630C_CLK_1X_VO0_DIVN_FLASH,
+	.max_id = AX630C_CLK_SDIO_M_CARD_DIVN,
 	/* V, spec 1.3 (sdhci-axera.c) */
 	.alias = { .has_alias = true, .set_stride = 0x4000, .clr_stride = 0x8000 },
 };

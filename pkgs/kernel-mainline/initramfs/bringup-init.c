@@ -34,6 +34,8 @@
  * CONFIG_DEVTMPFS. It must not need anything the mainline port has not built.
  */
 
+#include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -72,6 +74,24 @@
 #define MS_LOG_STASHED		(1u << 13)	/* the kernel log is in DRAM */
 #define MS_LED			(1u << 14)	/* the LED loop completed */
 #define MS_REBOOTING		(1u << 15)	/* reboot(2) is about to be called */
+#define MS_BLKDEV		(1u << 16)	/* #76: the eMMC produced a partitioned block device */
+#define MS_ROOTFS_RO		(1u << 17)	/* #76: ext4 on it mounted read-only and read */
+
+/*
+ * Storage probe (#76). Read-only throughout: the eMMC carries the running
+ * vendor system, and this excursion must leave it exactly as it found it.
+ *
+ * Note the partition is located by NAME out of /proc/partitions rather than by
+ * assuming a minor number. Nothing guarantees a mainline kernel enumerates the
+ * three SD4HC instances in the vendor's order, and mknod()ing a guessed minor
+ * would either fail confusingly or -- much worse -- succeed against the wrong
+ * device.
+ */
+#define ROOT_PART_NAME		"mmcblk0p17"
+#define PROBE_DEV		"/dev/probe-root"
+#define PROBE_MNT		"/mnt"
+#define BLKDEV_WAIT_SECONDS	10
+#define BLKDEV_POLL_MS		200
 
 /*
  * GPIO0, one 32-bit word per line at base + (n + 1) * 4. GPIO0_A23 is the
@@ -191,6 +211,230 @@ static void *map_phys(int fd, uint32_t phys, size_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
+/*
+ * Copy the kernel log into the reserved-DRAM stash, replacing whatever was
+ * there. Reading /dev/kmsg from offset 0 replays the ring buffer from its
+ * oldest surviving record, so this captures the boot from the first printk --
+ * earlier than pstore's console, which only starts at its own registration.
+ *
+ * Callable more than once: each call rewrites the header and the length, so a
+ * later call simply supersedes an earlier one with a longer log.
+ */
+static uint32_t stash_klog(volatile uint8_t *stash)
+{
+	uint32_t used = 0;
+	int fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+	ssize_t i;
+
+	for (i = 0; i < LOG_STASH_HDR; i++)
+		stash[i] = 0;
+	for (i = 0; LOG_STASH_MAGIC[i]; i++)
+		stash[i] = (uint8_t)LOG_STASH_MAGIC[i];
+
+	if (fd >= 0) {
+		char rec[8192];
+		ssize_t n;
+
+		(void)lseek(fd, 0, SEEK_SET);
+		while (used + LOG_STASH_HDR < LOG_STASH_SIZE) {
+			n = read(fd, rec, sizeof(rec));
+			if (n <= 0)
+				break;	/* EAGAIN = caught up */
+			if (used + LOG_STASH_HDR + (uint32_t)n > LOG_STASH_SIZE)
+				n = (ssize_t)(LOG_STASH_SIZE - LOG_STASH_HDR -
+					      used);
+			for (i = 0; i < n; i++)
+				stash[LOG_STASH_HDR + used + i] =
+					(uint8_t)rec[i];
+			used += (uint32_t)n;
+		}
+		close(fd);
+	}
+
+	wr32(stash + 24, used);
+
+	/*
+	 * The mapping is write-combining (arm64 gives O_SYNC /dev/mem over
+	 * mapped RAM Normal-NonCacheable), so the stores are not held in a
+	 * dirty cache line -- but they can sit in a write buffer. Drain it here
+	 * rather than trusting the reboot path, which on this SoC may be a raw
+	 * chip reset.
+	 */
+	__sync_synchronize();
+	(void)msync((void *)stash, LOG_STASH_SIZE, MS_SYNC);
+
+	return used;
+}
+
+/* --- storage probe (#76) ------------------------------------------------- */
+
+/*
+ * Emit /proc/partitions to the kernel log one record per line. This is the
+ * primary evidence that the mmc host bound, the card enumerated and the
+ * partition scanner ran -- all three, in one artifact, readable from the stash
+ * two boots later.
+ */
+static void log_partitions(void)
+{
+	char buf[4096];
+	ssize_t n;
+	int fd = open("/proc/partitions", O_RDONLY | O_CLOEXEC);
+	ssize_t i, start;
+
+	if (fd < 0) {
+		kmsg("openkvm: storage: /proc/partitions unreadable\n");
+		return;
+	}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0) {
+		kmsg("openkvm: storage: /proc/partitions empty\n");
+		return;
+	}
+	buf[n] = '\0';
+
+	/* One write() per line: each is a separate kmsg record. */
+	for (start = 0, i = 0; i < n; i++) {
+		if (buf[i] != '\n')
+			continue;
+		if (i > start) {
+			kmsg("openkvm: part: ");
+			(void)write(kmsg_fd, buf + start, (size_t)(i - start));
+			kmsg("\n");
+		}
+		start = i + 1;
+	}
+}
+
+/*
+ * Find a partition by name in /proc/partitions. Returns 0 and fills maj/min on
+ * success. The file's columns are "major minor #blocks name".
+ */
+static int find_partition(const char *want, unsigned *maj, unsigned *min)
+{
+	char buf[4096];
+	ssize_t n;
+	int fd = open("/proc/partitions", O_RDONLY | O_CLOEXEC);
+	char *p;
+
+	if (fd < 0)
+		return -1;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return -1;
+	buf[n] = '\0';
+
+	for (p = buf; *p; ) {
+		char *eol = strchr(p, '\n');
+		unsigned a = 0, b = 0;
+		char name[64];
+
+		if (!eol)
+			break;
+		*eol = '\0';
+		if (sscanf(p, " %u %u %*u %63s", &a, &b, name) == 3 &&
+		    strcmp(name, want) == 0) {
+			*maj = a;
+			*min = b;
+			return 0;
+		}
+		p = eol + 1;
+	}
+
+	return -1;
+}
+
+/*
+ * Wait for the eMMC rootfs partition, then mount it read-only and read it.
+ *
+ * Everything here is deliberately non-fatal: this is a bring-up probe, and a
+ * board that cannot mount its rootfs must still complete the dwell so that the
+ * watchdog evidence from #75 stays valid. Failures are logged and the milestone
+ * bit simply stays clear, which is a result, not a crash.
+ */
+static void probe_storage(volatile uint8_t *chipmode)
+{
+	unsigned maj = 0, min = 0;
+	int waited_ms = 0;
+	int rc;
+	DIR *d;
+	int entries = 0;
+
+	/*
+	 * MMC probing is asynchronous and card identification takes tens of
+	 * milliseconds, so the partition is not there the instant /init runs.
+	 * Poll rather than sleep a fixed time: the elapsed figure in the log is
+	 * itself diagnostic if a later kernel gets slower.
+	 */
+	while (waited_ms < BLKDEV_WAIT_SECONDS * 1000) {
+		if (find_partition(ROOT_PART_NAME, &maj, &min) == 0)
+			break;
+		nap(0, BLKDEV_POLL_MS * 1000000L);
+		waited_ms += BLKDEV_POLL_MS;
+	}
+
+	log_partitions();
+
+	if (find_partition(ROOT_PART_NAME, &maj, &min) != 0) {
+		kmsg("openkvm: storage: FAIL -- " ROOT_PART_NAME
+		     " never appeared\n");
+		return;
+	}
+	kmsg_hex("openkvm: storage: " ROOT_PART_NAME " found after ms: ",
+		 (uint32_t)waited_ms);
+	kmsg_hex("openkvm: storage: major: ", maj);
+	kmsg_hex("openkvm: storage: minor: ", min);
+	if (chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_BLKDEV);
+
+	(void)unlink(PROBE_DEV);
+	if (mknod(PROBE_DEV, S_IFBLK | 0600, makedev(maj, min)) != 0) {
+		kmsg_hex("openkvm: storage: mknod failed, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	/*
+	 * MS_RDONLY, and if the journal needs replaying, "noload" so we still
+	 * do not write. A clean shutdown precedes every run of this test, so
+	 * the fallback should never fire -- if it does, that is worth knowing.
+	 */
+	rc = mount(PROBE_DEV, PROBE_MNT, "ext4", MS_RDONLY, NULL);
+	if (rc != 0) {
+		kmsg_hex("openkvm: storage: ro mount failed, errno: ",
+			 (uint32_t)errno);
+		rc = mount(PROBE_DEV, PROBE_MNT, "ext4", MS_RDONLY, "noload");
+		if (rc == 0)
+			kmsg("openkvm: storage: mounted with noload "
+			     "(journal was dirty)\n");
+	}
+	if (rc != 0) {
+		kmsg_hex("openkvm: storage: FAIL -- mount errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	/*
+	 * Count directory entries rather than reading a named file. Nothing
+	 * here should depend on the vendor rootfs layout, and a non-zero count
+	 * already proves the block layer, the driver, ext4 and real DMA reads
+	 * from the card all work.
+	 */
+	d = opendir(PROBE_MNT);
+	if (d) {
+		while (readdir(d))
+			entries++;
+		closedir(d);
+	}
+	kmsg_hex("openkvm: storage: OK -- root entries: ", (uint32_t)entries);
+	if (entries > 2 && chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_ROOTFS_RO);
+
+	/* Leave nothing mounted: the next thing this board does is reboot. */
+	(void)umount(PROBE_MNT);
+}
+
 /* ------------------------------------------------------------------------- */
 
 int main(void)
@@ -303,52 +547,29 @@ int main(void)
 	 * than pstore's console, which only starts at its own registration.
 	 */
 	if (stash) {
-		uint32_t used = 0;
-		int fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+		uint32_t used = stash_klog(stash);
 
-		for (i = 0; i < LOG_STASH_HDR; i++)
-			((volatile uint8_t *)stash)[i] = 0;
-		for (i = 0; LOG_STASH_MAGIC[i]; i++)
-			((volatile uint8_t *)stash)[i] = (uint8_t)LOG_STASH_MAGIC[i];
-
-		if (fd >= 0) {
-			char rec[8192];
-			ssize_t n;
-
-			(void)lseek(fd, 0, SEEK_SET);
-			while (used + LOG_STASH_HDR < LOG_STASH_SIZE) {
-				n = read(fd, rec, sizeof(rec));
-				if (n <= 0)
-					break;	/* EAGAIN = caught up */
-				if (used + LOG_STASH_HDR + (uint32_t)n >
-				    LOG_STASH_SIZE)
-					n = (ssize_t)(LOG_STASH_SIZE -
-						      LOG_STASH_HDR - used);
-				for (i = 0; i < n; i++)
-					((volatile uint8_t *)stash)
-						[LOG_STASH_HDR + used + i] =
-							(uint8_t)rec[i];
-				used += (uint32_t)n;
-			}
-			close(fd);
-		}
-
-		wr32(stash + 24, used);
-
-		/*
-		 * The mapping is write-combining (arm64 gives O_SYNC /dev/mem
-		 * over mapped RAM Normal-NonCacheable), so the stores are not
-		 * held in a dirty cache line -- but they can sit in a write
-		 * buffer. Drain it here rather than trusting the reboot path,
-		 * which on this SoC may be a raw chip reset.
-		 */
-		__sync_synchronize();
-		(void)msync((void *)stash, LOG_STASH_SIZE, MS_SYNC);
 		kmsg_hex("openkvm: kernel log stashed, bytes: ", used);
 		if (chipmode)
 			wr32(chipmode + BACKUP0_SET_OFF, MS_LOG_STASHED);
 	} else {
 		kmsg("openkvm: WARNING: cannot map the log stash window\n");
+	}
+
+	/*
+	 * Milestone 2b (#76): storage. Deliberately AFTER the first stash --
+	 * this is the first step in the bring-up sequence that touches a
+	 * peripheral which could wedge, and #75's evidence must survive that.
+	 * The stash is rewritten below so the storage lines land in it too;
+	 * if this call never returns, the ramoops console zone still has
+	 * everything and the earlier stash is intact.
+	 */
+	probe_storage(chipmode);
+
+	if (stash) {
+		uint32_t used = stash_klog(stash);
+
+		kmsg_hex("openkvm: kernel log re-stashed, bytes: ", used);
 	}
 
 	/*

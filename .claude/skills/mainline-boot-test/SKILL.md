@@ -97,19 +97,28 @@ previous byte count compares the wrong range and reports a spurious mismatch
 ## 4. Arm slot B and go
 
 ```
-tools/kvmssh 'devmem 0x0239002C 32 0xF000
+tools/kvmssh 'devmem 0x0239002C 32 0x3F000
   /etc/init.d/S99checkboot systemB
   sync'
 tools/kvmssh 'nohup sh -c "sleep 2; reboot" >/dev/null 2>&1 &'
 ```
 
-The first write clears milestone bits 12–15 from any previous run — **skip it
+The first write clears milestone bits 12–17 from any previous run — **skip it
 and you will read a stale result and believe it**. `S99checkboot systemB` is
 mandatory: a raw `SLOTB` poke leaves `SLOTB_BOOTABLE` clear and the SPL falls
 straight back to A. Expect `0x00000038` after arming.
 
-Then wait. Round trip is roughly `20 s + the initramfs dwell` (120 s as
-shipped) — about 2 min 45 s. Wait with a background until-loop, not a sleep:
+**The mask grows as milestones are added.** It was `0xF000` for #75's four bits
+and is `0x3F000` since #76 added two more. The register's bits 12–29 are all
+free (nothing in the SPL, ATF, U-Boot, the RISC-V companion or the vendor
+kernel writes them), so there is room — but a stale mask silently leaves old
+bits set, which reads as a success that did not happen.
+
+Then wait. Round trip is roughly `20 s + the storage probe + the initramfs
+dwell` (120 s as shipped) — about 3 min. The storage probe adds anything from a
+fraction of a second to its 10 s partition-wait timeout, and the elapsed figure
+is logged (`found after ms:`) precisely so a creeping delay is visible rather
+than absorbed. Wait with a background until-loop, not a sleep:
 
 ```
 until timeout 20 tools/kvmssh 'true' >/dev/null 2>&1; do sleep 5; done
@@ -128,12 +137,19 @@ tools/kvmssh 'devmem 0x02390024'
 
 | Value | Meaning |
 |---|---|
-| `0x0000f014` | all four milestones + slot A re-armed — full success |
-| `0x0000?014` with fewer bits | got that far and died; see the table below |
+| `0x0003f014` | every milestone + slot A re-armed — full success |
+| `0x0000?014` / `0x000??014` with fewer bits | got that far and died; see the table below |
 | `0x00000014` | never reached userspace — go straight to the ramoops console |
 
 Bits: 12 = `/init` running and `/dev/mem` works, 13 = kernel log stashed,
-14 = dwell completed (this is the watchdog proof), 15 = `reboot(2)` called.
+14 = dwell completed (this is the watchdog proof), 15 = `reboot(2)` called,
+16 = the eMMC produced a partitioned block device (#76), 17 = ext4 on it
+mounted read-only and read (#76).
+
+Note the storage bits are set *before* the dwell, so `0x00033014` — storage
+good, dwell and reboot missing — means the board died during the dwell with
+storage working, which is a watchdog problem, not a storage one. The two
+questions are independent by construction.
 
 ```
 # the whole kernel log, verbatim, as /init copied it (record format)

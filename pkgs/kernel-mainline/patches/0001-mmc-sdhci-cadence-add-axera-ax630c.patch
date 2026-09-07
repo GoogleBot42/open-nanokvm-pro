@@ -1,0 +1,53 @@
+Subject: [PATCH] mmc: sdhci-cadence: add Axera AX630C compatible
+
+The AX630C (AX620E family) integrates a stock Cadence SD4HC: HRS at the
+window base, the SDHCI-compatible SRS block at +0x200, the HRS04 PHY access
+port and the HRS06 mode/tune field all exactly as this driver expects. Its
+PHY delay values come from the standard cdns,phy-* properties.
+
+The one thing it needs told is SDHCI_QUIRK2_PRESET_VALUE_BROKEN. The
+controller's preset registers are populated rather than blank, but with
+values that do not describe this board's PHY; the vendor's own fork of this
+driver selects the same quirk.
+
+No init hook. The DLL reset pulse the vendor driver issues before writing PHY
+parameters is already performed by the boot firmware, which reads the kernel
+off this controller before Linux starts.
+
+Issue #76 of the open-nanokvm-pro mainline port. Intended for upstream once
+the axera vendor prefix settles on LKML (see the AX650 series, v2 2026-09-01).
+
+--- a/drivers/mmc/host/sdhci-cadence.c
++++ b/drivers/mmc/host/sdhci-cadence.c
+@@ -500,6 +500,20 @@
+ 	},
+ };
+ 
++/*
++ * Axera AX630C. Stock SD4HC: the HRS/SRS layout, the HRS04 PHY port and the
++ * HRS06 mode/tune field are all as this driver already expects. The only
++ * integration the SoC needs is the preset quirk -- the vendor's own driver
++ * selects it too -- because the controller's preset registers are populated
++ * with values that do not describe this board's PHY.
++ */
++static const struct sdhci_cdns_drv_data sdhci_cdns_ax630c_drv_data = {
++	.pltfm_data = {
++		.ops = &sdhci_cdns_ops,
++		.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN,
++	},
++};
++
+ static const struct sdhci_cdns_drv_data sdhci_cdns_drv_data = {
+ 	.pltfm_data = {
+ 		.ops = &sdhci_cdns_ops,
+@@ -653,6 +667,10 @@
+ 		.compatible = "mobileye,eyeq-sd4hc",
+ 		.data = &sdhci_eyeq_drv_data,
+ 	},
++	{
++		.compatible = "axera,ax630c-sd4hc",
++		.data = &sdhci_cdns_ax630c_drv_data,
++	},
+ 	{ .compatible = "cdns,sd4hc" },
+ 	{ /* sentinel */ }
+ };

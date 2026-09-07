@@ -36,7 +36,8 @@ staticPkgs.stdenv.mkDerivation {
     runHook preBuild
 
     tree=$PWD/tree
-    mkdir -p "$tree/dev" "$tree/proc" "$tree/sys"
+    # /mnt is where #76's storage probe mounts the eMMC rootfs read-only.
+    mkdir -p "$tree/dev" "$tree/proc" "$tree/sys" "$tree/mnt"
 
     $CC -O2 -static -Wall -Wextra -Werror -o "$tree/init" "$src"
     $STRIP "$tree/init"

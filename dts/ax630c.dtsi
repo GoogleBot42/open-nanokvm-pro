@@ -17,6 +17,7 @@
  */
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/ax630c-clock.h>
 #include "ax630c-compat.h"
 
 / {
@@ -204,6 +205,156 @@
 			compatible = AX630C_FLASH_CLK_COMPAT, "syscon";
 			reg = <0x0 0x10030000 0x0 0x10000>;
 			#clock-cells = <1>;
+		};
+
+		/*
+		 * eMMC (#76) -- the boot device. Everything about this node is
+		 * argued in docs/reference/mainline/sdhci-model-20260906.md;
+		 * the four things a reader will want to know are:
+		 *
+		 * NO `resets`, deliberately. The SoC does have three reset
+		 * lines for this controller (prst/arst/cardrst, cpu syscon
+		 * 0x10 bits 12/12/11) but mainline sdhci-cadence reserves the
+		 * `resets` property for the CARD's RST_n and binds index 0 to
+		 * card_hw_reset. Listing the controller's own APB reset there
+		 * makes mmc_hw_reset() -- an error-recovery path -- reset the
+		 * host. It would pass a first boot and wedge under I/O error
+		 * days later. Firmware leaves all three deasserted (U-Boot
+		 * reads the kernel through this controller), so doing nothing
+		 * is correct.
+		 *
+		 * ONE clock. The binding allows exactly one and the driver
+		 * takes index 0 unnamed, so it is the card clock. The
+		 * controller's own bus gate (AX630C_CLK_EMMC_EB) cannot be
+		 * named here and is CLK_IS_CRITICAL in the clock driver.
+		 *
+		 * NO `sdhci-caps-mask`. The vendor's <0x2 0x03200000> clears
+		 * CAN_VDD_330|CAN_VDD_300|CAN_DO_HISPD, all of which the
+		 * cap-* properties below then re-add. It is redundant, not
+		 * dangerous -- CAPS0 reads 0x176AC8B2 on this silicon, so
+		 * CAN_VDD_180 survives the mask and ocr_avail is non-zero
+		 * either way (measured 2026-09-06).
+		 *
+		 * NO cdns,phy-input-delay-mmc-legacy. PHY address 0x06 has no
+		 * entry in any driver's property table, vendor included, so
+		 * the vendor DT's value has never been applied to this board.
+		 * Upstream's schema is unevaluatedProperties:false.
+		 *
+		 * TODO(#81): cap-mmc-hw-reset + reset-gpios = <&gpio2 23
+		 * GPIO_ACTIVE_LOW>. The card's real RST_n is GPIO2_A23, and
+		 * with CONFIG_RESET_GPIO the reset core synthesises a
+		 * controller over it for free -- but there is no GPIO
+		 * controller node until #81, and a phandle to a node that does
+		 * not exist does not compile.
+		 */
+		emmc: mmc@1b40000 {
+			compatible = AX630C_SDHCI_COMPAT, "cdns,sd4hc";
+			reg = <0x0 0x1b40000 0x0 0x10000>;
+			interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&cpu_clk AX630C_CLK_EMMC_CARD_EB>;
+			bus-width = <8>;
+			non-removable;
+			no-sd;
+			no-sdio;
+			disable-wp;
+			cap-mmc-highspeed;
+			fixed-emmc-driver-type = <4>;
+			/*
+			 * Pinned to high speed for bring-up, on purpose.
+			 * Mainline runs a read-gap tuning step over HRS37/HRS38
+			 * (0x94/0x98) for HS200+, and those registers appear in
+			 * NO AX630C source -- not the vendor kernel, not the
+			 * SPL, not U-Boot. If they are unimplemented the tuning
+			 * loop degrades harmlessly, but a 16-iteration retry
+			 * storm could outlast U-Boot's 30 s watchdog and look
+			 * exactly like a crash on a board with no console.
+			 *
+			 * TODO(#76): once this has booted, restore
+			 * max-frequency = <200000000> plus mmc-hs200-1_8v,
+			 * mmc-hs400-1_8v and mmc-hs400-enhanced-strobe, and the
+			 * HS400ES path (which mainline already implements
+			 * identically to the vendor) comes back with them.
+			 */
+			max-frequency = <50000000>;
+			cdns,phy-input-delay-sd-highspeed = <2>;
+			cdns,phy-input-delay-legacy = <4>;
+			cdns,phy-input-delay-sd-uhs-sdr12 = <1>;
+			cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
+			cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
+			cdns,phy-input-delay-sd-uhs-ddr50 = <2>;
+			cdns,phy-input-delay-mmc-highspeed = <2>;
+			cdns,phy-input-delay-mmc-ddr = <2>;
+			cdns,phy-dll-delay-sdclk = <45>;
+			cdns,phy-dll-delay-sdclk-hsmmc = <31>;
+			cdns,phy-dll-delay-strobe = <18>;
+			status = "okay";
+		};
+
+		/*
+		 * SD card slot (#76). Not on the boot path; this is where a
+		 * mainline rootfs goes, which is why it is enabled before
+		 * anything needs it.
+		 *
+		 * no-1-8-v is a deliberate cap, not an oversight. UHS on this
+		 * board needs the pad I/O-voltage domain switched in pin-group
+		 * G9's MISC0 word (0x104F1004/8 bits [8:7], with a rail-detect
+		 * read at 0x104F1058) -- something no upstream code does and
+		 * the vqmmc-regulator model cannot express. Without the switch
+		 * a card that negotiates 1.8 V signalling would be talking to
+		 * 3.3 V pads. With this property the slot runs default/high
+		 * speed to 50 MHz, correctly.
+		 */
+		sd: mmc@104e0000 {
+			compatible = AX630C_SDHCI_COMPAT, "cdns,sd4hc";
+			reg = <0x0 0x104e0000 0x0 0x10000>;
+			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&flash_clk AX630C_CLK_SD_CARD_EB>;
+			max-frequency = <50000000>;
+			bus-width = <4>;
+			no-mmc;
+			no-sdio;
+			no-1-8-v;
+			disable-wp;
+			broken-cd;
+			cap-sd-highspeed;
+			cdns,phy-input-delay-sd-highspeed = <2>;
+			cdns,phy-input-delay-legacy = <3>;
+			cdns,phy-input-delay-sd-uhs-sdr12 = <3>;
+			cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
+			cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
+			cdns,phy-input-delay-sd-uhs-ddr50 = <1>;
+			cdns,phy-dll-delay-sdclk = <0>;
+			status = "okay";
+		};
+
+		/*
+		 * SDIO -- the aic8800 Wi-Fi (#85), and the only closed content
+		 * this project still allows (firmware, not driver). Described
+		 * because it is the same IP as the two above and costs nothing
+		 * to get right now, disabled because #76 wants one fewer thing
+		 * to go wrong on a console-less first boot.
+		 */
+		sdio: mmc@104d0000 {
+			compatible = AX630C_SDHCI_COMPAT, "cdns,sd4hc";
+			reg = <0x0 0x104d0000 0x0 0x10000>;
+			interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&flash_clk AX630C_CLK_SDIO_M_CARD_EB>;
+			max-frequency = <50000000>;
+			bus-width = <4>;
+			no-sd;
+			no-mmc;
+			no-1-8-v;
+			disable-wp;
+			broken-cd;
+			cap-sd-highspeed;
+			cdns,phy-input-delay-sd-highspeed = <4>;
+			cdns,phy-input-delay-legacy = <3>;
+			cdns,phy-input-delay-sd-uhs-sdr12 = <3>;
+			cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
+			cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
+			cdns,phy-input-delay-sd-uhs-ddr50 = <1>;
+			cdns,phy-dll-delay-sdclk = <0>;
+			status = "disabled";
 		};
 
 		/*

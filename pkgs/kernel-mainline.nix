@@ -63,6 +63,15 @@ pkgs.stdenv.mkDerivation {
     gzip lzop which gawk bash zstd rsync
   ]);
 
+  # Modifications to files that already exist upstream. Unlike treeGraft below
+  # (which only ADDS files), these have to be diffs, and they are deliberately
+  # kept in upstream-submission shape -- one logical change, with the commit
+  # message in the patch header -- so #87 can send them as-is. A kernel bump
+  # that moves the context breaks the build loudly, which is the point.
+  patches = [
+    ./kernel-mainline/patches/0001-mmc-sdhci-cadence-add-axera-ax630c.patch
+  ];
+
   configFragment = ./kernel-mainline/ax630c.config;
 
   # Our own in-tree drivers, laid out at the path they would occupy upstream so
