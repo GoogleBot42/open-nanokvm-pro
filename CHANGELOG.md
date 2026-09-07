@@ -8,8 +8,8 @@ before cutting. Older releases (through v2.1.0-alpha.3) predate this file.
 
 ## v2.1.0-alpha.5
 
-DRAFT, not yet cut. Blob-free H.265, real rate control on both codecs, and the
-web UI becomes our own.
+Blob-free H.265, real rate control on both codecs, and the web UI becomes our
+own.
 
 - **H.265 (#64, #66).** The open encoder emits HEVC from source (VPS/SPS/PPS
   byte-identical to the vendor's, device-proven 1080p to 3840x2400) and the web UI
@@ -65,6 +65,10 @@ web UI becomes our own.
 - Known: the Chromium Vulkan bug behind #69 is not fixed, only worked around —
   H.265 needs a video element, so H.265 modes stay unusable there until the flag
   is set back to Default.
+- Not in this image: the mainline-kernel port (#26) began in this window, and a
+  mainline Linux 7.1.3 booted the AX630C for the first time (#74, #75, #80).
+  It builds as separate flake outputs and changes nothing the firmware ships;
+  `docs/mainline-port.md` tracks it.
 
 ## v2.1.0-alpha.4
 
