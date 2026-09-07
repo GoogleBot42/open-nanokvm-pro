@@ -90,6 +90,10 @@ pkgs.stdenv.mkDerivation {
   # Kconfig block and a Makefile line.
   stmmacKconfig = ./kernel-mainline/stmmac.Kconfig;
 
+  # And again for the GPIO controller (#81): drivers/gpio is flat upstream, so
+  # one .c in treeGraft plus this Kconfig block and a Makefile line.
+  gpioKconfig = ./kernel-mainline/gpio.Kconfig;
+
   postPatch = ''
     patchShebangs scripts
 
@@ -167,6 +171,28 @@ pkgs.stdenv.mkDerivation {
       "$stmmacK/Makefile"
     grep -qF 'obj-$(CONFIG_DWMAC_AXERA)' "$stmmacK/Makefile" \
       || { echo "ERROR: could not hook dwmac-axera.o into $stmmacK/Makefile" >&2; exit 1; }
+
+    # --- graft the GPIO controller (#81) ---------------------------------
+    # gpio-ax630c.c was copied above; GPIO_AX630C sorts between GPIO_ATH79 and
+    # GPIO_BCM_KONA. Assert both hooks: a kernel with this driver missing
+    # binds no gpiochip, so the HDMI receiver never powers on and the ATX
+    # lines are never claimed -- and the DT would look perfectly correct.
+    awk -v snippet="$gpioKconfig" '
+      /^config GPIO_BCM_KONA$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/gpio/Kconfig > drivers/gpio/Kconfig.grafted
+    mv drivers/gpio/Kconfig.grafted drivers/gpio/Kconfig
+    grep -q '^config GPIO_AX630C$' drivers/gpio/Kconfig \
+      || { echo "ERROR: could not hook GPIO_AX630C into drivers/gpio/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_GPIO_ATH79)\t\t+= gpio-ath79.o$|&\nobj-$(CONFIG_GPIO_AX630C)\t\t+= gpio-ax630c.o|' \
+      drivers/gpio/Makefile
+    grep -qF 'obj-$(CONFIG_GPIO_AX630C)' drivers/gpio/Makefile \
+      || { echo "ERROR: could not hook gpio-ax630c.o into drivers/gpio/Makefile" >&2; exit 1; }
   '';
 
   configurePhase = ''

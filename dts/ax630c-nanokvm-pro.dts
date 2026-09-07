@@ -9,6 +9,8 @@
  * drivers (see ax630c.dtsi).
  */
 
+#include <dt-bindings/gpio/gpio.h>
+
 #include "ax630c.dtsi"
 
 / {
@@ -18,6 +20,32 @@
 	aliases {
 		serial0 = &uart0;
 		ethernet0 = &gmac;
+	};
+
+	/*
+	 * The heartbeat LED (#81). GPIO0_A23 on pad SD_PWR_EN, active high.
+	 *
+	 * No linux,default-trigger: the bring-up initramfs blinks this line
+	 * itself through /dev/mem, because on a kernel with no rootfs it is the
+	 * only channel that says "userspace was reached" to a human in the
+	 * room. A kernel heartbeat trigger would fight it. What the node is
+	 * for meanwhile is ownership -- it is the cheapest end-to-end proof
+	 * that gpio-ranges reached the pin controller, since a claimed line
+	 * shows up in both /sys/kernel/debug/gpio and pinmux-pins.
+	 *
+	 * The same line is `reset-gpio` of the vendor DT's panel_dsi node.
+	 * That node is disabled on this board and has no mainline counterpart,
+	 * but do not be surprised to find GPIO0_A23 described as a panel reset
+	 * elsewhere.
+	 */
+	leds {
+		compatible = "gpio-leds";
+
+		led-heartbeat {
+			label = "sys-heartbeat";
+			gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
 	};
 
 	chosen {
@@ -179,28 +207,129 @@
 	phy-mode = "rgmii-id";
 	phy-handle = <&phy1>;
 
-	/*
-	 * The PHY's RSTn, GPIO1_A27 (pad EPHY_RSTN, muxed to GPIO by the
-	 * bootloader pad table). This is the GPIO block's per-line control
-	 * word: gpio1 base 0x04801000 + (27 + 1) * 4.
-	 *
-	 * TODO(#81): delete this and put
-	 *   reset-gpios = <&gpio1 27 GPIO_ACTIVE_LOW>;
-	 *   reset-assert-us = <15000>;
-	 *   reset-deassert-us = <75000>;
-	 * on the PHY node instead, where the MDIO core handles it. There is no
-	 * GPIO controller node to point at yet, and a mainline kernel that
-	 * cannot release its PHY has no way to report that it could not.
-	 */
-	axera,phy-reset-mmio = <0x04801070>;
-
 	mdio {
 		compatible = "snps,dwmac-mdio";
 		#address-cells = <1>;
 		#size-cells = <0>;
 
+		/*
+		 * RSTn is GPIO1_A27, pad EPHY_RSTN, active low. The MDIO core
+		 * pulses it when this device registers -- before it reads the
+		 * PHY's ID, which is the only ordering that matters. Firmware
+		 * does not drive it: on a cold or chip reset every GPIO line
+		 * comes up an input, so RSTn is left to whatever the board
+		 * pulls it to.
+		 *
+		 * The glue used to do this itself by poking the GPIO block's
+		 * line word through an address in DT, because there was no
+		 * GPIO controller to name (#77). #81 gave it one, and the two
+		 * delays below are the ones that glue used.
+		 */
 		phy1: ethernet-phy@1 {
 			reg = <1>;
+			reset-gpios = <&gpio1 27 GPIO_ACTIVE_LOW>;
+			reset-assert-us = <15000>;
+			reset-deassert-us = <75000>;
+		};
+	};
+};
+
+/*
+ * ATX (#81). Four lines to the host's front-panel header, driven from
+ * userspace: the KVM's whole reason to exist is pressing a button on a machine
+ * that is not this one.
+ *
+ * They are named rather than hogged. A hog would claim them for the kernel and
+ * put them out of reach of the chardev, and userspace is the only thing that
+ * knows when a press should happen. Naming them means tools/nanokvm-gpio can
+ * ask for "atx-power" instead of a global number that moves whenever a
+ * gpiochip probes in a different order.
+ *
+ * This is also the root fix for the SW_PWR trap (docs/mini-display.md). SW_PWR
+ * is GPIO0_A7 on pad VI_D7, which is also a capture data pad; the vendor's
+ * capture stack re-muxed it at every pipeline init and its GPIO driver stubbed
+ * chip->request, so nothing ever muxed it back and the value file went on
+ * echoing a latch that reached no ball. Here, requesting the line programs the
+ * mux (gpio-ranges -> gpio_request_enable), and the pin controller's strict
+ * mode means a peripheral state cannot take the pad while a line is held. The
+ * rule that keeps it that way: whatever declares the capture pin group in #83
+ * must not list VI_D7.
+ *
+ * The power LED sense is inverted -- the host is ON when the line reads 0 --
+ * which is a property of the board, not of the driver, so it is declared here
+ * as GPIO_ACTIVE_LOW and every consumer sees "1 means on".
+ */
+&gpio0 {
+	gpio-line-names =
+		"", "", "", "", "", "", "", "atx-power",
+		"", "", "", "", "", "", "", "",
+		"", "", "", "", "", "", "", "sys-heartbeat";
+};
+
+&gpio1 {
+	gpio-line-names =
+		"", "", "", "atx-reset";
+};
+
+&gpio2 {
+	gpio-line-names =
+		"", "", "", "", "", "", "", "",
+		"", "", "atx-hdd-led", "atx-power-led";
+};
+
+/*
+ * The LT6911UXC HDMI receiver (#81), the front end of the whole capture path.
+ *
+ * The vendor has no DT node for this part at all: its driver hardcodes
+ * i2c_get_adapter(0), the address 0x2b, seven global GPIO numbers and seven
+ * pinmux register writes. Every one of those is a board fact, and every one of
+ * them lives here now.
+ *
+ * Polarity is declared, not coded. The two loopout enables are active low in
+ * hardware and the two cable-detect inputs read 0 when a connector is mated;
+ * saying so here is what lets the driver read as "1 means present".
+ *
+ * The interrupt line is EPHY_LED0, which the bootloader's pad table leaves
+ * muxed to its EPHY function -- the vendor driver re-muxed it by hand at
+ * runtime, which is measurable on the running board (the pad word reads
+ * 0x00060083, not the 0x00000083 the boot table writes). Claiming the GPIO
+ * does that properly. The pull-up is not ours to invent: it is in the boot
+ * table already, and the vendor's own changelog records adding it for a board
+ * revision whose interrupt line floated. It is spelled out below so the pad
+ * keeps it whoever else touches the word.
+ */
+&i2c0 {
+	status = "okay";
+
+	hdmi-receiver@2b {
+		compatible = "lontium,lt6911uxc";
+		reg = <0x2b>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lt6911_int_pins>;
+
+		interrupt-gpios = <&gpio1 28 GPIO_ACTIVE_LOW>;
+		power-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+		hdmi-power-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+		loopout-gpios = <&gpio0 21 GPIO_ACTIVE_LOW>,
+				<&gpio2 17 GPIO_ACTIVE_LOW>;
+		hdmi-rx-detect-gpios = <&gpio2 18 GPIO_ACTIVE_LOW>;
+		hdmi-tx-detect-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&pinctrl {
+	/*
+	 * Electrical configuration only, no function property: the mux is
+	 * programmed by the GPIO claim, and a state that named a function
+	 * would fight it under strict mode.
+	 */
+	lt6911_int_pins: lt6911-int-pins {
+		lt6911-int {
+			pins = "EPHY_LED0";
+			bias-pull-up;
+			drive-strength = <3>;
+			input-schmitt-disable;
 		};
 	};
 };

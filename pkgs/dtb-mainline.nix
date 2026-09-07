@@ -110,6 +110,46 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q 'clock-frequency = <0x16e3600>' ${board}.decompiled.dts \
       || fail "arch timer clock-frequency is not 24 MHz"
 
+    # --- #81: GPIO, ATX and the HDMI receiver ---------------------------
+    # Four controllers, and 97 pads mapped between them. gpio-ranges is the
+    # property that makes a GPIO request reach the pin controller and program
+    # the pad's mux; get it wrong and nothing fails loudly -- lines simply
+    # drive pads that are still muxed to something else, which is exactly the
+    # SW_PWR trap this issue exists to kill. The mapping is not an identity, so
+    # count the pads the compiled blob actually claims rather than trusting the
+    # source to have been read correctly.
+    for g in 4800000 4801000 6000000 6001000; do
+      grep -q "gpio@$g" ${board}.decompiled.dts || fail "gpio@$g node missing"
+    done
+
+    ranges=$(grep -o 'gpio-ranges = <[^>]*>' ${board}.decompiled.dts \
+      | sed 's/.*<//; s/>//' \
+      | awk '{ for (i = 4; i <= NF; i += 4) n += strtonum($i) } END { print n + 0 }')
+    [ "$ranges" = "97" ] \
+      || fail "gpio-ranges cover $ranges pads, not the vendor DT's 97"
+
+    grep -q 'atx-power' ${board}.decompiled.dts \
+      || fail "the ATX lines lost their gpio-line-names"
+
+    # The HDMI receiver. Its driver takes every board fact from DT -- the bus,
+    # the address and seven GPIOs the vendor hardcoded as global numbers -- so
+    # a missing property here is a driver that binds and then drives nothing.
+    grep -q 'hdmi-receiver@2b' ${board}.decompiled.dts \
+      || fail "the LT6911UXC node is missing from i2c0"
+    for p in interrupt-gpios power-gpios hdmi-power-gpios loopout-gpios \
+             hdmi-rx-detect-gpios hdmi-tx-detect-gpios; do
+      grep -q "$p" ${board}.decompiled.dts \
+        || fail "the LT6911UXC node lost $p"
+    done
+
+    # #77's stopgap is gone: the PHY reset is a real GPIO on the PHY node now,
+    # pulsed by the MDIO core. Both halves are asserted, because dropping the
+    # property without adding the descriptor leaves a PHY nobody releases.
+    grep -q 'axera,phy-reset-mmio' ${board}.decompiled.dts \
+      && fail "gmac still pokes the PHY reset through a raw address"
+    grep -q 'reset-gpios' ${board}.decompiled.dts \
+      || fail "the ethernet PHY lost its reset-gpios"
+
     mkdir -p "$out/dtb"
     cp ${board}.dtb "$out/dtb/"
     cp ${board}.decompiled.dts "$out/dtb/"

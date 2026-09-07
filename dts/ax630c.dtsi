@@ -373,6 +373,153 @@
 		};
 
 		/*
+		 * GPIO (#81). Four identical 32-line controllers; the block is
+		 * DesignWare in its register names only, so gpio-dwapb cannot
+		 * bind and drivers/gpio/gpio-ax630c.c exists.
+		 *
+		 * gpio-ranges is the load-bearing property here, not
+		 * decoration. It is what makes gpiochip_generic_request() reach
+		 * the pin controller's gpio_request_enable(), which programs
+		 * the pad's mux -- the root fix for the SW_PWR trap, where
+		 * exporting a GPIO never reprogrammed the pad and the value
+		 * register echoed a latch that no longer reached a ball. The
+		 * mapping is not an identity: 97 of the 111 pads reach a GPIO
+		 * line, in seven runs per controller, and lines outside those
+		 * runs exist in the register file but reach no pad. The runs
+		 * below are the vendor DT's 97 single-line entries collapsed,
+		 * pin for pin.
+		 *
+		 * Two clocks each: "gpio" drives the per-line debounce filter
+		 * and the interrupt synchroniser, "apb" the register file.
+		 * Two resets each, deasserted at probe and never pulsed --
+		 * lines on these blocks drive the host's ATX power button and
+		 * the HDMI receiver's power rails, so a reset pulse would be a
+		 * keystroke nobody pressed.
+		 */
+		gpio0: gpio@4800000 {
+			compatible = AX630C_GPIO_COMPAT;
+			reg = <0x0 0x4800000 0x0 0x400>;
+			interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_CLK_GPIO0_EB>,
+				 <&periph_clk AX630C_PCLK_GPIO0_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX630C_RST_PERIPH_AX_GPIO0_GPIO_PRST>,
+				 <&periph_clk AX630C_RST_PERIPH_AX_GPIO0_GPIO>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			ngpios = <32>;
+			gpio-ranges = <&pinctrl 0 0 11>, <&pinctrl 11 79 4>,
+				      <&pinctrl 15 87 4>, <&pinctrl 19 62 1>,
+				      <&pinctrl 20 60 1>, <&pinctrl 21 92 3>,
+				      <&pinctrl 24 11 8>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "okay";
+		};
+
+		gpio1: gpio@4801000 {
+			compatible = AX630C_GPIO_COMPAT;
+			reg = <0x0 0x4801000 0x0 0x400>;
+			interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_CLK_GPIO1_EB>,
+				 <&periph_clk AX630C_PCLK_GPIO1_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX630C_RST_PERIPH_AX_GPIO1_GPIO_PRST>,
+				 <&periph_clk AX630C_RST_PERIPH_AX_GPIO1_GPIO>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			ngpios = <32>;
+			gpio-ranges = <&pinctrl 0 19 4>, <&pinctrl 4 95 4>,
+				      <&pinctrl 8 23 4>, <&pinctrl 12 33 12>,
+				      <&pinctrl 24 27 6>, <&pinctrl 30 63 2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "okay";
+		};
+
+		gpio2: gpio@6000000 {
+			compatible = AX630C_GPIO_COMPAT;
+			reg = <0x0 0x6000000 0x0 0x400>;
+			interrupts = <GIC_SPI 116 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_CLK_GPIO2_EB>,
+				 <&periph_clk AX630C_PCLK_GPIO2_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX630C_RST_PERIPH_AX_GPIO2_GPIO_PRST>,
+				 <&periph_clk AX630C_RST_PERIPH_AX_GPIO2_GPIO>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			ngpios = <32>;
+			/* 30 pads, not 32: lines 30 and 31 reach nothing. */
+			gpio-ranges = <&pinctrl 0 65 4>, <&pinctrl 4 45 6>,
+				      <&pinctrl 10 69 10>, <&pinctrl 20 56 1>,
+				      <&pinctrl 21 54 1>, <&pinctrl 22 55 1>,
+				      <&pinctrl 23 52 1>, <&pinctrl 24 51 1>,
+				      <&pinctrl 25 53 1>, <&pinctrl 26 57 3>,
+				      <&pinctrl 29 61 1>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "okay";
+		};
+
+		gpio3: gpio@6001000 {
+			compatible = AX630C_GPIO_COMPAT;
+			reg = <0x0 0x6001000 0x0 0x400>;
+			interrupts = <GIC_SPI 117 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_CLK_GPIO3_EB>,
+				 <&periph_clk AX630C_PCLK_GPIO3_EB>;
+			clock-names = "gpio", "apb";
+			resets = <&periph_clk AX630C_RST_PERIPH_AX_GPIO3_GPIO_PRST>,
+				 <&periph_clk AX630C_RST_PERIPH_AX_GPIO3_GPIO>;
+			reset-names = "apb", "gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			ngpios = <32>;
+			/* Three pads, on lines 1-3. Line 0 reaches nothing. */
+			gpio-ranges = <&pinctrl 1 84 3>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			status = "okay";
+		};
+
+		/*
+		 * I2C0 (#81), the bus the LT6911UXC HDMI receiver lives on.
+		 * Stock Synopsys DesignWare; mainline i2c-designware-platform
+		 * binds the unmodified compatible.
+		 *
+		 * The vendor driver hard-codes 208 MHz as its timing input and
+		 * programs the source mux itself. Naming the clock instead
+		 * means i2c-designware computes HCNT/LCNT from
+		 * clk_get_rate(), so the bus is right whatever source firmware
+		 * selected -- and clk_i2c_sel is registered precisely so that
+		 * rate is a fact rather than a constant.
+		 *
+		 * The "gpio" bus-recovery state is deliberately absent. The
+		 * vendor's recovery claims GPIO0_A24/A25 while its pinctrl
+		 * states leave those pads on the I2C controller, so it
+		 * bit-bangs pads the controller still owns -- recovery that
+		 * cannot work. Doing it properly needs scl-gpios/sda-gpios and
+		 * a matching pin state, which is worth adding the day a stuck
+		 * bus is actually observed.
+		 */
+		i2c0: i2c@4850000 {
+			compatible = "snps,designware-i2c";
+			reg = <0x0 0x4850000 0x0 0x400>;
+			interrupts = <GIC_SPI 135 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_CLK_I2C_MST0_EB>;
+			resets = <&periph_clk AX630C_RST_PERIPH_I2C0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c0_pins>;
+			clock-frequency = <400000>;
+			i2c-sda-hold-time-ns = <500>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		/*
 		 * eMMC (#76) -- the boot device. Everything about this node is
 		 * argued in docs/reference/mainline/sdhci-model-20260906.md;
 		 * the four things a reader will want to know are:

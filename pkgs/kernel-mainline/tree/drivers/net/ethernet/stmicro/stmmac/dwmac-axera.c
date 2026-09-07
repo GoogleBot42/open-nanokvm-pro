@@ -43,26 +43,17 @@
 #define   AX630C_EMAC_PHY_IF_RGMII	(BIT(10) | BIT(9))
 
 /*
- * The GPIO line word of the external PHY's RSTn (GPIO1_A27, pad EPHY_RSTN).
- * One 32-bit word per line at gpio_base + (line + 1) * 4; bit 0 is the output
- * value and bit 1 the direction (1 = output). The bootloader's pad table
- * already muxes the pad to GPIO1_A27 (0x104F0060 = 0x00060008) and the GPIO
- * block's clock and APB gate are on before Linux starts -- both measured.
- *
- * TODO(#81): with a GPIO controller this becomes
- * reset-gpios = <&gpio1 27 GPIO_ACTIVE_LOW> on the PHY node and the MDIO core
- * does the pulse for free. Until then the address comes from DT rather than
- * being hardcoded here, so the board fact stays in the board description.
+ * The external PHY's RSTn is GPIO1_A27 (pad EPHY_RSTN) and is no longer this
+ * driver's business: #81 gave the SoC a GPIO controller, so the line is
+ * reset-gpios on the PHY node and the MDIO core pulses it, with the same 15 ms
+ * assert and 75 ms settle, before it reads the PHY's ID. Firmware does not
+ * drive it -- on a cold or chip reset every GPIO line comes up an input -- so
+ * the pulse still has to happen; it just happens somewhere generic.
  */
-#define AX630C_PHY_RST_OUT		BIT(0)
-#define AX630C_PHY_RST_DIR_OUT		BIT(1)
-#define AX630C_PHY_RST_ASSERT_MS	15
-#define AX630C_PHY_RST_SETTLE_MS	75
 
 struct ax630c_dwmac {
 	struct device *dev;
 	struct regmap *syscon;
-	void __iomem *phy_reset;
 };
 
 /*
@@ -94,26 +85,6 @@ static int ax630c_dwmac_set_clk_tx_rate(void *bsp_priv, struct clk *clk_tx_i,
 		 speed, clk_get_rate(clk_tx_i), rate * 2);
 
 	return ret;
-}
-
-/*
- * Pulse the external PHY's reset. Firmware does not: on a cold or chip reset
- * every GPIO line comes up an input, so RSTn is left to whatever the board
- * pulls it to. Drive it rather than depend on that.
- */
-static void ax630c_dwmac_phy_reset(struct ax630c_dwmac *dwmac)
-{
-	u32 v;
-
-	if (!dwmac->phy_reset)
-		return;
-
-	v = readl(dwmac->phy_reset) & ~AX630C_PHY_RST_OUT;
-	writel(v | AX630C_PHY_RST_DIR_OUT, dwmac->phy_reset);
-	msleep(AX630C_PHY_RST_ASSERT_MS);
-	writel(v | AX630C_PHY_RST_DIR_OUT | AX630C_PHY_RST_OUT,
-	       dwmac->phy_reset);
-	msleep(AX630C_PHY_RST_SETTLE_MS);
 }
 
 /*
@@ -158,7 +129,6 @@ static int ax630c_dwmac_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct ax630c_dwmac *dwmac;
 	struct clk *ephy_clk;
-	u32 phy_reset_phys;
 	int ret;
 
 	ret = stmmac_get_platform_resources(pdev, &stmmac_res);
@@ -201,14 +171,6 @@ static int ax630c_dwmac_probe(struct platform_device *pdev)
 	plat_dat->set_clk_tx_rate = ax630c_dwmac_set_clk_tx_rate;
 	plat_dat->bsp_priv = dwmac;
 
-	if (!of_property_read_u32(dev->of_node, "axera,phy-reset-mmio",
-				  &phy_reset_phys)) {
-		dwmac->phy_reset = devm_ioremap(dev, phy_reset_phys, 4);
-		if (!dwmac->phy_reset)
-			return dev_err_probe(dev, -ENOMEM,
-					     "cannot map the PHY reset line\n");
-	}
-
 	ret = ax630c_dwmac_reset(dwmac);
 	if (ret)
 		return dev_err_probe(dev, ret, "EMAC block reset failed\n");
@@ -218,12 +180,12 @@ static int ax630c_dwmac_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, ret, "PHY interface select failed\n");
 
 	/*
-	 * Release the PHY last, so it leaves reset into a MAC that is already
-	 * out of reset and already told which pads to drive -- and before
-	 * stmmac_dvr_probe() scans the MDIO bus.
+	 * Block reset and pad select are done, so the PHY now leaves reset
+	 * into a MAC that is already out of reset and already told which pads
+	 * to drive. That ordering is why the reset-gpios pulse belongs to the
+	 * MDIO core: it happens inside stmmac_dvr_probe(), when the bus
+	 * registers, and therefore strictly after both writes above.
 	 */
-	ax630c_dwmac_phy_reset(dwmac);
-
 	return stmmac_dvr_probe(dev, plat_dat, &stmmac_res);
 }
 
