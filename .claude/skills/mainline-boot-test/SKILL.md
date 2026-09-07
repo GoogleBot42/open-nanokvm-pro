@@ -256,6 +256,64 @@ tools/kvmssh 'devmem 0x0239002C 32 0x3FF000'  # clear the milestone bits
 Verify both restores from the medium against the step-2 md5s, and confirm
 `devmem 0x02390024` reads `0x00000014` — slot A steady state.
 
+# Variant: booting the NixOS appliance from slot B (#78)
+
+Same loop, three differences. The image under test is a whole operating system
+rather than a self-terminating probe, so it does not reboot itself and its
+oracle is an SSH shell rather than a register.
+
+**Use the loop-image variant, never the partition one.** `.#nixos-appliance`
+puts root on `/dev/mmcblk0p17` — the vendor rootfs, which is the only way back
+onto the board. `.#nixos-appliance-loop` puts root in a FILE on that filesystem
+and loop-mounts it from stage 1: nothing is overwritten and rollback is `rm`.
+
+```
+nix build .#kernel-mainline-appliance-loop-slot-image -o result-appliance
+nix build .#dtb-mainline-slot-image                   -o result-mainline-dtb
+nix build .#nixos-appliance-loop                      -o result-approotfs
+```
+
+Steps 2 and 3 are unchanged except that the rootfs image goes across as well
+(~1.9 GB — `tools/kvmscp` it to `/root/nixos-root.img`, then hash-verify it on
+the device like any other transfer; it is a plain file, not a block write).
+Stage 1 expects it at the root of the carrier filesystem:
+
+```
+tools/kvmssh 'mv /root/nixos-root.img /nixos-root.img; sync
+  md5sum /nixos-root.img'
+```
+
+**Do not let the appliance re-arm the slot.** `nanokvm-checkboot.service` is the
+S99checkboot equivalent, and on a successful slot-B boot it would find
+`bootsystem=B` and re-arm `SLOTB_BOOTABLE` — which destroys the whole safety
+argument above, because the board would then stay on B. `nixos/loop-test.nix`
+sets `nanokvm.checkboot.enable = false` for exactly this reason. If you build
+your own test module, turn it off yourself.
+
+**Reading the result.** There is no dwell and no self-reboot, so:
+
+- The appliance takes the same MAC (`nanokvm-identity.service` derives it from
+  the SoC UID), so it takes the same DHCP lease and `tools/kvmssh` reaches it
+  at the address it already knows. It also answers to the same password:
+  stage 1 harvests root's hash out of the carrier filesystem's `/etc/shadow`
+  and the system uses it via `hashedPasswordFile`, the same trick #77 used and
+  for the same reason — no credential belongs in the image or the repo.
+- The carrier (the vendor rootfs) is bind-mounted at `/vendor-root`, so the
+  comparison that matters is one command:
+  `grep hwaddress /vendor-root/etc/network/interfaces` against
+  `ip link show eth0`.
+- If it never comes up, power-cycle or wait for the watchdog; nothing re-armed
+  the slot, so the next boot is slot A and the ramoops console zone at
+  `0x480e4000` still holds the whole failed boot. Read it exactly as in step 5.
+- `systemctl --failed`, `journalctl -b`, `cat /etc/fw_env.config`,
+  `cat /device_key` and `ip link show eth0` are the things worth capturing.
+  Compare the derived MAC against `hwaddress ether` in the vendor rootfs's
+  `/etc/network/interfaces` — they must be identical, and that is the check the
+  identity derivation exists to pass.
+
+**Getting back.** `reboot` from the appliance lands on slot A because nothing
+re-armed. Then step 6 as usual, plus `rm /nixos-root.img` on the vendor rootfs.
+
 # Adapting the initramfs for a new child issue
 
 `pkgs/kernel-mainline/initramfs/bringup-init.c` is one static musl binary with

@@ -322,6 +322,21 @@ in
       description = "Run NanoKVM-Server (the web UI, ATX, network and update routes).";
     };
 
+    checkboot.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Re-arm the active A/B slot on every boot (the S99checkboot equivalent).
+
+        Turn this OFF for a slot-B boot test. The SPL treats `SLOTB_BOOTABLE` as
+        consume-once, and the entire safety argument of the reversible harness
+        is that NOTHING in the slot-B image re-arms it -- so whatever happens
+        there, the next boot lands on slot A by itself. A booted appliance that
+        re-armed would stay on slot B, and getting back would need either a
+        working shell on it or Jeremy's hands on the power.
+      '';
+    };
+
     bootUpdate.enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -730,7 +745,7 @@ in
     # file now ships (see section 4), so the unit is live -- and #79 is what
     # puts a health gate in front of it (After=nanokvm-healthy.target) instead
     # of re-arming unconditionally the way the vendor does.
-    systemd.services.nanokvm-checkboot = {
+    systemd.services.nanokvm-checkboot = lib.mkIf cfg.checkboot.enable {
       description = "Confirm the active A/B boot slot (S99checkboot equivalent)";
       wantedBy = [ "multi-user.target" ];
       after = [ "local-fs.target" ];

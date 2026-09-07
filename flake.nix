@@ -383,7 +383,7 @@
         nixos-appliance = callPkg ./nixos/rootfs.nix nixosApplianceArgs;
         nixos-appliance-loop = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
           variant = "loop-image";
-          applianceModules = [{ nanokvm.rootImage.enable = true; }];
+          applianceModules = [ ./nixos/loop-test.nix ];
         });
         # Third variant: the same appliance retargeted at `qemu-system-aarch64
         # -M virt`, which is where the NixOS half of the boot is proven before
