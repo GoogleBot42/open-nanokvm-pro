@@ -7,17 +7,19 @@
  * reconciled clock by clock against a running device. Issue #80. Section
  * numbers in the comments below refer to that document.
  *
- * 279 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
- * 55 muxes, 23 dividers, 111 gates. Per controller: common 135, mm 40, flash
- * 30, periph 41, dispc 14, cpu 11, vpu 7, pllc 1. Counted out of the compiled
- * tables in vmlinux, and confirmed a third time by clk_summary on the running
- * kernel, which lists 280 distinct names -- these plus the DT fixed-clock.
+ * 282 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
+ * 55 muxes, 23 dividers, 114 gates. Per controller: common 135, mm 40, flash
+ * 33, periph 41, dispc 14, cpu 11, vpu 7, pllc 1. Counted out of the compiled
+ * tables in vmlinux, not re-read from the source that generated them; a
+ * clk_summary on a running kernel should therefore list 283 names -- these
+ * plus the unrelated DT fixed-clock.
  *
- * 246 of those are the set the vendor CCF driver registers. The other 33 are
+ * 246 of those are the set the vendor CCF driver registers. The other 36 are
  * ids it declares and leaves unregistered because its own drivers programmed
  * those windows by hand: thirteen for eMMC/SD/SDIO (#76), six for the two
- * watchdogs (#75) and fourteen for I2C and GPIO (#81). Anything that calls
- * clk_get() on a block the vendor drove by hand needs the same treatment.
+ * watchdogs (#75), fourteen for I2C and GPIO (#81) and three for USB (#82).
+ * Anything that calls clk_get() on a block the vendor drove by hand needs the
+ * same treatment.
  *
  * Two deliberate departures from the vendor table, both argued in section 6 of
  * the specification:
@@ -48,10 +50,11 @@
 /* --- reset lines (reset-model 6, driver in reset-ax630c.c) -------------- */
 
 /*
- * 148 lines over seven controllers: 144 that the vendor device tree binds to a
+ * 150 lines over seven controllers: 144 that the vendor device tree binds to a
  * consumer somewhere (cpu 4, comm 5, vpu 3, mm 23, dispc 10, periph 82, flash
- * 17) plus the four periph SW_RST3 lines the watchdog needs, which no vendor
- * DT node names because the vendor watchdog driver pokes that word itself.
+ * 17) plus the four periph SW_RST3 lines the watchdog needs and the two flash
+ * SW_RST0 lines USB needs -- six lines no vendor DT node names, because the
+ * vendor watchdog and dwc3 drivers poke those words themselves.
  *
  * Each entry is (value-word offset, bit). Everything else the vendor's three,
  * four and ten-cell specifiers carried is derivable or is software policy --
@@ -255,6 +258,14 @@ static const struct ax630c_reset_line ax630c_flash_reset_lines[] = {
 	[AX630C_RST_FLASH_BT_DPI0_FLASH_DPU_1X] = { 0x14, 26 },
 	[AX630C_RST_FLASH_BT_DPI0_FLASH_DPU_NX] = { 0x14, 27 },
 	[AX630C_RST_FLASH_ETH0_EPHY_SHUTDOWN] = { 0x20, 0 },
+	/*
+	 * #82. The vendor dwc3 glue writes BIT(24) and BIT(25) of the SW_RST0
+	 * value word (0x14) through this window's +0x4000/+0x8000 set/clear
+	 * aliases, set-then-clear at probe -- so assert is the set, which is
+	 * what this controller already does for every other line here.
+	 */
+	[AX630C_RST_FLASH_USB2_PHY] = { 0x14, 24 },
+	[AX630C_RST_FLASH_USB2_VCC] = { 0x14, 25 },
 };
 
 static const struct ax630c_reset_desc ax630c_flash_resets = {
@@ -738,6 +749,41 @@ static const struct ax630c_clk ax630c_flash_clks[] = {
 	 * consumer claims it.
 	 */
 	AX630C_GATE_C(AX630C_PCLK_PINMUX_EB, "pclk_pinmux_eb", NULL, 0x08, 16, CLK_IS_CRITICAL),
+
+	/*
+	 * USB 2.0 (#82). Three gates, all named by the dwc3 nodes -- so unlike
+	 * the SD/SDIO bus gates above none of them is CLK_IS_CRITICAL, and USB
+	 * powers down cleanly when its node is disabled.
+	 *
+	 * The id-to-bit relation in this window is arithmetic and independently
+	 * confirmed: every registered id in the 0x04 word sits at bit 25 - id
+	 * and every one in 0x08 at bit 45 - id, and the vendor dwc3 glue names
+	 * exactly these three BIT() positions (12, 14 in its CLK_EB0; 5 in its
+	 * CLK_EB1) for exactly these three ids (13, 11, 40 in the vendor clock
+	 * binding header). Two artifacts, same answer.
+	 *
+	 * clk_usb_ref_eb is 24 MHz and the dwc3 core node names it "ref". That
+	 * rate is not a guess: mainline's dwc3_ref_clk_period() derives
+	 * GUCTL.REFCLKPER, GFLADJ.REFCLK_FLADJ and GFLADJ.240MHZDECR from
+	 * clk_get_rate(), and only rate == 24000000 exactly reproduces the
+	 * three constants the vendor glue hardcodes (0x29, 0x7f0, 0xa).
+	 *
+	 * usb_ref_alt_clk_eb gets a NULL parent for the reason the SD bus gates
+	 * do: its source is not established in any artifact we have, nothing
+	 * reads its rate, and an invented parent would be indistinguishable
+	 * from a measured one later. The glue holds it enabled and no more.
+	 *
+	 * bus_clk_usb_eb hangs off clk_flash_glb_sel -- the AXI bus clock the
+	 * whole flash domain shares with the EMAC and both SD hosts -- and is
+	 * deliberately NOT CLK_SET_RATE_PARENT. The vendor glue sets that mux
+	 * to 312 MHz at USB probe; firmware already leaves it there (the field
+	 * reads 0b101 on the running board, measured 2026-09-06), so there is
+	 * nothing to do and a clk_set_rate() that propagated from here would
+	 * move the eMMC's and the MAC's bus clock as a side effect.
+	 */
+	AX630C_GATE_C(AX630C_CLK_USB_REF_EB, "clk_usb_ref_eb", "cpll_24m", 0x04, 12, 0),
+	AX630C_GATE_C(AX630C_USB_REF_ALT_CLK_EB, "usb_ref_alt_clk_eb", NULL, 0x04, 14, 0),
+	AX630C_GATE_C(AX630C_BUS_CLK_USB_EB, "bus_clk_usb_eb", "clk_flash_glb_sel", 0x08, 5, 0),
 
 	AX630C_DIV_C(AX630C_CLK_NX_VO1_DIVN_FLASH, "clk_nx_vo1_divn_flash", "clk_nx_vo1_sel", 0x0c, 15, 4, 19),
 	AX630C_DIV_C(AX630C_CLK_NX_VO0_DIVN_FLASH, "clk_nx_vo0_divn_flash", "clk_nx_vo0_sel", 0x0c, 10, 4, 14),

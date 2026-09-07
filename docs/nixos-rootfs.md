@@ -670,9 +670,15 @@ number, so closed gaps keep their slot and new ones are appended.
    `/etc/kvm/server.crt` is absent, ordered after `nanokvm-identity` so the CN
    is the final hostname). Both were found by the first QEMU boot; see
    [what is built](#what-is-built).
-2. **`/kvmapp/scripts/usbdev.sh` is missing — no keyboard, no mouse.** Unchanged
-   and still open; it is **#82's**, and on mainline there is no dwc3 glue either,
-   so there is nothing for the script to configure yet. 21.6 KB of `#!/bin/bash`
+2. **`/kvmapp/scripts/usbdev.sh` is missing — no keyboard, no mouse.** Still
+   open, and it is **#82's**. The KERNEL half stopped being a gap while #78 was
+   in flight: `pkgs/kernel-mainline/tree/drivers/usb/dwc3/dwc3-axera.c` is the
+   glue, `pkgs/kernel-mainline/ax630c.config` builds `USB_CONFIGFS` in along
+   with all five function drivers the script needs — HID, mass storage, NCM,
+   UAC2 and ACM — and #82's bring-up initramfs got a host to enumerate each one
+   off this board. What is still missing is the script's *policy*: the report
+   descriptors, the flag files, the Microsoft OS descriptors and the `udhcpd`
+   instance. 21.6 KB of `#!/bin/bash`
    that builds the entire USB gadget under `/sys/kernel/config/usb_gadget/g0`:
    three HID functions (`hid.GS0` keyboard 8-byte, `hid.GS1` relative mouse
    4-byte, `hid.GS2` absolute mouse 6-byte, each with an inline report

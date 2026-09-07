@@ -463,7 +463,7 @@ propose SG2002 work without flagging this gap up front.
   `sdhci-cadence`, no driver port; root-on-SD blocked on a missing card,
   `needs-human`); **#77 DONE, device-proven** (`tools/kvmssh` reaches the
   mainline kernel over Ethernet from the slot-B initramfs; PHY is a Realtek
-  RTL8211F, `phy-mode = rgmii-id`; milestone mask now `0x3FF000`; b2935d8);
+  RTL8211F, `phy-mode = rgmii-id`; milestone mask `0x3FF000` at the time, `0x1FFF000` since #82; b2935d8);
   **#80 follow-ups DONE, device-proven** (reset controller, six WDT clock IDs,
   watchdog on CCF clocks/resets, five `pinctrl-0` states; 3600 s dwell,
   `0x003FF014`; 16cedba) -- #80 still owes `gmac` pin states and the CPUPLL/
@@ -471,29 +471,41 @@ propose SG2002 work without flagging this gap up front.
   the four controllers, `lt6911-manage.c` replacing the vendor's 2907-line
   driver with the 15-file `/proc` ABI intact, an i2c0 node, the PHY reset moved
   to `reset-gpios`, `nanokvm-gpio` as a libgpiod program instead of a
-  sysfs-export unit, and 14 more clock rows so 279 not 265; `0x003FF014`,
-  evidence in `docs/reference/mainline/gpio-lt6911-20260907/`). **The SW_PWR
-  trap is fixed at the root on mainline**: `gpio_request_enable()` got its
-  first exercise on silicon and four pad words measurably changed function
-  because a driver asked for the line. `.assert`/`.reset` on the reset
-  provider are STILL untested and now ride #83/#84 -- #81 only ever needed
-  deassert, and pulsing a GPIO block whose lines drive the host's power button
-  is not something to do for coverage. All these issues stay open on the forge;
-  only #74 is closed.
+  sysfs-export unit, and 14 more clock rows; `0x003FF014`, evidence in
+  `docs/reference/mainline/gpio-lt6911-20260907/`). **The SW_PWR trap is fixed
+  at the root on mainline**: `gpio_request_enable()` got its first exercise on
+  silicon and four pad words measurably changed function because a driver
+  asked for the line. **#82 DONE, device-proven 2026-09-07** -- **a host
+  enumerated a mainline-kernel USB HID gadget from this board**
+  (`0x01FFF014`, every bit; gadget bound at t=12.63 s, host had it configured
+  1.0 s later at high speed; `docs/reference/mainline/usb-gadget-20260907/`).
+  `dwc3-axera.c` is a ~200-line of-simple-class glue whose real content is the
+  VBUSVALID bit no generic glue can express; two DT nodes so the core takes
+  the 24 MHz `ref` clock and lands on the vendor's exact GFLADJ constants;
+  three flash clock rows and two reset lines; the configfs gadget and all five
+  `usbdev.sh` function drivers built in (5 of 5 instantiated); milestone bits
+  22/23/24 and mask `0x1FFF000`. **#82 is also where the reset provider's
+  `.assert` finally ran on silicon** -- #81 only ever needed deassert, and
+  pulsing a GPIO block whose lines drive the host's power button was rightly
+  not done for coverage; the USB PHY reset needed a real pulse and got one.
+  With both branches merged the clock table is **282 rows** (265 + 14 + 3) and
+  the reset table 150. All these issues stay open on the forge; only #74 is
+  closed.
   **#78 offline half DONE** (the NixOS appliance is off the vendor kernel and
   off the second nixpkgs pin -- `nixpkgs-rootfs` deleted -- boots to multi-user
   under `qemu-system-aarch64` with zero failed units and the server on :80/:443;
   `nix run .#nixos-appliance-qemu-run`). It takes #81's `gpioBackend =
   "libgpiod"` server and ships `nanokvm-gpio`, so it is also what will finally
-  run that tool on hardware. Its hardware half is a reversible loop-image
-  slot-B boot and is waiting on the device.
-  Two corrections it produced: the eth0 MAC is **not** a provisioning-time
-  literal -- the vendor `/init` recomputes it from `/proc/ax_proc/uid` on every
-  boot and rewrites `/etc/network/interfaces`, so that file is a cache; and
-  IRAM0 is at physical 0, so `misc_info` really is at physical `0x740`
+  run that tool on hardware, and it owns the USB gadget's *policy* -- report
+  descriptors, flag files, the `udhcpd` instance -- that #82 deliberately left
+  (the vendor `usbdev.sh` is still uncaptured).
+  Two corrections it produced: **the eth0 MAC is NOT a provisioning-time
+  literal** -- the vendor `/init` recomputes it from `/proc/ax_proc/uid` on
+  every boot and rewrites `/etc/network/interfaces`, so that file is a cache;
+  and IRAM0 is at physical 0, so `misc_info` really is at physical `0x740`
   (`uid_l` `0x788`, `uid_h` `0x78c`).
-  Next: **#82** can start now; **#83**/**#84** are unblocked by #81; **#79** is
-  unblocked by #78; **#85** (aic8800) still can start from source.
+  Next: **#83**/**#84** are unblocked by #81; **#79** is unblocked by #78;
+  **#85** (aic8800) still can start from source.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

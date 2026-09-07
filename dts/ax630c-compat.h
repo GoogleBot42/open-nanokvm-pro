@@ -73,4 +73,13 @@
  */
 #define AX630C_GPIO_COMPAT		"axera,ax630c-gpio"
 
+/*
+ * USB (#82). Same shape as the two above: the controller is a stock Synopsys
+ * DWC3 and the mainline core node below it carries the plain "snps,dwc3". This
+ * compatible is the OUTER glue node's -- an of-simple-class wrapper that owns
+ * the clocks, the two software resets and VBUSVALID, all of which live in the
+ * flash syscon outside the core's window.
+ */
+#define AX630C_DWC3_COMPAT		"axera,ax630c-dwc3"
+
 #endif /* _DTS_AX630C_COMPAT_H */

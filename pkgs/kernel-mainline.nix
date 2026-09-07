@@ -121,6 +121,9 @@ pkgs.stdenv.mkDerivation {
   # Same for the HDMI receiver's management driver (#81), in drivers/misc.
   miscKconfig = ./kernel-mainline/misc.Kconfig;
 
+  # And for the DWC3 glue (#82). drivers/usb/dwc3 is flat too.
+  dwc3Kconfig = ./kernel-mainline/dwc3.Kconfig;
+
   postPatch = ''
     patchShebangs scripts
 
@@ -242,6 +245,31 @@ pkgs.stdenv.mkDerivation {
       drivers/misc/Makefile
     grep -qF 'obj-$(CONFIG_LT6911_MANAGE)' drivers/misc/Makefile \
       || { echo "ERROR: could not hook lt6911-manage.o into drivers/misc/Makefile" >&2; exit 1; }
+
+    # --- graft the DWC3 glue (#82) ---------------------------------------
+    # dwc3-axera.c was copied above. drivers/usb/dwc3 is flat and, unlike the
+    # files above, has NO alphabetical order to slot into -- upstream appends
+    # each new glue layer to the end of both lists. So the anchors are
+    # positional: the first glue entry in the Kconfig (USB_DWC3_OMAP) and the
+    # dwc3-apple.o line in the Makefile. Assert both, as everywhere else: a
+    # missed hook here builds a kernel whose USB node binds nothing, which on
+    # this board means no keyboard and no mouse.
+    awk -v snippet="$dwc3Kconfig" '
+      /^config USB_DWC3_OMAP$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/usb/dwc3/Kconfig > drivers/usb/dwc3/Kconfig.grafted
+    mv drivers/usb/dwc3/Kconfig.grafted drivers/usb/dwc3/Kconfig
+    grep -q '^config USB_DWC3_AXERA$' drivers/usb/dwc3/Kconfig \
+      || { echo "ERROR: could not hook USB_DWC3_AXERA into drivers/usb/dwc3/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_USB_DWC3_APPLE)\t\t+= dwc3-apple.o$|&\nobj-$(CONFIG_USB_DWC3_AXERA)\t\t+= dwc3-axera.o|' \
+      drivers/usb/dwc3/Makefile
+    grep -qF 'obj-$(CONFIG_USB_DWC3_AXERA)' drivers/usb/dwc3/Makefile \
+      || { echo "ERROR: could not hook dwc3-axera.o into drivers/usb/dwc3/Makefile" >&2; exit 1; }
   '';
 
   configurePhase = ''

@@ -56,393 +56,401 @@ resize2fs 1.47.4 (6-Mar-2025)
 [    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
 [    0.000000] arch_timer: cp15 timer running at 62.50MHz (virt).
 [    0.000000] clocksource: arch_sys_counter: mask: 0x1ffffffffffffff max_cycles: 0x1cd42e208c, max_idle_ns: 881590405314 ns
-[    0.000099] sched_clock: 57 bits at 63MHz, resolution 16ns, wraps every 4398046511096ns
-[    0.003845] Console: colour dummy device 80x25
-[    0.007185] Calibrating delay loop (skipped), value calculated using timer frequency.. 125.00 BogoMIPS (lpj=250000)
-[    0.007253] pid_max: default: 32768 minimum: 301
-[    0.010138] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
-[    0.010162] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
-[    0.015281] VFS: Finished mounting rootfs on nullfs
-[    0.026741] cacheinfo: Unable to detect cache hierarchy for CPU 0
-[    0.034349] rcu: Hierarchical SRCU implementation.
-[    0.034375] rcu: 	Max phase no-delay instances is 1000.
-[    0.035043] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
-[    0.037421] EFI services will not be available.
-[    0.037906] smp: Bringing up secondary CPUs ...
-[    0.040124] Detected VIPT I-cache on CPU1
-[    0.040916] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
-[    0.043234] smp: Brought up 1 node, 2 CPUs
-[    0.043252] SMP: Total of 2 processors activated.
-[    0.043271] CPU: All CPU(s) started at EL1
-[    0.043410] CPU features: detected: 32-bit EL0 Support
-[    0.043419] CPU features: detected: 32-bit EL1 Support
-[    0.043462] CPU features: detected: CRC32 instructions
-[    0.043571] CPU features: detected: PMUv3
-[    0.046247] alternatives: applying system-wide alternatives
-[    0.063624] Memory: 940192K/1048576K available (19392K kernel code, 5246K rwdata, 14640K rodata, 10048K init, 718K bss, 72628K reserved, 32768K cma-reserved)
-[    0.080938] devtmpfs: initialized
-[    0.094815] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
-[    0.095185] posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
-[    0.095356] futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
-[    0.096921] 2G module region forced by RANDOMIZE_MODULE_REGION_FULL
-[    0.096957] 0 pages in range for non-PLT usage
-[    0.096980] 511712 pages in range for PLT usage
-[    0.106316] DMI: not present or invalid.
-[    0.116256] NET: Registered PF_NETLINK/PF_ROUTE protocol family
-[    0.123806] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
-[    0.124018] audit: initializing netlink subsys (disabled)
-[    0.124984] audit: type=2000 audit(0.116:1): state=initialized audit_enabled=0 res=1
-[    0.128611] thermal_sys: Registered thermal governor 'step_wise'
-[    0.128641] thermal_sys: Registered thermal governor 'power_allocator'
-[    0.128906] cpuidle: using governor menu
-[    0.129667] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
-[    0.130055] ASID allocator initialised with 32768 entries
-[    0.134169] Serial: AMBA PL011 UART driver
-[    0.163378] 9000000.pl011: ttyAMA0 at MMIO 0x9000000 (irq = 13, base_baud = 0) is a PL011 rev1
-[    0.165037] printk: console [ttyAMA0] enabled
-[    0.178877] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
-[    0.178915] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
-[    0.178923] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
-[    0.178926] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
-[    0.178930] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
-[    0.178945] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
-[    0.178949] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
-[    0.178952] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
-[    0.184986] ACPI: Interpreter disabled.
-[    0.189064] iommu: Default domain type: Translated
-[    0.189100] iommu: DMA domain TLB invalidation policy: strict mode
-[    0.190152] SCSI subsystem initialized
-[    0.190505] libata version 3.00 loaded.
-[    0.191515] usbcore: registered new interface driver usbfs
-[    0.191692] usbcore: registered new interface driver hub
-[    0.191777] usbcore: registered new device driver usb
-[    0.192794] pps_core: LinuxPPS API ver. 1 registered
-[    0.192815] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
-[    0.192855] PTP clock support registered
-[    0.193106] EDAC MC: Ver: 3.0.0
-[    0.193954] scmi_core: SCMI protocol bus registered
-[    0.195803] FPGA manager framework
-[    0.201819] vgaarb: loaded
-[    0.203215] clocksource: Switched to clocksource arch_sys_counter
-[    0.204752] VFS: Disk quotas dquot_6.6.0
-[    0.204838] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
-[    0.206052] pnp: PnP ACPI: disabled
-[    0.218208] NET: Registered PF_INET protocol family
-[    0.219111] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
-[    0.221160] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
-[    0.221286] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
-[    0.221378] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
-[    0.221486] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
-[    0.221605] TCP: Hash tables configured (established 8192 bind 8192)
-[    0.222256] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
-[    0.222968] NET: Registered PF_UNIX/PF_LOCAL protocol family
-[    0.224653] RPC: Registered named UNIX socket transport module.
-[    0.224696] RPC: Registered udp transport module.
-[    0.224701] RPC: Registered tcp transport module.
-[    0.224718] RPC: Registered tcp-with-tls transport module.
-[    0.224730] RPC: Registered tcp NFSv4.1 backchannel transport module.
-[    0.224788] PCI: CLS 0 bytes, default 64
-[    0.227342] kvm [1]: HYP mode not available
-[    0.229213] Initialise system trusted keyrings
-[    0.231546] workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
-[    0.232911] squashfs: version 4.0 (2009/01/31) Phillip Lougher
-[    0.233911] NFS: Registering the id_resolver key type
-[    0.234113] Key type id_resolver registered
-[    0.234131] Key type id_legacy registered
-[    0.234306] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
-[    0.234357] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
-[    0.234939] 9p: Installing v9fs 9p2000 file system support
-[    0.236067] Key type asymmetric registered
-[    0.236146] Asymmetric key parser 'x509' registered
-[    0.236282] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
-[    0.236382] io scheduler mq-deadline registered
-[    0.236421] io scheduler kyber registered
-[    0.236625] io scheduler bfq registered
-[    0.255631] pl061_gpio 9030000.pl061: PL061 GPIO chip registered
-[    0.257722] ledtrig-cpu: registered to indicate activity on CPUs
-[    0.259892] pci-host-generic 4010000000.pcie: host bridge /pcie@10000000 ranges:
-[    0.260283] pci-host-generic 4010000000.pcie:       IO 0x003eff0000..0x003effffff -> 0x0000000000
-[    0.260609] pci-host-generic 4010000000.pcie:      MEM 0x0010000000..0x003efeffff -> 0x0010000000
-[    0.260669] pci-host-generic 4010000000.pcie:      MEM 0x8000000000..0xffffffffff -> 0x8000000000
-[    0.261052] pci-host-generic 4010000000.pcie: Memory resource size exceeds max for 32 bits
-[    0.261412] pci-host-generic 4010000000.pcie: ECAM at [mem 0x4010000000-0x401fffffff] for [bus 00-ff]
-[    0.262286] pci-host-generic 4010000000.pcie: PCI host bridge to bus 0000:00
-[    0.262481] pci_bus 0000:00: root bus resource [bus 00-ff]
-[    0.262528] pci_bus 0000:00: root bus resource [io  0x0000-0xffff]
-[    0.262560] pci_bus 0000:00: root bus resource [mem 0x10000000-0x3efeffff]
-[    0.262566] pci_bus 0000:00: root bus resource [mem 0x8000000000-0xffffffffff]
-[    0.263517] pci 0000:00:00.0: [1b36:0008] type 00 class 0x060000 conventional PCI endpoint
-[    0.266902] pci_bus 0000:00: resource 4 [io  0x0000-0xffff]
-[    0.266948] pci_bus 0000:00: resource 5 [mem 0x10000000-0x3efeffff]
-[    0.266954] pci_bus 0000:00: resource 6 [mem 0x8000000000-0xffffffffff]
-[    0.302555] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
-[    0.307749] msm_serial: driver initialized
-[    0.308449] SuperH (H)SCI(F) driver initialized
-[    0.308677] STM32 USART driver initialized
-[    0.321628] loop: module loaded
-[    0.322306] virtio_blk virtio1: 1/0/0 default/read/poll queues
-[    0.324618] virtio_blk virtio1: [vda] 4842592 512-byte logical blocks (2.48 GB/2.31 GiB)
-[    0.334792] megasas: 07.734.00.00-rc1
-[    0.337818] physmap-flash 0.flash: physmap platform flash device: [mem 0x00000000-0x03ffffff]
-[    0.338642] 0.flash: Found 2 x16 devices at 0x0 in 32-bit bank. Manufacturer ID 0x000000 Chip ID 0x000000
-[    0.338984] Intel/Sharp Extended Query Table at 0x0031
-[    0.339533] Using buffer write method
-[    0.339787] erase region 0: offset=0x0,size=0x40000,blocks=256
-[    0.339926] physmap-flash 0.flash: physmap platform flash device: [mem 0x04000000-0x07ffffff]
-[    0.340243] 0.flash: Found 2 x16 devices at 0x0 in 32-bit bank. Manufacturer ID 0x000000 Chip ID 0x000000
-[    0.340265] Intel/Sharp Extended Query Table at 0x0031
-[    0.340498] Using buffer write method
-[    0.340510] erase region 0: offset=0x0,size=0x40000,blocks=256
-[    0.340551] Concatenating MTD devices:
-[    0.340567] (0): "0.flash"
-[    0.340572] (1): "0.flash"
-[    0.340577] into device "0.flash"
-[    0.421459] tun: Universal TUN/TAP device driver, 1.6
-[    0.427987] thunder_xcv, ver 1.0
-[    0.428114] thunder_bgx, ver 1.0
-[    0.428180] nicpf, ver 1.0
-[    0.429825] e1000: Intel(R) PRO/1000 Network Driver
-[    0.429851] e1000: Copyright (c) 1999-2006 Intel Corporation.
-[    0.430039] e1000e: Intel(R) PRO/1000 Network Driver
-[    0.430230] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
-[    0.430390] igb: Intel(R) Gigabit Ethernet Network Driver
-[    0.430395] igb: Copyright (c) 2007-2014 Intel Corporation.
-[    0.430582] igbvf: Intel(R) Gigabit Virtual Function Network Driver
-[    0.430588] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
-[    0.430954] sky2: driver version 1.30
-[    0.433066] VFIO - User Level meta-driver version: 0.3
-[    0.437526] usbcore: registered new interface driver usb-storage
-[    0.442784] rtc-pl031 9010000.pl031: registered as rtc0
-[    0.443274] rtc-pl031 9010000.pl031: setting system clock to 2026-09-07T20:03:09 UTC (1788811389)
-[    0.444228] i2c_dev: i2c /dev entries driver
-[    0.457264] usbcore: registered new interface driver usbhid
-[    0.457296] usbhid: USB HID core driver
-[    0.462292] hw perfevents: enabled with armv8_pmuv3 PMU driver, 7 (0,8000003f) counters available
-[    0.467637] NET: Registered PF_INET6 protocol family
-[    0.472392] Segment Routing with IPv6
-[    0.472504] In-situ OAM (IOAM) with IPv6
-[    0.472839] NET: Registered PF_PACKET protocol family
-[    0.473574] 9pnet: Installing 9P2000 support
-[    0.473767] Key type dns_resolver registered
-[    0.490172] registered taskstats version 1
-[    0.491197] Loading compiled-in X.509 certificates
-[    0.503888] Demotion targets for Node 0: null
-[    0.509087] input: gpio-keys as /devices/platform/gpio-keys/input/input0
-[    0.513610] clk: Disabling unused clocks
-[    0.513765] PM: genpd: Disabling unused power domains
-[    0.547455] Freeing unused kernel memory: 10048K
-[    0.548090] Run /init as init process
-[    0.548130]   with arguments:
-[    0.548146]     /init
-[    0.548160]   with environment:
-[    0.548171]     HOME=/
-[    0.548180]     TERM=linux
+[    0.000040] sched_clock: 57 bits at 63MHz, resolution 16ns, wraps every 4398046511096ns
+[    0.005803] Console: colour dummy device 80x25
+[    0.007425] Calibrating delay loop (skipped), value calculated using timer frequency.. 125.00 BogoMIPS (lpj=250000)
+[    0.007495] pid_max: default: 32768 minimum: 301
+[    0.010514] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.010541] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.015848] VFS: Finished mounting rootfs on nullfs
+[    0.028109] cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    0.036061] rcu: Hierarchical SRCU implementation.
+[    0.036086] rcu: 	Max phase no-delay instances is 1000.
+[    0.036853] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.039427] EFI services will not be available.
+[    0.039970] smp: Bringing up secondary CPUs ...
+[    0.042055] Detected VIPT I-cache on CPU1
+[    0.042754] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.045443] smp: Brought up 1 node, 2 CPUs
+[    0.045461] SMP: Total of 2 processors activated.
+[    0.045482] CPU: All CPU(s) started at EL1
+[    0.045627] CPU features: detected: 32-bit EL0 Support
+[    0.045636] CPU features: detected: 32-bit EL1 Support
+[    0.045678] CPU features: detected: CRC32 instructions
+[    0.045794] CPU features: detected: PMUv3
+[    0.050372] alternatives: applying system-wide alternatives
+[    0.067607] Memory: 939744K/1048576K available (19712K kernel code, 5262K rwdata, 14728K rodata, 10048K init, 722K bss, 73076K reserved, 32768K cma-reserved)
+[    0.085757] devtmpfs: initialized
+[    0.099061] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.099435] posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+[    0.099613] futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+[    0.101208] 2G module region forced by RANDOMIZE_MODULE_REGION_FULL
+[    0.101248] 0 pages in range for non-PLT usage
+[    0.101272] 511600 pages in range for PLT usage
+[    0.110034] DMI: not present or invalid.
+[    0.120235] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.128318] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.128535] audit: initializing netlink subsys (disabled)
+[    0.129613] audit: type=2000 audit(0.120:1): state=initialized audit_enabled=0 res=1
+[    0.133659] thermal_sys: Registered thermal governor 'step_wise'
+[    0.133688] thermal_sys: Registered thermal governor 'power_allocator'
+[    0.134046] cpuidle: using governor menu
+[    0.134881] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.135184] ASID allocator initialised with 32768 entries
+[    0.139424] Serial: AMBA PL011 UART driver
+[    0.173048] 9000000.pl011: ttyAMA0 at MMIO 0x9000000 (irq = 13, base_baud = 0) is a PL011 rev1
+[    0.175103] printk: console [ttyAMA0] enabled
+[    0.186277] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.186296] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.186482] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.186489] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[    0.186495] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.186498] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.186517] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.186521] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.193696] ACPI: Interpreter disabled.
+[    0.197889] iommu: Default domain type: Translated
+[    0.197928] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.199088] SCSI subsystem initialized
+[    0.199447] libata version 3.00 loaded.
+[    0.200414] usbcore: registered new interface driver usbfs
+[    0.200599] usbcore: registered new interface driver hub
+[    0.200687] usbcore: registered new device driver usb
+[    0.201997] pps_core: LinuxPPS API ver. 1 registered
+[    0.202029] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.202066] PTP clock support registered
+[    0.202324] EDAC MC: Ver: 3.0.0
+[    0.203263] scmi_core: SCMI protocol bus registered
+[    0.204865] FPGA manager framework
+[    0.205297] Advanced Linux Sound Architecture Driver Initialized.
+[    0.211483] vgaarb: loaded
+[    0.212960] clocksource: Switched to clocksource arch_sys_counter
+[    0.213725] VFS: Disk quotas dquot_6.6.0
+[    0.213796] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.216240] pnp: PnP ACPI: disabled
+[    0.229081] NET: Registered PF_INET protocol family
+[    0.229976] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.232156] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.232262] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.232350] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.232472] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.232593] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.233386] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.234140] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.235860] RPC: Registered named UNIX socket transport module.
+[    0.235907] RPC: Registered udp transport module.
+[    0.235913] RPC: Registered tcp transport module.
+[    0.235918] RPC: Registered tcp-with-tls transport module.
+[    0.235923] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.236015] PCI: CLS 0 bytes, default 64
+[    0.241257] kvm [1]: HYP mode not available
+[    0.243295] Initialise system trusted keyrings
+[    0.244175] workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[    0.245608] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.247203] NFS: Registering the id_resolver key type
+[    0.247418] Key type id_resolver registered
+[    0.247446] Key type id_legacy registered
+[    0.247637] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.247704] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    0.248336] 9p: Installing v9fs 9p2000 file system support
+[    0.249491] Key type asymmetric registered
+[    0.249595] Asymmetric key parser 'x509' registered
+[    0.249825] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.249926] io scheduler mq-deadline registered
+[    0.249963] io scheduler kyber registered
+[    0.250176] io scheduler bfq registered
+[    0.269386] pl061_gpio 9030000.pl061: PL061 GPIO chip registered
+[    0.271599] ledtrig-cpu: registered to indicate activity on CPUs
+[    0.273923] pci-host-generic 4010000000.pcie: host bridge /pcie@10000000 ranges:
+[    0.274337] pci-host-generic 4010000000.pcie:       IO 0x003eff0000..0x003effffff -> 0x0000000000
+[    0.274676] pci-host-generic 4010000000.pcie:      MEM 0x0010000000..0x003efeffff -> 0x0010000000
+[    0.274742] pci-host-generic 4010000000.pcie:      MEM 0x8000000000..0xffffffffff -> 0x8000000000
+[    0.275144] pci-host-generic 4010000000.pcie: Memory resource size exceeds max for 32 bits
+[    0.275519] pci-host-generic 4010000000.pcie: ECAM at [mem 0x4010000000-0x401fffffff] for [bus 00-ff]
+[    0.276455] pci-host-generic 4010000000.pcie: PCI host bridge to bus 0000:00
+[    0.276653] pci_bus 0000:00: root bus resource [bus 00-ff]
+[    0.276714] pci_bus 0000:00: root bus resource [io  0x0000-0xffff]
+[    0.276754] pci_bus 0000:00: root bus resource [mem 0x10000000-0x3efeffff]
+[    0.276765] pci_bus 0000:00: root bus resource [mem 0x8000000000-0xffffffffff]
+[    0.277740] pci 0000:00:00.0: [1b36:0008] type 00 class 0x060000 conventional PCI endpoint
+[    0.281447] pci_bus 0000:00: resource 4 [io  0x0000-0xffff]
+[    0.281494] pci_bus 0000:00: resource 5 [mem 0x10000000-0x3efeffff]
+[    0.281502] pci_bus 0000:00: resource 6 [mem 0x8000000000-0xffffffffff]
+[    0.320887] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.326512] msm_serial: driver initialized
+[    0.327283] SuperH (H)SCI(F) driver initialized
+[    0.327538] STM32 USART driver initialized
+[    0.342078] loop: module loaded
+[    0.342700] virtio_blk virtio1: 1/0/0 default/read/poll queues
+[    0.344994] virtio_blk virtio1: [vda] 4842592 512-byte logical blocks (2.48 GB/2.31 GiB)
+[    0.355378] megasas: 07.734.00.00-rc1
+[    0.358444] physmap-flash 0.flash: physmap platform flash device: [mem 0x00000000-0x03ffffff]
+[    0.359327] 0.flash: Found 2 x16 devices at 0x0 in 32-bit bank. Manufacturer ID 0x000000 Chip ID 0x000000
+[    0.359652] Intel/Sharp Extended Query Table at 0x0031
+[    0.360163] Using buffer write method
+[    0.360422] erase region 0: offset=0x0,size=0x40000,blocks=256
+[    0.360567] physmap-flash 0.flash: physmap platform flash device: [mem 0x04000000-0x07ffffff]
+[    0.361107] 0.flash: Found 2 x16 devices at 0x0 in 32-bit bank. Manufacturer ID 0x000000 Chip ID 0x000000
+[    0.361131] Intel/Sharp Extended Query Table at 0x0031
+[    0.361460] Using buffer write method
+[    0.361472] erase region 0: offset=0x0,size=0x40000,blocks=256
+[    0.361524] Concatenating MTD devices:
+[    0.361540] (0): "0.flash"
+[    0.361546] (1): "0.flash"
+[    0.361551] into device "0.flash"
+[    0.440104] tun: Universal TUN/TAP device driver, 1.6
+[    0.446353] thunder_xcv, ver 1.0
+[    0.446438] thunder_bgx, ver 1.0
+[    0.446520] nicpf, ver 1.0
+[    0.448137] e1000: Intel(R) PRO/1000 Network Driver
+[    0.448168] e1000: Copyright (c) 1999-2006 Intel Corporation.
+[    0.448249] e1000e: Intel(R) PRO/1000 Network Driver
+[    0.448255] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    0.448339] igb: Intel(R) Gigabit Ethernet Network Driver
+[    0.448346] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    0.448454] igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[    0.448461] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    0.448950] sky2: driver version 1.30
+[    0.450870] VFIO - User Level meta-driver version: 0.3
+[    0.455870] usbcore: registered new interface driver usb-storage
+[    0.462272] rtc-pl031 9010000.pl031: registered as rtc0
+[    0.462744] rtc-pl031 9010000.pl031: setting system clock to 2026-09-07T20:25:08 UTC (1788812708)
+[    0.463830] i2c_dev: i2c /dev entries driver
+[    0.480607] usbcore: registered new interface driver usbhid
+[    0.480646] usbhid: USB HID core driver
+[    0.487205] hw perfevents: enabled with armv8_pmuv3 PMU driver, 7 (0,8000003f) counters available
+[    0.494474] NET: Registered PF_INET6 protocol family
+[    0.499311] Segment Routing with IPv6
+[    0.499453] In-situ OAM (IOAM) with IPv6
+[    0.499844] NET: Registered PF_PACKET protocol family
+[    0.500606] 9pnet: Installing 9P2000 support
+[    0.500885] Key type dns_resolver registered
+[    0.517178] registered taskstats version 1
+[    0.518132] Loading compiled-in X.509 certificates
+[    0.531328] Demotion targets for Node 0: null
+[    0.536846] input: gpio-keys as /devices/platform/gpio-keys/input/input0
+[    0.541050] clk: Disabling unused clocks
+[    0.541205] PM: genpd: Disabling unused power domains
+[    0.541276] ALSA device list:
+[    0.541312]   No soundcards found.
+[    0.576050] Freeing unused kernel memory: 10048K
+[    0.576749] Run /init as init process
+[    0.576845]   with arguments:
+[    0.576871]     /init
+[    0.576885]   with environment:
+[    0.576896]     HOME=/
+[    0.576905]     TERM=linux
 
 [1;32m<<< NixOS Stage 1 >>>[0m
 
 running udev...
-[    0.872799] stage-1-init: [Mon Sep  7 20:03:09 UTC 2026] running udev...
+[    0.910359] stage-1-init: [Mon Sep  7 20:25:08 UTC 2026] running udev...
 Starting systemd-udevd version 261
-[    0.990392] stage-1-init: [Mon Sep  7 20:03:10 UTC 2026] Starting systemd-udevd version 261
+[    1.020745] stage-1-init: [Mon Sep  7 20:25:09 UTC 2026] Starting systemd-udevd version 261
 kbd_mode: KDSKBMODE: Inappropriate ioctl for device
-%G[    2.698366] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] kbd_mode: KDSKBMODE: Inappropriate ioctl for device
+%G[    2.799625] stage-1-init: [Mon Sep  7 20:25:10 UTC 2026] kbd_mode: KDSKBMODE: Inappropriate ioctl for device
 starting device mapper and LVM...
-[    2.728846] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] starting device mapper and LVM...
+[    2.832155] stage-1-init: [Mon Sep  7 20:25:10 UTC 2026] starting device mapper and LVM...
   /dev/mapper/control: open failed: No such device
   Failure to communicate with kernel device-mapper driver.
   Check that device-mapper is available in the kernel.
   Incompatible libdevmapper 1.02.215 (2026-05-15) and kernel driver (unknown version).
-[    2.788959] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] /dev/mapper/control: open failed: No such device
-[    2.800172] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] Failure to communicate with kernel device-mapper driver.
-[    2.809735] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] Check that device-mapper is available in the kernel.
-[    2.820433] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] Incompatible libdevmapper 1.02.215 (2026-05-15) and kernel driver (unknown version).
+[    2.898103] stage-1-init: [Mon Sep  7 20:25:10 UTC 2026] /dev/mapper/control: open failed: No such device
+[    2.908894] stage-1-init: [Mon Sep  7 20:25:10 UTC 2026] Failure to communicate with kernel device-mapper driver.
+[    2.919390] stage-1-init: [Mon Sep  7 20:25:10 UTC 2026] Check that device-mapper is available in the kernel.
+[    2.930937] stage-1-init: [Mon Sep  7 20:25:10 UTC 2026] Incompatible libdevmapper 1.02.215 (2026-05-15) and kernel driver (unknown version).
 checking /dev/vda...
 fsck (busybox 1.37.0)
 [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/vda
-[    2.932947] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] checking /dev/vda...
-[    2.942252] stage-1-init: [Mon Sep  7 20:03:11 UTC 2026] fsck (busybox 1.37.0)
-[    2.953103] stage-1-init: [Mon Sep  7 20:03:12 UTC 2026] [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/vda
+[    3.066283] stage-1-init: [Mon Sep  7 20:25:11 UTC 2026] checking /dev/vda...
+[    3.076266] stage-1-init: [Mon Sep  7 20:25:11 UTC 2026] fsck (busybox 1.37.0)
+[    3.088345] stage-1-init: [Mon Sep  7 20:25:11 UTC 2026] [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/vda
 NANOKVM: clean, 47704/152608 files, 337105/605324 blocks
-[    2.970885] stage-1-init: [Mon Sep  7 20:03:12 UTC 2026] NANOKVM: clean, 47704/152608 files, 337105/605324 blocks
+[    3.104067] stage-1-init: [Mon Sep  7 20:25:11 UTC 2026] NANOKVM: clean, 47704/152608 files, 337105/605324 blocks
 mounting /dev/vda on /...
-[    2.988723] stage-1-init: [Mon Sep  7 20:03:12 UTC 2026] mounting /dev/vda on /...
-[    3.029731] EXT4-fs (vda): mounted filesystem 44444444-4444-4444-8888-888888888888 r/w with ordered data mode. Quota mode: none.
+[    3.121475] stage-1-init: [Mon Sep  7 20:25:11 UTC 2026] mounting /dev/vda on /...
+[    3.161110] EXT4-fs (vda): mounted filesystem 44444444-4444-4444-8888-888888888888 r/w with ordered data mode. Quota mode: none.
 
 [1;32m<<< NixOS Stage 2 >>>[0m
 
-[    3.884773] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888.
-[    3.892883] booting system configuration /nix/store/3g80pkxya45j9pg2rl15by6fd8gwl0hi-nixos-system-nanokvm-26.11pre-git
+[    4.025336] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888.
+[    4.033300] booting system configuration /nix/store/x6sv0qk4flsn7720az18mhad9czcl4zf-nixos-system-nanokvm-26.11pre-git
+[    4.198122] stage-2-init: running activation script...
 running activation script...
-[    4.058454] stage-2-init: running activation script...
+[    5.373854] stage-2-init: setting up /etc...
 setting up /etc...
-[    5.213887] stage-2-init: setting up /etc...
 starting systemd...
-P+q6E616D65\[18t7[32766;32766H[6n8[!p]104\[0m[?7h[1G[0J[    6.988254] systemd[1]: systemd 261 running in system mode (+PAM +AUDIT -SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF -XKBCOMMON +UTMP +LIBARCHIVE)
-[    6.988593] systemd[1]: Detected virtualization qemu.
-[    6.989000] systemd[1]: Detected architecture arm64.
-[    6.989772] systemd[1]: Detected first boot.
+P+q6E616D65\[18t7[32766;32766H[6n8[!p]104\[0m[?7h[1G[0J[    7.171097] systemd[1]: systemd 261 running in system mode (+PAM +AUDIT -SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF -XKBCOMMON +UTMP +LIBARCHIVE)
+[    7.171442] systemd[1]: Detected virtualization qemu.
+[    7.171884] systemd[1]: Detected architecture arm64.
+[    7.172672] systemd[1]: Detected first boot.
 
 [0;1;39mWelcome to [0m[0;38;2;126;186;228mNixOS 26.11 (Zokor)[0m[0;1;39m![0m
 
-[    7.004001] systemd[1]: Initializing machine ID from random generator.
-[    7.028224] systemd[1]: Hostname set to <nanokvm>.
-]3008;start=426a28a3bd6a4735b04e4d3d4655a802;user=root;hostname=nanokvm;machineid=948177dcdc0c4427b81e476498e19b39;bootid=e1ff6a837b964308bcb32a0ee2e3429d;pid=1;pidfdid=1;comm=systemd;type=boot\[    7.407331] systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
-[    7.724104] systemd[1]: Applying preset policy.
-[    9.277384] systemd[1]: Populated /etc with preset unit settings.
-[   10.348937] systemd[1]: Condition check resulted in System Slice being skipped.
-[   10.358923] systemd[1]: Queued start job for default target Multi-User System.
-[   10.412443] systemd[1]: Created slice Slice /system/getty.
+[    7.185296] systemd[1]: Initializing machine ID from random generator.
+[    7.211358] systemd[1]: Hostname set to <nanokvm>.
+]3008;start=0f3489559fcf4e6c830bd03b7a66bdde;user=root;hostname=nanokvm;machineid=6b94ed0aff7c40dfbd0cb3955f04194c;bootid=9aa6c3a335234a16a344c70ae58d1abc;pid=1;pidfdid=1;comm=systemd;type=boot\[    7.546899] systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[    7.859309] systemd[1]: Applying preset policy.
+[    9.414686] systemd[1]: Populated /etc with preset unit settings.
+[   10.501002] systemd[1]: Condition check resulted in Root Slice being skipped.
+[   10.501835] systemd[1]: Condition check resulted in System Slice being skipped.
+[   10.510892] systemd[1]: Queued start job for default target Multi-User System.
+[   10.564915] systemd[1]: Created slice Slice /system/getty.
 [[0;32m  OK  [0m] Created slice [0;1;39mSlice /system/getty[0m.
-[   10.422509] systemd[1]: Created slice Slice /system/modprobe.
+[   10.574208] systemd[1]: Created slice Slice /system/modprobe.
 [[0;32m  OK  [0m] Created slice [0;1;39mSlice /system/modprobe[0m.
-[   10.430870] systemd[1]: Created slice Slice /system/serial-getty.
+[   10.581189] systemd[1]: Created slice Slice /system/serial-getty.
 [[0;32m  OK  [0m] Created slice [0;1;39mSlice /system/serial-getty[0m.
-[   10.438658] systemd[1]: Created slice User and Session Slice.
+[   10.587658] systemd[1]: Created slice User and Session Slice.
 [[0;32m  OK  [0m] Created slice [0;1;39mUser and Session Slice[0m.
-[   10.441191] systemd[1]: Started Dispatch Password Requests to Console Directory Watch.
+[   10.590257] systemd[1]: Started Dispatch Password Requests to Console Directory Watch.
 [[0;32m  OK  [0m] Started [0;1;39mDispatch Password Requests to Console Directory Watch[0m.
-[   10.442883] systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+[   10.592022] systemd[1]: Started Forward Password Requests to Wall Directory Watch.
 [[0;32m  OK  [0m] Started [0;1;39mForward Password Requests to Wall Directory Watch[0m.
-[   10.444309] systemd[1]: Expecting device /dev/ttyAMA0...
+[   10.593579] systemd[1]: Expecting device /dev/ttyAMA0...
          Expecting device [0;1;39m/dev/ttyAMA0[0m...
-[   10.445149] systemd[1]: Reached target Local Encrypted Volumes.
+[   10.594443] systemd[1]: Reached target Local Encrypted Volumes.
 [[0;32m  OK  [0m] Reached target [0;1;39mLocal Encrypted Volumes[0m.
-[   10.445909] systemd[1]: Reached target Virtual Machines and Containers.
+[   10.595265] systemd[1]: Reached target Virtual Machines and Containers.
 [[0;32m  OK  [0m] Reached target [0;1;39mVirtual Machines and Containers[0m.
-[   10.446747] systemd[1]: Reached target Path Units.
+[   10.595975] systemd[1]: Reached target Path Units.
 [[0;32m  OK  [0m] Reached target [0;1;39mPath Units[0m.
-[   10.447504] systemd[1]: Reached target Remote File Systems.
+[   10.596642] systemd[1]: Reached target Remote File Systems.
 [[0;32m  OK  [0m] Reached target [0;1;39mRemote File Systems[0m.
-[   10.448171] systemd[1]: Reached target Slice Units.
+[   10.597501] systemd[1]: Reached target Slice Units.
 [[0;32m  OK  [0m] Reached target [0;1;39mSlice Units[0m.
-[   10.448796] systemd[1]: Reached target Swaps.
+[   10.598136] systemd[1]: Reached target Swaps.
 [[0;32m  OK  [0m] Reached target [0;1;39mSwaps[0m.
-[   10.460390] systemd[1]: Listening on Query the User Interactively for a Password.
+[   10.609741] systemd[1]: Listening on Query the User Interactively for a Password.
 [[0;32m  OK  [0m] Listening on [0;1;39mQuery the User Interactively for a Password[0m.
-[   10.470402] systemd[1]: Listening on Process Core Dump Socket.
+[   10.621135] systemd[1]: Listening on Process Core Dump Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mProcess Core Dump Socket[0m.
-[   10.481796] systemd[1]: Listening on Credential Encryption/Decryption.
+[   10.628113] systemd[1]: Listening on Credential Encryption/Decryption.
 [[0;32m  OK  [0m] Listening on [0;1;39mCredential Encryption/Decryption[0m.
-[   10.490845] systemd[1]: Listening on Factory Reset Management.
+[   10.637337] systemd[1]: Listening on Factory Reset Management.
 [[0;32m  OK  [0m] Listening on [0;1;39mFactory Reset Management[0m.
-[   10.492385] systemd[1]: Listening on Hostname Service Socket.
+[   10.638885] systemd[1]: Listening on Hostname Service Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mHostname Service Socket[0m.
-[   10.513389] systemd[1]: Starting Journal Log Access Socket...
+[   10.658521] systemd[1]: Starting Journal Log Access Socket...
          Starting [0;1;39mJournal Log Access Socket[0m...
-[   10.527813] systemd[1]: Listening on Journal Audit Socket.
+[   10.673863] systemd[1]: Listening on Journal Audit Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mJournal Audit Socket[0m.
-[   10.530831] systemd[1]: Listening on Journal Socket (/dev/log).
+[   10.676763] systemd[1]: Listening on Journal Socket (/dev/log).
 [[0;32m  OK  [0m] Listening on [0;1;39mJournal Socket (/dev/log)[0m.
-[   10.533648] systemd[1]: Listening on Journal Sockets.
+[   10.679345] systemd[1]: Listening on Journal Sockets.
 [[0;32m  OK  [0m] Listening on [0;1;39mJournal Sockets[0m.
-[   10.544557] systemd[1]: Listening on Console Output Muting Service Socket.
+[   10.691258] systemd[1]: Listening on Console Output Muting Service Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mConsole Output Muting Service Socket[0m.
-[   10.548015] systemd[1]: Listening on Network Management Metrics Varlink Socket.
+[   10.694653] systemd[1]: Listening on Network Management Metrics Varlink Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mNetwork Management Metrics Varlink Socket[0m.
-[   10.551577] systemd[1]: Listening on Network Management Varlink Socket.
+[   10.698249] systemd[1]: Listening on Network Management Varlink Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mNetwork Management Varlink Socket[0m.
-[   10.554628] systemd[1]: Listening on Network Management Netlink Socket.
+[   10.701201] systemd[1]: Listening on Network Management Netlink Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mNetwork Management Netlink Socket[0m.
-[   10.556115] systemd[1]: Userspace Out-Of-Memory (OOM) Killer Socket skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
-[   10.557106] systemd[1]: TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-os
-[   10.557580] systemd[1]: Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
-[   10.578856] systemd[1]: Listening on Disk Repartitioning Service Socket.
+[   10.702332] systemd[1]: Userspace Out-Of-Memory (OOM) Killer Socket skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   10.703098] systemd[1]: TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-os
+[   10.703356] systemd[1]: Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[   10.725394] systemd[1]: Listening on Disk Repartitioning Service Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mDisk Repartitioning Service Socket[0m.
-[   10.580813] systemd[1]: Listening on Resolve Monitor Varlink Socket.
+[   10.727340] systemd[1]: Listening on Resolve Monitor Varlink Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mResolve Monitor Varlink Socket[0m.
-[   10.582492] systemd[1]: Listening on Resolve Service Varlink Socket.
+[   10.729214] systemd[1]: Listening on Resolve Service Varlink Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mResolve Service Varlink Socket[0m.
-[   10.584511] systemd[1]: Listening on udev Control Socket.
+[   10.731069] systemd[1]: Listening on udev Control Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mudev Control Socket[0m.
-[   10.586117] systemd[1]: Listening on udev Kernel Socket.
+[   10.732533] systemd[1]: Listening on udev Kernel Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mudev Kernel Socket[0m.
-[   10.588001] systemd[1]: Listening on udev Varlink Socket.
+[   10.734389] systemd[1]: Listening on udev Varlink Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mudev Varlink Socket[0m.
+[   10.757753] systemd[1]: Mounting Huge Pages File System...
          Mounting [0;1;39mHuge Pages File System[0m...
-[   10.609645] systemd[1]: Mounting Huge Pages File System...
-[   10.628087] systemd[1]: Mounting POSIX Message Queue File System...
          Mounting [0;1;39mPOSIX Message Queue File System[0m...
-[   10.668139] systemd[1]: Mounting Kernel Debug File System...
+[   10.777874] systemd[1]: Mounting POSIX Message Queue File System...
+[   10.811362] systemd[1]: Mounting Kernel Debug File System...
          Mounting [0;1;39mKernel Debug File System[0m...
-[   10.675353] systemd[1]: Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
-[   10.676224] systemd[1]: Create List of Static Device Nodes skipped, unmet condition check ConditionFileNotEmpty=/run/booted-system/kernel-modules/lib/modules/7.1.3-nanokvm/modules.devname
-[   10.677170] systemd[1]: Load Kernel Module configfs skipped, unmet condition check ConditionKernelModuleLoaded=!configfs
-[   10.693481] systemd[1]: Mounting Kernel Configuration File System...
+[   10.818886] systemd[1]: Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[   10.819498] systemd[1]: Create List of Static Device Nodes skipped, unmet condition check ConditionFileNotEmpty=/run/booted-system/kernel-modules/lib/modules/7.1.3-nanokvm/modules.devname
+[   10.820081] systemd[1]: Load Kernel Module configfs skipped, unmet condition check ConditionKernelModuleLoaded=!configfs
+[   10.843066] systemd[1]: Mounting Kernel Configuration File System...
          Mounting [0;1;39mKernel Configuration File System[0m...
-[   10.752737] systemd[1]: Starting Load Kernel Module drm...
+[   10.902792] systemd[1]: Starting Load Kernel Module drm...
          Starting [0;1;39mLoad Kernel Module drm[0m...
-[   10.754255] systemd[1]: Load Kernel Module efi_pstore skipped, unmet condition check ConditionKernelModuleLoaded=!efi_pstore
-[   10.798844] systemd[1]: Starting Load Kernel Module fuse...
+[   10.906396] systemd[1]: Load Kernel Module efi_pstore skipped, unmet condition check ConditionKernelModuleLoaded=!efi_pstore
+[   10.965947] systemd[1]: Starting Load Kernel Module fuse...
          Starting [0;1;39mLoad Kernel Module fuse[0m...
-[   10.808123] systemd[1]: File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
-[   10.808941] systemd[1]: Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
-[   10.868966] systemd[1]: Starting Journal Service...
+[   10.969874] systemd[1]: File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[   10.970444] systemd[1]: Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[   11.018131] systemd[1]: Starting Journal Service...
          Starting [0;1;39mJournal Service[0m...
-[   10.878529] systemd[1]: Load Kernel Modules skipped, no trigger condition checks were met.
-[   10.887670] systemd[1]: Userspace Out-Of-Memory (OOM) Killer skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
-[   10.908136] systemd[1]: Starting Remount Root and Kernel File Systems...
+[   11.024749] systemd[1]: Load Kernel Modules skipped, no trigger condition checks were met.
+[   11.025441] systemd[1]: Userspace Out-Of-Memory (OOM) Killer skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   11.041236] systemd[1]: Starting Remount Root and Kernel File Systems...
          Starting [0;1;39mRemount Root and Kernel File Systems[0m...
-[   10.940083] systemd[1]: Starting Apply Kernel Variables...
+[   11.070370] systemd[1]: Starting Apply Kernel Variables...
          Starting [0;1;39mApply Kernel Variables[0m...
-[   10.966164] systemd[1]: Starting Create Static Device Nodes in /dev gracefully...
+[   11.104295] systemd[1]: Starting Create Static Device Nodes in /dev gracefully...
          Starting [0;1;39mCreate Static Device Nodes in /dev gracefully[0m...
-[   10.972420] systemd[1]: Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
-[   11.036742] systemd[1]: Starting Coldplug All udev Devices...
+[   11.109403] systemd[1]: Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   11.179215] systemd[1]: Starting Coldplug All udev Devices...
          Starting [0;1;39mColdplug All udev Devices[0m...
-[   11.078580] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888.
-[   11.155373] systemd[1]: Listening on Journal Log Access Socket.
+[   11.316502] systemd[1]: Listening on Journal Log Access Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mJournal Log Access Socket[0m.
-[   11.161075] systemd[1]: Mounted Huge Pages File System.
+[   11.327798] systemd[1]: Mounted Huge Pages File System.
 [[0;32m  OK  [0m] Mounted [0;1;39mHuge Pages File System[0m.
-[   11.169205] systemd[1]: Mounted POSIX Message Queue File System.
+[   11.336345] systemd[1]: Mounted POSIX Message Queue File System.
 [[0;32m  OK  [0m] Mounted [0;1;39mPOSIX Message Queue File System[0m.
-[   11.171933] systemd[1]: Mounted Kernel Debug File System.
+[   11.341250] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888.
+[   11.359690] systemd[1]: Mounted Kernel Debug File System.
 [[0;32m  OK  [0m] Mounted [0;1;39mKernel Debug File System[0m.
-[   11.177412] systemd[1]: Mounted Kernel Configuration File System.
+[   11.363265] systemd[1]: Mounted Kernel Configuration File System.
 [[0;32m  OK  [0m] Mounted [0;1;39mKernel Configuration File System[0m.
-[   11.187646] systemd[1]: modprobe@drm.service: Deactivated successfully.
-[   11.193588] systemd-journald[300]: Collecting audit messages is enabled.
-[   11.199164] systemd[1]: Finished Load Kernel Module drm.
+[   11.369742] systemd[1]: modprobe@drm.service: Deactivated successfully.
+[   11.371362] systemd-journald[299]: Collecting audit messages is enabled.
+[   11.374682] systemd[1]: Finished Load Kernel Module drm.
 [[0;32m  OK  [0m] Finished [0;1;39mLoad Kernel Module drm[0m.
-[   11.214766] systemd[1]: modprobe@fuse.service: Deactivated successfully.
-[   11.218239] systemd[1]: Finished Load Kernel Module fuse.
+[   11.382556] systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[   11.385215] systemd[1]: Finished Load Kernel Module fuse.
 [[0;32m  OK  [0m] Finished [0;1;39mLoad Kernel Module fuse[0m.
-[   11.239766] systemd[1]: Finished Remount Root and Kernel File Systems.
+[   11.391105] systemd[1]: Finished Remount Root and Kernel File Systems.
 [[0;32m  OK  [0m] Finished [0;1;39mRemount Root and Kernel File Systems[0m.
-[   11.263020] systemd[1]: Finished Apply Kernel Variables.
+[   11.398102] systemd[1]: Finished Apply Kernel Variables.
 [[0;32m  OK  [0m] Finished [0;1;39mApply Kernel Variables[0m.
-[   11.282763] systemd[1]: Listening on Disk Image Download Service Socket.
+[   11.412425] systemd[1]: Listening on Disk Image Download Service Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39mDisk Image Download Service Socket[0m.
-[   11.289884] systemd[1]: FUSE Control File System skipped, unmet condition check ConditionPathExists=/sys/fs/fuse/connections
-[   11.328949] systemd[1]: Starting Grow Root File System...
+[   11.416042] systemd[1]: FUSE Control File System skipped, unmet condition check ConditionPathExists=/sys/fs/fuse/connections
+[   11.433500] systemd[1]: Starting Grow Root File System...
          Starting [0;1;39mGrow Root File System[0m...
-[   11.337597] systemd[1]: Platform Persistent Storage Archival skipped, unmet condition check ConditionDirectoryNotEmpty=/sys/fs/pstore
-[   11.420190] systemd[1]: Starting Load/Save OS Random Seed...
+[   11.434894] systemd[1]: Platform Persistent Storage Archival skipped, unmet condition check ConditionDirectoryNotEmpty=/sys/fs/pstore
+[   11.458537] systemd[1]: Starting Load/Save OS Random Seed...
          Starting [0;1;39mLoad/Save OS Random Seed[0m...
-[   11.504234] systemd[1]: Starting Network Name Resolution...
+[   11.560510] systemd[1]: Starting Network Name Resolution...
          Starting [0;1;39mNetwork Name Resolution[0m...
-[   11.528017] EXT4-fs (vda): resizing filesystem from 605324 to 605324 blocks
-[   11.615469] systemd[1]: Starting Network Time Synchronization...
+[   11.649319] EXT4-fs (vda): resizing filesystem from 605324 to 605324 blocks
+[   11.654688] systemd[1]: Starting Network Time Synchronization...
          Starting [0;1;39mNetwork Time Synchronization[0m...
-[   11.616838] systemd[1]: TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
-[   11.640145] systemd[1]: Started Journal Service.
-[[0;32m  OK  [0m] Started [0;1;39mJournal Service[0m.
+[   11.658209] systemd[1]: TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   11.681245] systemd[1]: Finished Create Static Device Nodes in /dev gracefully.
 [[0;32m  OK  [0m] Finished [0;1;39mCreate Static Device Nodes in /dev gracefully[0m.
+[   11.704580] systemd[1]: Finished Grow Root File System.
 [[0;32m  OK  [0m] Finished [0;1;39mGrow Root File System[0m.
+[   11.722336] systemd[1]: Finished Load/Save OS Random Seed.
 [[0;32m  OK  [0m] Finished [0;1;39mLoad/Save OS Random Seed[0m.
+[   11.724608] systemd[1]: Reached target First Boot Complete.
 [[0;32m  OK  [0m] Reached target [0;1;39mFirst Boot Complete[0m.
-         Starting [0;1;39mFlush Journal to Persistent Storage[0m...
+[   11.774006] systemd[1]: Starting Create Static Device Nodes in /dev...
          Starting [0;1;39mCreate Static Device Nodes in /dev[0m...
-[   12.193308] systemd-journald[300]: Received client request to flush runtime journal.
-[[0;32m  OK  [0m] Started [0;1;39mNetwork Time Synchronization[0m.
-[[0;32m  OK  [0m] Finished [0;1;39mFlush Journal to Persistent Storage[0m.
+[   11.794782] systemd[1]: Started Journal Service.
+[[0;32m  OK  [0m] Started [0;1;39mJournal Service[0m.
+         Starting [0;1;39mFlush Journal to Persistent Storage[0m...
 [[0;32m  OK  [0m] Finished [0;1;39mCreate Static Device Nodes in /dev[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mPreparation for Local File Systems[0m.
-[[0;32m  OK  [0m] Reached target [0;1;39mSystem Time Set[0m.
+         Starting [0;1;39mRule-based Manager for Device Events and Files[0m...
+[   12.299722] systemd-journald[299]: Received client request to flush runtime journal.
          Mounting [0;1;39m/boot[0m...
          Mounting [0;1;39m/run/wrappers[0m...
-         Starting [0;1;39mRule-based Manager for Device Events and Files[0m...
-[[0;32m  OK  [0m] Started [0;1;39mNetwork Name Resolution[0m.
+[[0;32m  OK  [0m] Started [0;1;39mNetwork Time Synchronization[0m.
+[[0;32m  OK  [0m] Finished [0;1;39mFlush Journal to Persistent Storage[0m.
+[[0;32m  OK  [0m] Reached target [0;1;39mSystem Time Set[0m.
 [[0;32m  OK  [0m] Mounted [0;1;39m/boot[0m.
 [[0;32m  OK  [0m] Mounted [0;1;39m/run/wrappers[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mLocal File Systems[0m.
@@ -450,6 +458,7 @@ starting systemd...
          Starting [0;1;39mCreate SUID/SGID Wrappers[0m...
          Starting [0;1;39mSave Transient machine-id to Disk[0m...
          Starting [0;1;39mCreate System Files and Directories[0m...
+[[0;32m  OK  [0m] Started [0;1;39mNetwork Name Resolution[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mSave Transient machine-id to Disk[0m.
 [[0;32m  OK  [0m] Started [0;1;39mRule-based Manager for Device Events and Files[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mCreate System Files and Directories[0m.
@@ -460,12 +469,11 @@ starting systemd...
          Starting [0;1;39mUpdate is Completed[0m...
 [[0;32m  OK  [0m] Finished [0;1;39mUpdate is Completed[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mCreate SUID/SGID Wrappers[0m.
-[[0m[0;31m*     [0m] (1 of 2) A start job is running for…g All udev Devices (6s / no limit)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 2) A start job is running for…g All udev Devices (6s / no limit)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 2) A start job is running for…g All udev Devices (7s / no limit)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 2) A start job is running for /dev/ttyAMA0 (7s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 2) A start job is running for /dev/ttyAMA0 (8s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 2) A start job is running for /dev/ttyAMA0 (8s / 1min 30s)
+[[0m[0;31m*     [0m] (1 of 2) A start job is running for /dev/ttyAMA0 (6s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 2) A start job is running for /dev/ttyAMA0 (6s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 2) A start job is running for /dev/ttyAMA0 (7s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 2) A start job is running for…g All udev Devices (8s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 2) A start job is running for…g All udev Devices (8s / no limit)
 M[K[[0;32m  OK  [0m] Finished [0;1;39mColdplug All udev Devices[0m.
 [K[[0;32m  OK  [0m] Reached target [0;1;39mSystem Initialization[0m.
 [[0;32m  OK  [0m] Started [0;1;39mDiscard unused filesystem blocks once a week[0m.
@@ -484,7 +492,7 @@ starting systemd...
          Starting [0;1;39mCopy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)[0m...
          Starting [0;1;39mConfirm the active A/B boot slot (S99checkboot equivalent)[0m...
          Starting [0;1;39mApply the NanoKVM-Pro per… and hostname (from the SoC UID)[0m...
-         Starting [0;1;39mNanoKVM-Pro USB HID/storage gadget (stub -- #82)[0m...
+         Starting [0;1;39mNanoKVM-Pro USB HID/stora…gadget (stub -- #82 policy half)[0m...
          Starting [0;1;39mNanoKVM-Pro open video stack (capture + encoder modules)[0m...
          Starting [0;1;39mName Service Cache Daemon (nsncd)[0m...
          Starting [0;1;39mPost-Boot Actions[0m...
@@ -495,10 +503,9 @@ starting systemd...
 [[0;32m  OK  [0m] Finished [0;1;39mCopy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mConfirm the active A/B boot slot (S99checkboot equivalent)[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mApply the NanoKVM-Pro per…AC and hostname (from the SoC UID)[0m.
-[[0;32m  OK  [0m] Finished [0;1;39mNanoKVM-Pro USB HID/storage gadget (stub -- #82)[0m.
+[[0;32m  OK  [0m] Finished [0;1;39mNanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mNanoKVM-Pro open video stack (capture + encoder modules)[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mPost-Boot Actions[0m.
-[[0;32m  OK  [0m] Finished [0;1;39mImport lastlog data into lastlog2 database[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mPreparation for Network[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mHost and Network Name Lookups[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mUser and Group Name Lookups[0m.
@@ -507,107 +514,107 @@ starting systemd...
          Starting [0;1;39mGenerate the NanoKVM-Pro HTTPS certificate if absent[0m...
          Starting [0;1;39mUser Login Management[0m...
          Starting [0;1;39mNetwork Management[0m...
+[[0;32m  OK  [0m] Finished [0;1;39mImport lastlog data into lastlog2 database[0m.
 [[0;32m  OK  [0m] Started [0;1;39mD-Bus System Message Bus[0m.
 [[0;32m  OK  [0m] Started [0;1;39mAvahi mDNS/DNS-SD Stack[0m.
-[[0;32m  OK  [0m] Finished [0;1;39mGenerate the NanoKVM-Pro HTTPS certificate if absent[0m.
 [[0;32m  OK  [0m] Started [0;1;39mUser Login Management[0m.
          Starting [0;1;39mlinger-users.service[0m...
 [[0;32m  OK  [0m] Finished [0;1;39mlinger-users.service[0m.
 [[0;32m  OK  [0m] Started [0;1;39mNetwork Management[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mNetwork[0m.
-[[0;32m  OK  [0m] Started [0;1;39mNanoKVM-Pro server (open stack)[0m.
          Starting [0;1;39mEnable Persistent Storage in systemd-networkd[0m...
          Starting [0;1;39mPermit User Sessions[0m...
-[   23.183576] systemd-journald[300]: Time jumped backwards, rotating.
+[[0;32m  OK  [0m] Finished [0;1;39mGenerate the NanoKVM-Pro HTTPS certificate if absent[0m.
+[[0;32m  OK  [0m] Started [0;1;39mNanoKVM-Pro server (open stack)[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mPermit User Sessions[0m.
-[[0;32m  OK  [0m] Finished [0;1;39mEnable Persistent Storage in systemd-networkd[0m.
 [[0;32m  OK  [0m] Started [0;1;39mGetty on tty1[0m.
-[[0;32m  OK  [0m] Found device [0;1;39m/dev/ttyAMA0[0m.
-[[0;32m  OK  [0m] Started [0;1;39mSerial Getty on ttyAMA0[0m.
-[[0;32m  OK  [0m] Reached target [0;1;39mLogin Prompts[0m.
+[[0;32m  OK  [0m] Finished [0;1;39mEnable Persistent Storage in systemd-networkd[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mSSH Host Keys Generation[0m.
          Starting [0;1;39mSSH Daemon[0m...
 [[0;32m  OK  [0m] Started [0;1;39mSSH Daemon[0m.
+[[0;32m  OK  [0m] Found device [0;1;39m/dev/ttyAMA0[0m.
+[[0;32m  OK  [0m] Started [0;1;39mSerial Getty on ttyAMA0[0m.
+[[0;32m  OK  [0m] Reached target [0;1;39mLogin Prompts[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mMulti-User System[0m.
          Starting [0;1;39mPrint the appliance's boot state and power off (QEMU only)[0m...
-[   26.215345] nanokvm-qemu-selftest-start[529]: === nanokvm appliance self-test (#78) ===
-[   26.220245] nanokvm-qemu-selftest-start[529]: --- root filesystem ---
-[   26.247120] nanokvm-qemu-selftest-start[530]: /dev/vda ext4 rw,noatime
-[   26.252615] nanokvm-qemu-selftest-start[529]: --- stage 2 came from ---
-[   26.272201] nanokvm-qemu-selftest-start[531]: /nix/store/3g80pkxya45j9pg2rl15by6fd8gwl0hi-nixos-system-nanokvm-26.11pre-git
-[   26.276857] nanokvm-qemu-selftest-start[529]: --- /etc/fw_env.config ---
-[   26.295011] nanokvm-qemu-selftest-start[532]: /dev/mmcblk0 0x4C0000 0x100000
-[   26.304300] nanokvm-qemu-selftest-start[529]: --- identity ---
-[   26.313208] nanokvm-qemu-selftest-start[529]: hostname: nanokvm
-[   26.339536] nanokvm-qemu-selftest-start[529]: device_key: (none -- no SoC UID here)
-[   26.342773] nanokvm-qemu-selftest-start[529]: --- nanokvm-gpio (#81) ---
-[   26.345719] nanokvm-qemu-selftest-start[529]: /nix/store/9p402ldcaj2668lnpixf41v4zpfd1s7z-nanokvm-gpio-1.0/bin/nanokvm-gpio
-[   26.394105] nanokvm-qemu-selftest-start[536]: nanokvm-gpio: no gpiochip names line 'atx-power'
-[   26.396927] nanokvm-qemu-selftest-start[529]: --- app tree ---
-[   26.435815] nanokvm-qemu-selftest-start[538]: /kvmapp/server/:
-[   26.440009] nanokvm-qemu-selftest-start[538]: total 22928
-[   26.441080] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    1 root     root      23500072 Jan  1  1970 NanoKVM-Server
-[   26.441947] nanokvm-qemu-selftest-start[538]: dr-xr-xr-x    2 root     root          4096 Jan  1  1970 dl_lib
-[   26.442720] nanokvm-qemu-selftest-start[538]: dr-xr-xr-x    3 root     root          4096 Jan  1  1970 web
-[   26.443434] nanokvm-qemu-selftest-start[538]: /opt/lib/:
-[   26.444188] nanokvm-qemu-selftest-start[538]: total 8040
-[   26.444839] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root       1487904 Jan  1  1970 libasound.so
-[   26.445521] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root       1487904 Jan  1  1970 libasound.so.2
-[   26.446223] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root       1487904 Jan  1  1970 libasound.so.2.0.0
-[   26.446933] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root        831624 Jan  1  1970 libjpeg.so
-[   26.447995] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root        831624 Jan  1  1970 libjpeg.so.8
-[   26.448809] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root        831624 Jan  1  1970 libjpeg.so.8.3.2
-[   26.449501] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root        502768 Jan  1  1970 libopus.so
-[   26.450167] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root        502768 Jan  1  1970 libopus.so.0
-[   26.450984] nanokvm-qemu-selftest-start[538]: -r-xr-xr-x    3 root     root        502768 Jan  1  1970 libopus.so.0.11.1
-[   26.451927] nanokvm-qemu-selftest-start[529]: --- nanokvm units ---
-[   26.515451] nanokvm-qemu-selftest-start[539]:   nanokvm-appdir.service        loaded active     exited        Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)
-[   26.518349] nanokvm-qemu-selftest-start[539]:   nanokvm-cert.service          loaded active     exited        Generate the NanoKVM-Pro HTTPS certificate if absent
-[   26.519237] nanokvm-qemu-selftest-start[539]:   nanokvm-checkboot.service     loaded active     exited        Confirm the active A/B boot slot (S99checkboot equivalent)
-[   26.524536] nanokvm-qemu-selftest-start[539]:   nanokvm-identity.service      loaded active     exited        Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)
-[   26.525574] nanokvm-qemu-selftest-start[539]: ● nanokvm-qemu-selftest.service loaded activating start   start Print the appliance's boot state and power off (QEMU only)
-[   26.526471] nanokvm-qemu-selftest-start[539]:   nanokvm-usb.service           loaded active     exited        NanoKVM-Pro USB HID/storage gadget (stub -- #82)
-[   26.527136] nanokvm-qemu-selftest-start[539]:   nanokvm-video.service         loaded active     exited        NanoKVM-Pro open video stack (capture + encoder modules)
-[   26.527780] nanokvm-qemu-selftest-start[539]:   nanokvm.service               loaded active     running       NanoKVM-Pro server (open stack)
-[   26.528921] nanokvm-qemu-selftest-start[529]: --- failed units ---
-[   26.564614] nanokvm-qemu-selftest-start[540]:   UNIT LOAD ACTIVE SUB DESCRIPTION
-[   26.568635] nanokvm-qemu-selftest-start[540]: 0 loaded units listed.
-[   26.569652] nanokvm-qemu-selftest-start[529]: --- nanokvm.service ---
-[   26.697929] nanokvm-qemu-selftest-start[541]: ● nanokvm.service - NanoKVM-Pro server (open stack)
-[   26.702982] nanokvm-qemu-selftest-start[541]:      Loaded: loaded (/etc/systemd/system/nanokvm.service; enabled; preset: ignored)
-[   26.703952] nanokvm-qemu-selftest-start[541]:      Active: active (running) since Mon 2026-09-07 20:03:31 UTC; 3s ago
-[   26.704820] nanokvm-qemu-selftest-start[541]:  Invocation: 933e1554908c425586a96a71b78891de
-[   26.705397] nanokvm-qemu-selftest-start[541]:    Main PID: 493 (NanoKVM-Server)
-[   26.705955] nanokvm-qemu-selftest-start[541]:          IP: 0B in, 0B out
-[   26.706493] nanokvm-qemu-selftest-start[541]:          IO: 2.7M read, 4K written
-[   26.707069] nanokvm-qemu-selftest-start[541]:       Tasks: 7 (limit: 1165)
-[   26.707615] nanokvm-qemu-selftest-start[541]:      Memory: 13.2M (peak: 13.3M)
-[   26.708366] nanokvm-qemu-selftest-start[541]:         CPU: 401ms
-[   26.708933] nanokvm-qemu-selftest-start[541]:      CGroup: /system.slice/nanokvm.service
-[   26.712478] nanokvm-qemu-selftest-start[541]:              └─493 /dev/shm/kvmapp/server/NanoKVM-Server
-[   26.713456] nanokvm-qemu-selftest-start[541]: Sep 07 20:03:31 nanokvm systemd[1]: Started NanoKVM-Pro server (open stack).
-[   26.714308] nanokvm-qemu-selftest-start[529]: --- NanoKVM-Server.log ---
-[   26.723480] nanokvm-qemu-selftest-start[542]: 2026/09/07 20:03:32 create file /etc/kvm/server.yaml with default configuration
-[   26.728675] nanokvm-qemu-selftest-start[542]: 2026/09/07 20:03:32 using default configuration
-[   26.732832] nanokvm-qemu-selftest-start[542]: 2026/09/07 20:03:32 config loaded successfully
-[   26.733530] nanokvm-qemu-selftest-start[542]: [2026-09-07 20:03:32.411] [info] [logger.go:50] logger set success
-[   26.734156] nanokvm-qemu-selftest-start[542]: [2026-09-07 20:03:32.415] [info] [video_power.go:145] video idle suspend enabled: capture powers down after 5m0s without viewers
-[   26.736594] nanokvm-qemu-selftest-start[542]: 2026/09/07 20:03:32 Starting HTTPS server on :80, :443
-[   26.737425] nanokvm-qemu-selftest-start[529]: --- nanokvm-checkboot ---
-[   26.829733] nanokvm-qemu-selftest-start[543]: ● nanokvm-checkboot.service - Confirm the active A/B boot slot (S99checkboot equivalent)
-[   26.834527] nanokvm-qemu-selftest-start[543]:      Loaded: loaded (/etc/systemd/system/nanokvm-checkboot.service; enabled; preset: ignored)
-[   26.835309] nanokvm-qemu-selftest-start[543]:      Active: active (exited) since Mon 2026-09-07 20:03:29 UTC; 5s ago
-[   26.841151] nanokvm-qemu-selftest-start[543]:  Invocation: acdb13697c324e40abf0780bbdea6725
-[   26.841826] nanokvm-qemu-selftest-start[543]:     Process: 412 ExecStart=/nix/store/6slj2l0c3sp772fc3q0ahpfbpwwbk98n-unit-script-nanokvm-checkboot-start/bin/nanokvm-checkboot-start (code=exited, status=0/SUCCESS)
-[   26.842563] nanokvm-qemu-selftest-start[543]:    Main PID: 412 (code=exited, status=0/SUCCESS)
-[   26.843109] nanokvm-qemu-selftest-start[543]:          IP: 0B in, 0B out
-[   26.843612] nanokvm-qemu-selftest-start[543]:          IO: 1.5M read, 0B written
-[   26.844402] nanokvm-qemu-selftest-start[543]:    Mem peak: 2.5M
-[   26.848622] nanokvm-qemu-selftest-start[543]:         CPU: 125ms
-[   26.849242] nanokvm-qemu-selftest-start[543]: Sep 07 20:03:29 nanokvm systemd[1]: Starting Confirm the active A/B boot slot (S99checkboot equivalent)...
-[   26.850034] nanokvm-qemu-selftest-start[543]: Sep 07 20:03:29 nanokvm nanokvm-checkboot-start[412]: checkboot: bootsystem='' not a/b -- refusing to write the slot register
-[   26.850638] nanokvm-qemu-selftest-start[543]: Sep 07 20:03:29 nanokvm systemd[1]: Finished Confirm the active A/B boot slot (S99checkboot equivalent).
-[   26.851567] nanokvm-qemu-selftest-start[529]: === self-test done, powering off ===
+[   24.659361] nanokvm-qemu-selftest-start[527]: === nanokvm appliance self-test (#78) ===
+[   24.669628] nanokvm-qemu-selftest-start[527]: --- root filesystem ---
+[   24.710115] nanokvm-qemu-selftest-start[528]: /dev/vda ext4 rw,noatime
+[   24.711895] nanokvm-qemu-selftest-start[527]: --- stage 2 came from ---
+[   24.719080] nanokvm-qemu-selftest-start[529]: /nix/store/x6sv0qk4flsn7720az18mhad9czcl4zf-nixos-system-nanokvm-26.11pre-git
+[   24.719964] nanokvm-qemu-selftest-start[527]: --- /etc/fw_env.config ---
+[   24.734828] nanokvm-qemu-selftest-start[530]: /dev/mmcblk0 0x4C0000 0x100000
+[   24.736646] nanokvm-qemu-selftest-start[527]: --- identity ---
+[   24.758064] nanokvm-qemu-selftest-start[527]: hostname: nanokvm
+[   24.793238] nanokvm-qemu-selftest-start[527]: device_key: (none -- no SoC UID here)
+[   24.794421] nanokvm-qemu-selftest-start[527]: --- nanokvm-gpio (#81) ---
+[   24.795300] nanokvm-qemu-selftest-start[527]: /nix/store/9p402ldcaj2668lnpixf41v4zpfd1s7z-nanokvm-gpio-1.0/bin/nanokvm-gpio
+[   24.841238] nanokvm-qemu-selftest-start[534]: nanokvm-gpio: no gpiochip names line 'atx-power'
+[   24.842694] nanokvm-qemu-selftest-start[527]: --- app tree ---
+[   24.869862] nanokvm-qemu-selftest-start[536]: /kvmapp/server/:
+[   24.871531] nanokvm-qemu-selftest-start[536]: total 22928
+[   24.872388] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    1 root     root      23500072 Jan  1  1970 NanoKVM-Server
+[   24.873069] nanokvm-qemu-selftest-start[536]: dr-xr-xr-x    2 root     root          4096 Jan  1  1970 dl_lib
+[   24.873681] nanokvm-qemu-selftest-start[536]: dr-xr-xr-x    3 root     root          4096 Jan  1  1970 web
+[   24.874270] nanokvm-qemu-selftest-start[536]: /opt/lib/:
+[   24.875058] nanokvm-qemu-selftest-start[536]: total 8040
+[   24.875823] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root       1487904 Jan  1  1970 libasound.so
+[   24.876579] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root       1487904 Jan  1  1970 libasound.so.2
+[   24.877292] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root       1487904 Jan  1  1970 libasound.so.2.0.0
+[   24.878023] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root        831624 Jan  1  1970 libjpeg.so
+[   24.878641] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root        831624 Jan  1  1970 libjpeg.so.8
+[   24.879240] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root        831624 Jan  1  1970 libjpeg.so.8.3.2
+[   24.879841] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root        502768 Jan  1  1970 libopus.so
+[   24.880996] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root        502768 Jan  1  1970 libopus.so.0
+[   24.881728] nanokvm-qemu-selftest-start[536]: -r-xr-xr-x    3 root     root        502768 Jan  1  1970 libopus.so.0.11.1
+[   24.882586] nanokvm-qemu-selftest-start[527]: --- nanokvm units ---
+[   24.980702] nanokvm-qemu-selftest-start[537]:   nanokvm-appdir.service        loaded active     exited        Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)
+[   24.982232] nanokvm-qemu-selftest-start[537]:   nanokvm-cert.service          loaded active     exited        Generate the NanoKVM-Pro HTTPS certificate if absent
+[   24.982941] nanokvm-qemu-selftest-start[537]:   nanokvm-checkboot.service     loaded active     exited        Confirm the active A/B boot slot (S99checkboot equivalent)
+[   24.983597] nanokvm-qemu-selftest-start[537]:   nanokvm-identity.service      loaded active     exited        Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)
+[   24.985937] nanokvm-qemu-selftest-start[537]: ● nanokvm-qemu-selftest.service loaded activating start   start Print the appliance's boot state and power off (QEMU only)
+[   24.992663] nanokvm-qemu-selftest-start[537]:   nanokvm-usb.service           loaded active     exited        NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)
+[   24.993491] nanokvm-qemu-selftest-start[537]:   nanokvm-video.service         loaded active     exited        NanoKVM-Pro open video stack (capture + encoder modules)
+[   24.994196] nanokvm-qemu-selftest-start[537]:   nanokvm.service               loaded active     running       NanoKVM-Pro server (open stack)
+[   24.995171] nanokvm-qemu-selftest-start[527]: --- failed units ---
+[   25.048565] nanokvm-qemu-selftest-start[538]:   UNIT LOAD ACTIVE SUB DESCRIPTION
+[   25.052639] nanokvm-qemu-selftest-start[538]: 0 loaded units listed.
+[   25.055707] nanokvm-qemu-selftest-start[527]: --- nanokvm.service ---
+[   25.233132] nanokvm-qemu-selftest-start[539]: ● nanokvm.service - NanoKVM-Pro server (open stack)
+[   25.234379] nanokvm-qemu-selftest-start[539]:      Loaded: loaded (/etc/systemd/system/nanokvm.service; enabled; preset: ignored)
+[   25.235016] nanokvm-qemu-selftest-start[539]:      Active: active (running) since Mon 2026-09-07 20:25:30 UTC; 2s ago
+[   25.235627] nanokvm-qemu-selftest-start[539]:  Invocation: 09a1475000204b279f4834f6f408f9a4
+[   25.236302] nanokvm-qemu-selftest-start[539]:    Main PID: 495 (NanoKVM-Server)
+[   25.240522] nanokvm-qemu-selftest-start[539]:          IP: 0B in, 0B out
+[   25.241187] nanokvm-qemu-selftest-start[539]:          IO: 2.7M read, 4K written
+[   25.241767] nanokvm-qemu-selftest-start[539]:       Tasks: 7 (limit: 1165)
+[   25.242326] nanokvm-qemu-selftest-start[539]:      Memory: 11.2M (peak: 11.3M)
+[   25.243089] nanokvm-qemu-selftest-start[539]:         CPU: 404ms
+[   25.243661] nanokvm-qemu-selftest-start[539]:      CGroup: /system.slice/nanokvm.service
+[   25.248456] nanokvm-qemu-selftest-start[539]:              └─495 /dev/shm/kvmapp/server/NanoKVM-Server
+[   25.249374] nanokvm-qemu-selftest-start[539]: Sep 07 20:25:30 nanokvm systemd[1]: Started NanoKVM-Pro server (open stack).
+[   25.250265] nanokvm-qemu-selftest-start[527]: --- NanoKVM-Server.log ---
+[   25.258635] nanokvm-qemu-selftest-start[540]: 2026/09/07 20:25:31 create file /etc/kvm/server.yaml with default configuration
+[   25.259540] nanokvm-qemu-selftest-start[540]: 2026/09/07 20:25:31 using default configuration
+[   25.260290] nanokvm-qemu-selftest-start[540]: 2026/09/07 20:25:31 config loaded successfully
+[   25.260909] nanokvm-qemu-selftest-start[540]: [2026-09-07 20:25:31.491] [info] [logger.go:50] logger set success
+[   25.261508] nanokvm-qemu-selftest-start[540]: [2026-09-07 20:25:31.500] [info] [video_power.go:145] video idle suspend enabled: capture powers down after 5m0s without viewers
+[   25.262383] nanokvm-qemu-selftest-start[540]: 2026/09/07 20:25:31 Starting HTTPS server on :80, :443
+[   25.268581] nanokvm-qemu-selftest-start[527]: --- nanokvm-checkboot ---
+[   25.350810] nanokvm-qemu-selftest-start[541]: ● nanokvm-checkboot.service - Confirm the active A/B boot slot (S99checkboot equivalent)
+[   25.352313] nanokvm-qemu-selftest-start[541]:      Loaded: loaded (/etc/systemd/system/nanokvm-checkboot.service; enabled; preset: ignored)
+[   25.353056] nanokvm-qemu-selftest-start[541]:      Active: active (exited) since Mon 2026-09-07 20:25:28 UTC; 4s ago
+[   25.353673] nanokvm-qemu-selftest-start[541]:  Invocation: 5a5ae8477cfd4fa481a4b85d1d52a449
+[   25.354236] nanokvm-qemu-selftest-start[541]:     Process: 409 ExecStart=/nix/store/6slj2l0c3sp772fc3q0ahpfbpwwbk98n-unit-script-nanokvm-checkboot-start/bin/nanokvm-checkboot-start (code=exited, status=0/SUCCESS)
+[   25.360496] nanokvm-qemu-selftest-start[541]:    Main PID: 409 (code=exited, status=0/SUCCESS)
+[   25.361175] nanokvm-qemu-selftest-start[541]:          IP: 0B in, 0B out
+[   25.361691] nanokvm-qemu-selftest-start[541]:          IO: 1.5M read, 0B written
+[   25.362220] nanokvm-qemu-selftest-start[541]:    Mem peak: 2.9M
+[   25.362686] nanokvm-qemu-selftest-start[541]:         CPU: 112ms
+[   25.363193] nanokvm-qemu-selftest-start[541]: Sep 07 20:25:27 nanokvm systemd[1]: Starting Confirm the active A/B boot slot (S99checkboot equivalent)...
+[   25.364067] nanokvm-qemu-selftest-start[541]: Sep 07 20:25:28 nanokvm nanokvm-checkboot-start[409]: checkboot: bootsystem='' not a/b -- refusing to write the slot register
+[   25.364996] nanokvm-qemu-selftest-start[541]: Sep 07 20:25:28 nanokvm systemd[1]: Finished Confirm the active A/B boot slot (S99checkboot equivalent).
+[   25.368619] nanokvm-qemu-selftest-start[527]: === self-test done, powering off ===
 [[0;32m  OK  [0m] Stopped [0;1;39mPrint the appliance's boot state and power off (QEMU only)[0m.
 [[0;32m  OK  [0m] Removed slice [0;1;39mSlice /system/modprobe[0m.
 [[0;32m  OK  [0m] Stopped target [0;1;39mMulti-User System[0m.
@@ -640,9 +647,9 @@ starting systemd...
 [[0;32m  OK  [0m] Stopped [0;1;39mUser Login Management[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mNanoKVM-Pro server (open stack)[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mGetty on tty1[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mSSH Daemon[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mSerial Getty on ttyAMA0[0m.
-[!p]104\[0m[?7h[1G[0J7[32766;32766H[6n8]3008;end=e107183ab5744bd28dae333f4d7139dd\[[0;32m  OK  [0m] Stopped [0;1;39mSSH Daemon[0m.
-[[0;32m  OK  [0m] Unmounted [0;1;39m/boot[0m.
+[!p]104\[0m[?7h[1G[0J7[32766;32766H[6n8]3008;end=9c9ba715c2e84096ada2a46b98298a8c\[[0;32m  OK  [0m] Unmounted [0;1;39m/boot[0m.
 [[0;32m  OK  [0m] Mounted [0;1;39m/run/initramfs[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mPost-Boot Actions[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mLoad/Save OS Random Seed[0m.
@@ -651,7 +658,7 @@ starting systemd...
          Starting [0;1;39mGenerate shutdown ramfs[0m...
 [[0;32m  OK  [0m] Stopped [0;1;39mCopy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mGenerate the NanoKVM-Pro HTTPS certificate if absent[0m.
-[[0;32m  OK  [0m] Stopped [0;1;39mNanoKVM-Pro USB HID/storage gadget (stub -- #82)[0m.
+[[0;32m  OK  [0m] Stopped [0;1;39mNanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)[0m.
 [[0;32m  OK  [0m] Stopped [0;1;39mNanoKVM-Pro open video stack (capture + encoder modules)[0m.
          Stopping [0;1;39mPermit User Sessions[0m...
 [[0;32m  OK  [0m] Stopped [0;1;39mEnable Persistent Storage in systemd-networkd[0m.
@@ -718,66 +725,65 @@ starting systemd...
 [[0;32m  OK  [0m] Reached target [0;1;39mLate Shutdown Services[0m.
 [[0;32m  OK  [0m] Finished [0;1;39mSystem Power Off[0m.
 [[0;32m  OK  [0m] Reached target [0;1;39mSystem Power Off[0m.
-]3008;end=426a28a3bd6a4735b04e4d3d4655a802\[   29.733145] systemd-shutdown[1]: Syncing filesystems and block devices.
-[   29.758202] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
-[   29.803602] systemd-journald[300]: Received SIGTERM from PID 1 (systemd-shutdow).
-[   29.841265] systemd-udevd[336]: Failed to send readiness notification, ignoring: Connection refused
-[   29.910789] systemd-udevd[336]: Failed to push event serialization fd to service manager: Connection refused
-[   29.953799] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
-[   29.980756] systemd-shutdown[1]: Unmounting file systems.
-[   29.992206] (sd-umount)[606]: Unmounting '/run/credentials/systemd-journald.service'.
-[   29.997452] (sd-remount)[607]: Remounting '/nix/store' read-only with options ''.
-[   30.053837] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888 ro.
-[   30.072065] (sd-remount)[608]: Remounting '/' read-only with options ''.
-[   30.079303] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888.
-[   30.082415] systemd-shutdown[1]: All filesystems unmounted.
-[   30.082521] systemd-shutdown[1]: Deactivating swaps.
-[   30.082988] systemd-shutdown[1]: All swaps deactivated.
-[   30.083279] systemd-shutdown[1]: Detaching loop devices.
-[   30.140601] systemd-shutdown[1]: All loop devices detached.
-[   30.140713] systemd-shutdown[1]: Stopping MD devices.
-[   30.142094] systemd-shutdown[1]: All MD devices stopped.
-[   30.142188] systemd-shutdown[1]: Detaching DM devices.
-[   30.143243] systemd-shutdown[1]: All DM devices detached.
-[   30.143338] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
-[18t7[32766;32766H[6n8[!p]104\[0m[?7h[1G[0J[   30.825931] systemd-shutdown[1]: Successfully changed into root pivot.
-[   30.826111] systemd-shutdown[1]: Entering exitrd...
-[   30.877509] shutdown[1]: Syncing filesystems and block devices.
-[   30.884969] shutdown[1]: Sending SIGTERM to remaining processes...
-[   30.911600] shutdown[1]: Sending SIGKILL to remaining processes...
-[   30.936234] shutdown[1]: Unmounting file systems.
-[   30.954386] (sd-umoun[610]: Unmounting '/run/credentials'.
-[   30.960667] (sd-umoun[611]: Unmounting '/oldroot/sys/kernel/config'.
-[   30.966485] (sd-umoun[612]: Unmounting '/oldroot/sys/kernel/debug'.
-[   30.971921] (sd-umoun[613]: Unmounting '/oldroot/dev/mqueue'.
-[   30.977920] (sd-umoun[614]: Unmounting '/oldroot/dev/hugepages'.
-[   30.983152] (sd-umoun[615]: Unmounting '/oldroot/sys/fs/bpf'.
-[   30.988252] (sd-umoun[616]: Unmounting '/oldroot/sys/fs/pstore'.
-[   30.993248] (sd-umoun[617]: Unmounting '/oldroot/sys/fs/cgroup'.
-[   31.000795] (sd-umoun[618]: Unmounting '/oldroot/sys/kernel/security'.
-[   31.006451] (sd-umoun[619]: Unmounting '/oldroot/nix/store'.
-[   31.011978] (sd-umoun[620]: Unmounting '/oldroot'.
-[   31.012819] (sd-umoun[620]: Failed to unmount /oldroot: Device or resource busy
-[   31.018282] (sd-umoun[621]: Unmounting '/oldroot/sys'.
-[   31.023737] (sd-umoun[622]: Unmounting '/oldroot/run'.
-[   31.029177] (sd-umoun[623]: Unmounting '/oldroot/proc'.
-[   31.034266] (sd-umoun[624]: Unmounting '/oldroot/dev/shm'.
-[   31.039751] (sd-umoun[625]: Unmounting '/oldroot/dev/pts'.
-[   31.045212] (sd-umoun[626]: Unmounting '/oldroot/dev'.
-[   31.053125] (sd-umoun[627]: Unmounting '/oldroot'.
-[   31.114718] EXT4-fs (vda): unmounting filesystem 44444444-4444-4444-8888-888888888888.
-[   31.121498] shutdown[1]: All filesystems unmounted.
-[   31.121678] shutdown[1]: Deactivating swaps.
-[   31.122297] shutdown[1]: All swaps deactivated.
-[   31.122397] shutdown[1]: Detaching loop devices.
-[   31.156804] shutdown[1]: All loop devices detached.
-[   31.156920] shutdown[1]: Stopping MD devices.
-[   31.158285] shutdown[1]: All MD devices stopped.
-[   31.158382] shutdown[1]: Detaching DM devices.
-[   31.159607] shutdown[1]: All DM devices detached.
-[   31.159719] shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
-[   31.162023] shutdown[1]: Syncing filesystems and block devices.
-[   31.168013] shutdown[1]: Powering off.
-[   31.169716] Flash device refused suspend due to active operation (state 20)
-[   31.169805] Flash device refused suspend due to active operation (state 20)
-[   31.170421] reboot: Power down
+]3008;end=0f3489559fcf4e6c830bd03b7a66bdde\[   27.849585] systemd-shutdown[1]: Syncing filesystems and block devices.
+[   27.874263] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[   27.917712] systemd-journald[299]: Received SIGTERM from PID 1 (systemd-shutdow).
+[   28.030105] systemd-udevd[330]: Failed to push event serialization fd to service manager: Connection refused
+[   28.080089] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[   28.104881] systemd-shutdown[1]: Unmounting file systems.
+[   28.115154] (sd-umount)[602]: Unmounting '/run/credentials/systemd-journald.service'.
+[   28.120244] (sd-remount)[603]: Remounting '/nix/store' read-only with options ''.
+[   28.179430] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888 ro.
+[   28.194918] (sd-remount)[604]: Remounting '/' read-only with options ''.
+[   28.204717] EXT4-fs (vda): re-mounted 44444444-4444-4444-8888-888888888888.
+[   28.207677] systemd-shutdown[1]: All filesystems unmounted.
+[   28.207790] systemd-shutdown[1]: Deactivating swaps.
+[   28.208325] systemd-shutdown[1]: All swaps deactivated.
+[   28.208668] systemd-shutdown[1]: Detaching loop devices.
+[   28.264456] systemd-shutdown[1]: All loop devices detached.
+[   28.264561] systemd-shutdown[1]: Stopping MD devices.
+[   28.265898] systemd-shutdown[1]: All MD devices stopped.
+[   28.265993] systemd-shutdown[1]: Detaching DM devices.
+[   28.266850] systemd-shutdown[1]: All DM devices detached.
+[   28.266942] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[18t7[32766;32766H[6n8[!p]104\[0m[?7h[1G[0J[   28.942539] systemd-shutdown[1]: Successfully changed into root pivot.
+[   28.942673] systemd-shutdown[1]: Entering exitrd...
+[   28.991579] shutdown[1]: Syncing filesystems and block devices.
+[   28.997121] shutdown[1]: Sending SIGTERM to remaining processes...
+[   29.021937] shutdown[1]: Sending SIGKILL to remaining processes...
+[   29.044763] shutdown[1]: Unmounting file systems.
+[   29.068711] (sd-umoun[606]: Unmounting '/run/credentials'.
+[   29.082486] (sd-umoun[607]: Unmounting '/oldroot/sys/kernel/config'.
+[   29.088755] (sd-umoun[608]: Unmounting '/oldroot/sys/kernel/debug'.
+[   29.094244] (sd-umoun[609]: Unmounting '/oldroot/dev/mqueue'.
+[   29.099354] (sd-umoun[610]: Unmounting '/oldroot/dev/hugepages'.
+[   29.104646] (sd-umoun[611]: Unmounting '/oldroot/sys/fs/bpf'.
+[   29.109731] (sd-umoun[612]: Unmounting '/oldroot/sys/fs/pstore'.
+[   29.114709] (sd-umoun[613]: Unmounting '/oldroot/sys/fs/cgroup'.
+[   29.119959] (sd-umoun[614]: Unmounting '/oldroot/sys/kernel/security'.
+[   29.125287] (sd-umoun[615]: Unmounting '/oldroot/nix/store'.
+[   29.130290] (sd-umoun[616]: Unmounting '/oldroot'.
+[   29.131250] (sd-umoun[616]: Failed to unmount /oldroot: Device or resource busy
+[   29.136527] (sd-umoun[617]: Unmounting '/oldroot/sys'.
+[   29.141875] (sd-umoun[618]: Unmounting '/oldroot/run'.
+[   29.146463] (sd-umoun[619]: Unmounting '/oldroot/proc'.
+[   29.151455] (sd-umoun[620]: Unmounting '/oldroot/dev/shm'.
+[   29.156284] (sd-umoun[621]: Unmounting '/oldroot/dev/pts'.
+[   29.161344] (sd-umoun[622]: Unmounting '/oldroot/dev'.
+[   29.168612] (sd-umoun[623]: Unmounting '/oldroot'.
+[   29.224491] EXT4-fs (vda): unmounting filesystem 44444444-4444-4444-8888-888888888888.
+[   29.230406] shutdown[1]: All filesystems unmounted.
+[   29.230586] shutdown[1]: Deactivating swaps.
+[   29.231273] shutdown[1]: All swaps deactivated.
+[   29.231406] shutdown[1]: Detaching loop devices.
+[   29.263310] shutdown[1]: All loop devices detached.
+[   29.263476] shutdown[1]: Stopping MD devices.
+[   29.264853] shutdown[1]: All MD devices stopped.
+[   29.265005] shutdown[1]: Detaching DM devices.
+[   29.266270] shutdown[1]: All DM devices detached.
+[   29.266430] shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[   29.268704] shutdown[1]: Syncing filesystems and block devices.
+[   29.275259] shutdown[1]: Powering off.
+[   29.276937] Flash device refused suspend due to active operation (state 20)
+[   29.277018] Flash device refused suspend due to active operation (state 20)
+[   29.277901] reboot: Power down

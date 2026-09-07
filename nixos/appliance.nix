@@ -562,11 +562,16 @@ in
     #
     # This module therefore stubs #82 and #83, and no longer stubs #81.
 
-    # 5c. USB gadget -- STUB. #82 owns dwc3 glue, extcon-usb-gpio and the
-    # configfs gadget; the vendor usbdev.sh contract is gap 2 in
-    # docs/nixos-rootfs.md and is not even captured off the device yet.
+    # 5c. USB gadget -- STUB, but no longer for the reason it was written.
+    # #82 landed the dwc3 glue and the configfs function drivers, and a host has
+    # enumerated a gadget off this board on a mainline kernel. What is missing is
+    # the POLICY: `usbdev.sh` builds the whole gadget -- three HID report
+    # descriptors, the Microsoft OS descriptors, the flag files under /boot, the
+    # udhcpd instance -- and it exists only in the vendor rootfs, uncaptured
+    # (gap 2 in docs/nixos-rootfs.md). Until it is vendored or reimplemented
+    # there is nothing here to instantiate those functions.
     systemd.services.nanokvm-usb = {
-      description = "NanoKVM-Pro USB HID/storage gadget (stub -- #82)";
+      description = "NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)";
       wantedBy = [ "multi-user.target" ];
       before = [ "nanokvm.service" ];
       serviceConfig = {
@@ -574,9 +579,11 @@ in
         RemainAfterExit = true;
       };
       script = ''
-        echo "nanokvm-usb: STUB. No dwc3 glue and no gadget script on this"
-        echo "             kernel yet (issue #82): no keyboard, no mouse, no"
-        echo "             mass storage, no NCM."
+        echo "nanokvm-usb: STUB. The controller and the configfs function"
+        echo "             drivers are here (#82), but usbdev.sh -- the script"
+        echo "             that builds the gadget -- is vendor-only and not"
+        echo "             captured yet: no keyboard, no mouse, no mass"
+        echo "             storage, no NCM."
       '';
     };
 

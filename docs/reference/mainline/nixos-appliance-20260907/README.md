@@ -23,7 +23,7 @@ rather than a login prompt.
 | File | What it is |
 |---|---|
 | `qemu-boot-no-dev-console.log` | Run 1. The failure this whole harness earned its keep on. |
-| `qemu-boot-selftest.log` | Run 2. A clean boot plus the self-test dump. Re-taken after #81 merged, so it covers the merged tree. |
+| `qemu-boot-selftest.log` | Run 2. A clean boot plus the self-test dump. Re-taken after #81 and #82 merged, so it covers the merged tree. |
 
 ## Run 1 — the missing `/dev/console`
 
@@ -75,7 +75,7 @@ nanokvm-gpio: no gpiochip names line 'atx-power'
   nanokvm-cert.service        loaded active exited   Generate the HTTPS certificate if absent
   nanokvm-checkboot.service   loaded active exited   Confirm the active A/B boot slot
   nanokvm-identity.service    loaded active exited   MAC and hostname from the SoC UID
-  nanokvm-usb.service         loaded active exited   USB HID/storage gadget (stub -- #82)
+  nanokvm-usb.service         loaded active exited   USB HID/storage gadget (stub -- #82 policy half)
   nanokvm-video.service       loaded active exited   open video stack (stub -- #83)
   nanokvm.service             loaded active running  NanoKVM-Pro server (open stack)
 --- failed units ---
@@ -123,13 +123,16 @@ scaffold and would have fired on hardware:
    only in the vendor rootfs. `nanokvm-cert.service` now generates a self-signed
    per-device cert if absent, and the server runs.
 
-**The two hardware stubs behave.** `nanokvm-video` and `nanokvm-usb` succeed and
-say which issue owns the hardware they cannot touch (#83, #82). They exist so
-the ordering edges are real and so a boot log names the missing pipeline instead
-of leaving a silent black stream.
+**The two hardware stubs behave.** `nanokvm-video` (#83) and `nanokvm-usb` (#82)
+succeed and say which issue owns what they cannot do. They exist so the ordering
+edges are real and so a boot log names the missing pipeline instead of leaving a
+silent black stream. `nanokvm-usb` is a stub for a narrower reason than it was
+written for: #82 landed the dwc3 glue and all five configfs function drivers and
+a host has enumerated a gadget off this board, so what is missing is the
+*policy* — `usbdev.sh`, which exists only in the vendor rootfs.
 
 **#81 is wired in, and there is no GPIO stub.** This run was re-taken after #81
-merged. There is no `nanokvm-gpio.service` at all — nothing to export and
+and #82 merged. There is no `nanokvm-gpio.service` at all — nothing to export and
 nothing to mux by hand, because a GPIO request now runs through `gpio-ranges` →
 `gpio_request_enable()` and the pin controller programs the pad. Instead the
 appliance takes the `gpioBackend = "libgpiod"` server build and carries the

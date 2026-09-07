@@ -9,12 +9,13 @@
  * vendor's, deliberately: it is dense, already carved per controller, and
  * encodes a register/bit ordering worth preserving.
  *
- * 281 IDs of the 493 the vendor header declared, of which the driver registers
- * 279 -- the two SD/SDIO card muxes are named but deliberately left
- * unregistered, see the flash block below. 246 of the 279 are the set the
- * vendor CCF driver itself registered; the other 33 are IDs it declared and
- * never registered, because its own eMMC, SD, SDIO, watchdog, I2C and GPIO
- * drivers programmed those windows by hand. The rest are listed in section 1.2 of the
+ * 284 IDs of the 493 the vendor header declared, of which the driver registers
+ * 282 -- the two SD/SDIO card muxes are named but deliberately left
+ * unregistered, see the flash block below. 246 of the 282 are the set the
+ * vendor CCF driver itself registered; the other 36 are IDs it declared and
+ * never registered, because its own eMMC, SD, SDIO, watchdog, I2C, GPIO and
+ * dwc3 drivers programmed those windows by hand. The rest are listed in
+ * section 1.2 of the
  * specification and can be added as their register positions are confirmed. The isp and ddr namespaces are gone entirely --
  * neither ever had an implementation -- as are AX620X_CPUPLL (common ID 2,
  * deliberately never registered) and the seven dead PLL cells.
@@ -202,7 +203,10 @@
  * flash clk -- axera,ax630c-flash-clk
  *
  * The SD/SDIO ids (2, 3, 15, 16, 27, 28, 41, 42, 46, 51) and the pinmux APB
- * gate (29) are #76's, for the same reason as the cpu EMMC ids above.
+ * gate (29) are #76's, for the same reason as the cpu EMMC ids above. The
+ * three USB ids (11, 13, 40) are #82's, for the same reason again: the vendor
+ * CCF declares them and registers none, because the vendor dwc3 glue pokes
+ * this window's gates directly instead of taking clock handles.
  */
 #define AX630C_RGMII_EPHY_CLK_SEL		0
 #define AX630C_CLK_SDIO_M_CARD_SEL		2
@@ -213,7 +217,9 @@
 #define AX630C_CLK_EMAC_RGMII_TX_SEL		8
 #define AX630C_CLK_1X_VO1_SEL			9
 #define AX630C_CLK_1X_VO0_SEL			10
+#define AX630C_USB_REF_ALT_CLK_EB		11
 #define AX630C_EPHY_CLK_EB			12
+#define AX630C_CLK_USB_REF_EB			13
 #define AX630C_CLK_SDIO_M_CARD_EB		15
 #define AX630C_CLK_SD_CARD_EB			16
 #define AX630C_CLK_NX_VO1_EB			17
@@ -227,6 +233,7 @@
 #define AX630C_PCLK_SD_M_EB			28
 #define AX630C_PCLK_PINMUX_EB			29
 #define AX630C_CLK_LPC_FLASH_EB			34
+#define AX630C_BUS_CLK_USB_EB			40
 #define AX630C_ACLK_SDIO_M_EB			41
 #define AX630C_ACLK_SD_M_EB			42
 #define AX630C_ACLK_EMAC_EB			43
