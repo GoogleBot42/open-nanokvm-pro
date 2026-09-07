@@ -18,6 +18,7 @@
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/clock/ax630c-clock.h>
+#include <dt-bindings/reset/ax630c-reset.h>
 #include "ax630c-compat.h"
 
 / {
@@ -122,9 +123,17 @@
 		 * reconciled clock by clock against a running device.
 		 *
 		 * Every window is 64 KiB and every one is also a syscon. The
-		 * eight here register 246 clocks between them; the vendor's
+		 * eight here register 265 clocks between them; the vendor's
 		 * ninth ("isp") is omitted because no driver has ever
 		 * implemented it, as is the whole ddr namespace.
+		 *
+		 * Seven of the eight also hand out reset lines -- 148 of them,
+		 * one bit each in the words next to the clock gates, described
+		 * in docs/reference/mainline/reset-model-20260906.md. They get
+		 * #reset-cells here rather than reset-controller@ nodes of
+		 * their own: a second node over the same window would mean a
+		 * second regmap and a second lock over registers the clock
+		 * driver read-modify-writes. pllc has no reset lines.
 		 *
 		 * No node carries assigned-clocks yet. The bootloader leaves
 		 * the tree in a working state -- CPUPLL locked at 1.2 GHz, the
@@ -138,13 +147,30 @@
 		 * local to its own window rather than reproducing the vendor's
 		 * SECOND_OFFSET arithmetic.
 		 *
-		 * No pin states are declared here yet. The bootloader programs
-		 * every pad before Linux starts, so the board comes up muxed
-		 * correctly without them, and a state that merely restates what
-		 * firmware already did is a second source of truth. States
-		 * arrive with the drivers that need them to CHANGE something --
-		 * which, for the SW_PWR line, is the point of this driver: a
-		 * GPIO consumer now programs its own mux.
+		 * The states below are transcribed from the vendor boot
+		 * chain's own pad table (pinctrl-model section 4.2), which is
+		 * what actually programs these pads today: 133 writes, 111 of
+		 * them one per pad, issued by U-Boot before Linux starts. They
+		 * are therefore no-ops in value on this board -- the point of
+		 * writing them down is that Linux now OWNS the pads it uses,
+		 * so a pad cannot be silently re-muxed out from under a driver
+		 * and a second claimant gets -EBUSY instead of a corrupted
+		 * bus. Only nodes that exist get a state; the rest arrive with
+		 * their drivers (#77 RGMII, #81 GPIO, #82 USB, #83/#84 video).
+		 *
+		 * Three rules the driver enforces, worth knowing before adding
+		 * one:
+		 *
+		 *  - Config properties must name `pins`, never `groups`: the
+		 *    driver implements pin_config_set and not
+		 *    pin_config_group_set, and the core fails the whole state
+		 *    (and the consumer's probe) on the latter.
+		 *  - The multi-pad groups are wider than they look. "uart0"
+		 *    includes two RGMII pads as CTS/RTS and "uart1" includes
+		 *    EMMC_PWR_EN and BOND2, so the UART states below name
+		 *    their two pads explicitly.
+		 *  - drive-strength is the pad's raw 4-bit code, not mA. The
+		 *    mA mapping is not known for this SoC.
 		 *
 		 * axera,dphytx-reset / axera,dphytx-mipien are deliberately
 		 * absent. The six CDTX_* pads need the D-PHY transmitter parked
@@ -157,12 +183,145 @@
 			compatible = "axera,ax630c-pinctrl";
 			reg = <0x0 0x2300000 0x0 0xb000>,
 			      <0x0 0x104f0000 0x0 0x3000>;
+
+			/*
+			 * eMMC, three electrical variants. EMMC_RESET_N is
+			 * deliberately not here: it is not part of function
+			 * emmc at all (the pad has no function 0), it is the
+			 * card's RST_n driven as GPIO2_A23, and it belongs to
+			 * the reset-gpios TODO on the mmc node (#81).
+			 *
+			 * The vendor's own DT pin group for EMMC_CMD says
+			 * pull-DOWN where its boot table writes pull-up. The
+			 * boot table wins here: it is what has been running on
+			 * this board, and that DT group is one of the ones the
+			 * board dts never references.
+			 */
+			emmc_pins: emmc-pins {
+				emmc-data-cmd {
+					pins = "EMMC_DAT0", "EMMC_DAT1",
+					       "EMMC_DAT2", "EMMC_DAT3",
+					       "EMMC_DAT4", "EMMC_DAT5",
+					       "EMMC_DAT6", "EMMC_DAT7",
+					       "EMMC_CMD";
+					function = "emmc";
+					drive-strength = <3>;
+					bias-pull-up;
+					input-schmitt-disable;
+				};
+
+				emmc-clk {
+					pins = "EMMC_CLK";
+					function = "emmc";
+					drive-strength = <3>;
+					bias-disable;
+					input-schmitt-disable;
+				};
+
+				/* Data strobe: pulled down, per the boot table. */
+				emmc-ds {
+					pins = "EMMC_DS";
+					function = "emmc";
+					drive-strength = <3>;
+					bias-pull-down;
+					input-schmitt-disable;
+				};
+			};
+
+			sd_pins: sd-pins {
+				sd-all {
+					pins = "SD_CLK", "SD_CMD", "SD_DAT0",
+					       "SD_DAT1", "SD_DAT2", "SD_DAT3";
+					function = "sd";
+					drive-strength = <5>;
+					bias-disable;
+					input-schmitt-disable;
+				};
+			};
+
+			sdio_pins: sdio-pins {
+				sdio-all {
+					pins = "SDIO_CLK", "SDIO_CMD",
+					       "SDIO_DAT0", "SDIO_DAT1",
+					       "SDIO_DAT2", "SDIO_DAT3";
+					function = "sdio";
+					drive-strength = <8>;
+					bias-disable;
+					input-schmitt-disable;
+				};
+			};
+
+			/*
+			 * Two pads each, not the four-pad "uart0"/"uart1"
+			 * groups: this board wires no flow control, and those
+			 * groups would claim two RGMII pads and two pads the
+			 * board uses for other things.
+			 */
+			uart0_pins: uart0-pins {
+				uart0-txd-rxd {
+					pins = "UART0_TXD", "UART0_RXD";
+					function = "uart0";
+					drive-strength = <3>;
+					bias-pull-up;
+					input-schmitt-disable;
+				};
+			};
+
+			uart1_pins: uart1-pins {
+				uart1-txd-rxd {
+					pins = "UART1_TXD", "UART1_RXD";
+					function = "uart1";
+					drive-strength = <3>;
+					bias-pull-up;
+					input-schmitt-disable;
+				};
+			};
+
+			/*
+			 * The two I2C buses this board actually uses: i2c0
+			 * carries the LT6911UXC HDMI-RX bridge, i2c7 the
+			 * touch controller. These are exactly the states the
+			 * vendor board dts /delete-property/s -- along with
+			 * the "gpio" bus-recovery state, which left its
+			 * i2c-gpio recovery claiming GPIOs it could never
+			 * mux, so recovery bit-banged pads still wired to the
+			 * I2C controller.
+			 *
+			 * Declared but not referenced: there is no I2C
+			 * controller node until that driver is ported, and a
+			 * node whose driver does not exist is a DT that lies.
+			 * Bus recovery wants the matching "gpio" state, which
+			 * needs #81. i2c1 and i2c6 are deliberately absent:
+			 * their pads belong to spi1/spi2/i2s_slv0 on this
+			 * board, and with strict mux enforcement the second
+			 * claimant would simply fail.
+			 */
+			i2c0_pins: i2c0-pins {
+				i2c0-scl-sda {
+					pins = "I2C0_SCL", "I2C0_SDA";
+					function = "i2c0";
+					drive-strength = <3>;
+					bias-pull-up;
+					input-schmitt-disable;
+				};
+			};
+
+			i2c7_pins: i2c7-pins {
+				i2c7-scl-sda {
+					pins = "VI_D8", "VI_D9";
+					function = "i2c7";
+					drive-strength = <3>;
+					bias-pull-up;
+					input-schmitt-disable;
+				};
+			};
 		};
 
 		cpu_clk: clock-controller@1900000 {
 			compatible = AX630C_CPU_CLK_COMPAT, "syscon";
 			reg = <0x0 0x1900000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		pllc_clk: clock-controller@2210000 {
@@ -175,36 +334,42 @@
 			compatible = AX630C_COMMON_CLK_COMPAT, "syscon";
 			reg = <0x0 0x2340000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		vpu_clk: clock-controller@4030000 {
 			compatible = AX630C_VPU_CLK_COMPAT, "syscon";
 			reg = <0x0 0x4030000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		mm_clk: clock-controller@4430000 {
 			compatible = AX630C_MM_CLK_COMPAT, "syscon";
 			reg = <0x0 0x4430000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		dispc_clk: clock-controller@4600000 {
 			compatible = AX630C_DISPC_CLK_COMPAT, "syscon";
 			reg = <0x0 0x4600000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		periph_clk: clock-controller@4870000 {
 			compatible = AX630C_PERIPH_CLK_COMPAT, "syscon";
 			reg = <0x0 0x4870000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		flash_clk: clock-controller@10030000 {
 			compatible = AX630C_FLASH_CLK_COMPAT, "syscon";
 			reg = <0x0 0x10030000 0x0 0x10000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		/*
@@ -252,6 +417,8 @@
 			reg = <0x0 0x1b40000 0x0 0x10000>;
 			interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&cpu_clk AX630C_CLK_EMMC_CARD_EB>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&emmc_pins>;
 			bus-width = <8>;
 			non-removable;
 			no-sd;
@@ -323,6 +490,8 @@
 			reg = <0x0 0x104e0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&flash_clk AX630C_CLK_SD_CARD_EB>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&sd_pins>;
 			max-frequency = <50000000>;
 			bus-width = <4>;
 			no-mmc;
@@ -353,6 +522,8 @@
 			reg = <0x0 0x104d0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&flash_clk AX630C_CLK_SDIO_M_CARD_EB>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&sdio_pins>;
 			max-frequency = <50000000>;
 			bus-width = <4>;
 			no-sd;
@@ -434,6 +605,8 @@
 			reg-io-width = <4>;
 			clock-frequency = <208000000>;
 			interrupts = <GIC_SPI 118 IRQ_TYPE_LEVEL_HIGH>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart0_pins>;
 			status = "okay";
 		};
 
@@ -444,6 +617,8 @@
 			reg-io-width = <4>;
 			clock-frequency = <208000000>;
 			interrupts = <GIC_SPI 119 IRQ_TYPE_LEVEL_HIGH>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart1_pins>;
 			status = "disabled";
 		};
 
@@ -456,11 +631,19 @@
 		 * One reg window, not two. The vendor node's second window is
 		 * the peripheral syscon, which the clock controller above
 		 * already owns -- two request_mem_region()s over one window
-		 * cannot both succeed. The driver reaches this block's gates,
-		 * resets and clock-source mux through that syscon instead, with
-		 * the phandle's cell naming the instance (0 or 2; there is no
-		 * wdt1). TODO(#80): becomes clocks/resets/assigned-clock-parents
-		 * once the clock driver registers the six WDT clock IDs.
+		 * cannot both succeed. The block's two clocks, its two resets
+		 * and its counter-source mux are all bits in that window, so
+		 * they are named here as clocks and resets of the peripheral
+		 * controller and the driver never maps the window at all.
+		 *
+		 * assigned-clock-parents selects the 24 MHz source. Firmware
+		 * already selects it, so on this board the write never happens
+		 * (clk_set_parent() is a no-op when the parent matches) -- but
+		 * stating it means the timeout arithmetic and the hardware
+		 * agree on any board whose firmware differs, because the driver
+		 * takes its rate from clk_get_rate() rather than a constant.
+		 * The other source is the 32768 Hz RTC output, and both rates
+		 * are measured, not assumed.
 		 *
 		 * The interrupt is described because the hardware raises it at
 		 * the first of the block's two expiry stages, but the driver
@@ -471,7 +654,14 @@
 			compatible = AX630C_WDT_COMPAT;
 			reg = <0x0 0x4840000 0x0 0x400>;
 			interrupts = <GIC_SPI 149 IRQ_TYPE_LEVEL_HIGH>;
-			axera,periph-syscon = <&periph_clk 0>;
+			clocks = <&periph_clk AX630C_CLK_WDT0_EB>,
+				 <&periph_clk AX630C_PCLK_WDT0_EB>;
+			clock-names = "wdt", "apb";
+			assigned-clocks = <&periph_clk AX630C_CLK_WDT0_SEL>;
+			assigned-clock-parents = <&common_clk AX630C_CPLL_24M>;
+			resets = <&periph_clk AX630C_RST_PERIPH_WDT0_ARST>,
+				 <&periph_clk AX630C_RST_PERIPH_WDT0_PRST>;
+			reset-names = "wdt", "apb";
 			status = "okay";
 		};
 	};

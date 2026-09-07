@@ -88,6 +88,24 @@ pkgs.stdenvNoCC.mkDerivation {
     # driver-only change, and it must still be disabled until that driver lands.
     grep -q 'watchdog@4840000' ${board}.decompiled.dts || fail "wdt0 node missing"
 
+    # #80: the watchdog takes its gates, resets and counter-source mux from the
+    # peripheral clock controller. If a rename ever drops one of these the
+    # driver still probes -- reset handles are optional and a missing clock is
+    # only an error at get time -- so assert them here rather than discover it
+    # as a board that reboots every 60 s with no console.
+    grep -q 'clock-names = "wdt", "apb"' ${board}.decompiled.dts \
+      || fail "wdt0 lost its clock-names"
+    grep -q 'reset-names = "wdt", "apb"' ${board}.decompiled.dts \
+      || fail "wdt0 lost its reset-names"
+    grep -q 'assigned-clock-parents' ${board}.decompiled.dts \
+      || fail "wdt0 lost the 24 MHz counter-source selection"
+    grep -q 'axera,periph-syscon' ${board}.decompiled.dts \
+      && fail "wdt0 still carries the pre-#80 syscon phandle"
+
+    # #80: the pin states of the boot device. A state that fails to apply takes
+    # the consumer's probe down with it, and for eMMC that is the rootfs.
+    grep -q 'pinctrl-0' ${board}.decompiled.dts || fail "no pin states at all"
+
     # 24 MHz timer: firmware does not program CNTFRQ.
     grep -q 'clock-frequency = <0x16e3600>' ${board}.decompiled.dts \
       || fail "arch timer clock-frequency is not 24 MHz"

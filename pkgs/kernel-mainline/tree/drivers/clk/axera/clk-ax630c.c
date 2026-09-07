@@ -98,28 +98,39 @@ static const struct ax630c_alias *ax630c_alias_for(const struct ax630c_clk_desc 
  * With aliases this is two writes that touch only the named bits and never
  * read. Without them it is a locked read-modify-write, which is the best that
  * can be done on a word shared with other subsystems.
+ *
+ * The reset controller in reset-ax630c.c writes reset bits in the same windows
+ * and calls this directly; that is why it takes a regmap and a descriptor
+ * rather than a clock.
  */
-static int ax630c_write_bits(struct ax630c_hw *c, u32 offset, u32 mask, u32 val)
+int ax630c_write_bits_regmap(struct regmap *regmap,
+			     const struct ax630c_clk_desc *desc,
+			     u32 offset, u32 mask, u32 val)
 {
 	struct ax630c_alias scratch;
 	const struct ax630c_alias *alias;
 	int ret;
 
-	alias = ax630c_alias_for(c->desc, offset, &scratch);
+	alias = ax630c_alias_for(desc, offset, &scratch);
 	if (!alias->has_alias)
-		return regmap_update_bits(c->regmap, offset, mask, val);
+		return regmap_update_bits(regmap, offset, mask, val);
 
 	if (mask & ~val) {
-		ret = regmap_write(c->regmap, offset + alias->clr_stride,
+		ret = regmap_write(regmap, offset + alias->clr_stride,
 				   mask & ~val);
 		if (ret)
 			return ret;
 	}
 	if (val & mask)
-		return regmap_write(c->regmap, offset + alias->set_stride,
+		return regmap_write(regmap, offset + alias->set_stride,
 				    val & mask);
 
 	return 0;
+}
+
+static int ax630c_write_bits(struct ax630c_hw *c, u32 offset, u32 mask, u32 val)
+{
+	return ax630c_write_bits_regmap(c->regmap, c->desc, offset, mask, val);
 }
 
 static int ax630c_read_field(struct ax630c_hw *c, u32 offset, u8 shift, u8 width,
@@ -459,6 +470,7 @@ static int ax630c_clk_probe(struct platform_device *pdev)
 	const struct ax630c_clk_desc *desc;
 	struct ax630c_clk_data *data;
 	unsigned int i;
+	int ret;
 
 	desc = device_get_match_data(dev);
 	if (!desc)
@@ -503,8 +515,17 @@ static int ax630c_clk_probe(struct platform_device *pdev)
 		data->onecell->hws[info->id] = hw;
 	}
 
-	return devm_of_clk_add_hw_provider(dev, of_clk_hw_onecell_get,
-					   data->onecell);
+	ret = devm_of_clk_add_hw_provider(dev, of_clk_hw_onecell_get,
+					  data->onecell);
+	if (ret)
+		return ret;
+
+	/*
+	 * Same node, same regmap, same lock: the reset lines of this window are
+	 * bits in the words next to its clock gates, so this driver hands them
+	 * out too rather than leaving a second provider to race it.
+	 */
+	return ax630c_reset_register(dev, data->regmap, desc);
 }
 
 static const struct of_device_id ax630c_clk_of_match[] = {

@@ -7,8 +7,15 @@
  * reconciled clock by clock against a running device. Issue #80. Section
  * numbers in the comments below refer to that document.
  *
- * 246 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
- * 50 muxes, 20 dividers, 86 gates.
+ * 265 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
+ * 53 muxes, 23 dividers, 99 gates. Per controller: common 135, mm 40, flash
+ * 30, periph 27, dispc 14, cpu 11, vpu 7, pllc 1.
+ *
+ * 246 of those are the set the vendor CCF driver registers. The other 19 are
+ * ids it declares and leaves unregistered because its own drivers programmed
+ * those windows by hand: thirteen for eMMC/SD/SDIO (#76) and six for the two
+ * watchdogs (#75). Anything that calls clk_get() on a block the vendor drove
+ * by hand needs the same treatment.
  *
  * Two deliberate departures from the vendor table, both argued in section 6 of
  * the specification:
@@ -32,8 +39,227 @@
  */
 
 #include <dt-bindings/clock/ax630c-clock.h>
+#include <dt-bindings/reset/ax630c-reset.h>
 
 #include "clk-ax630c.h"
+
+/* --- reset lines (reset-model 6, driver in reset-ax630c.c) -------------- */
+
+/*
+ * 148 lines over seven controllers: 144 that the vendor device tree binds to a
+ * consumer somewhere (cpu 4, comm 5, vpu 3, mm 23, dispc 10, periph 82, flash
+ * 17) plus the four periph SW_RST3 lines the watchdog needs, which no vendor
+ * DT node names because the vendor watchdog driver pokes that word itself.
+ *
+ * Each entry is (value-word offset, bit). Everything else the vendor's three,
+ * four and ten-cell specifiers carried is derivable or is software policy --
+ * see clk-ax630c.h. The array index IS the DT cell, so these tables are dense
+ * and must stay in ID order.
+ */
+static const struct ax630c_reset_line ax630c_cpu_reset_lines[] = {
+	[AX630C_RST_CPU_EMMC_CARD] = { 0x10, 11 },
+	[AX630C_RST_CPU_EMMC] = { 0x10, 12 },
+	[AX630C_RST_CPU_SPI4_PRST] = { 0x10, 17 },
+	[AX630C_RST_CPU_SPI4] = { 0x10, 18 },
+};
+
+static const struct ax630c_reset_desc ax630c_cpu_resets = {
+	.lines = ax630c_cpu_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_cpu_reset_lines),
+};
+
+static const struct ax630c_reset_line ax630c_comm_reset_lines[] = {
+	[AX630C_RST_COMM_AUDIO_CODEC_PRST] = { 0x54, 0 },
+	[AX630C_RST_COMM_BT_DPI0_CM_DPU_1X] = { 0x54, 26 },
+	[AX630C_RST_COMM_BT_DPI0_CM_DPU_NX] = { 0x54, 27 },
+	[AX630C_RST_COMM_BT_DPI1_CM_DPU_1X] = { 0x54, 28 },
+	[AX630C_RST_COMM_BT_DPI1_CM_DPU_NX] = { 0x54, 29 },
+};
+
+static const struct ax630c_reset_desc ax630c_comm_resets = {
+	.lines = ax630c_comm_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_comm_reset_lines),
+};
+
+static const struct ax630c_reset_line ax630c_vpu_reset_lines[] = {
+	[AX630C_RST_VPU_JENC] = { 0x0C, 4 },
+	[AX630C_RST_VPU_VDEC] = { 0x0C, 6 },
+	[AX630C_RST_VPU_VENC] = { 0x0C, 7 },
+};
+
+static const struct ax630c_reset_desc ax630c_vpu_resets = {
+	.lines = ax630c_vpu_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_vpu_reset_lines),
+};
+
+static const struct ax630c_reset_line ax630c_mm_reset_lines[] = {
+	[AX630C_RST_MM_VPP_RST8] = { 0x10, 4 },
+	[AX630C_RST_MM_VPP_RST9] = { 0x10, 5 },
+	[AX630C_RST_MM_VO1_MM_DPU_OUT] = { 0x10, 7 },
+	[AX630C_RST_MM_VO1_MM_DPU_PRST] = { 0x10, 8 },
+	[AX630C_RST_MM_VO1_MM_DPU] = { 0x10, 9 },
+	[AX630C_RST_MM_VO0_MM_DPU_OUT] = { 0x10, 10 },
+	[AX630C_RST_MM_VO0_MM_DPU_PRST] = { 0x10, 11 },
+	[AX630C_RST_MM_VO0_MM_DPU] = { 0x10, 12 },
+	[AX630C_RST_MM_GDC_RST0] = { 0x10, 13 },
+	[AX630C_RST_MM_GDC_RST1] = { 0x10, 14 },
+	[AX630C_RST_MM_GDC_RST2] = { 0x10, 15 },
+	[AX630C_RST_MM_IVE_PRST] = { 0x10, 16 },
+	[AX630C_RST_MM_IVE] = { 0x10, 17 },
+	[AX630C_RST_MM_TDP_RST0] = { 0x10, 19 },
+	[AX630C_RST_MM_TDP_RST1] = { 0x10, 20 },
+	[AX630C_RST_MM_VPP_RST0] = { 0x10, 21 },
+	[AX630C_RST_MM_VPP_RST1] = { 0x10, 22 },
+	[AX630C_RST_MM_VPP_RST2] = { 0x10, 23 },
+	[AX630C_RST_MM_VPP_RST3] = { 0x10, 24 },
+	[AX630C_RST_MM_VPP_RST4] = { 0x10, 25 },
+	[AX630C_RST_MM_VPP_RST5] = { 0x10, 26 },
+	[AX630C_RST_MM_VPP_RST6] = { 0x10, 27 },
+	[AX630C_RST_MM_VPP_RST7] = { 0x10, 28 },
+};
+
+static const struct ax630c_reset_desc ax630c_mm_resets = {
+	.lines = ax630c_mm_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_mm_reset_lines),
+};
+
+static const struct ax630c_reset_line ax630c_dispc_reset_lines[] = {
+	[AX630C_RST_DISPC_DSI_DISPC_DPHY2DSI] = { 0x0C, 3 },
+	[AX630C_RST_DISPC_LVDSTX_DPHYTX_PLL_DIV7] = { 0x0C, 4 },
+	[AX630C_RST_DISPC_LVDSTX_DPHYTX_PLL] = { 0x0C, 5 },
+	[AX630C_RST_DISPC_DSI_DISPC_DPHYTX] = { 0x0C, 6 },
+	[AX630C_RST_DISPC_DSI_DISPC_DSI_RX_ESC] = { 0x0C, 7 },
+	[AX630C_RST_DISPC_DSI_DISPC_SYS] = { 0x0C, 8 },
+	[AX630C_RST_DISPC_DSI_DISPC_TXESC] = { 0x0C, 9 },
+	[AX630C_RST_DISPC_DSI_DISPC_TXPIX] = { 0x0C, 10 },
+	[AX630C_RST_DISPC_DSI_DISPC_DSI_PRST] = { 0x0C, 12 },
+	[AX630C_RST_DISPC_LVDSTX_LVDS_P] = { 0x0C, 13 },
+};
+
+static const struct ax630c_reset_desc ax630c_dispc_resets = {
+	.lines = ax630c_dispc_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_dispc_reset_lines),
+};
+
+static const struct ax630c_reset_line ax630c_periph_reset_lines[] = {
+	[AX630C_RST_PERIPH_AUDIO_CODEC] = { 0x18, 0 },
+	[AX630C_RST_PERIPH_DMA_PER_DMAPER_ARST] = { 0x18, 1 },
+	[AX630C_RST_PERIPH_DMA_PER_DMAPER_PRST] = { 0x18, 2 },
+	[AX630C_RST_PERIPH_PUB_CE_MAIN_SW] = { 0x18, 4 },
+	[AX630C_RST_PERIPH_PUB_CE_CNT_SW] = { 0x18, 5 },
+	[AX630C_RST_PERIPH_PUB_CE_SOFT_SW] = { 0x18, 6 },
+	[AX630C_RST_PERIPH_PUB_CE_SW] = { 0x18, 7 },
+	[AX630C_RST_PERIPH_PUB_CE_SW_PRST] = { 0x18, 8 },
+	[AX630C_RST_PERIPH_DMAC] = { 0x18, 9 },
+	[AX630C_RST_PERIPH_AX_GPIO0_GPIO_PRST] = { 0x18, 10 },
+	[AX630C_RST_PERIPH_AX_GPIO0_GPIO] = { 0x18, 11 },
+	[AX630C_RST_PERIPH_AX_GPIO1_GPIO_PRST] = { 0x18, 12 },
+	[AX630C_RST_PERIPH_AX_GPIO1_GPIO] = { 0x18, 13 },
+	[AX630C_RST_PERIPH_AX_GPIO2_GPIO_PRST] = { 0x18, 14 },
+	[AX630C_RST_PERIPH_AX_GPIO2_GPIO] = { 0x18, 15 },
+	[AX630C_RST_PERIPH_AX_GPIO3_GPIO_PRST] = { 0x18, 16 },
+	[AX630C_RST_PERIPH_AX_GPIO3_GPIO] = { 0x18, 17 },
+	[AX630C_RST_PERIPH_I2C0_PRST] = { 0x18, 18 },
+	[AX630C_RST_PERIPH_I2C0] = { 0x18, 19 },
+	[AX630C_RST_PERIPH_I2C1_PRST] = { 0x18, 20 },
+	[AX630C_RST_PERIPH_I2C1] = { 0x18, 21 },
+	[AX630C_RST_PERIPH_I2C2_PRST] = { 0x18, 22 },
+	[AX630C_RST_PERIPH_I2C2] = { 0x18, 23 },
+	[AX630C_RST_PERIPH_I2C3_PRST] = { 0x18, 24 },
+	[AX630C_RST_PERIPH_I2C3] = { 0x18, 25 },
+	[AX630C_RST_PERIPH_I2C4_PRST] = { 0x18, 26 },
+	[AX630C_RST_PERIPH_I2C4] = { 0x18, 27 },
+	[AX630C_RST_PERIPH_I2C5_PRST] = { 0x18, 28 },
+	[AX630C_RST_PERIPH_I2C5] = { 0x18, 29 },
+	[AX630C_RST_PERIPH_I2C6_PRST] = { 0x18, 30 },
+	[AX630C_RST_PERIPH_I2C6] = { 0x18, 31 },
+	[AX630C_RST_PERIPH_I2C7_PRST] = { 0x1C, 0 },
+	[AX630C_RST_PERIPH_I2C7] = { 0x1C, 1 },
+	[AX630C_RST_PERIPH_I2C_SLV0_PRST] = { 0x1C, 2 },
+	[AX630C_RST_PERIPH_I2C_SLV0] = { 0x1C, 3 },
+	[AX630C_RST_PERIPH_I2C_SLV1_PRST] = { 0x1C, 4 },
+	[AX630C_RST_PERIPH_I2C_SLV1] = { 0x1C, 5 },
+	[AX630C_RST_PERIPH_I2S_MST0_PRST] = { 0x1C, 6 },
+	[AX630C_RST_PERIPH_I2S_MST0] = { 0x1C, 7 },
+	[AX630C_RST_PERIPH_I2S_SLV0_PRST] = { 0x1C, 8 },
+	[AX630C_RST_PERIPH_I2S_SLV0] = { 0x1C, 9 },
+	[AX630C_RST_PERIPH_I2S_TDM_MST0_PRST] = { 0x1C, 10 },
+	[AX630C_RST_PERIPH_I2S_TDM_MST0] = { 0x1C, 11 },
+	[AX630C_RST_PERIPH_I2S_TDM_SLV0_PRST] = { 0x1C, 12 },
+	[AX630C_RST_PERIPH_I2S_TDM_SLV0] = { 0x1C, 13 },
+	[AX630C_RST_PERIPH_PWM0_PWM_CH0] = { 0x1C, 15 },
+	[AX630C_RST_PERIPH_PWM0_PWM_CH1] = { 0x1C, 16 },
+	[AX630C_RST_PERIPH_PWM0_PWM_CH2] = { 0x1C, 17 },
+	[AX630C_RST_PERIPH_PWM0_PWM_CH3] = { 0x1C, 18 },
+	[AX630C_RST_PERIPH_PWM0_PWM] = { 0x1C, 19 },
+	[AX630C_RST_PERIPH_PWM1_PWM_CH0] = { 0x1C, 20 },
+	[AX630C_RST_PERIPH_PWM1_PWM_CH1] = { 0x1C, 21 },
+	[AX630C_RST_PERIPH_PWM1_PWM_CH2] = { 0x1C, 22 },
+	[AX630C_RST_PERIPH_PWM1_PWM_CH3] = { 0x1C, 23 },
+	[AX630C_RST_PERIPH_PWM1_PWM] = { 0x1C, 24 },
+	[AX630C_RST_PERIPH_PWM2_PWM_CH0] = { 0x1C, 25 },
+	[AX630C_RST_PERIPH_PWM2_PWM_CH1] = { 0x1C, 26 },
+	[AX630C_RST_PERIPH_PWM2_PWM_CH2] = { 0x1C, 27 },
+	[AX630C_RST_PERIPH_PWM2_PWM_CH3] = { 0x1C, 28 },
+	[AX630C_RST_PERIPH_PWM2_PWM] = { 0x1C, 29 },
+	[AX630C_RST_PERIPH_SPI0_PRST] = { 0x1C, 30 },
+	[AX630C_RST_PERIPH_SPI0] = { 0x1C, 31 },
+	[AX630C_RST_PERIPH_SPI1_PRST] = { 0x20, 0 },
+	[AX630C_RST_PERIPH_SPI1] = { 0x20, 1 },
+	[AX630C_RST_PERIPH_SPI2_PRST] = { 0x20, 2 },
+	[AX630C_RST_PERIPH_SPI2] = { 0x20, 3 },
+	[AX630C_RST_PERIPH_AX_HRTIMER_PRESET] = { 0x20, 4 },
+	[AX630C_RST_PERIPH_AX_HRTIMER] = { 0x20, 5 },
+	[AX630C_RST_PERIPH_APB_TIMER1_PRESET] = { 0x20, 6 },
+	[AX630C_RST_PERIPH_APB_TIMER1] = { 0x20, 7 },
+	[AX630C_RST_PERIPH_AX_UART0_PRESET] = { 0x20, 20 },
+	[AX630C_RST_PERIPH_AX_UART0] = { 0x20, 21 },
+	[AX630C_RST_PERIPH_AX_UART1_PRESET] = { 0x20, 22 },
+	[AX630C_RST_PERIPH_AX_UART1] = { 0x20, 23 },
+	[AX630C_RST_PERIPH_AX_UART2_PRESET] = { 0x20, 24 },
+	[AX630C_RST_PERIPH_AX_UART2] = { 0x20, 25 },
+	[AX630C_RST_PERIPH_AX_UART3_PRESET] = { 0x20, 26 },
+	[AX630C_RST_PERIPH_AX_UART3] = { 0x20, 27 },
+	[AX630C_RST_PERIPH_AX_UART4_PRESET] = { 0x20, 28 },
+	[AX630C_RST_PERIPH_AX_UART4] = { 0x20, 29 },
+	[AX630C_RST_PERIPH_AX_UART5_PRESET] = { 0x20, 30 },
+	[AX630C_RST_PERIPH_AX_UART5] = { 0x20, 31 },
+	[AX630C_RST_PERIPH_WDT0_PRST] = { 0x24, 0 },
+	[AX630C_RST_PERIPH_WDT0_ARST] = { 0x24, 1 },
+	[AX630C_RST_PERIPH_WDT2_PRST] = { 0x24, 2 },
+	[AX630C_RST_PERIPH_WDT2_ARST] = { 0x24, 3 },
+};
+
+static const struct ax630c_reset_desc ax630c_periph_resets = {
+	.lines = ax630c_periph_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_periph_reset_lines),
+};
+
+static const struct ax630c_reset_line ax630c_flash_reset_lines[] = {
+	[AX630C_RST_FLASH_DMA_ARST] = { 0x14, 2 },
+	[AX630C_RST_FLASH_DMA_PRST] = { 0x14, 3 },
+	[AX630C_RST_FLASH_ETH0_EMAC] = { 0x14, 8 },
+	[AX630C_RST_FLASH_ETH0_EPHY] = { 0x14, 9 },
+	[AX630C_RST_FLASH_GZIPD] = { 0x14, 10 },
+	[AX630C_RST_FLASH_GZIPD_CORE] = { 0x14, 11 },
+	[AX630C_RST_FLASH_SD_CARDRST] = { 0x14, 15 },
+	[AX630C_RST_FLASH_SD_ARST] = { 0x14, 16 },
+	[AX630C_RST_FLASH_SD_PRST] = { 0x14, 17 },
+	[AX630C_RST_FLASH_SDIO_CARDRST] = { 0x14, 18 },
+	[AX630C_RST_FLASH_SDIO_ARST] = { 0x14, 19 },
+	[AX630C_RST_FLASH_SDIO_PRST] = { 0x14, 20 },
+	[AX630C_RST_FLASH_SPI_SLV_HRST] = { 0x14, 21 },
+	[AX630C_RST_FLASH_SPI_SLV] = { 0x14, 22 },
+	[AX630C_RST_FLASH_BT_DPI0_FLASH_DPU_1X] = { 0x14, 26 },
+	[AX630C_RST_FLASH_BT_DPI0_FLASH_DPU_NX] = { 0x14, 27 },
+	[AX630C_RST_FLASH_ETH0_EPHY_SHUTDOWN] = { 0x20, 0 },
+};
+
+static const struct ax630c_reset_desc ax630c_flash_resets = {
+	.lines = ax630c_flash_reset_lines,
+	.num_lines = ARRAY_SIZE(ax630c_flash_reset_lines),
+};
+
 
 /* --- shared parent tables (spec 2.9) ------------------------------------ */
 
@@ -149,6 +375,7 @@ const struct ax630c_clk_desc ax630c_cpu_desc = {
 	.clks = ax630c_cpu_clks,
 	.num_clks = ARRAY_SIZE(ax630c_cpu_clks),
 	.max_id = AX630C_CLK_EMMC_CARD_DIVN,
+	.resets = &ax630c_cpu_resets,
 	/* V, spec 1.3 (sdhci-axera.c) */
 	.alias = { .has_alias = true, .set_stride = 0x1000, .clr_stride = 0x2000 },
 };
@@ -360,6 +587,7 @@ const struct ax630c_clk_desc ax630c_common_desc = {
 	.clks = ax630c_common_clks,
 	.num_clks = ARRAY_SIZE(ax630c_common_clks),
 	.max_id = AX630C_CLK_RTC_OUT_32K,
+	.resets = &ax630c_comm_resets,
 	/*
 	 * I, spec 1.3: not directly cited, but the registered value words
 	 * 0x00, 0x0c, 0x18, 0x24, 0x3c and 0x48 sit on an exact 0xc stride,
@@ -417,6 +645,7 @@ const struct ax630c_clk_desc ax630c_dispc_desc = {
 	.clks = ax630c_dispc_clks,
 	.num_clks = ARRAY_SIZE(ax630c_dispc_clks),
 	.max_id = AX630C_CLK_CSI_TX_ESC_EB,
+	.resets = &ax630c_dispc_resets,
 	/*
 	 * GAP, spec 1.3: the set/clear alias window for dispc is unknown. Its
 	 * value words are a flat 4-byte stride, so it cannot be using the
@@ -521,6 +750,7 @@ const struct ax630c_clk_desc ax630c_flash_desc = {
 	.clks = ax630c_flash_clks,
 	.num_clks = ARRAY_SIZE(ax630c_flash_clks),
 	.max_id = AX630C_CLK_SDIO_M_CARD_DIVN,
+	.resets = &ax630c_flash_resets,
 	/* V, spec 1.3 (sdhci-axera.c) */
 	.alias = { .has_alias = true, .set_stride = 0x4000, .clr_stride = 0x8000 },
 };
@@ -580,6 +810,7 @@ const struct ax630c_clk_desc ax630c_mm_desc = {
 	.clks = ax630c_mm_clks,
 	.num_clks = ARRAY_SIZE(ax630c_mm_clks),
 	.max_id = AX630C_CLK_DPU_LITE_OUT_DIVN,
+	.resets = &ax630c_mm_resets,
 	/* GAP, spec 1.3: alias window unknown. See ax630c_dispc_desc. */
 	.alias = { .has_alias = false },
 };
@@ -598,11 +829,27 @@ static const char * const ax630c_clk_i2s_ref0_sel_parents[] = {
 	"cpll_12m", "hpll_16p384m", "hpll_24p576m", "epll_25m",
 };
 
+/*
+ * The two watchdog counter-clock muxes, one bit each (V, wdt-model 7). Both
+ * rates are measured rather than asserted: with the bit set the counter runs
+ * at 24.007 MHz and with it clear at 32.79 kHz, timed over three seconds
+ * against a widened reload on the running board (wdt-model 13). The slow
+ * source is therefore the 32768 Hz RTC output, not the 32000 the vendor
+ * driver hard-codes.
+ */
+static const char * const ax630c_clk_wdt_sel_parents[] = {
+	"rtc_out_32k", "cpll_24m",
+};
+
 static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_MUX_C(AX630C_SCLK_I2S_TDM_SEL, "sclk_i2s_tdm_sel", ax630c_i2s_sclk_parents, 0x00, 23, 2),
 	AX630C_MUX_C(AX630C_SCLK_I2S_M_SEL, "sclk_i2s_m_sel", ax630c_i2s_sclk_parents, 0x00, 21, 2),
 	AX630C_MUX_C(AX630C_CLK_TIMER_SEL, "clk_timer_sel", ax630c_clk_timer_sel_parents, 0x00, 13, 1),
 	AX630C_MUX_C(AX630C_CLK_I2S_REF0_SEL, "clk_i2s_ref0_sel", ax630c_clk_i2s_ref0_sel_parents, 0x00, 5, 2),
+
+	/* Watchdog (#75). Six IDs the vendor CCF declares and never registers. */
+	AX630C_MUX_C(AX630C_CLK_WDT2_SEL, "clk_wdt2_sel", ax630c_clk_wdt_sel_parents, 0x00, 20, 1),
+	AX630C_MUX_C(AX630C_CLK_WDT0_SEL, "clk_wdt0_sel", ax630c_clk_wdt_sel_parents, 0x00, 19, 1),
 
 	/* pclk_top_sel below lives in common_clk; parents resolve by name. */
 	AX630C_GATE_C(AX630C_SCLK_I2S_TDM_EB, "sclk_i2s_tdm_eb", "sclk_i2s_tdm_divn", 0x04, 17, CLK_SET_RATE_PARENT),
@@ -610,6 +857,14 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_GATE_C(AX630C_CLK_TIMER_EB, "clk_timer_eb", "clk_timer_sel", 0x04, 9, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_I2S_REF0_EB, "clk_i2s_ref0_eb", "clk_i2s_ref0_divn", 0x04, 4, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_I2S_AUDIO_REF_EB, "clk_i2s_audio_ref_eb", "hpll_12p288m", 0x04, 3, CLK_SET_RATE_PARENT),
+	/*
+	 * The counter-clock gates. Not CLK_IS_CRITICAL: the watchdog driver
+	 * holds wdt0's, and wdt2 is a block nothing on this board runs -- if
+	 * clk_disable_unused() gates its counter the block stops counting,
+	 * which is the safe direction for a watchdog nobody is petting.
+	 */
+	AX630C_GATE_C(AX630C_CLK_WDT2_EB, "clk_wdt2_eb", "clk_wdt2_sel", 0x04, 15, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_CLK_WDT0_EB, "clk_wdt0_eb", "clk_wdt0_sel", 0x04, 14, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_TIMER0_EB, "clk_timer0_eb", "clk_timer_sel", 0x08, 31, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_LPC_PERI_EB, "clk_lpc_peri_eb", "cpll_24m", 0x08, 18, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_ACLK_AX_DMA_PER_EB, "aclk_ax_dma_per_eb", "pclk_top_sel", 0x08, 0, CLK_SET_RATE_PARENT),
@@ -619,6 +874,9 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_GATE_C(AX630C_PCLK_I2S_M_EB, "pclk_i2s_m_eb", "pclk_top_sel", 0x0c, 27, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_AX_DMA_PER_EB, "pclk_ax_dma_per_eb", "pclk_top_sel", 0x0c, 11, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_TIMER0_EB, "pclk_timer0_eb", "pclk_top_sel", 0x10, 5, CLK_SET_RATE_PARENT),
+	/* The APB gates of the same two blocks. */
+	AX630C_GATE_C(AX630C_PCLK_WDT2_EB, "pclk_wdt2_eb", "pclk_top_sel", 0x10, 20, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_WDT0_EB, "pclk_wdt0_eb", "pclk_top_sel", 0x10, 19, CLK_SET_RATE_PARENT),
 
 	AX630C_DIV_C(AX630C_SCLK_I2S_TDM_DIVN, "sclk_i2s_tdm_divn", "sclk_i2s_tdm_sel", 0x14, 14, 6, 20),
 	AX630C_DIV_C(AX630C_SCLK_I2S_M_DIVN, "sclk_i2s_m_divn", "sclk_i2s_m_sel", 0x14, 7, 6, 13),
@@ -640,12 +898,24 @@ static const struct ax630c_alias_map ax630c_periph_alias_map[] = {
 	{ .offset = 0x0c, .set = 0xc0, .clr = 0xc4 },	/* EB2 */
 	{ .offset = 0x10, .set = 0xc8, .clr = 0xcc },	/* EB3 */
 	{ .offset = 0x14, .set = 0xd0, .clr = 0xd4 },	/* DIV0 -- I, uncited */
+	/*
+	 * The four reset words. RST0 and RST1 are named by the bootloaders,
+	 * RST2 by the vendor DT's own 4-cell specifiers, and RST3 by the
+	 * vendor watchdog node -- which is also the only consumer this window
+	 * has for it, and the pair this driver's own watchdog writes have
+	 * already been exercised on hardware (wdt-model 13.1).
+	 */
+	{ .offset = 0x18, .set = 0xd8, .clr = 0xdc },	/* SW_RST0 */
+	{ .offset = 0x1c, .set = 0xe0, .clr = 0xe4 },	/* SW_RST1 */
+	{ .offset = 0x20, .set = 0xe8, .clr = 0xec },	/* SW_RST2 */
+	{ .offset = 0x24, .set = 0xf0, .clr = 0xf4 },	/* SW_RST3 */
 };
 
 const struct ax630c_clk_desc ax630c_periph_desc = {
 	.clks = ax630c_periph_clks,
 	.num_clks = ARRAY_SIZE(ax630c_periph_clks),
 	.max_id = AX630C_CLK_I2S_REF0_DIVN,
+	.resets = &ax630c_periph_resets,
 	.alias = { .has_alias = false },
 	.alias_map = ax630c_periph_alias_map,
 	.num_alias_map = ARRAY_SIZE(ax630c_periph_alias_map),
@@ -668,6 +938,7 @@ const struct ax630c_clk_desc ax630c_vpu_desc = {
 	.clks = ax630c_vpu_clks,
 	.num_clks = ARRAY_SIZE(ax630c_vpu_clks),
 	.max_id = AX630C_CLK_JENC_EB,
+	.resets = &ax630c_vpu_resets,
 	/* GAP, spec 1.3: alias window unknown. See ax630c_dispc_desc. */
 	.alias = { .has_alias = false },
 };

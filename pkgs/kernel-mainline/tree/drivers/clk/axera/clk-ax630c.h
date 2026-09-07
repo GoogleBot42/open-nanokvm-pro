@@ -45,7 +45,7 @@ enum ax630c_clk_type {
 };
 
 /*
- * One row per clock. The union keeps the 246-row tables readable; the
+ * One row per clock. The union keeps the 265-row tables readable; the
  * per-type initialisers below are what the tables actually use.
  */
 struct ax630c_clk {
@@ -91,11 +91,36 @@ struct ax630c_clk {
 	};
 };
 
+/*
+ * One reset line: a bit in a value word of the same syscon window. Everything
+ * else the vendor's three, four and ten-cell specifiers carried is either
+ * derivable (the alias addresses, from the window's alias family) or a
+ * software behaviour rather than a hardware fact.
+ *
+ * The ten-cell form additionally cycles a clock gate around the release edge.
+ * That is deliberately not modelled here: no line any current consumer needs
+ * uses it, and the cycle is a read-modify-write across two regmap operations
+ * that would race a concurrent clk_enable(). It arrives with the video and
+ * display stacks (#83/#84), which are the only users, together with the lock
+ * that makes it safe.
+ */
+struct ax630c_reset_line {
+	u8 reg;		/* value-word offset; max seen 0x54 */
+	u8 bit;
+};
+
+struct ax630c_reset_desc {
+	const struct ax630c_reset_line *lines;
+	unsigned int num_lines;
+};
+
 /* Per-controller description, selected by of_device_id match data. */
 struct ax630c_clk_desc {
 	const struct ax630c_clk *clks;
 	unsigned int num_clks;
 	unsigned int max_id;
+	/* The window's reset lines, or NULL. Provided by the same DT node. */
+	const struct ax630c_reset_desc *resets;
 	struct ax630c_alias alias;
 	/*
 	 * periph does not use a single alias stride: each value word has its
@@ -159,6 +184,25 @@ struct ax630c_alias_map {
 #define AX630C_PLL_C(_id, _name, _parent)				\
 	{ .id = (_id), .type = AX630C_PLL, .name = (_name),		\
 	  .parent = (_parent) }
+
+/* --- shared between the clock and reset halves -------------------------- */
+
+/*
+ * Set the bits of @mask in the value word at @offset to @val, through the
+ * controller's write-1-to-set / write-1-to-clear aliases where it has them and
+ * as a locked read-modify-write where it does not. Defined in clk-ax630c.c.
+ */
+int ax630c_write_bits_regmap(struct regmap *regmap,
+			     const struct ax630c_clk_desc *desc,
+			     u32 offset, u32 mask, u32 val);
+
+/*
+ * Register the window's reset lines, if it has any and the DT node asks for
+ * them. Defined in reset-ax630c.c and called from the clock driver's probe:
+ * one node, one regmap, one provider for both.
+ */
+int ax630c_reset_register(struct device *dev, struct regmap *regmap,
+			  const struct ax630c_clk_desc *desc);
 
 /* Per-controller tables (clk-ax630c-tables.c). */
 extern const struct ax630c_clk_desc ax630c_pllc_desc;

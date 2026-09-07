@@ -21,15 +21,15 @@
  */
 
 #include <linux/bitops.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/io.h>
-#include <linux/mfd/syscon.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <linux/regmap.h>
+#include <linux/reset.h>
 #include <linux/watchdog.h>
 
 /* --- the watchdog block itself ------------------------------------------- */
@@ -61,73 +61,35 @@
  */
 #define AX630C_WDT_STROBE_US		1
 
-/* --- the peripheral syscon ------------------------------------------------ */
+/* --- the counter clock ---------------------------------------------------- */
 
 /*
- * The block's counter clock, APB clock, two resets and its clock-source mux all
- * live in the peripheral syscon, as write-1-to-set / write-1-to-clear alias
- * pairs over the value registers. The vendor driver mapped that window a second
- * time; here it is a phandle, because the clock driver already owns it as a
- * syscon and two request_mem_region()s over one window cannot both succeed.
+ * The block's two clocks, its two resets and its clock-source mux all live in
+ * the peripheral clock controller, which provides them as ordinary clocks and
+ * resets. The DT selects the counter's source with assigned-clock-parents and
+ * this driver simply asks what rate it got.
  *
- * TODO(#80): these five fields are exactly two clocks, two resets and an
- * assigned-clock-parent. Convert to clocks/resets phandles once the clock
- * driver registers the six WDT clock IDs -- it registers none of them today,
- * which is why this driver programs the bits itself rather than calling
- * clk_prepare_enable() and getting a silent no-op.
- *
- * That conversion is table rows, not reverse engineering: the WDT clocks are
- * in the clock model's "declared but not registered" bucket (clk-model
- * section 5.2), i.e. the vendor CCF never registered them either, and every
- * register position they need is already marked (V) in
- * wdt-model-20260906.md section 7. eMMC, SD, SDIO and the UARTs are in the
- * same bucket, so whoever adds those rows for sdhci-cadence (#76) can add
- * these in the same pass.
- */
-#define AX630C_PERIPH_MUX0_SET		0xa8
-#define AX630C_PERIPH_MUX0_CLR		0xac
-#define AX630C_PERIPH_EB0_SET		0xb0
-#define AX630C_PERIPH_EB0_CLR		0xb4
-#define AX630C_PERIPH_EB3_SET		0xc8
-#define AX630C_PERIPH_EB3_CLR		0xcc
-#define AX630C_PERIPH_RST3_SET		0xf0
-#define AX630C_PERIPH_RST3_CLR		0xf4
-
-/*
- * Counter-clock rates, both measured on hardware 2026-09-06 by widening TORR so
+ * Both source rates were measured on hardware 2026-09-06, by widening TORR so
  * the count could not wrap and timing WDT_CCVR over three seconds: 24.007 MHz
- * with the mux bit set, 32.79 kHz with it clear (the 32768 Hz RTC output; the
- * vendor driver's hard-coded 32000 is 2.3 % off).
+ * with the mux bit set and 32.79 kHz with it clear -- the 32768 Hz RTC output,
+ * so the vendor driver's hard-coded 32000 is 2.3 % off. Reading the rate from
+ * CCF rather than assuming one means the timeout is right whichever source the
+ * DT picks, and a board that omits assigned-clock-parents still gets correct
+ * arithmetic for whatever firmware left selected.
  *
- * This driver always selects the fast source. That is the safe direction: if
- * the syscon write were ever to fail, computing for 24 MHz on a 32 kHz counter
- * yields timeouts 732x too LONG -- a dog that never bites -- where the converse
- * would be an immediate reboot loop with no console to explain it.
+ * A reparent is not glitch-free, and the core performs it before probe, while
+ * U-Boot's dog is still armed. That is safe here and stays safe as long as the
+ * DT does not select a source FASTER than firmware's: U-Boot leaves the 24 MHz
+ * source selected and clk_set_parent() is a no-op when the parent already
+ * matches, so nothing is written at all on this board. Selecting a slower
+ * source would only stretch the remaining count.
  */
-#define AX630C_WDT_RATE_FAST		24000000U
-
-struct ax630c_wdt_periph_bits {
-	u32 mux_fast;		/* CLK_MUX0: 1 = 24 MHz, 0 = 32768 Hz */
-	u32 counter_clk;	/* CLK_EB0 gate */
-	u32 apb_clk;		/* CLK_EB3 gate */
-	u32 counter_rst;	/* SW_RST3, 1 = held in reset */
-	u32 apb_rst;		/* SW_RST3, 1 = held in reset */
-};
-
-/*
- * Instances 0 and 2. There is no instance 1 on this SoC; the NanoKVM-Pro
- * enables only wdt0, but the second row costs five constants.
- */
-static const struct ax630c_wdt_periph_bits ax630c_wdt_periph[] = {
-	[0] = { BIT(19), BIT(14), BIT(19), BIT(1), BIT(0) },
-	[2] = { BIT(20), BIT(15), BIT(20), BIT(3), BIT(2) },
-};
+#define AX630C_WDT_RATE_FALLBACK	24000000U
 
 struct ax630c_wdt {
 	struct watchdog_device wdd;
 	void __iomem *base;
-	struct regmap *periph;
-	const struct ax630c_wdt_periph_bits *bits;
+	unsigned long rate;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -149,25 +111,11 @@ static void ax630c_wdt_load(struct ax630c_wdt *wdt, u32 torr)
 	ax630c_wdt_kick(wdt);
 }
 
-static u32 ax630c_wdt_torr_for(unsigned int timeout_s)
+static u32 ax630c_wdt_torr_for(struct ax630c_wdt *wdt, unsigned int timeout_s)
 {
-	u64 ticks = (u64)timeout_s * AX630C_WDT_RATE_FAST / AX630C_WDT_STAGES;
+	u64 ticks = (u64)timeout_s * wdt->rate / AX630C_WDT_STAGES;
 
 	return min_t(u64, ticks >> AX630C_WDT_TICK_SHIFT, AX630C_WDT_TORR_MAX);
-}
-
-/*
- * Select the fast counter clock. The gate is closed around the mux write
- * because a source switch on a running counter is not glitch-free; the reload
- * afterwards discards whatever partial tick that produced.
- */
-static void ax630c_wdt_select_fast_clk(struct ax630c_wdt *wdt)
-{
-	regmap_write(wdt->periph, AX630C_PERIPH_EB0_CLR, wdt->bits->counter_clk);
-	regmap_write(wdt->periph, AX630C_PERIPH_MUX0_SET, wdt->bits->mux_fast);
-	regmap_write(wdt->periph, AX630C_PERIPH_EB0_SET, wdt->bits->counter_clk);
-	udelay(AX630C_WDT_STROBE_US);
-	ax630c_wdt_kick(wdt);
 }
 
 static int ax630c_wdt_ping(struct watchdog_device *wdd)
@@ -182,7 +130,7 @@ static int ax630c_wdt_set_timeout(struct watchdog_device *wdd,
 {
 	struct ax630c_wdt *wdt = watchdog_get_drvdata(wdd);
 
-	ax630c_wdt_load(wdt, ax630c_wdt_torr_for(timeout));
+	ax630c_wdt_load(wdt, ax630c_wdt_torr_for(wdt, timeout));
 	wdd->timeout = timeout;
 
 	return 0;
@@ -192,7 +140,7 @@ static int ax630c_wdt_start(struct watchdog_device *wdd)
 {
 	struct ax630c_wdt *wdt = watchdog_get_drvdata(wdd);
 
-	ax630c_wdt_load(wdt, ax630c_wdt_torr_for(wdd->timeout));
+	ax630c_wdt_load(wdt, ax630c_wdt_torr_for(wdt, wdd->timeout));
 	writel(AX630C_WDT_EN_ENABLE, wdt->base + AX630C_WDT_EN);
 	set_bit(WDOG_HW_RUNNING, &wdd->status);
 
@@ -218,14 +166,18 @@ static unsigned int ax630c_wdt_get_timeleft(struct watchdog_device *wdd)
 {
 	struct ax630c_wdt *wdt = watchdog_get_drvdata(wdd);
 
-	return readl(wdt->base + AX630C_WDT_CCVR) / AX630C_WDT_RATE_FAST;
+	return readl(wdt->base + AX630C_WDT_CCVR) / wdt->rate;
 }
 
 /*
  * Last-resort reboot. Runs from an atomic notifier with interrupts off and the
  * other CPU stopped: no sleeping, and it should not come back.
  *
- * A reload of 0 expires within a tick, so both stages elapse in microseconds.
+ * A reload of 0 expires within a tick, so both stages elapse in microseconds
+ * (30 us even on the slow source). No clock work is done here: touching CCF
+ * from an atomic notifier could sleep, and probe already left the counter
+ * clocked and its source selected.
+ *
  * The reset only reaches the SoC if COMM_ABORT_CFG bit 7 is set, which every
  * boot-chain stage does (read back as 0x2c0 on hardware). This driver does not
  * touch that register: a board where firmware left it clear cannot reboot by
@@ -236,7 +188,6 @@ static int ax630c_wdt_restart(struct watchdog_device *wdd,
 {
 	struct ax630c_wdt *wdt = watchdog_get_drvdata(wdd);
 
-	ax630c_wdt_select_fast_clk(wdt);
 	writel(AX630C_WDT_EN_ENABLE, wdt->base + AX630C_WDT_EN);
 	ax630c_wdt_load(wdt, 0);
 
@@ -273,8 +224,10 @@ MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started");
 static int ax630c_wdt_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	struct reset_control *rst;
 	struct ax630c_wdt *wdt;
-	unsigned int instance;
+	struct clk *counter;
+	struct clk *apb;
 	int ret;
 
 	wdt = devm_kzalloc(dev, sizeof(*wdt), GFP_KERNEL);
@@ -287,41 +240,65 @@ static int ax630c_wdt_probe(struct platform_device *pdev)
 
 	/*
 	 * Stop the dog first. U-Boot left it armed and counting, and everything
-	 * below -- a deferred syscon lookup most of all -- must not race it.
-	 * Every error return past this point re-arms it, so a failed probe still
-	 * leaves a board that reboots rather than one that hangs with no console
-	 * to say why.
+	 * below -- a deferred clock or reset lookup most of all -- must not race
+	 * it. Every error return past this point re-arms it, so a failed probe
+	 * still leaves a board that reboots rather than one that hangs with no
+	 * console to say why.
 	 */
 	writel(0, wdt->base + AX630C_WDT_EN);
 
-	wdt->periph = syscon_regmap_lookup_by_phandle_args(dev->of_node,
-							  "axera,periph-syscon",
-							  1, &instance);
-	if (IS_ERR(wdt->periph)) {
-		ret = PTR_ERR(wdt->periph);
-		dev_err_probe(dev, ret, "cannot reach the peripheral syscon\n");
+	/*
+	 * Release both resets before the clocks. Firmware already leaves them
+	 * released -- U-Boot could not have programmed the block otherwise --
+	 * so this is two alias writes that remove a dependency on which
+	 * bootloader ran. Optional, because a DT that omits them describes a
+	 * board where firmware owns the lines, and the calls then no-op.
+	 */
+	rst = devm_reset_control_get_optional_exclusive(dev, "wdt");
+	if (IS_ERR(rst)) {
+		ret = dev_err_probe(dev, PTR_ERR(rst), "no counter reset\n");
+		goto err_rearm;
+	}
+	ret = reset_control_deassert(rst);
+	if (ret)
+		goto err_rearm;
+
+	rst = devm_reset_control_get_optional_exclusive(dev, "apb");
+	if (IS_ERR(rst)) {
+		ret = dev_err_probe(dev, PTR_ERR(rst), "no APB reset\n");
+		goto err_rearm;
+	}
+	ret = reset_control_deassert(rst);
+	if (ret)
+		goto err_rearm;
+
+	apb = devm_clk_get_enabled(dev, "apb");
+	if (IS_ERR(apb)) {
+		ret = dev_err_probe(dev, PTR_ERR(apb), "no APB clock\n");
 		goto err_rearm;
 	}
 
-	if (instance >= ARRAY_SIZE(ax630c_wdt_periph) ||
-	    !ax630c_wdt_periph[instance].mux_fast) {
-		dev_err(dev, "no register bits known for instance %u\n",
-			instance);
-		ret = -EINVAL;
+	counter = devm_clk_get_enabled(dev, "wdt");
+	if (IS_ERR(counter)) {
+		ret = dev_err_probe(dev, PTR_ERR(counter), "no counter clock\n");
 		goto err_rearm;
 	}
-	wdt->bits = &ax630c_wdt_periph[instance];
 
 	/*
-	 * Release both resets and open both gates before touching the block
-	 * again. Firmware already leaves all four in this state; doing it anyway
-	 * costs four alias writes and removes a dependency on which bootloader
-	 * ran.
+	 * Everything below divides by this. A provider that cannot state a rate
+	 * would otherwise divide by zero in get_timeleft; fall back to the
+	 * measured fast rate and say so, because a watchdog with a wrong period
+	 * is still better than no watchdog on a board whose only other reboot
+	 * path is this same block.
 	 */
-	regmap_write(wdt->periph, AX630C_PERIPH_RST3_CLR,
-		     wdt->bits->counter_rst | wdt->bits->apb_rst);
-	regmap_write(wdt->periph, AX630C_PERIPH_EB3_SET, wdt->bits->apb_clk);
-	ax630c_wdt_select_fast_clk(wdt);
+	wdt->rate = clk_get_rate(counter);
+	if (!wdt->rate) {
+		wdt->rate = AX630C_WDT_RATE_FALLBACK;
+		dev_warn(dev, "counter clock reports no rate, assuming %lu Hz\n",
+			 wdt->rate);
+	}
+
+	ax630c_wdt_kick(wdt);
 
 	/*
 	 * No interrupt is claimed and the interrupt enable stays clear. The
@@ -338,7 +315,7 @@ static int ax630c_wdt_probe(struct platform_device *pdev)
 	wdt->wdd.min_timeout = 1;
 	wdt->wdd.max_timeout = (u32)(((u64)AX630C_WDT_TORR_MAX <<
 				      AX630C_WDT_TICK_SHIFT) * AX630C_WDT_STAGES /
-				     AX630C_WDT_RATE_FAST);
+				     wdt->rate);
 	wdt->wdd.timeout = 60;
 
 	/*
@@ -368,9 +345,8 @@ static int ax630c_wdt_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_rearm;
 
-	dev_info(dev, "instance %u at %u Hz, timeout %us, max %us\n",
-		 instance, AX630C_WDT_RATE_FAST, wdt->wdd.timeout,
-		 wdt->wdd.max_timeout);
+	dev_info(dev, "counter at %lu Hz, timeout %us, max %us\n",
+		 wdt->rate, wdt->wdd.timeout, wdt->wdd.max_timeout);
 
 	return 0;
 

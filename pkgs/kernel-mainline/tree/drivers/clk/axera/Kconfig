@@ -4,11 +4,15 @@ config COMMON_CLK_AX630C
 	bool "Axera AX630C (AX620E) clock controllers"
 	depends on ARM64 || COMPILE_TEST
 	select MFD_SYSCON
+	select RESET_CONTROLLER
 	help
 	  Support for the clock controllers on the Axera AX630C and the rest of
 	  the AX620E family. The clock tree is split across nine syscon windows
 	  (cpu, common, dispc, flash, mm, periph, vpu and the CPU PLL); one
 	  driver serves them all.
+
+	  The same windows hold the SoC's reset lines, in the words next to the
+	  clock gates, so the same nodes provide those as well.
 
 	  Say Y if you are building a kernel for an AX620E-family SoC. There is
 	  no module option: the controllers must be up before the peripherals
