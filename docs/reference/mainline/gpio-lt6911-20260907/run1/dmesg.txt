@@ -321,15 +321,15 @@
 [    7.026598] udhcpc: started, v1.37.0
 [    7.042279] udhcpc: broadcasting discover
 [    9.072425] udhcpc: broadcasting discover
-[    9.098417] udhcpc: broadcasting select for 192.168.0.224, server 192.168.1.1
-[    9.138270] udhcpc: lease of 192.168.0.224 obtained from 192.168.1.1, lease time 43200
-[    9.153922] openkvm: net: lease (address netmask router): 192.168.0.224 255.255.248.0 192.168.1.1
-[    9.164060] PING 192.168.1.1 (192.168.1.1): 56 data bytes
-[    9.170587] 64 bytes from 192.168.1.1: seq=0 ttl=64 time=0.817 ms
-[   10.170371] 64 bytes from 192.168.1.1: seq=1 ttl=64 time=0.416 ms
-[   11.170489] 64 bytes from 192.168.1.1: seq=2 ttl=64 time=0.390 ms
+[    9.098417] udhcpc: broadcasting select for <device-ip>, server <router>
+[    9.138270] udhcpc: lease of <device-ip> obtained from <router>, lease time 43200
+[    9.153922] openkvm: net: lease (address netmask router): <device-ip> 255.255.248.0 <router>
+[    9.164060] PING <router> (<router>): 56 data bytes
+[    9.170587] 64 bytes from <router>: seq=0 ttl=64 time=0.817 ms
+[   10.170371] 64 bytes from <router>: seq=1 ttl=64 time=0.416 ms
+[   11.170489] 64 bytes from <router>: seq=2 ttl=64 time=0.390 ms
 [   11.176659] 
-[   11.176659] --- 192.168.1.1 ping statistics ---
+[   11.176659] --- <router> ping statistics ---
 [   11.176659] 3 packets transmitted, 3 packets received, 0% packet loss
 [   11.176659] round-trip min/avg/max = 0.390/0.541/0.817 ms
 [   11.194895] openkvm: net: ping the router, exit: 0x00000000
@@ -343,127 +343,127 @@
 [   12.365109] [88] Jan 01 00:00:12 Running in background
 [   12.370972] openkvm: kernel log re-stashed, bytes: 0x00006549
 [   12.380841] openkvm: alive 0s/300s, watchdog0 state=inactive timeleft=28
-[   18.298993] [89] Jan 01 00:00:18 Child connection from 192.168.1.3:34072
-[   18.306348] [89] Jan 01 00:00:18 Exit before auth from <192.168.1.3:34072>: Exited normally
+[   18.298993] [89] Jan 01 00:00:18 Child connection from <lan-host>:34072
+[   18.306348] [89] Jan 01 00:00:18 Exit before auth from <<lan-host>:34072>: Exited normally
 [   22.390578] openkvm: alive 10s/300s, watchdog0 state=inactive timeleft=28
-[   23.265575] [90] Jan 01 00:00:23 Child connection from 192.168.1.3:39014
-[   23.475946] [90] Jan 01 00:00:23 Bad password attempt for 'root' from 192.168.1.3:39014
-[   23.678283] [90] Jan 01 00:00:23 Exit before auth from <192.168.1.3:39014>: (user 'root', 1 fails): Exited normally
+[   23.265575] [90] Jan 01 00:00:23 Child connection from <lan-host>:39014
+[   23.475946] [90] Jan 01 00:00:23 Bad password attempt for 'root' from <lan-host>:39014
+[   23.678283] [90] Jan 01 00:00:23 Exit before auth from <<lan-host>:39014>: (user 'root', 1 fails): Exited normally
 [   23.678307] 
-[   28.451529] [91] Jan 01 00:00:28 Child connection from 192.168.1.3:39022
-[   28.661233] [91] Jan 01 00:00:28 Password auth succeeded for 'root' from 192.168.1.3:39022
-[   28.677226] [91] Jan 01 00:00:28 Exit (root) from <192.168.1.3:39022>: Disconnect received
+[   28.451529] [91] Jan 01 00:00:28 Child connection from <lan-host>:39022
+[   28.661233] [91] Jan 01 00:00:28 Password auth succeeded for 'root' from <lan-host>:39022
+[   28.677226] [91] Jan 01 00:00:28 Exit (root) from <<lan-host>:39022>: Disconnect received
 [   32.400451] openkvm: alive 20s/300s, watchdog0 state=inactive timeleft=28
-[   39.066368] [93] Jan 01 00:00:38 Child connection from 192.168.1.3:46346
-[   39.073679] [93] Jan 01 00:00:38 Exit before auth from <192.168.1.3:46346>: Exited normally
+[   39.066368] [93] Jan 01 00:00:38 Child connection from <lan-host>:46346
+[   39.073679] [93] Jan 01 00:00:38 Exit before auth from <<lan-host>:46346>: Exited normally
 [   42.410332] openkvm: alive 30s/300s, watchdog0 state=inactive timeleft=28
-[   43.850246] [94] Jan 01 00:00:43 Child connection from 192.168.1.3:35640
-[   44.060853] [94] Jan 01 00:00:43 Bad password attempt for 'root' from 192.168.1.3:35640
-[   44.208563] [94] Jan 01 00:00:44 Exit before auth from <192.168.1.3:35640>: (user 'root', 1 fails): Exited normally
+[   43.850246] [94] Jan 01 00:00:43 Child connection from <lan-host>:35640
+[   44.060853] [94] Jan 01 00:00:43 Bad password attempt for 'root' from <lan-host>:35640
+[   44.208563] [94] Jan 01 00:00:44 Exit before auth from <<lan-host>:35640>: (user 'root', 1 fails): Exited normally
 [   44.208586] 
-[   48.941966] [95] Jan 01 00:00:48 Child connection from 192.168.1.3:35646
-[   49.152972] [95] Jan 01 00:00:49 Password auth succeeded for 'root' from 192.168.1.3:35646
-[   49.178692] [95] Jan 01 00:00:49 Exit (root) from <192.168.1.3:35646>: Disconnect received
+[   48.941966] [95] Jan 01 00:00:48 Child connection from <lan-host>:35646
+[   49.152972] [95] Jan 01 00:00:49 Password auth succeeded for 'root' from <lan-host>:35646
+[   49.178692] [95] Jan 01 00:00:49 Exit (root) from <<lan-host>:35646>: Disconnect received
 [   50.419576] openkvm: dwell extended to the cap by /run/keepalive
 [   52.426361] openkvm: alive 40s/3600s, watchdog0 state=inactive timeleft=28
 [   62.436029] openkvm: alive 50s/3600s, watchdog0 state=inactive timeleft=28
-[   66.140946] [99] Jan 01 00:01:06 Child connection from 192.168.1.3:51720
-[   66.148242] [99] Jan 01 00:01:06 Exit before auth from <192.168.1.3:51720>: Exited normally
-[   71.072646] [100] Jan 01 00:01:10 Child connection from 192.168.1.3:51736
-[   71.285289] [100] Jan 01 00:01:11 Bad password attempt for 'root' from 192.168.1.3:51736
-[   71.508870] [100] Jan 01 00:01:11 Exit before auth from <192.168.1.3:51736>: (user 'root', 1 fails): Exited normally
+[   66.140946] [99] Jan 01 00:01:06 Child connection from <lan-host>:51720
+[   66.148242] [99] Jan 01 00:01:06 Exit before auth from <<lan-host>:51720>: Exited normally
+[   71.072646] [100] Jan 01 00:01:10 Child connection from <lan-host>:51736
+[   71.285289] [100] Jan 01 00:01:11 Bad password attempt for 'root' from <lan-host>:51736
+[   71.508870] [100] Jan 01 00:01:11 Exit before auth from <<lan-host>:51736>: (user 'root', 1 fails): Exited normally
 [   71.508895] 
 [   72.445891] openkvm: alive 60s/3600s, watchdog0 state=inactive timeleft=28
-[   76.748569] [101] Jan 01 00:01:16 Child connection from 192.168.1.3:47970
-[   76.963183] [101] Jan 01 00:01:16 Password auth succeeded for 'root' from 192.168.1.3:47970
-[   76.978191] [101] Jan 01 00:01:16 Exit (root) from <192.168.1.3:47970>: Disconnect received
+[   76.748569] [101] Jan 01 00:01:16 Child connection from <lan-host>:47970
+[   76.963183] [101] Jan 01 00:01:16 Password auth succeeded for 'root' from <lan-host>:47970
+[   76.978191] [101] Jan 01 00:01:16 Exit (root) from <<lan-host>:47970>: Disconnect received
 [   82.455719] openkvm: alive 70s/3600s, watchdog0 state=inactive timeleft=28
-[   89.582545] [103] Jan 01 00:01:29 Child connection from 192.168.1.3:40872
-[   89.589917] [103] Jan 01 00:01:29 Exit before auth from <192.168.1.3:40872>: Exited normally
+[   89.582545] [103] Jan 01 00:01:29 Child connection from <lan-host>:40872
+[   89.589917] [103] Jan 01 00:01:29 Exit before auth from <<lan-host>:40872>: Exited normally
 [   92.465439] openkvm: alive 80s/3600s, watchdog0 state=inactive timeleft=28
-[   94.238993] [104] Jan 01 00:01:34 Child connection from 192.168.1.3:43116
-[   94.449048] [104] Jan 01 00:01:34 Bad password attempt for 'root' from 192.168.1.3:43116
-[   94.649320] [104] Jan 01 00:01:34 Exit before auth from <192.168.1.3:43116>: (user 'root', 1 fails): Exited normally
+[   94.238993] [104] Jan 01 00:01:34 Child connection from <lan-host>:43116
+[   94.449048] [104] Jan 01 00:01:34 Bad password attempt for 'root' from <lan-host>:43116
+[   94.649320] [104] Jan 01 00:01:34 Exit before auth from <<lan-host>:43116>: (user 'root', 1 fails): Exited normally
 [   94.649344] 
-[   99.136346] [105] Jan 01 00:01:39 Child connection from 192.168.1.3:43124
-[   99.349276] [105] Jan 01 00:01:39 Password auth succeeded for 'root' from 192.168.1.3:43124
-[   99.367657] [105] Jan 01 00:01:39 Exit (root) from <192.168.1.3:43124>: Disconnect received
+[   99.136346] [105] Jan 01 00:01:39 Child connection from <lan-host>:43124
+[   99.349276] [105] Jan 01 00:01:39 Password auth succeeded for 'root' from <lan-host>:43124
+[   99.367657] [105] Jan 01 00:01:39 Exit (root) from <<lan-host>:43124>: Disconnect received
 [  102.475276] openkvm: alive 90s/3600s, watchdog0 state=inactive timeleft=28
-[  111.389144] [108] Jan 01 00:01:51 Child connection from 192.168.1.3:35266
-[  111.396517] [108] Jan 01 00:01:51 Exit before auth from <192.168.1.3:35266>: Exited normally
+[  111.389144] [108] Jan 01 00:01:51 Child connection from <lan-host>:35266
+[  111.396517] [108] Jan 01 00:01:51 Exit before auth from <<lan-host>:35266>: Exited normally
 [  112.485021] openkvm: alive 100s/3600s, watchdog0 state=inactive timeleft=28
-[  116.212330] [109] Jan 01 00:01:56 Child connection from 192.168.1.3:53542
-[  116.426379] [109] Jan 01 00:01:56 Bad password attempt for 'root' from 192.168.1.3:53542
-[  116.596125] [109] Jan 01 00:01:56 Exit before auth from <192.168.1.3:53542>: (user 'root', 1 fails): Exited normally
+[  116.212330] [109] Jan 01 00:01:56 Child connection from <lan-host>:53542
+[  116.426379] [109] Jan 01 00:01:56 Bad password attempt for 'root' from <lan-host>:53542
+[  116.596125] [109] Jan 01 00:01:56 Exit before auth from <<lan-host>:53542>: (user 'root', 1 fails): Exited normally
 [  116.596149] 
-[  121.449620] [110] Jan 01 00:02:01 Child connection from 192.168.1.3:53556
-[  121.663053] [110] Jan 01 00:02:01 Password auth succeeded for 'root' from 192.168.1.3:53556
-[  121.678860] [110] Jan 01 00:02:01 Exit (root) from <192.168.1.3:53556>: Disconnect received
+[  121.449620] [110] Jan 01 00:02:01 Child connection from <lan-host>:53556
+[  121.663053] [110] Jan 01 00:02:01 Password auth succeeded for 'root' from <lan-host>:53556
+[  121.678860] [110] Jan 01 00:02:01 Exit (root) from <<lan-host>:53556>: Disconnect received
 [  122.494883] openkvm: alive 110s/3600s, watchdog0 state=inactive timeleft=28
-[  129.146679] [112] Jan 01 00:02:09 Child connection from 192.168.1.3:48876
-[  129.154038] [112] Jan 01 00:02:09 Exit before auth from <192.168.1.3:48876>: Exited normally
+[  129.146679] [112] Jan 01 00:02:09 Child connection from <lan-host>:48876
+[  129.154038] [112] Jan 01 00:02:09 Exit before auth from <<lan-host>:48876>: Exited normally
 [  132.504698] openkvm: alive 120s/3600s, watchdog0 state=inactive timeleft=28
-[  133.666202] [113] Jan 01 00:02:13 Child connection from 192.168.1.3:53994
-[  133.881202] [113] Jan 01 00:02:13 Bad password attempt for 'root' from 192.168.1.3:53994
-[  134.016396] [113] Jan 01 00:02:13 Exit before auth from <192.168.1.3:53994>: (user 'root', 1 fails): Exited normally
+[  133.666202] [113] Jan 01 00:02:13 Child connection from <lan-host>:53994
+[  133.881202] [113] Jan 01 00:02:13 Bad password attempt for 'root' from <lan-host>:53994
+[  134.016396] [113] Jan 01 00:02:13 Exit before auth from <<lan-host>:53994>: (user 'root', 1 fails): Exited normally
 [  134.016420] 
-[  138.859008] [114] Jan 01 00:02:18 Child connection from 192.168.1.3:53996
-[  139.068537] [114] Jan 01 00:02:18 Password auth succeeded for 'root' from 192.168.1.3:53996
-[  139.085418] [114] Jan 01 00:02:18 Exit (root) from <192.168.1.3:53996>: Disconnect received
+[  138.859008] [114] Jan 01 00:02:18 Child connection from <lan-host>:53996
+[  139.068537] [114] Jan 01 00:02:18 Password auth succeeded for 'root' from <lan-host>:53996
+[  139.085418] [114] Jan 01 00:02:18 Exit (root) from <<lan-host>:53996>: Disconnect received
 [  142.514556] openkvm: alive 130s/3600s, watchdog0 state=inactive timeleft=28
-[  148.042801] [116] Jan 01 00:02:27 Child connection from 192.168.1.3:39248
-[  148.050282] [116] Jan 01 00:02:27 Exit before auth from <192.168.1.3:39248>: Exited normally
-[  152.232030] [117] Jan 01 00:02:32 Child connection from 192.168.1.3:51394
-[  152.444819] [117] Jan 01 00:02:32 Bad password attempt for 'root' from 192.168.1.3:51394
+[  148.042801] [116] Jan 01 00:02:27 Child connection from <lan-host>:39248
+[  148.050282] [116] Jan 01 00:02:27 Exit before auth from <<lan-host>:39248>: Exited normally
+[  152.232030] [117] Jan 01 00:02:32 Child connection from <lan-host>:51394
+[  152.444819] [117] Jan 01 00:02:32 Bad password attempt for 'root' from <lan-host>:51394
 [  152.524380] openkvm: alive 140s/3600s, watchdog0 state=inactive timeleft=28
-[  152.609375] [117] Jan 01 00:02:32 Exit before auth from <192.168.1.3:51394>: (user 'root', 1 fails): Exited normally
+[  152.609375] [117] Jan 01 00:02:32 Exit before auth from <<lan-host>:51394>: (user 'root', 1 fails): Exited normally
 [  152.609395] 
-[  157.037037] [118] Jan 01 00:02:36 Child connection from 192.168.1.3:51400
-[  157.249738] [118] Jan 01 00:02:37 Password auth succeeded for 'root' from 192.168.1.3:51400
-[  157.274138] [118] Jan 01 00:02:37 Exit (root) from <192.168.1.3:51400>: Disconnect received
+[  157.037037] [118] Jan 01 00:02:36 Child connection from <lan-host>:51400
+[  157.249738] [118] Jan 01 00:02:37 Password auth succeeded for 'root' from <lan-host>:51400
+[  157.274138] [118] Jan 01 00:02:37 Exit (root) from <<lan-host>:51400>: Disconnect received
 [  162.534318] openkvm: alive 150s/3600s, watchdog0 state=inactive timeleft=28
-[  170.172905] [120] Jan 01 00:02:50 Child connection from 192.168.1.3:45646
-[  170.180399] [120] Jan 01 00:02:50 Exit before auth from <192.168.1.3:45646>: Exited normally
+[  170.172905] [120] Jan 01 00:02:50 Child connection from <lan-host>:45646
+[  170.180399] [120] Jan 01 00:02:50 Exit before auth from <<lan-host>:45646>: Exited normally
 [  172.544106] openkvm: alive 160s/3600s, watchdog0 state=inactive timeleft=28
-[  174.694759] [121] Jan 01 00:02:54 Child connection from 192.168.1.3:43378
-[  174.905748] [121] Jan 01 00:02:54 Bad password attempt for 'root' from 192.168.1.3:43378
-[  175.093166] [121] Jan 01 00:02:54 Exit before auth from <192.168.1.3:43378>: (user 'root', 1 fails): Exited normally
+[  174.694759] [121] Jan 01 00:02:54 Child connection from <lan-host>:43378
+[  174.905748] [121] Jan 01 00:02:54 Bad password attempt for 'root' from <lan-host>:43378
+[  175.093166] [121] Jan 01 00:02:54 Exit before auth from <<lan-host>:43378>: (user 'root', 1 fails): Exited normally
 [  175.093189] 
-[  179.746799] [122] Jan 01 00:02:59 Child connection from 192.168.1.3:43386
-[  179.959100] [122] Jan 01 00:02:59 Password auth succeeded for 'root' from 192.168.1.3:43386
-[  179.991224] [122] Jan 01 00:02:59 Exit (root) from <192.168.1.3:43386>: Disconnect received
+[  179.746799] [122] Jan 01 00:02:59 Child connection from <lan-host>:43386
+[  179.959100] [122] Jan 01 00:02:59 Password auth succeeded for 'root' from <lan-host>:43386
+[  179.991224] [122] Jan 01 00:02:59 Exit (root) from <<lan-host>:43386>: Disconnect received
 [  182.554037] openkvm: alive 170s/3600s, watchdog0 state=inactive timeleft=28
 [  192.563827] openkvm: alive 180s/3600s, watchdog0 state=inactive timeleft=28
-[  194.613841] [133] Jan 01 00:03:14 Child connection from 192.168.1.3:49014
-[  194.621221] [133] Jan 01 00:03:14 Exit before auth from <192.168.1.3:49014>: Exited normally
-[  199.792040] [134] Jan 01 00:03:19 Child connection from 192.168.1.3:49016
-[  200.005548] [134] Jan 01 00:03:19 Bad password attempt for 'root' from 192.168.1.3:49016
-[  200.225086] [134] Jan 01 00:03:20 Exit before auth from <192.168.1.3:49016>: (user 'root', 1 fails): Exited normally
+[  194.613841] [133] Jan 01 00:03:14 Child connection from <lan-host>:49014
+[  194.621221] [133] Jan 01 00:03:14 Exit before auth from <<lan-host>:49014>: Exited normally
+[  199.792040] [134] Jan 01 00:03:19 Child connection from <lan-host>:49016
+[  200.005548] [134] Jan 01 00:03:19 Bad password attempt for 'root' from <lan-host>:49016
+[  200.225086] [134] Jan 01 00:03:20 Exit before auth from <<lan-host>:49016>: (user 'root', 1 fails): Exited normally
 [  200.225110] 
 [  202.573728] openkvm: alive 190s/3600s, watchdog0 state=inactive timeleft=28
-[  205.402576] [135] Jan 01 00:03:25 Child connection from 192.168.1.3:55954
-[  205.613772] [135] Jan 01 00:03:25 Password auth succeeded for 'root' from 192.168.1.3:55954
-[  205.635209] [135] Jan 01 00:03:25 Exit (root) from <192.168.1.3:55954>: Disconnect received
+[  205.402576] [135] Jan 01 00:03:25 Child connection from <lan-host>:55954
+[  205.613772] [135] Jan 01 00:03:25 Password auth succeeded for 'root' from <lan-host>:55954
+[  205.635209] [135] Jan 01 00:03:25 Exit (root) from <<lan-host>:55954>: Disconnect received
 [  212.583616] openkvm: alive 200s/3600s, watchdog0 state=inactive timeleft=28
-[  216.585441] [139] Jan 01 00:03:36 Child connection from 192.168.1.3:54188
-[  216.592824] [139] Jan 01 00:03:36 Exit before auth from <192.168.1.3:54188>: Exited normally
-[  220.744969] [140] Jan 01 00:03:40 Child connection from 192.168.1.3:54194
-[  220.958915] [140] Jan 01 00:03:40 Bad password attempt for 'root' from 192.168.1.3:54194
-[  221.102159] [140] Jan 01 00:03:40 Exit before auth from <192.168.1.3:54194>: (user 'root', 1 fails): Exited normally
+[  216.585441] [139] Jan 01 00:03:36 Child connection from <lan-host>:54188
+[  216.592824] [139] Jan 01 00:03:36 Exit before auth from <<lan-host>:54188>: Exited normally
+[  220.744969] [140] Jan 01 00:03:40 Child connection from <lan-host>:54194
+[  220.958915] [140] Jan 01 00:03:40 Bad password attempt for 'root' from <lan-host>:54194
+[  221.102159] [140] Jan 01 00:03:40 Exit before auth from <<lan-host>:54194>: (user 'root', 1 fails): Exited normally
 [  221.102183] 
 [  222.594164] openkvm: alive 210s/3600s, watchdog0 state=inactive timeleft=28
-[  225.448928] [141] Jan 01 00:03:45 Child connection from 192.168.1.3:39806
-[  225.662821] [141] Jan 01 00:03:45 Password auth succeeded for 'root' from 192.168.1.3:39806
-[  225.684388] [141] Jan 01 00:03:45 Exit (root) from <192.168.1.3:39806>: Disconnect received
+[  225.448928] [141] Jan 01 00:03:45 Child connection from <lan-host>:39806
+[  225.662821] [141] Jan 01 00:03:45 Password auth succeeded for 'root' from <lan-host>:39806
+[  225.684388] [141] Jan 01 00:03:45 Exit (root) from <<lan-host>:39806>: Disconnect received
 [  232.604023] openkvm: alive 220s/3600s, watchdog0 state=inactive timeleft=28
-[  241.551796] [146] Jan 01 00:04:01 Child connection from 192.168.1.3:49564
-[  241.559180] [146] Jan 01 00:04:01 Exit before auth from <192.168.1.3:49564>: Exited normally
+[  241.551796] [146] Jan 01 00:04:01 Child connection from <lan-host>:49564
+[  241.559180] [146] Jan 01 00:04:01 Exit before auth from <<lan-host>:49564>: Exited normally
 [  242.613858] openkvm: alive 230s/3600s, watchdog0 state=inactive timeleft=28
 [  252.623667] openkvm: alive 240s/3600s, watchdog0 state=inactive timeleft=28
-[  253.301675] [147] Jan 01 00:04:13 Child connection from 192.168.1.3:41240
-[  253.513869] [147] Jan 01 00:04:13 Bad password attempt for 'root' from 192.168.1.3:41240
-[  253.684918] [147] Jan 01 00:04:13 Exit before auth from <192.168.1.3:41240>: (user 'root', 1 fails): Exited normally
+[  253.301675] [147] Jan 01 00:04:13 Child connection from <lan-host>:41240
+[  253.513869] [147] Jan 01 00:04:13 Bad password attempt for 'root' from <lan-host>:41240
+[  253.684918] [147] Jan 01 00:04:13 Exit before auth from <<lan-host>:41240>: (user 'root', 1 fails): Exited normally
 [  253.684942] 
 [  262.633533] openkvm: alive 250s/3600s, watchdog0 state=inactive timeleft=28
-[  265.305628] [148] Jan 01 00:04:25 Child connection from 192.168.1.3:57596
-[  265.519844] [148] Jan 01 00:04:25 Password auth succeeded for 'root' from 192.168.1.3:57596
+[  265.305628] [148] Jan 01 00:04:25 Child connection from <lan-host>:57596
+[  265.519844] [148] Jan 01 00:04:25 Password auth succeeded for 'root' from <lan-host>:57596

@@ -350,7 +350,7 @@ open-userspace capture or a precise reason it's stuck.
 - **Units** (both run our from-source image, both link the Axera blobs — the blob
   path is exactly what we trace):
   - ATX version — `192.168.0.221`
-  - Desk version — `192.168.0.224`
+  - Desk version — `<device-ip>`
 - SSH as `root` (default password `sipeed` on the from-source image).
 
 One unit runs the instrumented/experimental code; the other serves as the
