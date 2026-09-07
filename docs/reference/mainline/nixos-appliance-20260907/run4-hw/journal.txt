@@ -1,0 +1,929 @@
+[   11.294927] nanokvm kernel: Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[   11.295185] nanokvm kernel: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[   11.295273] nanokvm kernel: KASLR disabled due to lack of seed
+[   11.295337] nanokvm kernel: Machine model: Sipeed NanoKVM-Pro
+[   11.295391] nanokvm kernel: Memory limited to 824MB
+[   11.295459] nanokvm kernel: earlycon: uart8250 at MMIO32 0x0000000004880000 (options '')
+[   11.295523] nanokvm kernel: printk: legacy bootconsole [uart8250] enabled
+[   11.295574] nanokvm kernel: efi: UEFI not found.
+[   11.295627] nanokvm kernel: OF: reserved mem: 0x0000000040040000..0x000000004007ffff (256 KiB) nomap non-reusable atf@40040000
+[   11.295681] nanokvm kernel: OF: reserved mem: 0x0000000044200000..0x00000000461fffff (32768 KiB) nomap non-reusable optee@44200000
+[   11.295736] nanokvm kernel: OF: reserved mem: 0x0000000048000000..0x00000000480dffff (896 KiB) nomap non-reusable vendor-pstore@48000000
+[   11.295789] nanokvm kernel: OF: reserved mem: 0x00000000480e0000..0x00000000480e7fff (32 KiB) map non-reusable ramoops@480e0000
+[   11.295841] nanokvm kernel: OF: reserved mem: 0x00000000480e8000..0x00000000480effff (32 KiB) map non-reusable bringup-log@480e8000
+[   11.295912] nanokvm kernel: NUMA: Faking a node at [mem 0x0000000040000000-0x00000000737fffff]
+[   11.295988] nanokvm kernel: NODE_DATA(0) allocated [mem 0x7366f380-0x73671a7f]
+[   11.296130] nanokvm kernel: cma: Reserved 32 MiB at 0x0000000071600000
+[   11.296189] nanokvm kernel: psci: probing for conduit method from DT.
+[   11.296242] nanokvm kernel: psci: PSCIv1.1 detected in firmware.
+[   11.296294] nanokvm kernel: psci: Using standard PSCI v0.2 function IDs
+[   11.296345] nanokvm kernel: psci: Trusted OS migration not required
+[   11.296399] nanokvm kernel: psci: SMC Calling Convention v1.2
+[   11.296452] nanokvm kernel: Zone ranges:
+[   11.296504] nanokvm kernel:   DMA      [mem 0x0000000040000000-0x00000000737fffff]
+[   11.296556] nanokvm kernel:   DMA32    empty
+[   11.296608] nanokvm kernel:   Normal   empty
+[   11.296660] nanokvm kernel: Movable zone start for each node
+[   11.296713] nanokvm kernel: Early memory node ranges
+[   11.296766] nanokvm kernel:   node   0: [mem 0x0000000040000000-0x000000004003ffff]
+[   11.296838] nanokvm kernel:   node   0: [mem 0x0000000040040000-0x000000004007ffff]
+[   11.296892] nanokvm kernel:   node   0: [mem 0x0000000040080000-0x00000000441fffff]
+[   11.296946] nanokvm kernel:   node   0: [mem 0x0000000044200000-0x00000000461fffff]
+[   11.296998] nanokvm kernel:   node   0: [mem 0x0000000046200000-0x0000000047ffffff]
+[   11.297051] nanokvm kernel:   node   0: [mem 0x0000000048000000-0x00000000480dffff]
+[   11.297106] nanokvm kernel:   node   0: [mem 0x00000000480e0000-0x00000000737fffff]
+[   11.297158] nanokvm kernel: Initmem setup node 0 [mem 0x0000000040000000-0x00000000737fffff]
+[   11.297210] nanokvm kernel: On node 0, zone DMA: 18432 pages in unavailable ranges
+[   11.297263] nanokvm kernel: percpu: Embedded 26 pages/cpu s66904 r8192 d31400 u106496
+[   11.297314] nanokvm kernel: pcpu-alloc: s66904 r8192 d31400 u106496 alloc=26*4096
+[   11.297369] nanokvm kernel: pcpu-alloc: [0] 0 [0] 1 
+[   11.297423] nanokvm kernel: Detected VIPT I-cache on CPU0
+[   11.297509] nanokvm kernel: CPU features: detected: ARM erratum 845719
+[   11.297590] nanokvm kernel: alternatives: applying boot alternatives
+[   11.297653] nanokvm kernel: Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[   11.297711] nanokvm kernel: Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 logomode=vo0@dsi_dpi_video", will be passed to user space.
+[   11.297765] nanokvm kernel: printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[   11.297839] nanokvm kernel: Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[   11.297895] nanokvm kernel: Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[   11.297949] nanokvm kernel: software IO TLB: SWIOTLB bounce buffer size adjusted to 0MB
+[   11.298000] nanokvm kernel: software IO TLB: area num 2.
+[   11.298052] nanokvm kernel: software IO TLB: mapped [mem 0x0000000070580000-0x0000000070680000] (1MB)
+[   11.298105] nanokvm kernel: Fallback order for Node 0: 0 
+[   11.298157] nanokvm kernel: Built 1 zonelists, mobility grouping on.  Total pages: 210944
+[   11.298209] nanokvm kernel: Policy zone: DMA
+[   11.298260] nanokvm kernel: mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[   11.298312] nanokvm kernel: SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[   11.298363] nanokvm kernel: rcu: Preemptible hierarchical RCU implementation.
+[   11.298417] nanokvm kernel: rcu:         RCU event tracing is enabled.
+[   11.298470] nanokvm kernel: rcu:         RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=2.
+[   11.298522] nanokvm kernel:         Trampoline variant of Tasks RCU enabled.
+[   11.298574] nanokvm kernel:         Tracing variant of Tasks RCU enabled.
+[   11.298652] nanokvm kernel: rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[   11.298874] nanokvm kernel: rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[   11.298934] nanokvm kernel: RCU Tasks: Setting shift to 1 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=2.
+[   11.298986] nanokvm kernel: NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[   11.299037] nanokvm kernel: Root IRQ handler: gic_handle_irq
+[   11.299093] nanokvm kernel: rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[   11.299144] nanokvm kernel: arch_timer: cp15 timer running at 24.00MHz (virt).
+[   11.299201] nanokvm kernel: clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[   11.299253] nanokvm kernel: sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[   11.299305] nanokvm kernel: Console: colour dummy device 80x25
+[   11.299363] nanokvm kernel: Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[   11.299420] nanokvm kernel: pid_max: default: 32768 minimum: 301
+[   11.299475] nanokvm kernel: Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[   11.299563] nanokvm kernel: Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[   11.299618] nanokvm kernel: VFS: Finished mounting rootfs on nullfs
+[   11.299673] nanokvm kernel: rcu: Hierarchical SRCU implementation.
+[   11.299730] nanokvm kernel: rcu:         Max phase no-delay instances is 1000.
+[   11.299785] nanokvm kernel: Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[   11.299842] nanokvm kernel: EFI services will not be available.
+[   11.299897] nanokvm kernel: smp: Bringing up secondary CPUs ...
+[   11.299952] nanokvm kernel: Detected VIPT I-cache on CPU1
+[   11.300113] nanokvm kernel: CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[   11.300195] nanokvm kernel: smp: Brought up 1 node, 2 CPUs
+[   11.300255] nanokvm kernel: SMP: Total of 2 processors activated.
+[   11.300310] nanokvm kernel: CPU: All CPU(s) started at EL1
+[   11.300365] nanokvm kernel: CPU features: detected: 32-bit EL0 Support
+[   11.300420] nanokvm kernel: CPU features: detected: 32-bit EL1 Support
+[   11.300478] nanokvm kernel: CPU features: detected: CRC32 instructions
+[   11.300533] nanokvm kernel: CPU features: detected: PMUv3
+[   11.300589] nanokvm kernel: alternatives: applying system-wide alternatives
+[   11.300646] nanokvm kernel: Memory: 704320K/843776K available (19712K kernel code, 5262K rwdata, 14728K rodata, 10176K init, 722K bss, 103680K reserved, 32768K cma-reserved)
+[   11.300710] nanokvm kernel: devtmpfs: initialized
+[   11.300767] nanokvm kernel: clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[   11.300825] nanokvm kernel: posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+[   11.300882] nanokvm kernel: futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+[   11.300937] nanokvm kernel: 20048 pages in range for non-PLT usage
+[   11.300994] nanokvm kernel: 511568 pages in range for PLT usage
+[   11.301049] nanokvm kernel: DMI: not present or invalid.
+[   11.301104] nanokvm kernel: NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[   11.301167] nanokvm kernel: DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[   11.301224] nanokvm kernel: audit: initializing netlink subsys (disabled)
+[   11.301279] nanokvm kernel: audit: type=2000 audit(0.132:1): state=initialized audit_enabled=0 res=1
+[   11.301336] nanokvm kernel: thermal_sys: Registered thermal governor 'step_wise'
+[   11.301392] nanokvm kernel: thermal_sys: Registered thermal governor 'power_allocator'
+[   11.301447] nanokvm kernel: cpuidle: using governor menu
+[   11.301503] nanokvm kernel: hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[   11.301558] nanokvm kernel: ASID allocator initialised with 65536 entries
+[   11.301612] nanokvm kernel: Serial: AMBA PL011 UART driver
+[   11.301677] nanokvm kernel: pstore: Using crash dump compression: deflate
+[   11.301732] nanokvm kernel: printk: legacy console [ramoops-1] enabled
+[   11.301788] nanokvm kernel: pstore: Registered ramoops as persistent store backend
+[   11.301843] nanokvm kernel: ramoops: using 0x8000@0x480e0000, ecc: 0
+[   11.301899] nanokvm kernel: HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[   11.301954] nanokvm kernel: HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[   11.302009] nanokvm kernel: HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[   11.302064] nanokvm kernel: HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[   11.302120] nanokvm kernel: HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[   11.302186] nanokvm kernel: HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[   11.302259] nanokvm kernel: HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[   11.302322] nanokvm kernel: HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[   11.302379] nanokvm kernel: ACPI: Interpreter disabled.
+[   11.302434] nanokvm kernel: iommu: Default domain type: Translated
+[   11.302489] nanokvm kernel: iommu: DMA domain TLB invalidation policy: strict mode
+[   11.302544] nanokvm kernel: SCSI subsystem initialized
+[   11.302602] nanokvm kernel: libata version 3.00 loaded.
+[   11.302658] nanokvm kernel: usbcore: registered new interface driver usbfs
+[   11.302714] nanokvm kernel: usbcore: registered new interface driver hub
+[   11.302777] nanokvm kernel: usbcore: registered new device driver usb
+[   11.302836] nanokvm kernel: pps_core: LinuxPPS API ver. 1 registered
+[   11.302893] nanokvm kernel: pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[   11.302949] nanokvm kernel: PTP clock support registered
+[   11.303003] nanokvm kernel: EDAC MC: Ver: 3.0.0
+[   11.303059] nanokvm kernel: scmi_core: SCMI protocol bus registered
+[   11.303121] nanokvm kernel: FPGA manager framework
+[   11.303178] nanokvm kernel: Advanced Linux Sound Architecture Driver Initialized.
+[   11.303233] nanokvm kernel: vgaarb: loaded
+[   11.303289] nanokvm kernel: clocksource: Switched to clocksource arch_sys_counter
+[   11.303345] nanokvm kernel: VFS: Disk quotas dquot_6.6.0
+[   11.303400] nanokvm kernel: VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[   11.303455] nanokvm kernel: pnp: PnP ACPI: disabled
+[   11.303511] nanokvm kernel: NET: Registered PF_INET protocol family
+[   11.303567] nanokvm kernel: IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[   11.303632] nanokvm kernel: tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[   11.303688] nanokvm kernel: Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[   11.303745] nanokvm kernel: TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[   11.303801] nanokvm kernel: TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[   11.303857] nanokvm kernel: TCP: Hash tables configured (established 8192 bind 8192)
+[   11.303913] nanokvm kernel: UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[   11.303969] nanokvm kernel: NET: Registered PF_UNIX/PF_LOCAL protocol family
+[   11.304066] nanokvm kernel: RPC: Registered named UNIX socket transport module.
+[   11.304124] nanokvm kernel: RPC: Registered udp transport module.
+[   11.304191] nanokvm kernel: RPC: Registered tcp transport module.
+[   11.304248] nanokvm kernel: RPC: Registered tcp-with-tls transport module.
+[   11.304307] nanokvm kernel: RPC: Registered tcp NFSv4.1 backchannel transport module.
+[   11.304361] nanokvm kernel: PCI: CLS 0 bytes, default 64
+[   11.304416] nanokvm kernel: kvm [1]: HYP mode not available
+[   11.304471] nanokvm kernel: Initialise system trusted keyrings
+[   11.304527] nanokvm kernel: workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[   11.304583] nanokvm kernel: squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[   11.304638] nanokvm kernel: NFS: Registering the id_resolver key type
+[   11.304701] nanokvm kernel: Key type id_resolver registered
+[   11.304757] nanokvm kernel: Key type id_legacy registered
+[   11.304812] nanokvm kernel: nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[   11.304867] nanokvm kernel: nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[   11.304922] nanokvm kernel: 9p: Installing v9fs 9p2000 file system support
+[   11.304977] nanokvm kernel: Key type asymmetric registered
+[   11.305032] nanokvm kernel: Asymmetric key parser 'x509' registered
+[   11.305087] nanokvm kernel: Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[   11.305151] nanokvm kernel: io scheduler mq-deadline registered
+[   11.305208] nanokvm kernel: io scheduler kyber registered
+[   11.305263] nanokvm kernel: io scheduler bfq registered
+[   11.305318] nanokvm kernel: ledtrig-cpu: registered to indicate activity on CPUs
+[   11.305373] nanokvm kernel: Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[   11.305428] nanokvm kernel: printk: legacy console [ttyS0] disabled
+[   11.305484] nanokvm kernel: 4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+[   11.305538] nanokvm kernel: printk: legacy console [ttyS0] enabled
+[   11.305595] nanokvm kernel: printk: legacy bootconsole [uart8250] disabled
+[   11.305658] nanokvm kernel: msm_serial: driver initialized
+[   11.305715] nanokvm kernel: SuperH (H)SCI(F) driver initialized
+[   11.305769] nanokvm kernel: STM32 USART driver initialized
+[   11.305823] nanokvm kernel: loop: module loaded
+[   11.305878] nanokvm kernel: megasas: 07.734.00.00-rc1
+[   11.305933] nanokvm kernel: tun: Universal TUN/TAP device driver, 1.6
+[   11.305989] nanokvm kernel: thunder_xcv, ver 1.0
+[   11.306045] nanokvm kernel: thunder_bgx, ver 1.0
+[   11.306102] nanokvm kernel: nicpf, ver 1.0
+[   11.306166] nanokvm kernel: e1000: Intel(R) PRO/1000 Network Driver
+[   11.306221] nanokvm kernel: e1000: Copyright (c) 1999-2006 Intel Corporation.
+[   11.306278] nanokvm kernel: e1000e: Intel(R) PRO/1000 Network Driver
+[   11.306333] nanokvm kernel: e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[   11.306391] nanokvm kernel: igb: Intel(R) Gigabit Ethernet Network Driver
+[   11.306446] nanokvm kernel: igb: Copyright (c) 2007-2014 Intel Corporation.
+[   11.306502] nanokvm kernel: igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[   11.306558] nanokvm kernel: igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[   11.306614] nanokvm kernel: sky2: driver version 1.30
+[   11.307837] nanokvm kernel: axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[   11.309179] nanokvm kernel: axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[   11.311484] nanokvm kernel: axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[   11.312800] nanokvm kernel: axera-dwmac 104c0000.ethernet:         DWMAC4/5
+[   11.314046] nanokvm kernel: axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[   11.315017] nanokvm kernel: axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[   11.316553] nanokvm kernel: axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[   11.317915] nanokvm kernel: axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[   11.319238] nanokvm kernel: axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[   11.320735] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[   11.322214] nanokvm kernel: axera-dwmac 104c0000.ethernet: device MAC address 0a:57:59:a7:8e:43
+[   11.323303] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[   11.324564] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[   11.325743] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[   11.326918] nanokvm kernel: axera-dwmac 104c0000.ethernet: TSO supported
+[   11.328261] nanokvm kernel: axera-dwmac 104c0000.ethernet: TSO feature enabled
+[   11.329401] nanokvm kernel: axera-dwmac 104c0000.ethernet: SPH feature enabled
+[   11.330515] nanokvm kernel: axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[   11.330681] nanokvm kernel: VFIO - User Level meta-driver version: 0.3
+[   11.331812] nanokvm kernel: axera-dwc3 soc:usb@8000000: 2 clocks, VBUSVALID set (peripheral mode)
+[   11.331970] nanokvm kernel: usbcore: registered new interface driver usb-storage
+[   11.332180] nanokvm kernel: i2c_dev: i2c /dev entries driver
+[   11.333406] nanokvm kernel: ax630c-wdt 4840000.watchdog: counter at 24000000 Hz, timeout 60s, max 357s
+[   11.333604] nanokvm kernel: SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[   11.333671] nanokvm kernel: usbcore: registered new interface driver usbhid
+[   11.333731] nanokvm kernel: usbhid: USB HID core driver
+[   11.333787] nanokvm kernel: optee: probing for conduit method.
+[   11.333844] nanokvm kernel: optee: revision 3.21
+[   11.333899] nanokvm kernel: optee: initialized driver
+[   11.333955] nanokvm kernel: mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+[   11.334013] nanokvm kernel: mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+[   11.334090] nanokvm kernel: NET: Registered PF_INET6 protocol family
+[   11.334149] nanokvm kernel: Segment Routing with IPv6
+[   11.334205] nanokvm kernel: In-situ OAM (IOAM) with IPv6
+[   11.334262] nanokvm kernel: NET: Registered PF_PACKET protocol family
+[   11.334317] nanokvm kernel: 9pnet: Installing 9P2000 support
+[   11.334375] nanokvm kernel: Key type dns_resolver registered
+[   11.334433] nanokvm kernel: registered taskstats version 1
+[   11.334491] nanokvm kernel: Loading compiled-in X.509 certificates
+[   11.334549] nanokvm kernel: Demotion targets for Node 0: null
+[   11.335726] nanokvm kernel: axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[   11.341133] nanokvm kernel: axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[   11.342080] nanokvm kernel: axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[   11.342983] nanokvm kernel: axera-dwmac 104c0000.ethernet:         DWMAC4/5
+[   11.343883] nanokvm kernel: axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[   11.346558] nanokvm kernel: axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[   11.347748] nanokvm kernel: axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[   11.348996] nanokvm kernel: axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[   11.350129] nanokvm kernel: axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[   11.351484] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[   11.353038] nanokvm kernel: axera-dwmac 104c0000.ethernet: device MAC address 5e:e9:0b:0f:1b:c2
+[   11.354269] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[   11.355604] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[   11.357071] nanokvm kernel: axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[   11.358266] nanokvm kernel: axera-dwmac 104c0000.ethernet: TSO supported
+[   11.359433] nanokvm kernel: axera-dwmac 104c0000.ethernet: TSO feature enabled
+[   11.360710] nanokvm kernel: axera-dwmac 104c0000.ethernet: SPH feature enabled
+[   11.361777] nanokvm kernel: axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[   11.361924] nanokvm kernel: mmc0: invalid driver type, default to driver type B
+[   11.361988] nanokvm kernel: mmc0: invalid driver type, default to driver type B
+[   11.362086] nanokvm kernel: mmc0: invalid driver type, default to driver type B
+[   11.362142] nanokvm kernel: mmc0: invalid driver type, default to driver type B
+[   11.362199] nanokvm kernel: mmc0: invalid driver type, default to driver type B
+[   11.363443] nanokvm kernel: lt6911-manage 0-002b: LT6911UXC found
+[   11.364774] nanokvm kernel: lt6911-manage 0-002b: ready
+[   11.364934] nanokvm kernel: clk: Disabling unused clocks
+[   11.365014] nanokvm kernel: PM: genpd: Disabling unused power domains
+[   11.365072] nanokvm kernel: ALSA device list:
+[   11.365129] nanokvm kernel:   No soundcards found.
+[   11.366586] nanokvm kernel: dw-apb-uart 4880000.serial: forbid DMA for kernel console
+[   11.366745] nanokvm kernel: Freeing unused kernel memory: 10176K
+[   11.366817] nanokvm kernel: Run /init as init process
+[   11.366877] nanokvm kernel:   with arguments:
+[   11.366953] nanokvm kernel:     /init
+[   11.367010] nanokvm kernel:   with environment:
+[   11.367068] nanokvm kernel:     HOME=/
+[   11.367125] nanokvm kernel:     TERM=linux
+[   11.367184] nanokvm kernel:     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[   11.367278] nanokvm kernel:     logomode=vo0@dsi_dpi_video
+[   11.367345] nanokvm stage-1-init: [Thu Jan  1 00:00:01 UTC 1970] running udev...
+[   11.367556] nanokvm stage-1-init: [Thu Jan  1 00:00:01 UTC 1970] Starting systemd-udevd version 261
+[   11.368969] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: renamed from eth0
+[   11.369144] nanokvm kernel: mmc0: new HS200 MMC card at address 0001
+[   11.369220] nanokvm kernel: mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+[   11.369281] nanokvm kernel:  mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+[   11.369389] nanokvm kernel: mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+[   11.369448] nanokvm kernel: mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+[   11.369505] nanokvm kernel: mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (510:0)
+[   11.369571] nanokvm stage-1-init: [Thu Jan  1 00:00:02 UTC 1970] kbd_mode: KDSKBMODE: Inappropriate ioctl for device
+[   11.369635] nanokvm stage-1-init: [Thu Jan  1 00:00:02 UTC 1970] starting device mapper and LVM...
+[   11.369694] nanokvm kernel: random: crng init done
+[   11.369756] nanokvm stage-1-init: [Thu Jan  1 00:00:03 UTC 1970] /dev/mapper/control: open failed: No such device
+[   11.369817] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Failure to communicate with kernel device-mapper driver.
+[   11.369908] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Check that device-mapper is available in the kernel.
+[   11.369975] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] Incompatible libdevmapper 1.02.215 (2026-05-15) and kernel driver (unknown version).
+[   11.370035] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] nanokvm: loop-mounting /nixos-root.img off /dev/mmcblk0p17
+[   11.370093] nanokvm kernel: EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b r/w with ordered data mode. Quota mode: none.
+[   11.370155] nanokvm kernel: loop0: detected capacity change from 0 to 3768456
+[   11.370213] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] checking /dev/loop0...
+[   11.370271] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] fsck (busybox 1.37.0)
+[   11.370331] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/loop0
+[   11.370407] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] NANOKVM: clean, 47295/119520 files, 331928/471057 blocks
+[   11.370469] nanokvm stage-1-init: [Thu Jan  1 00:00:04 UTC 1970] mounting /dev/loop0 on /...
+[   11.370531] nanokvm kernel: EXT4-fs (loop0): mounted filesystem 44444444-4444-4444-8888-888888888888 r/w with ordered data mode. Quota mode: none.
+[   11.370588] nanokvm kernel: EXT4-fs (loop0): re-mounted 44444444-4444-4444-8888-888888888888.
+[   11.370646] nanokvm unknown: booting system configuration /nix/store/rjj0q4npskrvimi9iz04w2ji7c2db88m-nixos-system-nanokvm-26.11pre-git
+[   11.370703] nanokvm stage-2-init: running activation script...
+[   11.370765] nanokvm stage-2-init: setting up /etc...
+[   11.370828] nanokvm systemd[1]: System time advanced to built-in epoch: Tue 2026-03-17 19:55:52 UTC
+[   11.370925] nanokvm systemd[1]: systemd 261 running in system mode (+PAM +AUDIT -SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK -BTF -XKBCOMMON +UTMP +LIBARCHIVE)
+[   11.370993] nanokvm systemd[1]: Detected architecture arm64.
+[   11.371056] nanokvm systemd[1]: Detected first boot.
+[   11.371117] nanokvm systemd[1]: Initializing machine ID from random generator.
+[   11.371180] nanokvm systemd[1]: Hostname set to <nanokvm>.
+[   11.371246] nanokvm systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[   11.371308] nanokvm systemd[1]: Applying preset policy.
+[   11.371393] nanokvm systemd[1]: Populated /etc with preset unit settings.
+[   11.371456] nanokvm systemd[1]: Queued start job for default target Multi-User System.
+[   11.371523] nanokvm systemd[1]: Created slice Slice /system/getty.
+[   11.371586] nanokvm systemd[1]: Created slice Slice /system/modprobe.
+[   11.371648] nanokvm systemd[1]: Created slice Slice /system/serial-getty.
+[   11.371710] nanokvm systemd[1]: Created slice Slice /system/systemd-fsck.
+[   11.371776] nanokvm systemd[1]: Created slice User and Session Slice.
+[   11.371841] nanokvm systemd[1]: Started Dispatch Password Requests to Console Directory Watch.
+[   11.371919] nanokvm systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+[   11.371983] nanokvm systemd[1]: Expecting device /dev/mmcblk0p16...
+[   11.372179] nanokvm systemd[1]: Expecting device /dev/ttyS0...
+[   11.372259] nanokvm systemd[1]: Reached target Local Encrypted Volumes.
+[   11.372323] nanokvm systemd[1]: Reached target Virtual Machines and Containers.
+[   11.372400] nanokvm systemd[1]: Reached target Path Units.
+[   11.372465] nanokvm systemd[1]: Reached target Remote File Systems.
+[   11.372530] nanokvm systemd[1]: Reached target Slice Units.
+[   11.372593] nanokvm systemd[1]: Reached target Swaps.
+[   11.372687] nanokvm systemd[1]: Listening on Query the User Interactively for a Password.
+[   11.372751] nanokvm systemd[1]: Listening on Process Core Dump Socket.
+[   11.372812] nanokvm systemd[1]: Listening on Credential Encryption/Decryption.
+[   11.372873] nanokvm systemd[1]: Listening on Factory Reset Management.
+[   11.372935] nanokvm systemd[1]: Listening on Hostname Service Socket.
+[   11.372999] nanokvm systemd[1]: Starting Journal Log Access Socket...
+[   11.373064] nanokvm systemd[1]: Listening on Journal Audit Socket.
+[   11.373128] nanokvm systemd[1]: Listening on Journal Socket (/dev/log).
+[   11.373191] nanokvm systemd[1]: Listening on Journal Sockets.
+[   11.373277] nanokvm systemd[1]: Listening on Console Output Muting Service Socket.
+[   11.373339] nanokvm systemd[1]: Listening on Network Management Metrics Varlink Socket.
+[   11.373403] nanokvm systemd[1]: Listening on Network Management Varlink Socket.
+[   11.373466] nanokvm systemd[1]: Listening on Network Management Netlink Socket.
+[   11.373531] nanokvm systemd[1]: Userspace Out-Of-Memory (OOM) Killer Socket skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   11.373594] nanokvm systemd[1]: TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-os
+[   11.373661] nanokvm systemd[1]: Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[   11.373741] nanokvm systemd[1]: Listening on Disk Repartitioning Service Socket.
+[   11.373804] nanokvm systemd[1]: Listening on Resolve Monitor Varlink Socket.
+[   11.373867] nanokvm systemd[1]: Listening on Resolve Service Varlink Socket.
+[   11.373928] nanokvm systemd[1]: Listening on udev Control Socket.
+[   11.373993] nanokvm systemd[1]: Listening on udev Kernel Socket.
+[   11.374057] nanokvm systemd[1]: Listening on udev Varlink Socket.
+[   11.374119] nanokvm systemd[1]: Mounting Huge Pages File System...
+[   11.374182] nanokvm systemd[1]: Mounting POSIX Message Queue File System...
+[   11.374290] nanokvm systemd[1]: Mounting Kernel Debug File System...
+[   11.374605] nanokvm systemd[1]: Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[   11.374782] nanokvm systemd[1]: Create List of Static Device Nodes skipped, unmet condition check ConditionFileNotEmpty=/run/booted-system/kernel-modules/lib/modules/7.1.3-nanokvm/modules.devname
+[   11.374865] nanokvm systemd[1]: Load Kernel Module configfs skipped, unmet condition check ConditionKernelModuleLoaded=!configfs
+[   11.374934] nanokvm systemd[1]: Mounting Kernel Configuration File System...
+[   11.375000] nanokvm systemd[1]: Starting Load Kernel Module drm...
+[   11.375066] nanokvm systemd[1]: Load Kernel Module efi_pstore skipped, unmet condition check ConditionKernelModuleLoaded=!efi_pstore
+[   11.375157] nanokvm systemd[1]: Starting Load Kernel Module fuse...
+[   11.375220] nanokvm systemd[1]: File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[   11.375289] nanokvm systemd[1]: Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[   11.375352] nanokvm systemd[1]: Starting Journal Service...
+[   11.375414] nanokvm systemd[1]: Load Kernel Modules skipped, no trigger condition checks were met.
+[   11.375476] nanokvm systemd[1]: Userspace Out-Of-Memory (OOM) Killer skipped, unmet condition check ConditionPathExists=/proc/pressure/memory
+[   11.375541] nanokvm systemd[1]: Starting Remount Root and Kernel File Systems...
+[   11.375603] nanokvm systemd[1]: Starting Apply Kernel Variables...
+[   11.375708] nanokvm kernel: EXT4-fs (loop0): re-mounted 44444444-4444-4444-8888-888888888888.
+[   11.375773] nanokvm systemd[1]: Starting Create Static Device Nodes in /dev gracefully...
+[   11.376232] nanokvm systemd-journald[340]: Collecting audit messages is enabled.
+[   11.376491] nanokvm systemd[1]: Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   11.376626] nanokvm systemd[1]: Starting Coldplug All udev Devices...
+[   11.376718] nanokvm systemd-journald[340]: Journal started
+[   11.376860] nanokvm systemd-journald[340]: Runtime Journal (/run/log/journal/<machine-id>) is 2M, max 16M, 14M free.
+[   11.408230] nanokvm systemd[1]: Started Journal Service.
+[   11.419252] nanokvm systemd[1]: Listening on Journal Log Access Socket.
+[   11.433538] nanokvm systemd[1]: Mounted Huge Pages File System.
+[   11.449297] nanokvm systemd[1]: Mounted POSIX Message Queue File System.
+[   11.461438] nanokvm systemd[1]: Mounted Kernel Debug File System.
+[   11.473185] nanokvm systemd[1]: Mounted Kernel Configuration File System.
+[   11.485613] nanokvm systemd[1]: modprobe@drm.service: Deactivated successfully.
+[   11.487429] nanokvm systemd[1]: Finished Load Kernel Module drm.
+[   11.505810] nanokvm systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[   11.507507] nanokvm systemd[1]: Finished Load Kernel Module fuse.
+[   11.528629] nanokvm systemd[1]: Finished Remount Root and Kernel File Systems.
+[   11.548798] nanokvm systemd[1]: Finished Apply Kernel Variables.
+[   11.572579] nanokvm systemd[1]: Finished Create Static Device Nodes in /dev gracefully.
+[   11.615962] nanokvm systemd[1]: Listening on Disk Image Download Service Socket.
+[   11.629065] nanokvm systemd[1]: FUSE Control File System skipped, unmet condition check ConditionPathExists=/sys/fs/fuse/connections
+[   11.640489] nanokvm systemd[1]: Starting Flush Journal to Persistent Storage...
+[   11.665001] nanokvm systemd[1]: Starting Platform Persistent Storage Archival...
+[   11.696881] nanokvm systemd[1]: Starting Load/Save OS Random Seed...
+[   11.758895] nanokvm systemd-journald[340]: Time spent on flushing to /var/log/journal/<machine-id> is 43.215ms for 392 entries.
+[   11.758895] nanokvm systemd-journald[340]: System Journal (/var/log/journal/<machine-id>) is 4M, max 32M, 28M free.
+[   11.860827] nanokvm systemd-journald[340]: Received client request to flush runtime journal.
+[   11.776597] nanokvm systemd[1]: Starting Network Name Resolution...
+[   11.799980] nanokvm systemd-pstore[359]: PStore console-ramoops-0 moved to /var/lib/systemd/pstore/console-ramoops-0
+[   11.806877] nanokvm systemd-pstore[359]: PStore dmesg-ramoops-0 moved to /var/lib/systemd/pstore/dmesg-ramoops-0
+[   11.841551] nanokvm systemd[1]: Starting Network Time Synchronization...
+[   11.889679] nanokvm systemd[1]: Starting Create Static Device Nodes in /dev...
+[   11.908445] nanokvm systemd[1]: TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-os
+[   11.957761] nanokvm systemd[1]: Finished Flush Journal to Persistent Storage.
+[   11.986377] nanokvm systemd[1]: Finished Platform Persistent Storage Archival.
+[   12.012483] nanokvm systemd[1]: Finished Load/Save OS Random Seed.
+[   12.044756] nanokvm systemd[1]: Finished Create Static Device Nodes in /dev.
+[   12.066635] nanokvm systemd[1]: Reached target First Boot Complete.
+[   12.080608] nanokvm systemd[1]: Reached target Preparation for Local File Systems.
+[   12.108953] nanokvm systemd[1]: Starting Rule-based Manager for Device Events and Files...
+[   12.316143] nanokvm systemd-resolved[362]: Positive Trust Anchors:
+[   12.318196] nanokvm systemd-resolved[362]: . IN DS 20326 8 2 e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d
+[   12.318743] nanokvm systemd-resolved[362]: . IN DS 38696 8 2 683d2d0acb8c9b712a1948b27f741219298d0a450d612c483af444a4c0fb2b16
+[   12.319429] nanokvm systemd-resolved[362]: Negative trust anchors: home.arpa 10.in-addr.arpa 16.172.in-addr.arpa 17.172.in-addr.arpa 18.172.in-addr.arpa 19.172.in-addr.arpa 20.172.in-addr.arpa 21.172.in-addr.arpa 22.172.in-addr.arpa 23.172.in-addr.arpa 24.172.in-addr.arpa 25.172.in-addr.arpa 26.172.in-addr.arpa 27.172.in-addr.arpa 28.172.in-addr.arpa 29.172.in-addr.arpa 30.172.in-addr.arpa 31.172.in-addr.arpa 170.0.0.192.in-addr.arpa 171.0.0.192.in-addr.arpa 168.192.in-addr.arpa d.f.ip6.arpa ipv4only.arpa resolver.arpa corp home internal intranet lan local private test
+[   12.349440] nanokvm systemd-timesyncd[363]: Disabling NSCD because DNSSEC validation is turned off
+[   12.424690] nanokvm systemd[1]: Mounting /run/wrappers...
+[   12.481342] nanokvm systemd-udevd[373]: Using default interface naming scheme 'v261'.
+[   12.499104] nanokvm systemd[1]: Started Network Time Synchronization.
+[   12.513597] nanokvm systemd[1]: Reached target System Time Set.
+[   12.532743] nanokvm systemd[1]: Mounted /run/wrappers.
+[   12.546889] nanokvm systemd[1]: Reached target Local File Systems.
+[   12.570472] nanokvm systemd[1]: Listening on Boot Loader Control Service Socket.
+[   12.591633] nanokvm systemd[1]: Starting Create SUID/SGID Wrappers...
+[   12.608537] nanokvm systemd[1]: Update Boot Loader Random Seed skipped, no trigger condition checks were met.
+[   12.647427] nanokvm systemd[1]: Starting Save Transient machine-id to Disk...
+[   12.703550] nanokvm systemd[1]: Starting Create System Files and Directories...
+[   12.904616] nanokvm systemd[1]: etc-machine\x2did.mount: Deactivated successfully.
+[   12.917260] nanokvm systemd[1]: Finished Save Transient machine-id to Disk.
+[   12.936579] nanokvm systemd[1]: Finished Create System Files and Directories.
+[   13.013389] nanokvm systemd[1]: Starting Rebuild Journal Catalog...
+[   13.077273] nanokvm systemd[1]: Starting Record System Boot/Shutdown in UTMP...
+[   13.102248] nanokvm systemd[1]: Started Rule-based Manager for Device Events and Files.
+[   13.264456] nanokvm systemd-resolved[362]: Using system hostname 'nanokvm'.
+[   13.299838] nanokvm systemd[1]: Started Network Name Resolution.
+[   13.335506] nanokvm systemd-resolved[362]: Switching to fallback DNS server 1.1.1.1#one.one.one.one.
+[   13.394903] nanokvm systemd[1]: Finished Record System Boot/Shutdown in UTMP.
+[   13.437633] nanokvm systemd[1]: Finished Rebuild Journal Catalog.
+[   13.472839] nanokvm systemd[1]: Starting Update is Completed...
+[   13.576537] nanokvm systemd[1]: Finished Update is Completed.
+[   13.694366] nanokvm systemd[1]: suid-sgid-wrappers.service: Deactivated successfully.
+[   13.700577] nanokvm systemd[1]: Finished Create SUID/SGID Wrappers.
+[   13.712663] nanokvm systemd[1]: suid-sgid-wrappers.service: Consumed 465ms CPU time over 1.103s wall clock time, 7.6M memory peak, 4.4M read from disk.
+[   14.144200] nanokvm systemd[1]: Finished Coldplug All udev Devices.
+[   14.153550] nanokvm systemd[1]: Reached target System Initialization.
+[   14.165691] nanokvm systemd[1]: Started Discard unused filesystem blocks once a week.
+[   14.176816] nanokvm systemd[1]: Started logrotate.timer.
+[   14.188505] nanokvm systemd[1]: Started Daily Cleanup of Temporary Directories.
+[   14.200498] nanokvm systemd[1]: Reached target Timer Units.
+[   14.212873] nanokvm systemd[1]: Listening on Avahi mDNS/DNS-SD Stack Activation Socket.
+[   14.232256] nanokvm systemd[1]: Listening on D-Bus System Message Bus Socket.
+[   14.256933] nanokvm systemd[1]: Listening on OpenSSH Server Socket (systemd-ssh-generator, AF_UNIX Local).
+[   14.269113] nanokvm systemd[1]: Listening on Virtual Machine and Container Registration Service Socket.
+[   14.280505] nanokvm systemd[1]: Reached target Socket Units.
+[   14.292460] nanokvm systemd[1]: Reached target Basic System.
+[   14.318210] nanokvm systemd[1]: Starting Avahi mDNS/DNS-SD Stack...
+[   14.348864] nanokvm systemd[1]: Starting Import lastlog data into lastlog2 database...
+[   14.404469] nanokvm systemd[1]: Starting Logrotate configuration check...
+[   14.460107] nanokvm systemd[1]: Starting Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step)...
+[   14.522533] nanokvm systemd[1]: Starting Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID)...
+[   14.580475] nanokvm logrotate[450]: warning: logrotate in debug mode does nothing except printing debug messages!  Consider using verbose mode (-v) instead if this is not what you want.
+[   14.580475] nanokvm logrotate[450]: reading config file /nix/store/c5c5s0c34b1llcns7fgp9lm8pkc492p3-logrotate.conf
+[   14.580475] nanokvm logrotate[450]: note: 'monthly' overrides previously specified 'weekly'
+[   14.580091] nanokvm systemd[1]: Started Leave the slot-B test: reboot after a bounded dwell.
+[   14.604188] nanokvm logrotate[450]: note: 'size' overrides previously specified 'daily'
+[   14.616555] nanokvm logrotate[450]: Reading state from file: /var/lib/logrotate.status
+[   14.616555] nanokvm logrotate[450]: state file /var/lib/logrotate.status does not exist
+[   14.616555] nanokvm logrotate[450]: Allocating hash table for state file, size 64 entries
+[   14.616555] nanokvm logrotate[450]: Handling 3 logs
+[   14.616555] nanokvm logrotate[450]: rotating pattern: "/var/log/btmp" monthly empty log files are not rotated, only log files >= 1048576 bytes are rotated, (1 rotations), old logs are removed
+[   14.616555] nanokvm logrotate[450]: considering log /var/log/btmp
+[   14.616555] nanokvm logrotate[450]: Creating new state
+[   14.616555] nanokvm logrotate[450]:   Now: 2026-03-17 19:55
+[   14.616555] nanokvm logrotate[450]:   Last rotated at 2026-03-17 19:00
+[   14.616555] nanokvm logrotate[450]:   log does not need rotating (log has already been rotated)
+[   14.616555] nanokvm logrotate[450]: rotating pattern: "/var/log/wtmp" monthly empty log files are not rotated, only log files >= 1048576 bytes are rotated, (1 rotations), old logs are removed
+[   14.616555] nanokvm logrotate[450]: considering log /var/log/wtmp
+[   14.616555] nanokvm logrotate[450]: Creating new state
+[   14.616555] nanokvm logrotate[450]:   Now: 2026-03-17 19:55
+[   14.616555] nanokvm logrotate[450]:   Last rotated at 2026-03-17 19:00
+[   14.616555] nanokvm logrotate[450]:   log does not need rotating (log has already been rotated)
+[   14.616555] nanokvm logrotate[450]: rotating pattern: "/var/log/nanokvm/*.log" 10485760 bytes empty log files are not rotated, (3 rotations), old logs are removed
+[   14.616555] nanokvm logrotate[450]: considering log /var/log/nanokvm/*.log
+[   14.616555] nanokvm logrotate[450]:   log /var/log/nanokvm/*.log does not exist -- skipping
+[   14.616555] nanokvm logrotate[450]: Creating new state
+[   14.663589] nanokvm systemd[1]: Starting NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)...
+[   14.722108] nanokvm systemd[1]: Starting NanoKVM-Pro open video stack (capture + encoder modules)...
+[   14.779207] nanokvm systemd[1]: Starting Name Service Cache Daemon (nsncd)...
+[   14.804390] nanokvm nanokvm-slotb-deadman-start[462]: slotb-deadman: rebooting to slot A 900 s from now (uptime 14 s)
+[   14.804390] nanokvm nanokvm-slotb-deadman-start[462]:                unless /run/keepalive appears
+[   14.826857] nanokvm nanokvm-usb-start[464]: nanokvm-usb: STUB. The controller and the configfs function
+[   14.829795] nanokvm nanokvm-usb-start[464]:              drivers are here (#82), but usbdev.sh -- the script
+[   14.829795] nanokvm nanokvm-usb-start[464]:              that builds the gadget -- is vendor-only and not
+[   14.829795] nanokvm nanokvm-usb-start[464]:              captured yet: no keyboard, no mouse, no mass
+[   14.829795] nanokvm nanokvm-usb-start[464]:              storage, no NCM.
+[   14.860240] nanokvm systemd[1]: Starting Post-Boot Actions...
+[   14.925283] nanokvm systemd[1]: Started Reset console on configuration changes.
+[   14.949489] nanokvm nanokvm-identity[458]: identity: uid=<uid-hi><uid-lo> mac=<redacted-mac> hostname=kvm-<derived>
+[   14.972711] nanokvm systemd[1]: Starting SSH Host Keys Generation...
+[   14.992494] nanokvm systemd[1]: NanoKVM-Pro mini-display status screen skipped, unmet condition check ConditionPathExists=/dev/fb0
+[   14.993948] nanokvm nanokvm-video-start[467]: nanokvm-video: STUB. open_vin_csi2 / open_vin_capture /
+[   15.000140] nanokvm nanokvm-video-start[467]:                ax630c_venc_vcmd are not ported to this kernel yet
+[   15.000140] nanokvm nanokvm-video-start[467]:                (issue #83). No /dev/video0; the server will serve
+[   15.000140] nanokvm nanokvm-video-start[467]:                the UI but not a stream.
+[   15.061634] nanokvm systemd[1]: Finished Logrotate configuration check.
+[   15.087510] nanokvm systemd[1]: Finished NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half).
+[   15.109307] nanokvm systemd[1]: Finished NanoKVM-Pro open video stack (capture + encoder modules).
+[   15.134272] nanokvm systemd[1]: Finished Post-Boot Actions.
+[   15.170246] nanokvm systemd[1]: Finished Import lastlog data into lastlog2 database.
+[   15.178430] nanokvm nsncd[472]: Mar 17 19:56:00.101 INFO started, config: Config { ignored_request_types: {}, worker_count: 8, handoff_timeout: 10s }, path: "/var/run/nscd/socket"
+[   15.186894] nanokvm systemd[1]: Started Name Service Cache Daemon (nsncd).
+[   15.261461] nanokvm systemd[1]: Reached target Host and Network Name Lookups.
+[   15.273630] nanokvm systemd[1]: Reached target User and Group Name Lookups.
+[   15.307152] nanokvm systemd[1]: Starting D-Bus System Message Bus...
+[   15.374888] nanokvm systemd[1]: Starting User Login Management...
+[   15.404464] nanokvm avahi-daemon[447]: Found user 'avahi' (UID 999) and group 'avahi' (GID 999).
+[   15.412538] nanokvm avahi-daemon[447]: Successfully dropped root privileges.
+[   15.412823] nanokvm avahi-daemon[447]: avahi-daemon 0.8 starting up.
+[   15.610565] nanokvm systemd[1]: Finished Copy /kvmapp to tmpfs (the vendor nanokvm_pre.sh step).
+[   15.678080] nanokvm dbus-broker-launch[515]: Looking up NSS group entry for 'netdev'...
+[   15.692405] nanokvm dbus-broker-launch[515]: NSS returned no entry for 'netdev'
+[   15.692405] nanokvm dbus-broker-launch[515]: Invalid group-name in /nix/store/5kh76sbl1kkrpncgkr29bqr7vgwk7z09-system-path/share/dbus-1/system.d/avahi-dbus.conf +24: group="netdev"
+[   15.702783] nanokvm dbus-broker-launch[515]: Looking up NSS group entry for 'wpa_supplicant'...
+[   15.717627] nanokvm dbus-broker-launch[515]: NSS returned no entry for 'wpa_supplicant'
+[   15.717627] nanokvm dbus-broker-launch[515]: Invalid group-name in /nix/store/5kh76sbl1kkrpncgkr29bqr7vgwk7z09-system-path/share/dbus-1/system.d/dbus-wpa_supplicant.conf +11: group="wpa_supplicant"
+[   15.800120] nanokvm dbus-broker-launch[515]: Invalid group-name in /nix/store/p12nspa1cgpss6rsffh5k8lcp1f6kvk6-avahi-0.8/share/dbus-1/system.d/avahi-dbus.conf +24: group="netdev"
+[   15.856062] nanokvm systemd[1]: Started D-Bus System Message Bus.
+[   16.010028] nanokvm systemd-logind[516]: New seat seat0.
+[   16.031509] nanokvm dbus-broker-launch[515]: Ready
+[   16.045402] nanokvm avahi-daemon[447]: No service file found in /etc/avahi/services.
+[   16.047407] nanokvm systemd[1]: Started User Login Management.
+[   16.045630] nanokvm avahi-daemon[447]: *** WARNING: Detected another IPv4 mDNS stack running on this host. This makes mDNS unreliable and is thus not recommended. ***
+[   16.045737] nanokvm avahi-daemon[447]: *** WARNING: Detected another IPv6 mDNS stack running on this host. This makes mDNS unreliable and is thus not recommended. ***
+[   16.048305] nanokvm avahi-daemon[447]: Joining mDNS multicast group on interface lo.IPv6 with address ::1.
+[   16.048367] nanokvm avahi-daemon[447]: New relevant interface lo.IPv6 for mDNS.
+[   16.048384] nanokvm avahi-daemon[447]: Joining mDNS multicast group on interface lo.IPv4 with address 127.0.0.1.
+[   16.048424] nanokvm avahi-daemon[447]: New relevant interface lo.IPv4 for mDNS.
+[   16.048439] nanokvm avahi-daemon[447]: Network interface enumeration completed.
+[   16.048470] nanokvm avahi-daemon[447]: Registering new address record for ::1 on lo.*.
+[   16.048586] nanokvm avahi-daemon[447]: Registering new address record for 127.0.0.1 on lo.IPv4.
+[   16.123582] nanokvm systemd[1]: Started Avahi mDNS/DNS-SD Stack.
+[   16.170634] nanokvm systemd[1]: Starting linger-users.service...
+[   16.224427] nanokvm systemd[1]: Starting Hostname Service...
+[   16.353777] nanokvm systemd[1]: linger-users.service: Deactivated successfully.
+[   16.355106] nanokvm systemd[1]: Finished linger-users.service.
+[   16.408346] nanokvm systemd[1]: Found device /dev/ttyS0.
+[   16.710930] nanokvm systemd[1]: Started Hostname Service.
+[   16.717654] nanokvm hostnamectl[489]: Hint: static hostname is already set, so the specified transient hostname will not be used.
+[   16.933179] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[   16.932458] nanokvm avahi-daemon[447]: Server startup complete. Host name is nanokvm.local. Local service cookie is 1253105850.
+[   17.020405] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[   17.056194] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: No Safety Features support found
+[   17.102830] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: IEEE 1588-2008 Advanced Timestamp supported
+[   17.104116] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: registered PTP clock
+[   17.132095] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: configuring for phy/rgmii-id link mode
+[   17.206293] nanokvm systemd[1]: Finished Apply the NanoKVM-Pro per-device MAC and hostname (from the SoC UID).
+[   17.742997] nanokvm systemd[1]: Found device /dev/mmcblk0p16.
+[   18.010234] nanokvm systemd[1]: Reached target Preparation for Network.
+[   18.026870] nanokvm systemd[1]: Listening on Network Management Resolve Hook Socket.
+[   18.052963] nanokvm systemd[1]: Starting Generate the NanoKVM-Pro HTTPS certificate if absent...
+[   18.081921] nanokvm systemd[1]: Starting File System Check on /dev/mmcblk0p16...
+[   18.166112] nanokvm systemd[1]: Starting Network Management...
+[   18.579856] nanokvm systemd-fsck[555]: fsck.fat 4.2 (2021-01-31)
+[   18.579856] nanokvm systemd-fsck[555]: /dev/mmcblk0p16: 4 files, 8/258078 clusters
+[   18.604636] nanokvm systemd[1]: Finished File System Check on /dev/mmcblk0p16.
+[   18.673067] nanokvm systemd[1]: Mounting /boot...
+[   18.752551] nanokvm systemd-timesyncd[363]: Network configuration changed, trying to establish connection.
+[   18.752918] nanokvm systemd-timesyncd[363]: Network configuration changed, trying to establish connection.
+[   18.801867] nanokvm systemd-networkd[548]: Failed to open nftables netlink socket. IPMasquerade= and NFTSet= settings will not be applied. Ignoring: Protocol not supported
+[   18.871961] nanokvm systemd[1]: Mounted /boot.
+[   18.910868] nanokvm systemd-networkd[548]: lo: Link UP
+[   18.910901] nanokvm systemd-networkd[548]: lo: Gained carrier
+[   18.911024] nanokvm systemd-networkd[548]: end0: Link UP
+[   18.928547] nanokvm systemd[1]: Started Network Management.
+[   18.930260] nanokvm systemd-networkd[548]: end0: Link DOWN
+[   18.943181] nanokvm systemd-networkd[548]: end0: Link UP
+[   18.953412] nanokvm systemd[1]: Reached target Network.
+[   18.980433] nanokvm systemd[1]: Starting Enable Persistent Storage in systemd-networkd...
+[   18.984409] nanokvm systemd-networkd[548]: end0: Configuring with /etc/systemd/network/99-ethernet-default-dhcp.network.
+[   19.028811] nanokvm systemd[1]: Starting Permit User Sessions...
+[   19.212585] nanokvm systemd[1]: Finished Enable Persistent Storage in systemd-networkd.
+[   19.236437] nanokvm systemd[1]: Finished Permit User Sessions.
+[   19.281829] nanokvm systemd[1]: Started Getty on tty1.
+[   19.329775] nanokvm systemd[1]: Started Serial Getty on ttyS0.
+[   19.361089] nanokvm systemd[1]: Reached target Login Prompts.
+[   19.554145] nanokvm nanokvm-cert-start[553]: ....+..+...+...+....+...+..+......+....+...........+++++++++++++++++++++++++++++++++++++++*....+.....+++++++++++++++++++++++++++++++++++++++*..+...+.....+...+....+......+.................+.+.....+.+......+.........+...+..+............................+......+..............+...+.......+........+..................+.+........+.+............+..................+..+...+....+......+......+.........+.....+..........+.....+......+...+.+......+.....+.+..............+...+.......+.........................................+....+...+.....+...+...+.+.........+...........+......+.........+......+...+.......+...+..+.......+...+..............+......+...+.+.........+......+.....+.+........+.........+.............+..+...+...+.+......+.....+.......+........+.......+......+...............+.....+.+......+.......................+....+.....+...+...+.+.....+....+...........+...+.+.........+..+...++++++
+[   19.960253] nanokvm nanokvm-cert-start[553]: ....+.....+...+...+.........+......+....+++++++++++++++++++++++++++++++++++++++*.....+++++++++++++++++++++++++++++++++++++++*....+..+.......+...+.........+.....+.+.....+.........+...+.......+...+.....+......+.+......+..+..........+..+...+.+...........+.........+.........+......+....+...+.....+...+..........+...........+....+..+....+...............+..............+......+.+............+..+......+...+.+...........+.............+......+........+.+..+...+....+...++++++
+[   20.021585] nanokvm nanokvm-cert-start[553]: -----
+[   20.116593] nanokvm systemd[1]: Finished Generate the NanoKVM-Pro HTTPS certificate if absent.
+[   20.157161] nanokvm systemd[1]: Started NanoKVM-Pro server (open stack).
+[   21.265571] nanokvm systemd-networkd[548]: end0: Gained carrier
+[   21.275939] nanokvm kernel: axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+[   21.277781] nanokvm kernel: axera-dwmac 104c0000.ethernet end0: Link is Up - 1Gbps/Full - flow control off
+[   23.168418] nanokvm systemd-networkd[548]: end0: Gained IPv6LL
+[   23.168566] nanokvm avahi-daemon[447]: Joining mDNS multicast group on interface end0.IPv6 with address <redacted-ipv6-ll>.
+[   23.168670] nanokvm avahi-daemon[447]: New relevant interface end0.IPv6 for mDNS.
+[   23.168742] nanokvm avahi-daemon[447]: Registering new address record for <redacted-ipv6-ll> on end0.*.
+[   23.175248] nanokvm systemd-timesyncd[363]: Network configuration changed, trying to establish connection.
+[   23.929578] nanokvm systemd[1]: Starting Virtual Console Setup...
+[   24.175353] nanokvm systemd-vconsole-setup[602]: Configuration of first virtual console was skipped, ignoring remaining ones.
+[   24.179440] nanokvm systemd[1]: Finished Virtual Console Setup.
+[   24.232903] nanokvm sshd-keygen-start[514]: Generating public/private rsa key pair.
+[   24.232903] nanokvm sshd-keygen-start[514]: Your identification has been saved in /etc/ssh/ssh_host_rsa_key
+[   24.232903] nanokvm sshd-keygen-start[514]: Your public key has been saved in /etc/ssh/ssh_host_rsa_key.pub
+[   24.232903] nanokvm sshd-keygen-start[514]: The key fingerprint is:
+[   24.232903] nanokvm sshd-keygen-start[514]: SHA256:6C2rNgYwlYBh0/pZOgQz7Y1qlkDr0tHRAJ9QUFr2PfU root@nanokvm
+[   24.232903] nanokvm sshd-keygen-start[514]: The key's randomart image is:
+[   24.232903] nanokvm sshd-keygen-start[514]: +---[RSA 4096]----+
+[   24.232903] nanokvm sshd-keygen-start[514]: |+=***o    .      |
+[   24.232903] nanokvm sshd-keygen-start[514]: |o=+O.o.. . .     |
+[   24.232903] nanokvm sshd-keygen-start[514]: |..O.=.. o   E    |
+[   24.232903] nanokvm sshd-keygen-start[514]: |+o.+.o . .       |
+[   24.232903] nanokvm sshd-keygen-start[514]: |o+=.+ . S        |
+[   24.232903] nanokvm sshd-keygen-start[514]: |.*o= . .         |
+[   24.232903] nanokvm sshd-keygen-start[514]: |+  .. o .        |
+[   24.232903] nanokvm sshd-keygen-start[514]: |    +  o         |
+[   24.232903] nanokvm sshd-keygen-start[514]: |   o.o.          |
+[   24.232903] nanokvm sshd-keygen-start[514]: +----[SHA256]-----+
+[   24.293687] nanokvm sshd-keygen-start[610]: Generating public/private ed25519 key pair.
+[   24.293687] nanokvm sshd-keygen-start[610]: Your identification has been saved in /etc/ssh/ssh_host_ed25519_key
+[   24.293687] nanokvm sshd-keygen-start[610]: Your public key has been saved in /etc/ssh/ssh_host_ed25519_key.pub
+[   24.293687] nanokvm sshd-keygen-start[610]: The key fingerprint is:
+[   24.293687] nanokvm sshd-keygen-start[610]: SHA256:k+YO5uTbNxslnb+utv00+1uH4c9iP7vP1BNoOm28RAQ root@nanokvm
+[   24.293687] nanokvm sshd-keygen-start[610]: The key's randomart image is:
+[   24.293687] nanokvm sshd-keygen-start[610]: +--[ED25519 256]--+
+[   24.293687] nanokvm sshd-keygen-start[610]: |           E     |
+[   24.293687] nanokvm sshd-keygen-start[610]: |            .    |
+[   24.293687] nanokvm sshd-keygen-start[610]: |             .   |
+[   24.293687] nanokvm sshd-keygen-start[610]: |         . ....  |
+[   24.293687] nanokvm sshd-keygen-start[610]: |        S . ++.. |
+[   24.293687] nanokvm sshd-keygen-start[610]: |       o . o*o oo|
+[   24.293687] nanokvm sshd-keygen-start[610]: |      + . .o =+o*|
+[   24.293687] nanokvm sshd-keygen-start[610]: |     = +  o.=.+O*|
+[   24.293687] nanokvm sshd-keygen-start[610]: |      +.o..+o*+O/|
+[   24.293687] nanokvm sshd-keygen-start[610]: +----[SHA256]-----+
+[   24.299589] nanokvm systemd[1]: sshd-keygen.service: Deactivated successfully.
+[   24.301056] nanokvm systemd[1]: Finished SSH Host Keys Generation.
+[   24.313578] nanokvm systemd[1]: sshd-keygen.service: Consumed 6.533s CPU time over 9.327s wall clock time, 4M memory peak, 1.8M read from disk.
+[   24.323310] nanokvm systemd[1]: Starting SSH Daemon...
+[   24.423039] nanokvm sshd[612]: Server listening on 0.0.0.0 port 22.
+[   24.423182] nanokvm sshd[612]: Server listening on :: port 22.
+[   24.423707] nanokvm systemd[1]: Started SSH Daemon.
+[   24.425813] nanokvm systemd[1]: Reached target Multi-User System.
+[   24.435540] nanokvm systemd[1]: Starting Record slot-B boot milestones in the A/B slot register...
+[   25.607851] nanokvm systemd-networkd[548]: end0: DHCPv4 address <device-ip>/21, gateway <router> acquired from <router>
+[   25.620558] nanokvm avahi-daemon[447]: Joining mDNS multicast group on interface end0.IPv4 with address <device-ip>.
+[   25.622612] nanokvm avahi-daemon[447]: New relevant interface end0.IPv4 for mDNS.
+[   25.623355] nanokvm systemd-networkd[548]: Could not set hostname: Access denied
+[   25.628285] nanokvm avahi-daemon[447]: Registering new address record for <device-ip> on end0.IPv4.
+[   25.628404] nanokvm systemd-timesyncd[363]: Network configuration changed, trying to establish connection.
+[   26.638346] nanokvm nanokvm-slotb-milestones-start[613]: slotb-milestones: BACKUP0 now 0x0E000018
+[   26.642906] nanokvm systemd[1]: Finished Record slot-B boot milestones in the A/B slot register.
+[   26.645099] nanokvm systemd[1]: Startup finished in 7.022s (kernel) + 19.622s (userspace) = 26.645s.
+[   55.619624] nanokvm systemd[1]: systemd-hostnamed.service: Deactivated successfully.
+[   55.709669] nanokvm systemd-resolved[362]: Clock change detected. Flushing caches.
+[   55.712650] nanokvm systemd-timesyncd[363]: Contacted time server 172.232.15.202:123 (0.nixos.pool.ntp.org).
+[   55.712867] nanokvm systemd-timesyncd[363]: Initial clock synchronization to Mon 2026-09-07 22:46:56.252654 UTC.
+[   55.745614] nanokvm systemd[1]: Starting Discard unused blocks on filesystems from /etc/fstab...
+[   55.767932] nanokvm systemd[1]: Starting Logrotate Service...
+[   56.009585] nanokvm systemd[1]: logrotate.service: Deactivated successfully.
+[   56.012289] nanokvm systemd[1]: Finished Logrotate Service.
+[   56.156689] nanokvm fstrim[638]: /boot: 126 MiB (132131840 bytes) trimmed on /dev/mmcblk0p16
+[   56.156689] nanokvm fstrim[638]: /: 534.3 MiB (560246784 bytes) trimmed on /dev/loop0
+[   56.161778] nanokvm systemd[1]: fstrim.service: Deactivated successfully.
+[   56.163133] nanokvm systemd[1]: Finished Discard unused blocks on filesystems from /etc/fstab.
+[   56.165553] nanokvm systemd[1]: fstrim.service: Consumed 277ms CPU time over 416ms wall clock time, 2.9M memory peak, 1M read from disk.
+[   59.125911] nanokvm sshd-session[644]: banner exchange: Connection from <lan-host> port 57048: invalid format [preauth]
+[   63.609505] nanokvm unix_chkpwd[652]: password check failed for user (root)
+[   63.610783] nanokvm sshd-session[651]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[   64.918552] nanokvm sshd-session[649]: error: PAM: Authentication failure for root from <lan-host>
+[   64.930842] nanokvm sshd-session[649]: Connection closed by authenticating user root <lan-host> port 49826 [preauth]
+[   69.897283] nanokvm sshd-session[654]: Accepted keyboard-interactive/pam for root from <lan-host> port 49832 ssh2
+[   69.915630] nanokvm sshd-session[654]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[   70.002803] nanokvm systemd-logind[516]: New session '1' of user 'root' with class 'user' and type 'tty'.
+[   70.027747] nanokvm systemd[1]: Created slice Slice /user/0.
+[   70.037361] nanokvm systemd[1]: Starting User Runtime Directory /run/user/0...
+[   70.124760] nanokvm systemd[1]: Finished User Runtime Directory /run/user/0.
+[   70.139810] nanokvm systemd[1]: Starting User Manager for UID 0...
+[   70.202384] nanokvm (systemd)[661]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[   70.211687] nanokvm systemd-logind[516]: New session '2' of user 'root' with class 'manager-early' and type 'unspecified'.
+[   72.273302] nanokvm systemd[661]: Queued start job for default target Main User Target.
+[   72.292259] nanokvm systemd[661]: Created slice User Application Slice.
+[   72.292517] nanokvm systemd[661]: Started Daily Cleanup of User's Temporary Directories.
+[   72.292657] nanokvm systemd[661]: Reached target Paths.
+[   72.293002] nanokvm systemd[661]: Reached target Timers.
+[   72.297340] nanokvm systemd[661]: Starting D-Bus User Message Bus Socket...
+[   72.303546] nanokvm systemd[661]: Starting Create User Files and Directories...
+[   72.368524] nanokvm systemd[661]: Finished Create User Files and Directories.
+[   72.487546] nanokvm systemd[661]: Listening on D-Bus User Message Bus Socket.
+[   72.488246] nanokvm systemd[661]: Reached target Sockets.
+[   72.488660] nanokvm systemd[661]: Reached target Basic System.
+[   72.489022] nanokvm systemd[661]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[   72.489411] nanokvm systemd[661]: Reached target Main User Target.
+[   72.489712] nanokvm systemd[661]: Startup finished in 2.242s.
+[   72.491780] nanokvm systemd[1]: Started User Manager for UID 0.
+[   72.508905] nanokvm systemd[1]: Started Session 1 of User root.
+[   72.612319] nanokvm systemd[1]: Starting Hostname Service...
+[   72.875799] nanokvm systemd[1]: Started Hostname Service.
+[   72.942569] nanokvm sshd-session[672]: Received disconnect from <lan-host> port 49832:11: disconnected by user
+[   72.943097] nanokvm sshd-session[672]: Disconnected from user root <lan-host> port 49832
+[   72.945220] nanokvm sshd-session[654]: pam_unix(sshd:session): session closed for user root
+[   72.950855] nanokvm systemd[1]: session-1.scope: Deactivated successfully.
+[   72.952296] nanokvm systemd[1]: session-1.scope: Consumed 121ms CPU time over 442ms wall clock time, 3.4M memory peak, 1.1M read from disk.
+[   72.957395] nanokvm systemd-logind[516]: Session 1 logged out. Waiting for processes to exit.
+[   72.962201] nanokvm systemd-logind[516]: Removed session 1.
+[   83.138492] nanokvm systemd[1]: Stopping User Manager for UID 0...
+[   83.148784] nanokvm systemd[661]: Activating special unit Exit the Session...
+[   83.150808] nanokvm systemd[661]: Stopped target Main User Target.
+[   83.151145] nanokvm systemd[661]: Stopped target Basic System.
+[   83.151384] nanokvm systemd[661]: Stopped target Paths.
+[   83.151576] nanokvm systemd[661]: Stopped target Sockets.
+[   83.151780] nanokvm systemd[661]: Stopped target Timers.
+[   83.151998] nanokvm systemd[661]: Stopped Daily Cleanup of User's Temporary Directories.
+[   83.153894] nanokvm systemd[661]: Closed D-Bus User Message Bus Socket.
+[   83.154464] nanokvm systemd[661]: Stopped Create User Files and Directories.
+[   83.158028] nanokvm systemd[661]: Removed slice User Application Slice.
+[   83.158324] nanokvm systemd[661]: Reached target Shutdown.
+[   83.159740] nanokvm systemd[661]: Finished Exit the Session.
+[   83.160247] nanokvm systemd[661]: Reached target Exit the Session.
+[   83.173185] nanokvm (sd-pam)[663]: pam_unix(systemd-user:session): session closed for user root
+[   83.173337] nanokvm systemd-logind[516]: Removed session 2.
+[   83.181757] nanokvm systemd[1]: user@0.service: Deactivated successfully.
+[   83.183833] nanokvm systemd[1]: Stopped User Manager for UID 0.
+[   83.185875] nanokvm systemd[1]: user@0.service: Consumed 2.204s CPU time over 13.042s wall clock time, 15.3M memory peak, 10.1M read from disk.
+[   83.294250] nanokvm systemd[1]: Stopping User Runtime Directory /run/user/0...
+[   83.361291] nanokvm systemd[1]: run-user-0.mount: Deactivated successfully.
+[   83.365042] nanokvm systemd[1]: user-runtime-dir@0.service: Deactivated successfully.
+[   83.366303] nanokvm systemd[1]: Stopped User Runtime Directory /run/user/0.
+[   85.469023] nanokvm sshd-session[691]: banner exchange: Connection from <lan-host> port 52834: invalid format [preauth]
+[   90.379893] nanokvm unix_chkpwd[699]: password check failed for user (root)
+[   90.381245] nanokvm sshd-session[698]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[   92.762638] nanokvm sshd-session[696]: error: PAM: Authentication failure for root from <lan-host>
+[   92.774584] nanokvm sshd-session[696]: Connection closed by authenticating user root <lan-host> port 52836 [preauth]
+[   97.447529] nanokvm sshd-session[701]: Accepted keyboard-interactive/pam for root from <lan-host> port 50742 ssh2
+[   97.465061] nanokvm sshd-session[701]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[   97.505059] nanokvm systemd-logind[516]: New session '3' of user 'root' with class 'user' and type 'tty'.
+[   97.533599] nanokvm systemd[1]: Starting User Runtime Directory /run/user/0...
+[   97.619152] nanokvm systemd[1]: Finished User Runtime Directory /run/user/0.
+[   97.634190] nanokvm systemd[1]: Starting User Manager for UID 0...
+[   97.697117] nanokvm (systemd)[708]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[   97.706385] nanokvm systemd-logind[516]: New session '4' of user 'root' with class 'manager-early' and type 'unspecified'.
+[   99.715346] nanokvm systemd[708]: Queued start job for default target Main User Target.
+[   99.732229] nanokvm systemd[708]: Created slice User Application Slice.
+[   99.732477] nanokvm systemd[708]: Started Daily Cleanup of User's Temporary Directories.
+[   99.732623] nanokvm systemd[708]: Reached target Paths.
+[   99.732984] nanokvm systemd[708]: Reached target Timers.
+[   99.737212] nanokvm systemd[708]: Starting D-Bus User Message Bus Socket...
+[   99.744512] nanokvm systemd[708]: Starting Create User Files and Directories...
+[   99.801687] nanokvm systemd[708]: Finished Create User Files and Directories.
+[   99.809362] nanokvm systemd[708]: Listening on D-Bus User Message Bus Socket.
+[   99.810878] nanokvm systemd[708]: Reached target Sockets.
+[   99.811747] nanokvm systemd[708]: Reached target Basic System.
+[   99.812662] nanokvm systemd[708]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[   99.812883] nanokvm systemd[1]: Started User Manager for UID 0.
+[   99.814800] nanokvm systemd[708]: Reached target Main User Target.
+[   99.815538] nanokvm systemd[708]: Startup finished in 2.073s.
+[   99.829044] nanokvm systemd[1]: Started Session 3 of User root.
+[  100.098977] nanokvm sshd-session[719]: Received disconnect from <lan-host> port 50742:11: disconnected by user
+[  100.099526] nanokvm sshd-session[719]: Disconnected from user root <lan-host> port 50742
+[  100.101700] nanokvm sshd-session[701]: pam_unix(sshd:session): session closed for user root
+[  100.109571] nanokvm systemd[1]: session-3.scope: Deactivated successfully.
+[  100.114151] nanokvm systemd-logind[516]: Session 3 logged out. Waiting for processes to exit.
+[  100.117581] nanokvm systemd-logind[516]: Removed session 3.
+[  110.136745] nanokvm systemd[1]: Stopping User Manager for UID 0...
+[  110.143479] nanokvm systemd[708]: Activating special unit Exit the Session...
+[  110.143912] nanokvm systemd[708]: Stopped target Main User Target.
+[  110.144328] nanokvm systemd[708]: Stopped target Basic System.
+[  110.144600] nanokvm systemd[708]: Stopped target Paths.
+[  110.144820] nanokvm systemd[708]: Stopped target Sockets.
+[  110.145035] nanokvm systemd[708]: Stopped target Timers.
+[  110.145243] nanokvm systemd[708]: Stopped Daily Cleanup of User's Temporary Directories.
+[  110.152449] nanokvm systemd[708]: Closed D-Bus User Message Bus Socket.
+[  110.153034] nanokvm systemd[708]: Stopped Create User Files and Directories.
+[  110.154455] nanokvm systemd[708]: Removed slice User Application Slice.
+[  110.154705] nanokvm systemd[708]: Reached target Shutdown.
+[  110.155885] nanokvm systemd[708]: Finished Exit the Session.
+[  110.156307] nanokvm systemd[708]: Reached target Exit the Session.
+[  110.171471] nanokvm (sd-pam)[710]: pam_unix(systemd-user:session): session closed for user root
+[  110.171988] nanokvm systemd-logind[516]: Removed session 4.
+[  110.179978] nanokvm systemd[1]: user@0.service: Deactivated successfully.
+[  110.182095] nanokvm systemd[1]: Stopped User Manager for UID 0.
+[  110.184488] nanokvm systemd[1]: user@0.service: Consumed 2.182s CPU time over 12.546s wall clock time, 8.9M memory peak.
+[  110.290636] nanokvm systemd[1]: Stopping User Runtime Directory /run/user/0...
+[  110.366018] nanokvm systemd[1]: run-user-0.mount: Deactivated successfully.
+[  110.369729] nanokvm systemd[1]: user-runtime-dir@0.service: Deactivated successfully.
+[  110.370943] nanokvm systemd[1]: Stopped User Runtime Directory /run/user/0.
+[  129.947884] nanokvm systemd[1]: systemd-hostnamed.service: Deactivated successfully.
+[  137.922511] nanokvm sshd-session[743]: banner exchange: Connection from <lan-host> port 42660: invalid format [preauth]
+[  142.839904] nanokvm unix_chkpwd[748]: password check failed for user (root)
+[  142.841249] nanokvm sshd-session[747]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[  144.681586] nanokvm sshd-session[745]: error: PAM: Authentication failure for root from <lan-host>
+[  144.693537] nanokvm sshd-session[745]: Connection closed by authenticating user root <lan-host> port 38518 [preauth]
+[  149.583772] nanokvm sshd-session[750]: Accepted keyboard-interactive/pam for root from <lan-host> port 38522 ssh2
+[  149.601284] nanokvm sshd-session[750]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  149.640665] nanokvm systemd-logind[516]: New session '5' of user 'root' with class 'user' and type 'tty'.
+[  149.673398] nanokvm systemd[1]: Starting User Runtime Directory /run/user/0...
+[  149.750418] nanokvm systemd[1]: Finished User Runtime Directory /run/user/0.
+[  149.764877] nanokvm systemd[1]: Starting User Manager for UID 0...
+[  149.817747] nanokvm (systemd)[757]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[  149.827555] nanokvm systemd-logind[516]: New session '6' of user 'root' with class 'manager-early' and type 'unspecified'.
+[  151.827568] nanokvm systemd[757]: Queued start job for default target Main User Target.
+[  151.844483] nanokvm systemd[757]: Created slice User Application Slice.
+[  151.844745] nanokvm systemd[757]: Started Daily Cleanup of User's Temporary Directories.
+[  151.844888] nanokvm systemd[757]: Reached target Paths.
+[  151.845846] nanokvm systemd[757]: Reached target Timers.
+[  151.850490] nanokvm systemd[757]: Starting D-Bus User Message Bus Socket...
+[  151.856453] nanokvm systemd[757]: Starting Create User Files and Directories...
+[  151.915223] nanokvm systemd[757]: Finished Create User Files and Directories.
+[  151.923425] nanokvm systemd[757]: Listening on D-Bus User Message Bus Socket.
+[  151.924420] nanokvm systemd[757]: Reached target Sockets.
+[  151.925300] nanokvm systemd[757]: Reached target Basic System.
+[  151.925949] nanokvm systemd[1]: Started User Manager for UID 0.
+[  151.928782] nanokvm systemd[757]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[  151.929178] nanokvm systemd[757]: Reached target Main User Target.
+[  151.929482] nanokvm systemd[757]: Startup finished in 2.066s.
+[  151.944807] nanokvm systemd[1]: Started Session 5 of User root.
+[  152.798771] nanokvm sshd-session[771]: Received disconnect from <lan-host> port 38522:11: disconnected by user
+[  152.799290] nanokvm sshd-session[771]: Disconnected from user root <lan-host> port 38522
+[  152.801374] nanokvm sshd-session[750]: pam_unix(sshd:session): session closed for user root
+[  152.810216] nanokvm systemd-logind[516]: Session 5 logged out. Waiting for processes to exit.
+[  152.811976] nanokvm systemd[1]: session-5.scope: Deactivated successfully.
+[  152.813693] nanokvm systemd[1]: session-5.scope: Consumed 577ms CPU time over 867ms wall clock time, 20.3M memory peak, 16.4M read from disk, 3.9K incoming IP traffic, 2.3K outgoing IP traffic.
+[  152.817367] nanokvm systemd-logind[516]: Removed session 5.
+[  162.887546] nanokvm systemd[1]: Stopping User Manager for UID 0...
+[  162.894762] nanokvm systemd[757]: Activating special unit Exit the Session...
+[  162.896289] nanokvm systemd[757]: Stopped target Main User Target.
+[  162.896649] nanokvm systemd[757]: Stopped target Basic System.
+[  162.896912] nanokvm systemd[757]: Stopped target Paths.
+[  162.897133] nanokvm systemd[757]: Stopped target Sockets.
+[  162.897366] nanokvm systemd[757]: Stopped target Timers.
+[  162.897591] nanokvm systemd[757]: Stopped Daily Cleanup of User's Temporary Directories.
+[  162.899431] nanokvm systemd[757]: Closed D-Bus User Message Bus Socket.
+[  162.899983] nanokvm systemd[757]: Stopped Create User Files and Directories.
+[  162.901775] nanokvm systemd[757]: Removed slice User Application Slice.
+[  162.902059] nanokvm systemd[757]: Reached target Shutdown.
+[  162.903657] nanokvm systemd[757]: Finished Exit the Session.
+[  162.904527] nanokvm systemd[757]: Reached target Exit the Session.
+[  162.924262] nanokvm (sd-pam)[759]: pam_unix(systemd-user:session): session closed for user root
+[  162.925250] nanokvm systemd-logind[516]: Removed session 6.
+[  162.934914] nanokvm systemd[1]: user@0.service: Deactivated successfully.
+[  162.937761] nanokvm systemd[1]: Stopped User Manager for UID 0.
+[  162.939260] nanokvm systemd[1]: user@0.service: Consumed 2.182s CPU time over 13.171s wall clock time, 8.9M memory peak.
+[  163.059512] nanokvm systemd[1]: Stopping User Runtime Directory /run/user/0...
+[  163.130193] nanokvm systemd[1]: run-user-0.mount: Deactivated successfully.
+[  163.133400] nanokvm systemd[1]: user-runtime-dir@0.service: Deactivated successfully.
+[  163.134669] nanokvm systemd[1]: Stopped User Runtime Directory /run/user/0.
+[  168.512108] nanokvm sshd-session[814]: banner exchange: Connection from <lan-host> port 52120: invalid format [preauth]
+[  173.433183] nanokvm unix_chkpwd[819]: password check failed for user (root)
+[  173.434426] nanokvm sshd-session[818]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[  175.578957] nanokvm sshd-session[816]: error: PAM: Authentication failure for root from <lan-host>
+[  175.590939] nanokvm sshd-session[816]: Connection closed by authenticating user root <lan-host> port 34072 [preauth]
+[  180.684097] nanokvm sshd-session[824]: Accepted keyboard-interactive/pam for root from <lan-host> port 34088 ssh2
+[  180.703494] nanokvm sshd-session[824]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  180.742979] nanokvm systemd-logind[516]: New session '7' of user 'root' with class 'user' and type 'tty'.
+[  180.773504] nanokvm systemd[1]: Starting User Runtime Directory /run/user/0...
+[  180.855546] nanokvm systemd[1]: Finished User Runtime Directory /run/user/0.
+[  180.870094] nanokvm systemd[1]: Starting User Manager for UID 0...
+[  180.929287] nanokvm (systemd)[831]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[  180.938653] nanokvm systemd-logind[516]: New session '8' of user 'root' with class 'manager-early' and type 'unspecified'.
+[  182.948149] nanokvm systemd[831]: Queued start job for default target Main User Target.
+[  182.968199] nanokvm systemd[831]: Created slice User Application Slice.
+[  182.968449] nanokvm systemd[831]: Started Daily Cleanup of User's Temporary Directories.
+[  182.968587] nanokvm systemd[831]: Reached target Paths.
+[  182.968930] nanokvm systemd[831]: Reached target Timers.
+[  182.973087] nanokvm systemd[831]: Starting D-Bus User Message Bus Socket...
+[  182.980520] nanokvm systemd[831]: Starting Create User Files and Directories...
+[  183.038353] nanokvm systemd[831]: Finished Create User Files and Directories.
+[  183.045188] nanokvm systemd[831]: Listening on D-Bus User Message Bus Socket.
+[  183.046609] nanokvm systemd[831]: Reached target Sockets.
+[  183.047602] nanokvm systemd[831]: Reached target Basic System.
+[  183.048626] nanokvm systemd[831]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[  183.048992] nanokvm systemd[1]: Started User Manager for UID 0.
+[  183.049427] nanokvm systemd[831]: Reached target Main User Target.
+[  183.049687] nanokvm systemd[831]: Startup finished in 2.075s.
+[  183.061004] nanokvm systemd[1]: Started Session 7 of User root.
+[  183.136162] nanokvm sshd-session[842]: Received disconnect from <lan-host> port 34088:11: disconnected by user
+[  183.136687] nanokvm sshd-session[842]: Disconnected from user root <lan-host> port 34088
+[  183.138709] nanokvm sshd-session[824]: pam_unix(sshd:session): session closed for user root
+[  183.146326] nanokvm systemd[1]: session-7.scope: Deactivated successfully.
+[  183.151634] nanokvm systemd-logind[516]: Session 7 logged out. Waiting for processes to exit.
+[  183.155266] nanokvm systemd-logind[516]: Removed session 7.
+[  187.203200] nanokvm sshd-session[845]: banner exchange: Connection from <lan-host> port 35256: invalid format [preauth]
+[  192.626837] nanokvm unix_chkpwd[850]: password check failed for user (root)
+[  192.628808] nanokvm sshd-session[849]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=<lan-host>  user=root
+[  193.387732] nanokvm systemd[1]: Stopping User Manager for UID 0...
+[  193.396249] nanokvm systemd[831]: Activating special unit Exit the Session...
+[  193.397146] nanokvm systemd[831]: Stopped target Main User Target.
+[  193.397421] nanokvm systemd[831]: Stopped target Basic System.
+[  193.397647] nanokvm systemd[831]: Stopped target Paths.
+[  193.397842] nanokvm systemd[831]: Stopped target Sockets.
+[  193.398035] nanokvm systemd[831]: Stopped target Timers.
+[  193.398229] nanokvm systemd[831]: Stopped Daily Cleanup of User's Temporary Directories.
+[  193.400329] nanokvm systemd[831]: Closed D-Bus User Message Bus Socket.
+[  193.400890] nanokvm systemd[831]: Stopped Create User Files and Directories.
+[  193.402372] nanokvm systemd[831]: Removed slice User Application Slice.
+[  193.402635] nanokvm systemd[831]: Reached target Shutdown.
+[  193.403241] nanokvm systemd[831]: Finished Exit the Session.
+[  193.403628] nanokvm systemd[831]: Reached target Exit the Session.
+[  193.418143] nanokvm systemd-logind[516]: Removed session 8.
+[  193.427253] nanokvm systemd[1]: user@0.service: Deactivated successfully.
+[  193.429819] nanokvm systemd[1]: Stopped User Manager for UID 0.
+[  193.432440] nanokvm systemd[1]: user@0.service: Consumed 2.181s CPU time over 12.558s wall clock time, 9.1M memory peak.
+[  193.527038] nanokvm systemd[1]: Stopping User Runtime Directory /run/user/0...
+[  193.594669] nanokvm systemd[1]: run-user-0.mount: Deactivated successfully.
+[  193.598360] nanokvm systemd[1]: user-runtime-dir@0.service: Deactivated successfully.
+[  193.599661] nanokvm systemd[1]: Stopped User Runtime Directory /run/user/0.
+[  194.628570] nanokvm sshd-session[847]: error: PAM: Authentication failure for root from <lan-host>
+[  194.640220] nanokvm sshd-session[847]: Connection closed by authenticating user root <lan-host> port 53418 [preauth]
+[  199.600784] nanokvm sshd-session[859]: Accepted keyboard-interactive/pam for root from <lan-host> port 53422 ssh2
+[  199.618229] nanokvm sshd-session[859]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  199.657305] nanokvm systemd-logind[516]: New session '9' of user 'root' with class 'user' and type 'tty'.
+[  199.685628] nanokvm systemd[1]: Starting User Runtime Directory /run/user/0...
+[  199.762897] nanokvm systemd[1]: Finished User Runtime Directory /run/user/0.
+[  199.775330] nanokvm systemd[1]: Starting User Manager for UID 0...
+[  199.836894] nanokvm (systemd)[866]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[  199.846294] nanokvm systemd-logind[516]: New session '10' of user 'root' with class 'manager-early' and type 'unspecified'.
+[  201.852463] nanokvm systemd[866]: Queued start job for default target Main User Target.
+[  201.872205] nanokvm systemd[866]: Created slice User Application Slice.
+[  201.872460] nanokvm systemd[866]: Started Daily Cleanup of User's Temporary Directories.
+[  201.872601] nanokvm systemd[866]: Reached target Paths.
+[  201.872957] nanokvm systemd[866]: Reached target Timers.
+[  201.877141] nanokvm systemd[866]: Starting D-Bus User Message Bus Socket...
+[  201.884527] nanokvm systemd[866]: Starting Create User Files and Directories...
+[  201.941980] nanokvm systemd[866]: Finished Create User Files and Directories.
+[  201.950026] nanokvm systemd[866]: Listening on D-Bus User Message Bus Socket.
+[  201.951611] nanokvm systemd[866]: Reached target Sockets.
+[  201.952596] nanokvm systemd[866]: Reached target Basic System.
+[  201.953255] nanokvm systemd[1]: Started User Manager for UID 0.
+[  201.956794] nanokvm systemd[866]: Run user-specific NixOS activation skipped, unmet condition check ConditionUser=!@system
+[  201.957184] nanokvm systemd[866]: Reached target Main User Target.
+[  201.957448] nanokvm systemd[866]: Startup finished in 2.076s.
+[  201.973543] nanokvm systemd[1]: Started Session 9 of User root.

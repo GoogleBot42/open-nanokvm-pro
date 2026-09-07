@@ -311,7 +311,18 @@ in
       hostFsType = lib.mkOption {
         type = lib.types.str;
         default = "ext4";
-        description = "Filesystem type of `hostDevice`.";
+        description = "Filesystem type of the carrier.";
+      };
+      hostPartition = lib.mkOption {
+        type = lib.types.int;
+        default = parts.root.number;
+        description = ''
+          Partition number of the carrier, used to FIND it rather than to name
+          it. Stage 1 takes whichever `mmcblk*` disk has this partition,
+          because the three SD4HC instances probe in no fixed order and the
+          eMMC is not reliably `mmcblk0` -- one #78 hardware run had it as
+          `mmcblk1`. Seventeen partitions is unique to the eMMC on this board.
+        '';
       };
       path = lib.mkOption {
         type = lib.types.str;
@@ -475,20 +486,41 @@ in
     # looking for the root device. Runs after udev has settled the block
     # devices, which is exactly when the eMMC partitions exist.
     boot.initrd.postDeviceCommands = lib.mkIf cfg.rootImage.enable ''
-      echo "nanokvm: loop-mounting ${cfg.rootImage.path} off ${cfg.rootImage.hostDevice}"
-      # waitDevice is stage 1's own helper; `udevadm settle` has already run by
-      # here, but the eMMC probes asynchronously and a missing partition would
-      # otherwise be a bare mount failure with no explanation.
-      waitDevice ${cfg.rootImage.hostDevice} || \
-        echo "nanokvm: ${cfg.rootImage.hostDevice} never appeared" >&2
+      # LOCATE THE CARRIER, DO NOT ASSUME IT. The AX630C has three SD4HC
+      # instances and nothing orders their probes, so the eMMC is not reliably
+      # mmcblk0: one #78 run had it as mmcblk1 and stage 1 sat waiting for a
+      # /dev/mmcblk0p17 that was never going to appear. #75's bring-up init
+      # already knew this and located its partition by name out of
+      # /proc/partitions; this is the same discipline. The eMMC is the only
+      # device on this board with seventeen partitions, so "the disk that has
+      # a p17" identifies it exactly.
+      nkhost=""
+      nktry=0
+      while [ "$nktry" -lt 60 ]; do
+        for nkp in /sys/class/block/mmcblk*p${toString cfg.rootImage.hostPartition}; do
+          [ -e "$nkp" ] || continue
+          nkhost="/dev/$(basename "$nkp")"
+          break
+        done
+        [ -n "$nkhost" ] && break
+        sleep 1
+        nktry=$((nktry + 1))
+      done
+
+      if [ -z "$nkhost" ]; then
+        echo "nanokvm: no mmcblk*p${toString cfg.rootImage.hostPartition} appeared -- no carrier" >&2
+        nkhost=${cfg.rootImage.hostDevice}
+      fi
+
+      echo "nanokvm: loop-mounting ${cfg.rootImage.path} off $nkhost"
       mkdir -p /nanokvm-host
       # rw, and it has to be: losetup opens the backing file O_RDWR, which
       # fails with EROFS on a read-only mount, and a read-only loop device
       # cannot carry a writable root. The only blocks written on the carrier
       # filesystem are the ones already allocated to our image file, plus its
       # journal -- the same traffic every vendor boot generates.
-      mount -t ${cfg.rootImage.hostFsType} ${cfg.rootImage.hostDevice} /nanokvm-host \
-        || echo "nanokvm: could not mount ${cfg.rootImage.hostDevice}" >&2
+      mount -t ${cfg.rootImage.hostFsType} "$nkhost" /nanokvm-host \
+        || echo "nanokvm: could not mount $nkhost" >&2
       losetup /dev/loop0 /nanokvm-host${cfg.rootImage.path} \
         || echo "nanokvm: could not attach /nanokvm-host${cfg.rootImage.path}" >&2
       # /nanokvm-host is deliberately left mounted: the loop device holds the
@@ -839,9 +871,22 @@ in
     # list (docs/provenance.md); timesyncd talks to the NTP pool only.
     services.timesyncd.enable = true;
 
-    # Overwritten per-device by nanokvm-identity above; this is what an
-    # un-provisioned board reports.
-    networking.hostName = "nanokvm";
+    # EMPTY, and that is the whole point. `networking.hostName = "nanokvm"`
+    # writes /etc/hostname, which is a STATIC hostname -- and systemd-hostnamed
+    # refuses to let a transient hostname override a static one:
+    #
+    #   hostnamectl[489]: Hint: static hostname is already set, so the
+    #                     specified transient hostname will not be used.
+    #
+    # So the first three hardware runs came up as `nanokvm` no matter what
+    # nanokvm-identity did, and switching that call to `--transient` (which was
+    # itself a necessary fix -- the static write fails outright on a read-only
+    # store symlink) only changed the error into a polite refusal. With no
+    # static hostname there is nothing to lose to, and the transient one the
+    # identity service derives from the SoC UID is what gethostname(2), the
+    # server, mDNS and the DHCP client read. An un-provisioned board falls back
+    # to the kernel default, `localhost`.
+    networking.hostName = "";
     networking.useNetworkd = true;
     networking.useDHCP = lib.mkDefault true;
 
