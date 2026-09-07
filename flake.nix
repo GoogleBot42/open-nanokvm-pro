@@ -211,17 +211,26 @@
           partSize = 64 * 1024 * 1024;
           loadAddr = "0x40200000";
           nameSuffix = "-mainline";
-          title = "mainline kernel partition image (slot B, #74)";
+          title = "mainline kernel partition image (slot B, #74/#75)";
           flashNotes = ''
             TARGET partition: kernel_b  (A/B slot B), 64M
               eMMC device   : /dev/mmcblk0p15   (p14 = slot A / shipped 4.19 kernel)
 
-            This is SCAFFOLDING (#74). It has no watchdog driver, so U-Boot's
-            30 s wdt0 arm-before-booti WILL hard-reset it -- that is #75's job.
-            Flash it only together with the matching mainline dtb.
+            Carries the ax630c watchdog driver (#75), so U-Boot's 30 s
+            wdt0 arm-before-booti no longer resets it, and a bring-up
+            initramfs whose /init leaves boot evidence in the A/B slot
+            register and in reserved DRAM. There is no storage driver yet
+            (#76), so it reaches that initramfs and nothing further, then
+            reboots itself. Flash only together with the matching mainline
+            dtb -- the reserved-memory layout and the watchdog's syscon
+            phandle both live there.
 
             Flash (reversible slot-B test):
-              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync'';
+              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync
+
+            Read the result back from slot A afterwards:
+              devmem 0x02390024                      # milestone bits 12-15
+              dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=8 | strings'';
         };
 
         dtb-mainline-slot-image = callPkg ./pkgs/slot-image.nix {

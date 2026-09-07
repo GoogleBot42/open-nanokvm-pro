@@ -97,10 +97,24 @@
 		 * written at 0x48000000 is destroyed by the very kernel meant to
 		 * recover it (measured 2026-09-06).
 		 *
+		 * More precisely, this 64 KiB sits inside the DATA area of the
+		 * vendor ramoops' ftrace zone (0x480d0000-0x480f0000). Nothing
+		 * writes that data unless pstore function tracing is switched
+		 * on, and the zap at the vendor's probe rewrites only the
+		 * zone's own 12-byte header at 0x480d0000. Confirmed on
+		 * hardware: a full mainline boot log written here was still
+		 * intact after the vendor kernel had booted and read it.
+		 *
 		 * mem-type 1 is uncached. On a board whose only reset is a
 		 * watchdog or a raw chip reset, neither of which writes back
 		 * dirty cache lines, a cacheable pstore zone is a log that
 		 * evaporates in exactly the case it exists for.
+		 *
+		 * Both sizes are powers of two because ramoops rounds them down
+		 * to one anyway -- 0x6000 would silently become 0x4000, and a
+		 * DT that has to be simulated to know its own layout is worse
+		 * than a DT that is simply explicit. 0x4000 console, and the
+		 * 0x4000 remainder becomes two 0x2000 dump records.
 		 *
 		 * This is the only channel that survives when userspace never
 		 * runs: the console zone holds the boot log from the first
@@ -111,7 +125,7 @@
 		ramoops@480e0000 {
 			compatible = "ramoops";
 			reg = <0x0 0x480e0000 0x0 0x8000>;
-			console-size = <0x6000>;
+			console-size = <0x4000>;
 			record-size = <0x2000>;
 			mem-type = <1>;
 		};

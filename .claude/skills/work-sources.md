@@ -407,8 +407,21 @@ propose SG2002 work without flagging this gap up front.
   `dts/ax630c{.dtsi,-nanokvm-pro.dts}` with `cpp` + `dtc -p 4096`, and both are
   packaged for the slot-B partitions so #75's first boot is reversible. Additive:
   all eight vendor-path derivation hashes are byte-identical to before. New gate
-  `.#checks.<system>.mainline-dtb`. **#74 does NOT boot** — U-Boot arms wdt0 for 30 s
-  before `booti` and nothing pets it, which is exactly #75's scope.
+  `.#checks.<system>.mainline-dtb`.
+  **#75 is DONE + device-proven (2026-09-06): A MAINLINE KERNEL HAS BOOTED ON
+  THIS SILICON.** Slot-B boot of `.#kernel-mainline` brought up both A53s,
+  probed the clk/pinctrl/watchdog drivers, reached userspace, lived **122 s**
+  (twice U-Boot's 30 s-per-stage wdt0 arm, with `watchdog0 timeleft=29` at every
+  10 s sample — the core petting the adopted dog), rebooted itself through a
+  `syscon-reboot` node on `CHIP_RST_SW`, and the SPL failed back to slot A on
+  its own. Evidence: `docs/reference/mainline/first-boot-20260906/` (full boot
+  log, both persistence channels). New: `drivers/watchdog/ax630c_wdt.c` from
+  `docs/reference/mainline/wdt-model-20260906.md`, and
+  `pkgs/initramfs-mainline.nix` + `pkgs/kernel-mainline/initramfs/bringup-init.c`
+  — one static musl `/init` that leaves boot evidence in slot-register bits
+  12-15, in reserved DRAM, and on the heartbeat LED. Reusable for every later
+  child issue's first boot. Device was restored to slot B = vendor kernel;
+  `/root/pre75/` holds both backups and the mainline images for a fast re-test.
   **#80's source half is DONE (2026-09-06, still open).** Both data models are
   banked as specs — `docs/reference/mainline/{clk,pinctrl}-model-20260906.md`,
   written by Opus subagents from the vendor GPL *source* and reconciled against
@@ -420,9 +433,12 @@ propose SG2002 work without flagging this gap up front.
   §2: 246 clocks not 247, 133 DEMO writes not ~66, 56 functions not ~30, 97
   gpio-ranges not 128. What #80 still owes is the I2C and DEMO-derived pin
   states, deliberately deferred to #76 and #81 because they attach to DT nodes
-  that do not exist yet. Nothing about it is boot-tested; that needs #75.
-  Next: **#75** (needs the device for one slot-B boot); **#85** (aic8800) can
-  still start from source in parallel, as can #76/#81 now that clk+pinctrl exist.
+  that do not exist yet. #75 boot-tested both drivers on hardware: they probe,
+  and the clock framework runs the tree to completion (`clk: Disabling unused
+  clocks`).
+  Next: **#76** (eMMC/SD + reset driver -- the first child that needs a real
+  peripheral, and the one that turns the bring-up initramfs into a rootfs);
+  **#85** (aic8800) can still start from source in parallel, as can #81.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

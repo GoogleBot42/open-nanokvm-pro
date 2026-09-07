@@ -36,7 +36,7 @@ staticPkgs.stdenv.mkDerivation {
     runHook preBuild
 
     tree=$PWD/tree
-    mkdir -p "$tree/dev" "$tree/proc"
+    mkdir -p "$tree/dev" "$tree/proc" "$tree/sys"
 
     $CC -O2 -static -Wall -Wextra -Werror -o "$tree/init" "$src"
     $STRIP "$tree/init"

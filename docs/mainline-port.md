@@ -512,8 +512,8 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 ## 8. Child issues
 
 Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
-lives as a comment on #26. **#74 is done** (see "What exists now" at the end of
-this section); everything else is open.
+lives as a comment on #26. **#74 and #75 are done** (see "What exists now" at the end
+of this section); #80's source half is written but unbooted; everything else is open.
 
 1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
@@ -521,10 +521,13 @@ this section); everything else is open.
    in-repo; vendor-prefix behind one macro. Package via `slot-image.nix`
    (kernel ≤ 64 MiB, dtb ≤ 1 MiB, `dtc -p 4096`). Depends on: nothing.
 2. **#75 `ax_wdt` port + boot-contract shims (first hardware step)** —
-   Describing-subagent spec of `axera,ax-wdt` → watchdog + restart-handler
-   driver; cmdline keeps `blkdevparts=`; minimal initramfs that re-arms
-   `SLOTB_BOOTABLE` and drives the heartbeat LED. Boot on slot B, read the
-   result via `bootsystem` on the following boot. Depends on: #74.
+   DONE 2026-09-06, device-proven. Watchdog driver written from a
+   describing-subagent spec, `syscon-reboot` for the ordinary reboot, and
+   a bring-up initramfs that leaves boot evidence in the slot register, in
+   reserved DRAM and on the heartbeat LED. The stated exit criterion
+   (`bootsystem` = B on the next boot) was replaced: re-arming
+   `SLOTB_BOOTABLE` would strand the device on a slot with no rootfs, so
+   the milestone bits are the oracle and every exit path returns to slot A.
 3. **#76 eMMC/SD via `sdhci-cadence` + reset driver + gate-only clk driver** —
    Spec + port of `axera_reset` (`#reset-cells = <1>` + table) and a CCF
    driver covering the 86 gates (PLLs as fixed-factor); `cdns,sd4hc` with
@@ -661,9 +664,75 @@ vendor board dts deletes, and the 40 DEMO-table entries whose electrical config
 no DT state carries — attach to nodes that do not exist until #76 (I2C) and #81
 (GPIO), so they land with those.
 
-Not booted, and cannot be until #75. What is verified is that the kernel builds,
-both drivers link in with their initcalls registered, the dtb builds, and the
-table counts hold when counted back out of the compiled objects.
+Not booted at the time of writing; #75 booted it later the same day and both
+drivers came up (see below).
+
+### What exists now (#75, 2026-09-06) — BOOTED
+
+**A mainline kernel has run on this silicon.** `.#kernel-mainline` boots from
+slot B, brings up both CPUs, probes the clock, pin-control and watchdog
+drivers, reaches userspace, and reboots itself back to slot A. Log and
+milestone evidence: [reference/mainline/first-boot-20260906/](reference/mainline/first-boot-20260906/).
+
+Three pieces made that possible.
+
+**The watchdog** (`drivers/watchdog/ax630c_wdt.c`, from
+[wdt-model-20260906.md](reference/mainline/wdt-model-20260906.md)) is what
+trap 3 in §5 predicted: U-Boot arms wdt0 immediately before `booti`, so #74's
+kernel was hard-reset every time. The driver adopts the running dog instead of
+restarting it — it programs the counter mux, its own reload and `WDOG_HW_RUNNING`
+in one probe, so there is no window where the board is unprotected — and every
+error path re-arms the block, because a failed probe that leaves the dog off
+turns a diagnosable reboot loop into a silent hang. It caps
+`max_hw_heartbeat_ms` at 10 s regardless of the advertised timeout, which makes
+it safe whether the block resets at the first expiry or (as the spec infers)
+the second.
+
+**Reboot** does not come from the watchdog in the normal case. PSCI here
+implements no `SYSTEM_RESET` — it still registers a priority-129 restart handler,
+makes one SMC that returns NOT_SUPPORTED, and falls through — so the DT now
+carries a mainline `syscon-reboot` node on `CHIP_RST_SW` (common syscon
+`0x023400a8` bit 0), the same bit the vendor U-Boot's own reboot uses. The
+watchdog's restart handler sits behind it at priority 128.
+
+**Observability** is the other half, and on a board with no serial console it is
+not optional. Three channels, all read back from slot A on the following boot:
+
+| Channel | Holds | Survives |
+|---|---|---|
+| Milestone bits 12–15 of `TOP_CHIPMODE_GLB_BACKUP0` | reached userspace / stashed the log / completed the dwell / called `reboot` | warm reboot **and** raw chip reset (both measured) |
+| Log stash at `0x480e8000` | the whole kernel log, verbatim, from the first printk | anything that leaves DRAM powered |
+| ramoops at `0x480e0000` | console zone + panic dumps — the only channel when userspace never runs | ditto, and it is uncached so a watchdog reset cannot strand it in a dirty cache line |
+
+Both regions sit in the 64 KiB tail of the window the vendor DT reserves for
+its own pstore — specifically inside the *data* area of the vendor ramoops'
+ftrace zone, which nothing writes unless pstore function tracing is on, and
+whose zap at the vendor's probe rewrites only its own 12-byte header at
+`0x480d0000`. **Do not move our zones to the head of that window:** the vendor
+kernel zaps every zone it owns about 1.5 s into the boot that would have read
+them, which was measured the hard way.
+
+The `/init` is one static musl binary with no shell. It mounts `/proc` and
+`/sys`, makes its own device nodes (devtmpfs is *not* auto-mounted on the
+initramfs path), reaches the slot register, the heartbeat LED and its stash
+through `/dev/mem`, then dwells 120 s — twice the bootloader's watchdog arm,
+which is what makes the dwell a test rather than a courtesy — blinking a
+three-short-one-long pattern and logging the watchdog's own `timeleft` every
+10 s, before rebooting.
+
+**Nothing re-arms `SLOTB_BOOTABLE`.** The SPL consumes it on the way in, so
+every exit path — clean reboot, panic, hang, watchdog reset — lands the next
+boot on slot A. That is the entire safety argument for the test, and it is why
+the run is unattended: slot A and the rootfs are never written.
+
+One trap worth carrying forward: `/dev/kmsg` writes are ratelimited to ten
+records per five seconds per open file unless `printk_devkmsg` is `on`. A normal
+system never notices because systemd sets it at boot; an initramfs inherits the
+default and silently loses everything past the tenth line. The first boot lost
+two milestone lines to it. `/init` now sets it before logging anything.
+
+Still absent, by design: no storage, network, GPIO, USB or video driver. The
+kernel reaches its initramfs and nothing further — #76 is the next step.
 
 ---
 

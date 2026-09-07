@@ -1,0 +1,237 @@
+ive timeleft=29
+[   41.200728] openkvm: alive 40s/120s, watchdog0 state=inactive timeleft=29
+[   51.210230] openkvm: alive 50s/120s, watchdog0 state=inactive timeleft=29
+[   61.219739] openkvm: alive 60s/120s, watchdog0 state=inactive timeleft=29
+[   71.229205] openkvm: alive 70s/120s, watchdog0 state=inactive timeleft=29
+[   81.238674] openkvm: alive 80s/120s, watchdog0 state=inactive timeleft=29
+[   91.248146] openkvm: alive 90s/120s, watchdog0 state=inactive timeleft=29
+[  101.257633] openkvm: alive 100s/120s, watchdog0 state=inactive timeleft=29
+[  111.267171] openkvm: alive 110s/120s, watchdog0 state=inactive timeleft=29
+[  121.276659] openkvm: rebooting via the restart handler
+[  122.282373] reboot: Restarting system
+461fffff (32768 KiB) nomap non-reusable optee@44200000
+[    0.000000] OF: reserved mem: 0x0000000048000000..0x00000000480dffff (896 KiB) nomap non-reusable vendor-pstore@48000000
+[    0.000000] OF: reserved mem: 0x00000000480e0000..0x00000000480e7fff (32 KiB) map non-reusable ramoops@480e0000
+[    0.000000] OF: reserved mem: 0x00000000480e8000..0x00000000480effff (32 KiB) map non-reusable bringup-log@480e8000
+[    0.000000] NUMA: Faking a node at [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000] NODE_DATA(0) allocated [mem 0x73679a40-0x7367c13f]
+[    0.000000] cma: Reserved 32 MiB at 0x0000000071600000
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: Trusted OS migration not required
+[    0.000000] psci: SMC Calling Convention v1.2
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x000000004003ffff]
+[    0.000000]   node   0: [mem 0x0000000040040000-0x000000004007ffff]
+[    0.000000]   node   0: [mem 0x0000000040080000-0x00000000441fffff]
+[    0.000000]   node   0: [mem 0x0000000044200000-0x00000000461fffff]
+[    0.000000]   node   0: [mem 0x0000000046200000-0x0000000047ffffff]
+[    0.000000]   node   0: [mem 0x0000000048000000-0x00000000480dffff]
+[    0.000000]   node   0: [mem 0x00000000480e0000-0x00000000737fffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000] On node 0, zone DMA: 18432 pages in unavailable ranges
+[    0.000000] percpu: Embedded 26 pages/cpu s66904 r8192 d31400 u106496
+[    0.000000] pcpu-alloc: s66904 r8192 d31400 u106496 alloc=26*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    0.000000] Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video", will be passed to user space.
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 0MB
+[    0.000000] software IO TLB: area num 2.
+[    0.000000] software IO TLB: mapped [mem 0x0000000070580000-0x0000000070680000] (1MB)
+[    0.000000] Fallback order for Node 0: 0 
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 210944
+[    0.000000] Policy zone: DMA
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=2.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] RCU Tasks: Setting shift to 1 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=2.
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000001] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008372] Console: colour dummy device 80x25
+[    0.012925] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.023214] pid_max: default: 32768 minimum: 301
+[    0.028090] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.035512] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.043692] VFS: Finished mounting rootfs on nullfs
+[    0.050519] rcu: Hierarchical SRCU implementation.
+[    0.055380] rcu: 	Max phase no-delay instances is 1000.
+[    0.060838] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.069420] EFI services will not be available.
+[    0.074175] smp: Bringing up secondary CPUs ...
+[    0.079314] Detected VIPT I-cache on CPU1
+[    0.079446] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.079607] smp: Brought up 1 node, 2 CPUs
+[    0.094324] SMP: Total of 2 processors activated.
+[    0.099040] CPU: All CPU(s) started at EL1
+[    0.103196] CPU features: detected: 32-bit EL0 Support
+[    0.108353] CPU features: detected: 32-bit EL1 Support
+[    0.113518] CPU features: detected: CRC32 instructions
+[    0.118680] CPU features: detected: PMUv3
+[    0.122751] alternatives: applying system-wide alternatives
+[    0.129964] Memory: 711660K/843776K available (19264K kernel code, 5246K rwdata, 14564K rodata, 3520K init, 718K bss, 96340K reserved, 32768K cma-reserved)
+[    0.144843] devtmpfs: initialized
+[    0.151048] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.160886] posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+[    0.168338] futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+[    0.177564] 21872 pages in range for non-PLT usage
+[    0.177586] 513392 pages in range for PLT usage
+[    0.184392] DMI: not present or invalid.
+[    0.195490] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.202815] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.210765] audit: initializing netlink subsys (disabled)
+[    0.216516] audit: type=2000 audit(0.136:1): state=initialized audit_enabled=0 res=1
+[    0.217678] thermal_sys: Registered thermal governor 'step_wise'
+[    0.224294] thermal_sys: Registered thermal governor 'power_allocator'
+[    0.230413] cpuidle: using governor menu
+[    0.241224] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.248114] ASID allocator initialised with 65536 entries
+[    0.255951] Serial: AMBA PL011 UART driver
+[    0.261493] pstore: Using crash dump compression: deflate
+[    0.266957] printk: legacy console [ramoops-1] enabled
+[    0.272465] pstore: Registered ramoops as persistent store backend
+[    0.278662] ramoops: using 0x8000@0x480e0000, ecc: 0
+[    0.294667] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.301516] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.307804] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.314608] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[    0.320893] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.327697] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.333981] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.340785] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.349518] ACPI: Interpreter disabled.
+[    0.355434] iommu: Default domain type: Translated
+[    0.360272] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.366875] SCSI subsystem initialized
+[    0.370941] libata version 3.00 loaded.
+[    0.375073] usbcore: registered new interface driver usbfs
+[    0.380614] usbcore: registered new interface driver hub
+[    0.385977] usbcore: registered new device driver usb
+[    0.391682] pps_core: LinuxPPS API ver. 1 registered
+[    0.396679] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.405844] PTP clock support registered
+[    0.409923] EDAC MC: Ver: 3.0.0
+[    0.413591] scmi_core: SCMI protocol bus registered
+[    0.419507] FPGA manager framework
+[    0.424300] vgaarb: loaded
+[    0.427712] clocksource: Switched to clocksource arch_sys_counter
+[    0.434163] VFS: Disk quotas dquot_6.6.0
+[    0.438145] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.445628] pnp: PnP ACPI: disabled
+[    0.455989] NET: Registered PF_INET protocol family
+[    0.461102] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.469533] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.477957] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.485731] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.493559] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.501003] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.507530] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.514383] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.520654] RPC: Registered named UNIX socket transport module.
+[    0.526633] RPC: Registered udp transport module.
+[    0.531354] RPC: Registered tcp transport module.
+[    0.536074] RPC: Registered tcp-with-tls transport module.
+[    0.541577] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.548048] PCI: CLS 0 bytes, default 64
+[    0.552343] kvm [1]: HYP mode not available
+[    0.557586] Initialise system trusted keyrings
+[    0.562371] workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[    0.571137] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.577499] NFS: Registering the id_resolver key type
+[    0.582702] Key type id_resolver registered
+[    0.586905] Key type id_legacy registered
+[    0.590957] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.597680] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    0.605416] 9p: Installing v9fs 9p2000 file system support
+[    0.611186] Key type asymmetric registered
+[    0.615325] Asymmetric key parser 'x509' registered
+[    0.620293] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.627730] io scheduler mq-deadline registered
+[    0.632280] io scheduler kyber registered
+[    0.636350] io scheduler bfq registered
+[    0.650044] ledtrig-cpu: registered to indicate activity on CPUs
+[    0.685983] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.696069] printk: legacy console [ttyS0] disabled
+[    0.701378] 4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+[    0.710248] printk: legacy console [ttyS0] enabled
+[    0.719875] printk: legacy bootconsole [uart8250] disabled
+[    0.738328] msm_serial: driver initialized
+[    0.743298] SuperH (H)SCI(F) driver initialized
+[    0.748116] STM32 USART driver initialized
+[    0.761229] loop: module loaded
+[    0.765821] megasas: 07.734.00.00-rc1
+[    0.776753] tun: Universal TUN/TAP device driver, 1.6
+[    0.783111] thunder_xcv, ver 1.0
+[    0.786481] thunder_bgx, ver 1.0
+[    0.789773] nicpf, ver 1.0
+[    0.794179] e1000: Intel(R) PRO/1000 Network Driver
+[    0.799122] e1000: Copyright (c) 1999-2006 Intel Corporation.
+[    0.804943] e1000e: Intel(R) PRO/1000 Network Driver
+[    0.809924] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    0.815910] igb: Intel(R) Gigabit Ethernet Network Driver
+[    0.821329] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    0.826969] igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[    0.833252] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    0.839756] sky2: driver version 1.30
+[    0.845327] VFIO - User Level meta-driver version: 0.3
+[    0.854823] usbcore: registered new interface driver usb-storage
+[    0.865228] i2c_dev: i2c /dev entries driver
+[    0.876078] ax630c-wdt 4840000.watchdog: instance 0 at 24000000 Hz, timeout 60s, max 357s
+[    0.893656] SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[    0.901589] usbcore: registered new interface driver usbhid
+[    0.907219] usbhid: USB HID core driver
+[    0.918302] optee: probing for conduit method.
+[    0.922896] optee: revision 3.21
+[    0.923388] optee: initialized driver
+[    0.933841] NET: Registered PF_INET6 protocol family
+[    0.939974] Segment Routing with IPv6
+[    0.943743] In-situ OAM (IOAM) with IPv6
+[    0.947807] NET: Registered PF_PACKET protocol family
+[    0.952987] 9pnet: Installing 9P2000 support
+[    0.957372] Key type dns_resolver registered
+[    0.974563] registered taskstats version 1
+[    0.979853] Loading compiled-in X.509 certificates
+[    0.994713] Demotion targets for Node 0: null
+[    1.010730] clk: Disabling unused clocks
+[    1.015011] PM: genpd: Disabling unused power domains
+[    1.020168] Warning: unable to open an initial console.
+[    1.026987] Freeing unused kernel memory: 3520K
+[    1.031762] Run /init as init process
+[    1.035440]   with arguments:
+[    1.038427]     /init
+[    1.040713]   with environment:
+[    1.043869]     HOME=/
+[    1.046232]     TERM=linux
+[    1.048951]     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[    1.054795]     blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs)
+[    1.078018]     logomode=vo0@dsi_dpi_video
+[    1.082763] openkvm: mainline bring-up init (#75) running
+[    1.088553] openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    1.133057] openkvm: /proc/version: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[    1.150519] openkvm: BACKUP0 after milestone 1: 0x00001018
+[    1.156914] openkvm: kernel log stashed, bytes: 0x00003d16
+[    1.162745] openkvm: alive 0s/120s, watchdog0 state=inactive timeleft=29
+[   11.172213] openkvm: alive 10s/120s, watchdog0 state=inactive timeleft=29
+[   21.181730] openkvm: alive 20s/120s, watchdog0 state=inactive timeleft=29
+[   31.191236] openkvm: alive 30s/120s, watchdog0 state=inact

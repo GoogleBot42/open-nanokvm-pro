@@ -36,6 +36,7 @@
 
 #include <fcntl.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -93,8 +94,19 @@
 #define LOG_STASH_MAGIC		"OPENKVM-MAINLINE-LOG1"	/* 21 bytes + NUL */
 #define LOG_STASH_HDR		32			/* magic, then a u32 length at +24 */
 
-/* Blink for long enough that a human who looked away still catches it. */
-#define BLINK_SECONDS		15
+/*
+ * How long to stay alive before rebooting, blinking throughout.
+ *
+ * This is the watchdog test, not a courtesy to whoever is watching the LED.
+ * U-Boot arms wdt0 at 30 s per stage, so anything under a minute proves only
+ * that the board can boot -- it says nothing about whether the driver adopted
+ * the running dog and the watchdog core is petting it. Outliving the
+ * bootloader's arm by 2x is the evidence.
+ */
+#define DWELL_SECONDS		120
+
+/* One liveness line to the log every this many seconds of the dwell. */
+#define HEARTBEAT_SECONDS	10
 
 static int kmsg_fd = -1;
 
@@ -122,6 +134,29 @@ static void kmsg_hex(const char *label, uint32_t v)
 	buf[n++] = '\n';
 	if (kmsg_fd >= 0)
 		(void)write(kmsg_fd, buf, n);
+}
+
+/*
+ * Read the first line of a file into buf, NUL-terminated, newline stripped.
+ * Returns 0 on success. Used only for the two watchdog sysfs attributes, so a
+ * failure is reported in the log rather than treated as fatal.
+ */
+static int read_line(const char *path, char *buf, size_t len)
+{
+	int fd = open(path, O_RDONLY | O_CLOEXEC);
+	ssize_t n;
+
+	if (fd < 0)
+		return -1;
+	n = read(fd, buf, len - 1);
+	close(fd);
+	if (n <= 0)
+		return -1;
+	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+		n--;
+	buf[n] = '\0';
+
+	return 0;
 }
 
 static void nap(long sec, long nsec)
@@ -184,24 +219,46 @@ int main(void)
 		static const char *echo[] = { "/proc/cmdline", "/proc/version" };
 		char buf[1024];
 		size_t k;
+		int fd;
+
+		/*
+		 * Lift the /dev/kmsg write ratelimit first. Its default is
+		 * "ratelimit": ten records per five seconds per open file,
+		 * after which writes are silently discarded. On a normal
+		 * system systemd sets this to "on" at boot and nobody ever
+		 * notices; an initramfs with no systemd inherits the default,
+		 * and the first bring-up boot lost two milestone lines to it
+		 * before anyone worked out where they had gone.
+		 */
+		fd = open("/proc/sys/kernel/printk_devkmsg",
+			  O_WRONLY | O_CLOEXEC);
+		if (fd >= 0) {
+			(void)write(fd, "on\n", 3);
+			close(fd);
+		}
 
 		for (k = 0; k < sizeof(echo) / sizeof(echo[0]); k++) {
-			int fd = open(echo[k], O_RDONLY | O_CLOEXEC);
 			ssize_t n;
+			size_t pre;
 
+			/*
+			 * One write per file, not four: each write() to
+			 * /dev/kmsg is a separate record, so building the line
+			 * here keeps the log readable and costs three fewer
+			 * records against the ratelimit above.
+			 */
+			pre = (size_t)snprintf(buf, sizeof(buf), "openkvm: %s: ",
+					       echo[k]);
+			fd = open(echo[k], O_RDONLY | O_CLOEXEC);
 			if (fd < 0)
 				continue;
-			n = read(fd, buf, sizeof(buf) - 1);
+			n = read(fd, buf + pre, sizeof(buf) - pre - 2);
 			close(fd);
 			if (n <= 0)
 				continue;
-			buf[n] = '\0';
-			kmsg("openkvm: ");
-			kmsg(echo[k]);
-			kmsg(": ");
-			kmsg(buf);
-			if (buf[n - 1] != '\n')
-				kmsg("\n");
+			if (buf[pre + n - 1] != '\n')
+				buf[pre + n++] = '\n';
+			(void)write(kmsg_fd, buf, pre + (size_t)n);
 		}
 	} else {
 		kmsg("openkvm: WARNING: /proc mount failed\n");
@@ -294,32 +351,66 @@ int main(void)
 		kmsg("openkvm: WARNING: cannot map the log stash window\n");
 	}
 
-	/* Milestone 3: a distinctive blink -- three short, one long, repeat. */
-	if (gpio0) {
-		volatile void *led = gpio0 + GPIO0_LED_OFF;
-		uint32_t base = rd32(led) & ~(GPIO_DR | GPIO_DDR);
-		long elapsed = 0;
+	/*
+	 * Milestone 3: outlive the bootloader's watchdog, blinking a
+	 * distinctive three-short-one-long pattern the whole time so a human
+	 * can tell this apart from the vendor system's steady heartbeat.
+	 *
+	 * The blinking is the human-facing half. The real content is the
+	 * liveness line every HEARTBEAT_SECONDS, which carries the watchdog's
+	 * own countdown straight out of sysfs: if the driver has adopted the
+	 * running dog and the core is petting it, timeleft keeps jumping back
+	 * up. If it never does, the board reboots mid-dwell and the log stops
+	 * at the last line -- which says exactly when.
+	 */
+	{
+		volatile void *led = gpio0 ? gpio0 + GPIO0_LED_OFF : NULL;
+		uint32_t base = led ? rd32(led) & ~(GPIO_DR | GPIO_DDR) : 0;
+		long elapsed = 0, next_beat = 0;
+		char msg[256], left[32], state[32];
 
-		kmsg("openkvm: blinking sys-heartbeat (GPIO0_A23)\n");
-		while (elapsed < BLINK_SECONDS * 1000) {
+		if (!led)
+			kmsg("openkvm: WARNING: cannot map GPIO0; no LED\n");
+		if (mount("sysfs", "/sys", "sysfs", 0, NULL) != 0)
+			kmsg("openkvm: WARNING: /sys mount failed; no watchdog readout\n");
+
+		while (elapsed < DWELL_SECONDS * 1000) {
+			if (elapsed >= next_beat) {
+				if (read_line("/sys/class/watchdog/watchdog0/timeleft",
+					      left, sizeof(left)) != 0)
+					strcpy(left, "?");
+				if (read_line("/sys/class/watchdog/watchdog0/state",
+					      state, sizeof(state)) != 0)
+					strcpy(state, "?");
+				snprintf(msg, sizeof(msg),
+					 "openkvm: alive %lds/%ds, watchdog0 state=%s timeleft=%s\n",
+					 elapsed / 1000, DWELL_SECONDS, state, left);
+				kmsg(msg);
+				next_beat += HEARTBEAT_SECONDS * 1000;
+			}
+
 			for (i = 0; i < 3; i++) {
-				wr32(led, base | GPIO_DDR | GPIO_DR);
+				if (led)
+					wr32(led, base | GPIO_DDR | GPIO_DR);
 				nap(0, 120000000L);
-				wr32(led, base | GPIO_DDR);
+				if (led)
+					wr32(led, base | GPIO_DDR);
 				nap(0, 180000000L);
 				elapsed += 300;
 			}
-			wr32(led, base | GPIO_DDR | GPIO_DR);
+			if (led)
+				wr32(led, base | GPIO_DDR | GPIO_DR);
 			nap(0, 700000000L);
-			wr32(led, base | GPIO_DDR);
+			if (led)
+				wr32(led, base | GPIO_DDR);
 			nap(0, 400000000L);
 			elapsed += 1100;
 		}
-		wr32(led, base | GPIO_DDR);
+
+		if (led)
+			wr32(led, base | GPIO_DDR);
 		if (chipmode)
 			wr32(chipmode + BACKUP0_SET_OFF, MS_LED);
-	} else {
-		kmsg("openkvm: WARNING: cannot map GPIO0; no LED\n");
 	}
 
 
