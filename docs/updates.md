@@ -98,12 +98,28 @@ tag a version without one, and the GitHub release workflow lifts the section
 verbatim into the release description (plus a compare link to the previous
 tag).
 
-**Primary path — from the Gitea web UI:** Actions → **cut-release** → Run
+**Primary path — the `cut-release` workflow on Gitea.** From the web UI:
+Actions → **cut-release** → Run
 workflow → enter the version (e.g. `2.0.1`). The job
 (`.gitea/workflows/cut-release.yml`) validates, writes `VERSION`, commits
 `release: 2.0.1`, tags `v2.0.1`, pushes, and force-moves the rolling
 `preview` tag to the same commit — git work only, no nix, safe on the Gitea
 runner. (A `dry_run` input validates without pushing.)
+
+The same workflow is dispatchable over the API, which is how an agent cuts a
+release without a browser (used for alpha.4 and alpha.5). Always dry-run first:
+
+```bash
+TOK=$(grep -o 'token: .*' ~/.config/tea/config.yml | head -1 | cut -d' ' -f2)
+curl -X POST -H "Authorization: token $TOK" -H 'Content-Type: application/json' \
+  -d '{"ref":"main","inputs":{"version":"2.1.0-alpha.5","dry_run":"true"}}' \
+  https://git.neet.dev/api/v1/repos/zuckerberg/open-nanokvm-pro/actions/workflows/cut-release.yml/dispatches
+```
+
+**204 means accepted, not succeeded.** Poll
+`/api/v1/repos/zuckerberg/open-nanokvm-pro/actions/tasks?limit=1` for the run's
+`status` and `conclusion`, then re-dispatch with `dry_run` `"false"`. The
+booleans are passed as **strings**; a JSON boolean is rejected.
 
 **Alpha releases:** give the version any semver prerelease suffix —
 `2.1.0-alpha.1`. That single fact drives the whole split: GitHub publishes it
