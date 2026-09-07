@@ -54,8 +54,8 @@ are the only source of truth.)
 Scanned `docs/{updates,mini-display,architecture,blob-replacement}.md`
 for pending/TODO/unverified markers still present in the tree:
 
-- **`docs/updates.md`, "Hardware validation TODO" callout (around line
-  163–167):** the SPL→U-Boot A/B slot-B failover path was reasoned from
+- **`docs/updates.md`, "Hardware validation TODO" callout (now near line
+  246):** the SPL→U-Boot A/B slot-B failover path was reasoned from
   source. **2026-08-30: now EXERCISED on hardware** (during #49) — slot B
   boots via `/etc/init.d/S99checkboot systemB`+reboot, and a kernel that
   dies on slot B auto-fails-over to slot A in ~40s (BOOTABLE bits are
@@ -379,7 +379,8 @@ propose SG2002 work without flagging this gap up front.
   even when the screen is white). #69 closed.**
   **2026-09-06 — the browser queue is EMPTY.** #67, #70 and the #69 stream-type
   hand-back all shipped and are device-proven; #68 and #46 (done since 2026-09-05)
-  were closed as bookkeeping. Open issues are down to 17, and every one of them is
+  were closed as bookkeeping. Open issues were down to 17 then (28 after the
+  #74-#87 filing on 2026-09-06), and every one of them is
   either an epic (#55, #26), `needs-human`, or open only pending a human bench/browser
   check (#61, #64 cold boot, #66 supported-browser, #72 hardware-HEVC browser).
   Evidence + reusable harnesses: `docs/reference/vcenc-open/stream-handback-20260906/`
@@ -489,8 +490,8 @@ propose SG2002 work without flagging this gap up front.
   pulsing a GPIO block whose lines drive the host's power button was rightly
   not done for coverage; the USB PHY reset needed a real pulse and got one.
   With both branches merged the clock table is **282 rows** (265 + 14 + 3) and
-  the reset table 150. All these issues stay open on the forge; only #74 is
-  closed.
+  the reset table 150. #74 and #77 are closed on the forge; #81 and #82 stay
+  open with their residuals listed in coordinator comments (2026-09-07).
   **#78 offline half DONE** (the NixOS appliance is off the vendor kernel and
   off the second nixpkgs pin -- `nixpkgs-rootfs` deleted -- boots to multi-user
   under `qemu-system-aarch64` with zero failed units and the server on :80/:443;
@@ -504,8 +505,17 @@ propose SG2002 work without flagging this gap up front.
   every boot and rewrites `/etc/network/interfaces`, so that file is a cache;
   and IRAM0 is at physical 0, so `misc_info` really is at physical `0x740`
   (`uid_l` `0x788`, `uid_h` `0x78c`).
-  Next: **#83**/**#84** are unblocked by #81; **#79** is unblocked by #78;
-  **#85** (aic8800) still can start from source.
+  **#78 hardware half, 2026-09-07 evening:** run 1 BOOTED the appliance from
+  slot B (NixOS 26.11 on mainline 7.1.3, multi-user in 20 s, zero failed units,
+  root on a loop image over the vendor rootfs; UID/MAC/fw_env proven on silicon;
+  `nanokvm-gpio` ran on hardware for the first time). Run 2 carried two fixes
+  (transient hostname, `ClientIdentifier=mac`) and STRANDED the board: a slot-B
+  *appliance* stays up and pets the dog, so it never fails over -- fixed in
+  `nixos/loop-test.nix` (stage-1 panicOnFail, 30-min deadman, milestone bits
+  25-27), untested. The board needs a power cycle, then p13/p15 restored from
+  `/root/pre75/*.bak`. #81, #82 and #78 are all merged to main (bff4044).
+  Next: **#83**/**#84** are unblocked by #81; **#79** is unblocked by #78 (and
+  wants the SD card); **#85** (aic8800) is an owner decision, `needs-human`.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

@@ -125,6 +125,20 @@ that is arbitration, not a bug.
   unless `printk_devkmsg` is `on` (systemd sets it, an initramfs does not) --
   which silently eats everything past the tenth line.
   `docs/mainline-port.md` section 8; `pkgs/kernel-mainline/initramfs/`.
+- **A stale fixed-output hash is invisible on any host that already holds the
+  output** (the store path comes from the hash alone, so the fetch never
+  re-runs): `.#update-package` built green here for two days while the release
+  runner died on `vendorHash`. `buildGoModule`'s vendor tree also depends on
+  `postPatch` (a patch that drops an import drops a module). Validate
+  release-critical FODs with `nix build --rebuild` before cutting --
+  `docs/building.md` "Pinned hashes" (alpha.5, 2026-09-07).
+- **A slot-B *appliance* has no way back to slot A.** The #75 initramfs always
+  ended in `reboot(2)`; a NixOS system that boots and stays up pets U-Boot's
+  watchdog forever, and if it comes up without network the board is stranded
+  until someone pulls power (#78 run 2, 2026-09-07). Every slot-B appliance
+  test must carry its own exit -- `nixos/loop-test.nix` (stage-1 panicOnFail,
+  userspace deadman, milestone bits 25-27) -- and `checkboot` disabled so it
+  never re-arms slot B.
 - **The board's ethernet PHY is a Realtek RTL8211F, not the JLSemi JL2101 the
   vendor DT names** (PHYID 0x001cc916, read over MDIO 2026-09-06). An
   `ethernet-phy-id*` compatible makes Linux skip the bus read, so the vendor has
