@@ -213,7 +213,7 @@ The derivation, which `nanokvm-identity.service` now reproduces byte for byte:
 device_key = field 2 of /proc/ax_proc/uid, with the leading "0x" stripped,
              written to /device_key WITH a trailing newline
 HHLL       = first 4 hex chars of `sha512sum /device_key`   (the hash is OF THE FILE)
-MAC        = 48:da:35:6d:HH:LL
+MAC        = 48:da:35:xx:HH:LL
 hostname   = kvm-HHLL
 ```
 

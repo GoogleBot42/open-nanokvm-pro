@@ -1344,7 +1344,7 @@ sed-writes that line. The file is a cache, not the source. The full chain, which
 ```
 device_key = field 2 of /proc/ax_proc/uid, "0x" stripped, written with a newline
 HHLL       = first 4 hex chars of sha512sum(/device_key)     # the hash is OF THE FILE
-MAC        = 48:da:35:6d:HH:LL          hostname = kvm-HHLL
+MAC        = 48:da:35:xx:HH:LL          hostname = kvm-HHLL
 ```
 
 so a mainline boot keeps the MAC, the DHCP lease and the hostname the unit has
