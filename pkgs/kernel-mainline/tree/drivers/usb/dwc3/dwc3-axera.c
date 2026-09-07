@@ -69,13 +69,11 @@
  */
 #define AX630C_USB_RESET_US		2
 
-struct ax630c_dwc3 {
-	struct device *dev;
-	struct regmap *syscon;
-	struct reset_control *resets;
-	struct clk_bulk_data *clks;
-};
-
+/*
+ * No driver state outlives probe(). The clocks and resets are devm-managed and
+ * nothing here reconfigures them afterwards; VBUSVALID is written once. A
+ * struct to hold copies of them would be state nothing reads.
+ */
 static void ax630c_dwc3_assert(void *data)
 {
 	reset_control_assert(data);
@@ -108,20 +106,15 @@ static int ax630c_dwc3_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
-	struct ax630c_dwc3 *glue;
+	struct reset_control *resets;
+	struct clk_bulk_data *clks;
+	struct regmap *syscon;
+	int num_clks, ret;
 	bool host;
-	int ret;
 
-	glue = devm_kzalloc(dev, sizeof(*glue), GFP_KERNEL);
-	if (!glue)
-		return -ENOMEM;
-
-	glue->dev = dev;
-	platform_set_drvdata(pdev, glue);
-
-	glue->syscon = syscon_regmap_lookup_by_phandle(np, "axera,flash-syscon");
-	if (IS_ERR(glue->syscon))
-		return dev_err_probe(dev, PTR_ERR(glue->syscon),
+	syscon = syscon_regmap_lookup_by_phandle(np, "axera,flash-syscon");
+	if (IS_ERR(syscon))
+		return dev_err_probe(dev, PTR_ERR(syscon),
 				     "no axera,flash-syscon regmap\n");
 
 	/*
@@ -130,13 +123,14 @@ static int ax630c_dwc3_probe(struct platform_device *pdev)
 	 * undefined until the clock arrives; releasing into a clocked block is
 	 * the sequence this hardware has always been brought up with.
 	 */
-	ret = devm_clk_bulk_get_all_enabled(dev, &glue->clks);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to get the USB clocks\n");
+	num_clks = devm_clk_bulk_get_all_enabled(dev, &clks);
+	if (num_clks < 0)
+		return dev_err_probe(dev, num_clks,
+				     "failed to get the USB clocks\n");
 
-	glue->resets = devm_reset_control_array_get_optional_exclusive(dev);
-	if (IS_ERR(glue->resets))
-		return dev_err_probe(dev, PTR_ERR(glue->resets),
+	resets = devm_reset_control_array_get_optional_exclusive(dev);
+	if (IS_ERR(resets))
+		return dev_err_probe(dev, PTR_ERR(resets),
 				     "failed to get the USB resets\n");
 
 	/*
@@ -146,17 +140,17 @@ static int ax630c_dwc3_probe(struct platform_device *pdev)
 	 * one thing the reset exists for. Asserting first is also the first
 	 * real exercise of the #80 reset controller's .assert path.
 	 */
-	ret = reset_control_assert(glue->resets);
+	ret = reset_control_assert(resets);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to assert the USB resets\n");
 
 	udelay(AX630C_USB_RESET_US);
 
-	ret = reset_control_deassert(glue->resets);
+	ret = reset_control_deassert(resets);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to release the USB resets\n");
 
-	ret = devm_add_action_or_reset(dev, ax630c_dwc3_assert, glue->resets);
+	ret = devm_add_action_or_reset(dev, ax630c_dwc3_assert, resets);
 	if (ret)
 		return ret;
 
@@ -166,13 +160,19 @@ static int ax630c_dwc3_probe(struct platform_device *pdev)
 	 * core believes VBUS is absent stays disconnected.
 	 */
 	host = ax630c_dwc3_is_host(np);
-	ret = regmap_update_bits(glue->syscon, AX630C_FLASH_USB2_CTRL,
+	ret = regmap_update_bits(syscon, AX630C_FLASH_USB2_CTRL,
 				 AX630C_USB2_VBUSVALID,
 				 host ? 0 : AX630C_USB2_VBUSVALID);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to set VBUSVALID\n");
 
-	dev_info(dev, "VBUSVALID %s (%s mode)\n",
+	/*
+	 * Logged, not silent. This bit and the clock count are the two facts
+	 * that decide whether the port will enumerate, and a board that probes
+	 * cleanly and enumerates nothing gives no other clue which one was
+	 * wrong -- the same lesson #77 learned about the RGMII tx mux.
+	 */
+	dev_info(dev, "%d clocks, VBUSVALID %s (%s mode)\n", num_clks,
 		 host ? "cleared" : "set", host ? "host" : "peripheral");
 
 	/*

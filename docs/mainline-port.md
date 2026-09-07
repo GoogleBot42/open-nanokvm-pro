@@ -1121,10 +1121,12 @@ Standard slot-B loop (`.claude/skills/mainline-boot-test`), with the mask at
   `ls /sys/class/udc` names the controller, `cat /sys/class/udc/*/state` says
   how far enumeration got, and `ls /sys/kernel/config/usb_gadget/g0/functions`
   shows the bound gadget. `dmesg | grep -i -e dwc3 -e axera-dwc3` carries the
-  glue's own `VBUSVALID set (peripheral mode)` line and the core's
-  `dwc3 8000000.usb: Configuration mismatch` style complaints if the ref clock
-  is wrong. Milestone bits 22 and 23 record the same facts for a run nobody
-  watches.
+  glue's own `3 clocks, VBUSVALID set (peripheral mode)` line. And
+  `grep -e clk_usb_ref_eb -e bus_clk_usb_eb -e usb_ref_alt_clk_eb
+  /sys/kernel/debug/clk/clk_summary` is the check that matters most: the ref
+  row must read **24000000** and be enabled, because that number is what the
+  core's GFLADJ arithmetic is built on and nothing else reports it. Milestone
+  bits 22 and 23 record the rest for a run nobody watches.
 - **Host-side, on the bench machine the KVM's USB-C is plugged into.**
   `lsusb -d 1d6b:0104` and `dmesg | tail` around the boot; a `hidraw` node and
   an `input` device should appear. This is the only check that proves the
