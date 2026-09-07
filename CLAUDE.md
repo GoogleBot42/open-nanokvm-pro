@@ -125,6 +125,15 @@ that is arbitration, not a bug.
   unless `printk_devkmsg` is `on` (systemd sets it, an initramfs does not) --
   which silently eats everything past the tenth line.
   `docs/mainline-port.md` section 8; `pkgs/kernel-mainline/initramfs/`.
+- **The board's ethernet PHY is a Realtek RTL8211F, not the JLSemi JL2101 the
+  vendor DT names** (PHYID 0x001cc916, read over MDIO 2026-09-06). An
+  `ethernet-phy-id*` compatible makes Linux skip the bus read, so the vendor has
+  always bound a JLSemi driver to a Realtek part -- harmlessly, because that
+  driver programs nothing. Mainline's realtek driver DOES program things, so
+  `phy-mode` must be **`rgmii-id`**: both 2 ns delays are pin-strapped on and
+  `"rgmii"` clears them. The failure is a link that trains, reports 1Gbps/Full,
+  and passes not one packet -- **that signature is always an RGMII delay
+  problem** (#77, `docs/reference/mainline/ethernet-boot-20260906/`).
 
 ## Hardware tripwires
 

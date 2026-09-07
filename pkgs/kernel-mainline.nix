@@ -85,6 +85,11 @@ pkgs.stdenv.mkDerivation {
   # below where it belongs alphabetically.
   watchdogKconfig = ./kernel-mainline/watchdog.Kconfig;
 
+  # Same shape for the DWMAC glue (#77): drivers/net/ethernet/stmicro/stmmac is
+  # a flat directory upstream, so the driver is one .c in treeGraft plus this
+  # Kconfig block and a Makefile line.
+  stmmacKconfig = ./kernel-mainline/stmmac.Kconfig;
+
   postPatch = ''
     patchShebangs scripts
 
@@ -138,6 +143,30 @@ pkgs.stdenv.mkDerivation {
       drivers/watchdog/Makefile
     grep -qF 'obj-$(CONFIG_AX630C_WATCHDOG) += ax630c_wdt.o' drivers/watchdog/Makefile \
       || { echo "ERROR: could not hook ax630c_wdt.o into drivers/watchdog/Makefile" >&2; exit 1; }
+
+    # --- graft the DWMAC glue (#77) --------------------------------------
+    # dwmac-axera.c was copied above; hook its Kconfig block in ahead of
+    # DWMAC_EIC7700 (the alphabetical slot after DWMAC_ANARION) and its object
+    # line after dwmac-anarion.o. Assert both: a missed hook here builds a
+    # kernel whose ethernet node binds nothing, on a board that is supposed to
+    # be reachable only over ethernet.
+    stmmacK=drivers/net/ethernet/stmicro/stmmac
+    awk -v snippet="$stmmacKconfig" '
+      /^config DWMAC_EIC7700$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' "$stmmacK/Kconfig" > "$stmmacK/Kconfig.grafted"
+    mv "$stmmacK/Kconfig.grafted" "$stmmacK/Kconfig"
+    grep -q '^config DWMAC_AXERA$' "$stmmacK/Kconfig" \
+      || { echo "ERROR: could not hook DWMAC_AXERA into $stmmacK/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_DWMAC_ANARION)\t+= dwmac-anarion.o$|&\nobj-$(CONFIG_DWMAC_AXERA)\t+= dwmac-axera.o|' \
+      "$stmmacK/Makefile"
+    grep -qF 'obj-$(CONFIG_DWMAC_AXERA)' "$stmmacK/Makefile" \
+      || { echo "ERROR: could not hook dwmac-axera.o into $stmmacK/Makefile" >&2; exit 1; }
   '';
 
   configurePhase = ''

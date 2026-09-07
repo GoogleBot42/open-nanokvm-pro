@@ -17,6 +17,7 @@
 
 	aliases {
 		serial0 = &uart0;
+		ethernet0 = &gmac;
 	};
 
 	chosen {
@@ -143,6 +144,63 @@
 		 */
 		bringup-log@480e8000 {
 			reg = <0x0 0x480e8000 0x0 0x8000>;
+		};
+	};
+};
+
+/*
+ * Ethernet (#77). A Realtek RTL8211F at MDIO address 1, RGMII.
+ *
+ * NOT a JLSemi JL2101, whatever the vendor DT says. That DT declares
+ * `compatible = "ethernet-phy-id937c.4030"` on this node, which makes the MDIO
+ * core skip the bus read entirely and bind the vendor's JLSemi driver to
+ * whatever is actually there. Read over MDIO on the running board 2026-09-06,
+ * the part answers PHYID1 = 0x001c, PHYID2 = 0xc916 -- Realtek's RTL8211F, and
+ * mainline's own realtek driver claims it. So there is no JL2101 driver to
+ * write; that half of #77's scope simply does not exist on this hardware.
+ *
+ * Hence no `compatible` on the PHY node here: the scan reads the real ID.
+ *
+ * phy-mode = "rgmii-id", and this is the whole ballgame. The RTL8211F's two
+ * 2 ns delays come up ENABLED from pin-strapping (measured: page 0xd08 TXCR
+ * bit 8 = 1, RXCR bit 3 = 1 on the running vendor system), and the vendor's
+ * JLSemi driver never writes them -- its RGMII block is compiled out. Mainline's
+ * realtek driver is not so passive: rtl8211f_config_rgmii_delay() writes both
+ * bits to match phy-mode, so "rgmii" DISABLES the delays the board is built
+ * around. That failure looks like success -- the link trains and reports
+ * 1 Gbps/full -- and then no frame survives. It cost one boot cycle to find.
+ *
+ * The twenty `jl2xxx,*` tuning properties the vendor DT carries are inert even
+ * on the driver they were written for (each is gated behind a compile-time
+ * operation mode that is NONE or C_MACRO), and irrelevant here regardless.
+ */
+&gmac {
+	status = "okay";
+	phy-mode = "rgmii-id";
+	phy-handle = <&phy1>;
+
+	/*
+	 * The PHY's RSTn, GPIO1_A27 (pad EPHY_RSTN, muxed to GPIO by the
+	 * bootloader pad table). This is the GPIO block's per-line control
+	 * word: gpio1 base 0x04801000 + (27 + 1) * 4.
+	 *
+	 * TODO(#81): delete this and put
+	 *   reset-gpios = <&gpio1 27 GPIO_ACTIVE_LOW>;
+	 *   reset-assert-us = <15000>;
+	 *   reset-deassert-us = <75000>;
+	 * on the PHY node instead, where the MDIO core handles it. There is no
+	 * GPIO controller node to point at yet, and a mainline kernel that
+	 * cannot release its PHY has no way to report that it could not.
+	 */
+	axera,phy-reset-mmio = <0x04801070>;
+
+	mdio {
+		compatible = "snps,dwmac-mdio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		phy1: ethernet-phy@1 {
+			reg = <1>;
 		};
 	};
 };

@@ -1,0 +1,39 @@
+MDIO read of the NanoKVM-Pro's ethernet PHY, taken 2026-09-06 from the RUNNING
+VENDOR SYSTEM (Linux 4.19.125, vendor jlsemi driver bound, gigabit link up).
+
+Method: a 60-line C program using SIOCGMIIPHY / SIOCGMIIREG / SIOCSMIIREG on
+eth0, compiled with the device's own gcc. The only write is the page-select
+register (0x1f), restored afterwards. Source: harness/phyread.c beside this
+file.
+
+Why it matters: the vendor device tree declares
+`compatible = "ethernet-phy-id937c.4030"` on this PHY, which makes the MDIO
+core skip the bus read and bind the vendor's JLSemi JL2101 driver without ever
+asking the part what it is. The part is not a JL2101.
+
+    phy_addr      = 1
+    BMCR   (0x00) = 0x1040
+    BMSR   (0x01) = 0x79ad
+    PHYID1 (0x02) = 0x001c
+    PHYID2 (0x03) = 0xc916
+    PAGE   (0x1f) = 0x0a42
+    p0xd08 TXCR (0x11) = 0x0109   TX_DELAY(bit8) = 1
+    p0xd08 RXCR (0x15) = 0x0019   RX_DELAY(bit3) = 1
+    PAGE restored to 0x0a42
+
+Two facts:
+
+1. PHYID = 0x001cc916 = Realtek RTL8211F. Mainline's realtek driver matches it
+   with PHY_ID_MATCH_EXACT(0x001cc916) and claims the part on a mainline boot,
+   which is what run 1 shows in its log ("PHY [stmmac-0:01] driver [RTL8211F
+   Gigabit Ethernet]").
+
+2. Both of the RTL8211F's 2 ns RGMII delays are ENABLED, and this is the
+   pin-strapped power-on state: the vendor's JLSemi driver never writes page
+   0xd08 (its RGMII operation mode is a compile-time NONE, so
+   jl2xxx_rgmii_static_op_set() is never reached), and neither does U-Boot.
+
+Consequence for the DT: the correct mainline phy-mode is "rgmii-id", not
+"rgmii". Mainline's realtek driver writes both delay bits to match phy-mode, so
+"rgmii" clears the delays the board is built around -- the link still trains
+and reports 1 Gbps/full, and no frame survives. See run1 vs run2 beside this.

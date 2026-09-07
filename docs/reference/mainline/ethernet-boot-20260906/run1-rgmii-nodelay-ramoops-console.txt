@@ -1,0 +1,248 @@
+00 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    1.369710] openkvm: /proc/version: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[    1.387187] openkvm: BACKUP0 after milestone 1: 0x00001018
+[    1.393651] openkvm: kernel log stashed, bytes: 0x00004524
+[    1.427372] mmc0: invalid driver type, default to driver type B
+[    1.434153] mmc0: invalid driver type, default to driver type B
+[    1.452531] mmc0: invalid driver type, default to driver type B
+[    1.458473] mmc0: invalid driver type, default to driver type B
+[    1.464424] mmc0: invalid driver type, default to driver type B
+[    2.486008] mmc0: new HS200 MMC card at address 0001
+[    2.491820] mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+[    2.497833]  mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+[    2.518254] mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+[    2.525387] mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+[    2.532359] mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (511:0)
+[    2.600121] openkvm: part:major minor  #blocks  name
+[    2.605137] openkvm: part: 179        0   30539776 mmcblk0
+[    2.610640] openkvm: part: 179        1        768 mmcblk0p1
+[    2.616314] openkvm: part: 179        2        512 mmcblk0p2
+[    2.621987] openkvm: part: 179        3        256 mmcblk0p3
+[    2.627667] openkvm: part: 179        4        256 mmcblk0p4
+[    2.633340] openkvm: part: 179        5       1536 mmcblk0p5
+[    2.639015] openkvm: part: 179        6       1536 mmcblk0p6
+[    2.644687] openkvm: part: 179        7       1024 mmcblk0p7
+[    2.650362] openkvm: part: 179        8       6144 mmcblk0p8
+[    2.656035] openkvm: part: 179        9       6144 mmcblk0p9
+[    2.661708] openkvm: part: 179       10       1024 mmcblk0p10
+[    2.667467] openkvm: part: 179       11       1024 mmcblk0p11
+[    2.673226] openkvm: part: 179       12       1024 mmcblk0p12
+[    2.678987] openkvm: part: 179       13       1024 mmcblk0p13
+[    2.684747] openkvm: part: 179       14      65536 mmcblk0p14
+[    2.690507] openkvm: part: 179       15      65536 mmcblk0p15
+[    2.696267] openkvm: part: 179       16     131072 mmcblk0p16
+[    2.702028] openkvm: part: 179       17   30255360 mmcblk0p17
+[    2.707788] openkvm: part: 179       32       4096 mmcblk0boot0
+[    2.713720] openkvm: part: 179       64       4096 mmcblk0boot1
+[    2.719758] openkvm: storage: mmcblk0p17 found after ms: 0x000004b0
+[    2.726041] openkvm: storage: major: 0x000000b3
+[    2.730591] openkvm: storage: minor: 0x00000011
+[    2.746512] EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b ro with ordered data mode. Quota mode: none.
+[    2.759483] openkvm: storage: OK -- root entries: 0x00000022
+[    2.766101] openkvm: net: harvested MAC, length: 0x00000011
+[    2.775231] openkvm: net: harvested root shadow entry, length: 0x00000062
+[    2.782399] EXT4-fs (mmcblk0p17): unmounting filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b.
+[    2.793277] axera-dwmac 104c0000.ethernet eth0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[    2.826964] axera-dwmac 104c0000.ethernet eth0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[    2.849070] axera-dwmac 104c0000.ethernet eth0: No Safety Features support found
+[    2.857008] axera-dwmac 104c0000.ethernet eth0: IEEE 1588-2008 Advanced Timestamp supported
+[    2.865673] axera-dwmac 104c0000.ethernet eth0: registered PTP clock
+[    2.872061] axera-dwmac 104c0000.ethernet eth0: configuring for phy/rgmii link mode
+[    5.980316] axera-dwmac 104c0000.ethernet eth0: Link is Up - 1Gbps/Full - flow control off
+[    6.109325] openkvm: net: carrier up after ms: 0x00000c80
+[    6.114908] openkvm: net: link 1000 Mbit/s full duplex
+[    6.122072] udhcpc: started, v1.37.0
+[    6.143006] udhcpc: broadcasting discover
+[    8.177120] udhcpc: broadcasting discover
+[   10.205104] udhcpc: broadcasting discover
+[   12.233114] udhcpc: broadcasting discover
+[   14.259163] udhcpc: broadcasting discover
+[   16.293101] udhcpc: broadcasting discover
+[   18.321093] udhcpc: broadcasting discover
+[   20.349108] udhcpc: broadcasting discover
+[   22.384539] udhcpc: no lease, failing
+[   22.388617] openkvm: net: udhcpc exit: 0x00000001
+[   22.393427] openkvm: net: FAIL -- no DHCP lease
+[   22.399164] Waiting for kernel randomness to be initialised...
+[   24.110936] random: crng init done
+[   24.115796] Generating 256 bit ed25519 key, this may take a while...
+[   24.138581] Public key portion is:
+[   24.142297] ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINgkEMxFmpd9i/79gXdjIGpsJ+30vOWlmwMyiVj9Wz1h root@(none)
+[   24.142297] Fingerprint: SHA256:P+n+9vwl7fmiZS2TgW7X+Oimmcnt8+bGuCAzbf9rPyM
+[   24.161258] openkvm: sshd: dropbear exit: 0x00000000
+[   24.161776] [77] Jan 01 00:00:24 Running in background
+[   24.167579] openkvm: kernel log re-stashed, bytes: 0x00005959
+[   24.177488] openkvm: alive 0s/300s, watchdog0 state=inactive timeleft=26
+[   34.187131] openkvm: alive 10s/300s, watchdog0 state=inactive timeleft=26
+[   44.196842] openkvm: alive 20s/300s, watchdog0 state=inactive timeleft=26
+[   54.206541] openkvm: alive 30s/300s, watchdog0 state=inactive timeleft=26
+[   64.216259] openkvm: alive 40s/300s, watchdog0 state=inactive timeleft=26
+[   74.225970] openkvm: alive 50s/300s, watchdog0 state=inactive timeleft=26
+[   84.235662] openkvm: alive 60s/300s, watchdog0 state=inactive timeleft=26
+[   94.245366] openkvm: alive 70s/300s, watchdog0 state=inactive timeleft=26
+[  104.255090] openkvm: alive 80s/300s, watchdog0 state=inactive timeleft=26
+[  114.264773] openkvm: alive 90s/300s, watchdog0 state=inactive timeleft=26
+[  124.274491] openkvm: alive 100s/300s, watchdog0 state=inactive timeleft=26
+[  134.284252] openkvm: alive 110s/300s, watchdog0 state=inactive timeleft=26
+[  144.294045] openkvm: alive 120s/300s, watchdog0 state=inactive timeleft=26
+[  154.303843] openkvm: alive 130s/300s, watchdog0 state=inactive timeleft=26
+[  164.313634] openkvm: alive 140s/300s, watchdog0 state=inactive timeleft=26
+[  174.323423] openkvm: alive 150s/300s, watchdog0 state=inactive timeleft=26
+[  184.333229] openkvm: alive 160s/300s, watchdog0 state=inactive timeleft=26
+[  194.343044] openkvm: alive 170s/300s, watchdog0 state=inactive timeleft=26
+[  204.352780] openkvm: alive 180s/300s, watchdog0 state=inactive timeleft=26
+[  214.362568] openkvm: alive 190s/300s, watchdog0 state=inactive timeleft=26
+[  224.372354] openkvm: alive 200s/300s, watchdog0 state=inactive timeleft=26
+[  234.382151] openkvm: alive 210s/300s, watchdog0 state=inactive timeleft=26
+[  244.391970] openkvm: alive 220s/300s, watchdog0 state=inactive timeleft=26
+[  254.401783] openkvm: alive 230s/300s, watchdog0 state=inactive timeleft=26
+[  264.411573] openkvm: alive 240s/300s, watchdog0 state=inactive timeleft=26
+[  274.421387] openkvm: alive 250s/300s, watchdog0 state=inactive timeleft=26
+[  284.431177] openkvm: alive 260s/300s, watchdog0 state=inactive timeleft=26
+[  294.440970] openkvm: alive 270s/300s, watchdog0 state=inactive timeleft=26
+[  304.450784] openkvm: alive 280s/300s, watchdog0 state=inactive timeleft=26
+[  314.460587] openkvm: alive 290s/300s, watchdog0 state=inactive timeleft=26
+[  324.471615] openkvm: kernel log final stash, bytes: 0x00006326
+[  324.477491] openkvm: rebooting via the restart handler
+[  325.517609] reboot: Restarting system
+5536 entries
+[    0.256399] Serial: AMBA PL011 UART driver
+[    0.261924] pstore: Using crash dump compression: deflate
+[    0.267393] printk: legacy console [ramoops-1] enabled
+[    0.272926] pstore: Registered ramoops as persistent store backend
+[    0.279124] ramoops: using 0x8000@0x480e0000, ecc: 0
+[    0.297741] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.304594] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.310880] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.317685] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[    0.323970] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.330774] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.337058] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.343862] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.352577] ACPI: Interpreter disabled.
+[    0.358625] iommu: Default domain type: Translated
+[    0.363464] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.370051] SCSI subsystem initialized
+[    0.374092] libata version 3.00 loaded.
+[    0.378233] usbcore: registered new interface driver usbfs
+[    0.383778] usbcore: registered new interface driver hub
+[    0.389142] usbcore: registered new device driver usb
+[    0.394889] pps_core: LinuxPPS API ver. 1 registered
+[    0.399888] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.409060] PTP clock support registered
+[    0.413151] EDAC MC: Ver: 3.0.0
+[    0.416836] scmi_core: SCMI protocol bus registered
+[    0.422737] FPGA manager framework
+[    0.427516] vgaarb: loaded
+[    0.430928] clocksource: Switched to clocksource arch_sys_counter
+[    0.437390] VFS: Disk quotas dquot_6.6.0
+[    0.441373] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.448851] pnp: PnP ACPI: disabled
+[    0.459305] NET: Registered PF_INET protocol family
+[    0.464410] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.472842] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.481271] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.489047] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.496869] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.504313] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.510844] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.517699] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.523973] RPC: Registered named UNIX socket transport module.
+[    0.529953] RPC: Registered udp transport module.
+[    0.534675] RPC: Registered tcp transport module.
+[    0.539396] RPC: Registered tcp-with-tls transport module.
+[    0.544900] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.551372] PCI: CLS 0 bytes, default 64
+[    0.555649] kvm [1]: HYP mode not available
+[    0.561491] Initialise system trusted keyrings
+[    0.567237] workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[    0.576198] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.582591] NFS: Registering the id_resolver key type
+[    0.587738] Key type id_resolver registered
+[    0.591943] Key type id_legacy registered
+[    0.596007] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.602731] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    0.610477] 9p: Installing v9fs 9p2000 file system support
+[    0.616268] Key type asymmetric registered
+[    0.620409] Asymmetric key parser 'x509' registered
+[    0.625380] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.632802] io scheduler mq-deadline registered
+[    0.637351] io scheduler kyber registered
+[    0.641421] io scheduler bfq registered
+[    0.655669] ledtrig-cpu: registered to indicate activity on CPUs
+[    0.692711] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.702750] printk: legacy console [ttyS0] disabled
+[    0.708072] 4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+[    0.716957] printk: legacy console [ttyS0] enabled
+[    0.726577] printk: legacy bootconsole [uart8250] disabled
+[    0.745581] msm_serial: driver initialized
+[    0.750581] SuperH (H)SCI(F) driver initialized
+[    0.755399] STM32 USART driver initialized
+[    0.768467] loop: module loaded
+[    0.773014] megasas: 07.734.00.00-rc1
+[    0.784321] tun: Universal TUN/TAP device driver, 1.6
+[    0.790680] thunder_xcv, ver 1.0
+[    0.794071] thunder_bgx, ver 1.0
+[    0.797364] nicpf, ver 1.0
+[    0.801801] e1000: Intel(R) PRO/1000 Network Driver
+[    0.806749] e1000: Copyright (c) 1999-2006 Intel Corporation.
+[    0.812576] e1000e: Intel(R) PRO/1000 Network Driver
+[    0.817557] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    0.823530] igb: Intel(R) Gigabit Ethernet Network Driver
+[    0.828944] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    0.834587] igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[    0.840870] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    0.847422] sky2: driver version 1.30
+[    0.852440] axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[    0.858955] axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[    0.967248] axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[    0.974284] axera-dwmac 104c0000.ethernet: 	DWMAC4/5
+[    0.979312] axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[    0.986639] axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[    0.993530] axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[    1.000854] axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[    1.007743] axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[    1.014114] axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[    1.021979] axera-dwmac 104c0000.ethernet: device MAC address 86:9a:eb:c4:7c:40
+[    1.029308] axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[    1.036286] axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[    1.043274] axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[    1.051033] axera-dwmac 104c0000.ethernet: TSO supported
+[    1.056360] axera-dwmac 104c0000.ethernet: TSO feature enabled
+[    1.062208] axera-dwmac 104c0000.ethernet: SPH feature enabled
+[    1.068055] axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[    1.082705] VFIO - User Level meta-driver version: 0.3
+[    1.092271] usbcore: registered new interface driver usb-storage
+[    1.102671] i2c_dev: i2c /dev entries driver
+[    1.113696] ax630c-wdt 4840000.watchdog: instance 0 at 24000000 Hz, timeout 60s, max 357s
+[    1.136077] SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[    1.144230] usbcore: registered new interface driver usbhid
+[    1.149878] usbhid: USB HID core driver
+[    1.161453] optee: probing for conduit method.
+[    1.163044] mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+[    1.166023] optee: revision 3.21
+[    1.173490] mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+[    1.173939] optee: initialized driver
+[    1.191938] NET: Registered PF_INET6 protocol family
+[    1.198210] Segment Routing with IPv6
+[    1.201986] In-situ OAM (IOAM) with IPv6
+[    1.205996] NET: Registered PF_PACKET protocol family
+[    1.211152] 9pnet: Installing 9P2000 support
+[    1.215555] Key type dns_resolver registered
+[    1.232915] registered taskstats version 1
+[    1.237999] Loading compiled-in X.509 certificates
+[    1.252811] Demotion targets for Node 0: null
+[    1.269281] clk: Disabling unused clocks
+[    1.273555] PM: genpd: Disabling unused power domains
+[    1.278686] Warning: unable to open an initial console.
+[    1.286606] Freeing unused kernel memory: 5952K
+[    1.291368] Run /init as init process
+[    1.295063]   with arguments:
+[    1.298034]     /init
+[    1.300320]   with environment:
+[    1.303473]     HOME=/
+[    1.305836]     TERM=linux
+[    1.308554]     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[    1.314399]     logomode=vo0@dsi_dpi_video
+[    1.319402] openkvm: mainline bring-up init (#75) running
+[    1.325164] openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x48800

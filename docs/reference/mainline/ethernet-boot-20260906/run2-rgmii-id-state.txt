@@ -1,0 +1,46 @@
+== uname
+Linux (none) 7.1.3-nanokvm #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970 aarch64 GNU/Linux
+== cmdline
+mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+== net dev
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  eth0:  978318   12894    0    0    0     0          0         0 337198282    9000    0    0    0     0       0          0
+== interrupts
+           CPU0       CPU1       
+ 11:      18102      17544 GIC-0  27 Level     arch_timer
+ 14:      12227          0 GIC-0 112 Level     eth0
+ 15:        157          0 GIC-0  41 Level     mmc0
+ 16:       7560          0 GIC-0 106 Level     mmc1
+IPI0:       114        146       Rescheduling interrupts
+IPI1:      5175       6092       Function call interrupts
+IPI2:         0          0       CPU stop interrupts
+IPI3:         0          0       CPU stop NMIs
+IPI4:         0          0       Timer broadcast interrupts
+IPI5:         4          1       IRQ work interrupts
+IPI6:         0          0       CPU backtrace interrupts
+IPI7:         0          0       KGDB roundup interrupts
+Err:          0
+== phy_id
+0x001cc916
+== link
+1000
+full
+1
+48:da:35:xx:xx:xx
+== flash syscon 0x10030000 04 08 14 20 28
+0x10030000 0x00330B60
+0x10030004 0x00007A2C
+0x10030008 0x000FF03F
+0x10030014 0x3C0002E0
+0x10030020 0x400021D1
+0x10030028 0x00000600
+== gpio1 line27 word
+0x00000003
+== watchdog
+AX630C watchdog
+inactive
+27
+== slot register
+0x003F3018

@@ -1,0 +1,476 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[    0.000000] KASLR disabled due to lack of seed
+[    0.000000] Machine model: Sipeed NanoKVM-Pro
+[    0.000000] Memory limited to 824MB
+[    0.000000] earlycon: uart8250 at MMIO32 0x0000000004880000 (options '')
+[    0.000000] printk: legacy bootconsole [uart8250] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000040040000..0x000000004007ffff (256 KiB) nomap non-reusable atf@40040000
+[    0.000000] OF: reserved mem: 0x0000000044200000..0x00000000461fffff (32768 KiB) nomap non-reusable optee@44200000
+[    0.000000] OF: reserved mem: 0x0000000048000000..0x00000000480dffff (896 KiB) nomap non-reusable vendor-pstore@48000000
+[    0.000000] OF: reserved mem: 0x00000000480e0000..0x00000000480e7fff (32 KiB) map non-reusable ramoops@480e0000
+[    0.000000] OF: reserved mem: 0x00000000480e8000..0x00000000480effff (32 KiB) map non-reusable bringup-log@480e8000
+[    0.000000] NUMA: Faking a node at [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000] NODE_DATA(0) allocated [mem 0x73676c40-0x7367933f]
+[    0.000000] cma: Reserved 32 MiB at 0x0000000071600000
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: Trusted OS migration not required
+[    0.000000] psci: SMC Calling Convention v1.2
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x000000004003ffff]
+[    0.000000]   node   0: [mem 0x0000000040040000-0x000000004007ffff]
+[    0.000000]   node   0: [mem 0x0000000040080000-0x00000000441fffff]
+[    0.000000]   node   0: [mem 0x0000000044200000-0x00000000461fffff]
+[    0.000000]   node   0: [mem 0x0000000046200000-0x0000000047ffffff]
+[    0.000000]   node   0: [mem 0x0000000048000000-0x00000000480dffff]
+[    0.000000]   node   0: [mem 0x00000000480e0000-0x00000000737fffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x00000000737fffff]
+[    0.000000] On node 0, zone DMA: 18432 pages in unavailable ranges
+[    0.000000] percpu: Embedded 26 pages/cpu s66904 r8192 d31400 u106496
+[    0.000000] pcpu-alloc: s66904 r8192 d31400 u106496 alloc=26*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    0.000000] Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 logomode=vo0@dsi_dpi_video", will be passed to user space.
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 0MB
+[    0.000000] software IO TLB: area num 2.
+[    0.000000] software IO TLB: mapped [mem 0x0000000070580000-0x0000000070680000] (1MB)
+[    0.000000] Fallback order for Node 0: 0 
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 210944
+[    0.000000] Policy zone: DMA
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=2.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] RCU Tasks: Setting shift to 1 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=2.
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000001] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008393] Console: colour dummy device 80x25
+[    0.012945] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.023235] pid_max: default: 32768 minimum: 301
+[    0.028108] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.035529] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.043712] VFS: Finished mounting rootfs on nullfs
+[    0.050530] rcu: Hierarchical SRCU implementation.
+[    0.055393] rcu: 	Max phase no-delay instances is 1000.
+[    0.060849] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.069467] EFI services will not be available.
+[    0.074224] smp: Bringing up secondary CPUs ...
+[    0.079360] Detected VIPT I-cache on CPU1
+[    0.079496] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.079658] smp: Brought up 1 node, 2 CPUs
+[    0.094365] SMP: Total of 2 processors activated.
+[    0.099081] CPU: All CPU(s) started at EL1
+[    0.103237] CPU features: detected: 32-bit EL0 Support
+[    0.108393] CPU features: detected: 32-bit EL1 Support
+[    0.113559] CPU features: detected: CRC32 instructions
+[    0.118722] CPU features: detected: PMUv3
+[    0.122792] alternatives: applying system-wide alternatives
+[    0.130015] Memory: 709028K/843776K available (19392K kernel code, 5246K rwdata, 14628K rodata, 5952K init, 718K bss, 98972K reserved, 32768K cma-reserved)
+[    0.144893] devtmpfs: initialized
+[    0.151374] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.161230] posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+[    0.168676] futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+[    0.177915] 21216 pages in range for non-PLT usage
+[    0.177937] 512736 pages in range for PLT usage
+[    0.184758] DMI: not present or invalid.
+[    0.195854] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.203179] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.211136] audit: initializing netlink subsys (disabled)
+[    0.216884] audit: type=2000 audit(0.136:1): state=initialized audit_enabled=0 res=1
+[    0.218087] thermal_sys: Registered thermal governor 'step_wise'
+[    0.224662] thermal_sys: Registered thermal governor 'power_allocator'
+[    0.230773] cpuidle: using governor menu
+[    0.241581] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.248470] ASID allocator initialised with 65536 entries
+[    0.256326] Serial: AMBA PL011 UART driver
+[    0.261861] pstore: Using crash dump compression: deflate
+[    0.267326] printk: legacy console [ramoops-1] enabled
+[    0.272837] pstore: Registered ramoops as persistent store backend
+[    0.279034] ramoops: using 0x8000@0x480e0000, ecc: 0
+[    0.297320] HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.304165] HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+[    0.310452] HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.317256] HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+[    0.323540] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.330344] HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+[    0.336628] HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.343431] HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+[    0.352081] ACPI: Interpreter disabled.
+[    0.358079] iommu: Default domain type: Translated
+[    0.362919] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.369524] SCSI subsystem initialized
+[    0.373570] libata version 3.00 loaded.
+[    0.377707] usbcore: registered new interface driver usbfs
+[    0.383251] usbcore: registered new interface driver hub
+[    0.388616] usbcore: registered new device driver usb
+[    0.394338] pps_core: LinuxPPS API ver. 1 registered
+[    0.399334] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.408499] PTP clock support registered
+[    0.412592] EDAC MC: Ver: 3.0.0
+[    0.416261] scmi_core: SCMI protocol bus registered
+[    0.422208] FPGA manager framework
+[    0.426988] vgaarb: loaded
+[    0.430407] clocksource: Switched to clocksource arch_sys_counter
+[    0.436862] VFS: Disk quotas dquot_6.6.0
+[    0.440844] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.448326] pnp: PnP ACPI: disabled
+[    0.458700] NET: Registered PF_INET protocol family
+[    0.463809] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.472227] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.480655] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.488433] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.496263] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.503714] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.510250] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.517089] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.523344] RPC: Registered named UNIX socket transport module.
+[    0.529322] RPC: Registered udp transport module.
+[    0.534044] RPC: Registered tcp transport module.
+[    0.538763] RPC: Registered tcp-with-tls transport module.
+[    0.544267] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.550739] PCI: CLS 0 bytes, default 64
+[    0.555012] kvm [1]: HYP mode not available
+[    0.560843] Initialise system trusted keyrings
+[    0.565818] workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+[    0.574946] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.581342] NFS: Registering the id_resolver key type
+[    0.586488] Key type id_resolver registered
+[    0.590693] Key type id_legacy registered
+[    0.594759] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.601482] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    0.609228] 9p: Installing v9fs 9p2000 file system support
+[    0.615031] Key type asymmetric registered
+[    0.619175] Asymmetric key parser 'x509' registered
+[    0.624148] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.631570] io scheduler mq-deadline registered
+[    0.636119] io scheduler kyber registered
+[    0.640190] io scheduler bfq registered
+[    0.654166] ledtrig-cpu: registered to indicate activity on CPUs
+[    0.691117] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.701191] printk: legacy console [ttyS0] disabled
+[    0.706543] 4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+[    0.715410] printk: legacy console [ttyS0] enabled
+[    0.725036] printk: legacy bootconsole [uart8250] disabled
+[    0.748989] msm_serial: driver initialized
+[    0.754001] SuperH (H)SCI(F) driver initialized
+[    0.758814] STM32 USART driver initialized
+[    0.772034] loop: module loaded
+[    0.776584] megasas: 07.734.00.00-rc1
+[    0.787729] tun: Universal TUN/TAP device driver, 1.6
+[    0.794126] thunder_xcv, ver 1.0
+[    0.797516] thunder_bgx, ver 1.0
+[    0.800808] nicpf, ver 1.0
+[    0.805263] e1000: Intel(R) PRO/1000 Network Driver
+[    0.810227] e1000: Copyright (c) 1999-2006 Intel Corporation.
+[    0.816051] e1000e: Intel(R) PRO/1000 Network Driver
+[    0.821030] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    0.827006] igb: Intel(R) Gigabit Ethernet Network Driver
+[    0.832420] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    0.838054] igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[    0.844335] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    0.850876] sky2: driver version 1.30
+[    0.855897] axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+[    0.862411] axera-dwmac 104c0000.ethernet: IRQ sfty not found
+[    0.974715] axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+[    0.981751] axera-dwmac 104c0000.ethernet: 	DWMAC4/5
+[    0.986779] axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+[    0.994106] axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+[    1.000997] axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+[    1.008319] axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+[    1.015208] axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+[    1.021573] axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+[    1.029440] axera-dwmac 104c0000.ethernet: device MAC address 02:e2:d5:b4:bc:04
+[    1.036769] axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+[    1.043746] axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+[    1.050735] axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+[    1.058494] axera-dwmac 104c0000.ethernet: TSO supported
+[    1.063821] axera-dwmac 104c0000.ethernet: TSO feature enabled
+[    1.069668] axera-dwmac 104c0000.ethernet: SPH feature enabled
+[    1.075515] axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+[    1.090073] VFIO - User Level meta-driver version: 0.3
+[    1.099716] usbcore: registered new interface driver usb-storage
+[    1.110170] i2c_dev: i2c /dev entries driver
+[    1.121270] ax630c-wdt 4840000.watchdog: instance 0 at 24000000 Hz, timeout 60s, max 357s
+[    1.143859] SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+[    1.151920] usbcore: registered new interface driver usbhid
+[    1.157562] usbhid: USB HID core driver
+[    1.169181] optee: probing for conduit method.
+[    1.173773] optee: revision 3.21
+[    1.174269] optee: initialized driver
+[    1.174532] mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+[    1.180889] NET: Registered PF_INET6 protocol family
+[    1.181294] mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+[    1.191485] Segment Routing with IPv6
+[    1.205162] In-situ OAM (IOAM) with IPv6
+[    1.209184] NET: Registered PF_PACKET protocol family
+[    1.214365] 9pnet: Installing 9P2000 support
+[    1.218761] Key type dns_resolver registered
+[    1.236229] registered taskstats version 1
+[    1.241329] Loading compiled-in X.509 certificates
+[    1.256166] Demotion targets for Node 0: null
+[    1.272664] clk: Disabling unused clocks
+[    1.276931] PM: genpd: Disabling unused power domains
+[    1.282074] Warning: unable to open an initial console.
+[    1.289992] Freeing unused kernel memory: 5952K
+[    1.294751] Run /init as init process
+[    1.298444]   with arguments:
+[    1.301415]     /init
+[    1.303707]   with environment:
+[    1.306859]     HOME=/
+[    1.309222]     TERM=linux
+[    1.311940]     board_id=0x5,boot_reason=0x04,initcall_debug=0
+[    1.317785]     logomode=vo0@dsi_dpi_video
+[    1.322858] openkvm: mainline bring-up init (#75) running
+[    1.328576] openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+[    1.373109] openkvm: /proc/version: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+[    1.390568] openkvm: BACKUP0 after milestone 1: 0x00001018
+[    1.397020] openkvm: kernel log stashed, bytes: 0x00004525
+[    1.427459] mmc0: invalid driver type, default to driver type B
+[    1.434234] mmc0: invalid driver type, default to driver type B
+[    1.452606] mmc0: invalid driver type, default to driver type B
+[    1.458551] mmc0: invalid driver type, default to driver type B
+[    1.464505] mmc0: invalid driver type, default to driver type B
+[    2.486081] mmc0: new HS200 MMC card at address 0001
+[    2.491935] mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+[    2.497722]  mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+[    2.517889] mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+[    2.525039] mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+[    2.532018] mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (511:0)
+[    2.603474] openkvm: part:major minor  #blocks  name
+[    2.608489] openkvm: part: 179        0   30539776 mmcblk0
+[    2.613989] openkvm: part: 179        1        768 mmcblk0p1
+[    2.619662] openkvm: part: 179        2        512 mmcblk0p2
+[    2.625335] openkvm: part: 179        3        256 mmcblk0p3
+[    2.631007] openkvm: part: 179        4        256 mmcblk0p4
+[    2.636680] openkvm: part: 179        5       1536 mmcblk0p5
+[    2.642353] openkvm: part: 179        6       1536 mmcblk0p6
+[    2.648027] openkvm: part: 179        7       1024 mmcblk0p7
+[    2.653702] openkvm: part: 179        8       6144 mmcblk0p8
+[    2.659374] openkvm: part: 179        9       6144 mmcblk0p9
+[    2.665046] openkvm: part: 179       10       1024 mmcblk0p10
+[    2.670809] openkvm: part: 179       11       1024 mmcblk0p11
+[    2.676570] openkvm: part: 179       12       1024 mmcblk0p12
+[    2.682330] openkvm: part: 179       13       1024 mmcblk0p13
+[    2.688090] openkvm: part: 179       14      65536 mmcblk0p14
+[    2.693850] openkvm: part: 179       15      65536 mmcblk0p15
+[    2.699610] openkvm: part: 179       16     131072 mmcblk0p16
+[    2.705370] openkvm: part: 179       17   30255360 mmcblk0p17
+[    2.711129] openkvm: part: 179       32       4096 mmcblk0boot0
+[    2.717062] openkvm: part: 179       64       4096 mmcblk0boot1
+[    2.723094] openkvm: storage: mmcblk0p17 found after ms: 0x000004b0
+[    2.729378] openkvm: storage: major: 0x000000b3
+[    2.733927] openkvm: storage: minor: 0x00000011
+[    2.749785] EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b ro with ordered data mode. Quota mode: none.
+[    2.762749] openkvm: storage: OK -- root entries: 0x00000022
+[    2.772864] openkvm: net: harvested MAC, length: 0x00000011
+[    2.781865] openkvm: net: harvested root shadow entry, length: 0x00000062
+[    2.789037] EXT4-fs (mmcblk0p17): unmounting filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b.
+[    2.799849] axera-dwmac 104c0000.ethernet eth0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[    2.834441] axera-dwmac 104c0000.ethernet eth0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[    2.856547] axera-dwmac 104c0000.ethernet eth0: No Safety Features support found
+[    2.864489] axera-dwmac 104c0000.ethernet eth0: IEEE 1588-2008 Advanced Timestamp supported
+[    2.873174] axera-dwmac 104c0000.ethernet eth0: registered PTP clock
+[    2.879574] axera-dwmac 104c0000.ethernet eth0: configuring for phy/rgmii-id link mode
+[    5.975776] axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+[    5.985075] axera-dwmac 104c0000.ethernet eth0: Link is Up - 1Gbps/Full - flow control off
+[    6.116819] openkvm: net: carrier up after ms: 0x00000c80
+[    6.122426] openkvm: net: link 1000 Mbit/s full duplex
+[    6.129640] udhcpc: started, v1.37.0
+[    6.150486] udhcpc: broadcasting discover
+[    8.180600] udhcpc: broadcasting discover
+[   10.895963] udhcpc: broadcasting discover
+[   10.922598] udhcpc: broadcasting select for DEVICE_IP, server REDACTED_IP
+[   10.962456] udhcpc: lease of DEVICE_IP obtained from REDACTED_IP, lease time 43200
+[   10.977991] openkvm: net: lease (address netmask router): DEVICE_IP 255.255.248.0 REDACTED_IP
+[   10.988126] PING REDACTED_IP (REDACTED_IP): 56 data bytes
+[   10.994648] 64 bytes from REDACTED_IP: seq=0 ttl=64 time=0.815 ms
+[   11.994606] 64 bytes from REDACTED_IP: seq=1 ttl=64 time=0.501 ms
+[   12.994630] 64 bytes from REDACTED_IP: seq=2 ttl=64 time=0.389 ms
+[   13.000802] 
+[   13.000802] --- REDACTED_IP ping statistics ---
+[   13.000802] 3 packets transmitted, 3 packets received, 0% packet loss
+[   13.000802] round-trip min/avg/max = 0.389/0.568/0.815 ms
+[   13.019039] openkvm: net: ping the router, exit: 0x00000000
+[   13.025896] Waiting for kernel randomness to be initialised...
+[   14.798419] random: crng init done
+[   14.803198] Generating 256 bit ed25519 key, this may take a while...
+[   14.825937] Public key portion is:
+[   14.829609] ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHjV8giEql3s0E5LSv0EFv31mNXAZ2WFDPNfcK2Cr48n root@(none)
+[   14.829609] Fingerprint: SHA256:o2V207QlSym28N4dD28tsUq1giTzE1MWBQSgODZE/I8
+[   14.848657] openkvm: sshd: dropbear exit: 0x00000000
+[   14.849179] [82] Jan 01 00:00:14 Running in background
+[   14.854966] openkvm: kernel log re-stashed, bytes: 0x00005b90
+[   14.864948] openkvm: alive 0s/300s, watchdog0 state=inactive timeleft=26
+[   16.795076] [83] Jan 01 00:00:16 Child connection from REDACTED_IP:41294
+[   16.802386] [83] Jan 01 00:00:16 Exit before auth from <REDACTED_IP:41294>: Exited normally
+[   21.348058] [84] Jan 01 00:00:21 Child connection from REDACTED_IP:41296
+[   21.556704] [84] Jan 01 00:00:21 Bad password attempt for 'root' from REDACTED_IP:41296
+[   21.728045] [84] Jan 01 00:00:21 Exit before auth from <REDACTED_IP:41296>: (user 'root', 1 fails): Exited normally
+[   21.728067] 
+[   22.767088] [85] Jan 01 00:00:22 Child connection from REDACTED_IP:41302
+[   22.774371] [85] Jan 01 00:00:22 Exit before auth from <REDACTED_IP:41302>: Exited normally
+[   24.874848] openkvm: alive 10s/300s, watchdog0 state=inactive timeleft=26
+[   27.142082] [86] Jan 01 00:00:27 Child connection from REDACTED_IP:37298
+[   27.354003] [86] Jan 01 00:00:27 Password auth succeeded for 'root' from REDACTED_IP:37298
+[   27.371177] [86] Jan 01 00:00:27 Exit (root) from <REDACTED_IP:37298>: Disconnect received
+[   28.254348] [89] Jan 01 00:00:28 Child connection from REDACTED_IP:37306
+[   28.466967] [89] Jan 01 00:00:28 Bad password attempt for 'root' from REDACTED_IP:37306
+[   28.672576] [89] Jan 01 00:00:28 Exit before auth from <REDACTED_IP:37306>: (user 'root', 1 fails): Exited normally
+[   28.672601] 
+[   33.494266] [90] Jan 01 00:00:33 Child connection from REDACTED_IP:37322
+[   33.704507] [90] Jan 01 00:00:33 Password auth succeeded for 'root' from REDACTED_IP:37322
+[   33.721263] [90] Jan 01 00:00:33 Exit (root) from <REDACTED_IP:37322>: Disconnect received
+[   34.884947] openkvm: alive 20s/300s, watchdog0 state=inactive timeleft=26
+[   42.288119] [93] Jan 01 00:00:42 Child connection from REDACTED_IP:50700
+[   42.295405] [93] Jan 01 00:00:42 Exit before auth from <REDACTED_IP:50700>: Exited normally
+[   44.894840] openkvm: alive 30s/300s, watchdog0 state=inactive timeleft=26
+[   47.135529] [95] Jan 01 00:00:47 Child connection from REDACTED_IP:49398
+[   47.344821] [95] Jan 01 00:00:47 Bad password attempt for 'root' from REDACTED_IP:49398
+[   47.476401] [95] Jan 01 00:00:47 Exit before auth from <REDACTED_IP:49398>: (user 'root', 1 fails): Exited normally
+[   47.476425] 
+[   52.390026] [96] Jan 01 00:00:52 Child connection from REDACTED_IP:49408
+[   52.599842] [96] Jan 01 00:00:52 Password auth succeeded for 'root' from REDACTED_IP:49408
+[   52.622328] [96] Jan 01 00:00:52 Exit (root) from <REDACTED_IP:49408>: Disconnect received
+[   52.904108] openkvm: dwell extended to the cap by /run/keepalive
+[   54.910885] openkvm: alive 40s/3600s, watchdog0 state=inactive timeleft=26
+[   63.426122] [101] Jan 01 00:01:03 Child connection from REDACTED_IP:53566
+[   63.433491] [101] Jan 01 00:01:03 Exit before auth from <REDACTED_IP:53566>: Exited normally
+[   64.920642] openkvm: alive 50s/3600s, watchdog0 state=inactive timeleft=26
+[   68.284294] [102] Jan 01 00:01:08 Child connection from REDACTED_IP:35154
+[   68.496625] [102] Jan 01 00:01:08 Bad password attempt for 'root' from REDACTED_IP:35154
+[   68.717865] [102] Jan 01 00:01:08 Exit before auth from <REDACTED_IP:35154>: (user 'root', 1 fails): Exited normally
+[   68.717889] 
+[   73.530651] [103] Jan 01 00:01:13 Child connection from REDACTED_IP:35156
+[   73.739646] [103] Jan 01 00:01:13 Password auth succeeded for 'root' from REDACTED_IP:35156
+[   73.772623] [103] Jan 01 00:01:13 Exit (root) from <REDACTED_IP:35156>: Disconnect received
+[   74.930581] openkvm: alive 60s/3600s, watchdog0 state=inactive timeleft=26
+[   84.940293] openkvm: alive 70s/3600s, watchdog0 state=inactive timeleft=26
+[   92.206864] [110] Jan 01 00:01:32 Child connection from REDACTED_IP:54584
+[   92.214259] [110] Jan 01 00:01:32 Exit before auth from <REDACTED_IP:54584>: Exited normally
+[   94.950067] openkvm: alive 80s/3600s, watchdog0 state=inactive timeleft=26
+[   96.305745] [111] Jan 01 00:01:36 Child connection from REDACTED_IP:51970
+[   96.517927] [111] Jan 01 00:01:36 Bad password attempt for 'root' from REDACTED_IP:51970
+[   96.735500] [111] Jan 01 00:01:36 Exit before auth from <REDACTED_IP:51970>: (user 'root', 1 fails): Exited normally
+[   96.735522] 
+[  101.415790] [112] Jan 01 00:01:41 Child connection from REDACTED_IP:51984
+[  101.628734] [112] Jan 01 00:01:41 Password auth succeeded for 'root' from REDACTED_IP:51984
+[  101.648409] [112] Jan 01 00:01:41 Exit (root) from <REDACTED_IP:51984>: Disconnect received
+[  104.959921] openkvm: alive 90s/3600s, watchdog0 state=inactive timeleft=26
+[  114.969645] openkvm: alive 100s/3600s, watchdog0 state=inactive timeleft=26
+[  119.340974] [114] Jan 01 00:01:59 Child connection from REDACTED_IP:50390
+[  119.348358] [114] Jan 01 00:01:59 Exit before auth from <REDACTED_IP:50390>: Exited normally
+[  124.386762] [115] Jan 01 00:02:04 Child connection from REDACTED_IP:40556
+[  124.596067] [115] Jan 01 00:02:04 Bad password attempt for 'root' from REDACTED_IP:40556
+[  124.797859] [115] Jan 01 00:02:04 Exit before auth from <REDACTED_IP:40556>: (user 'root', 1 fails): Exited normally
+[  124.797882] 
+[  124.979531] openkvm: alive 110s/3600s, watchdog0 state=inactive timeleft=26
+[  129.599998] [116] Jan 01 00:02:09 Child connection from REDACTED_IP:40562
+[  129.812173] [116] Jan 01 00:02:09 Password auth succeeded for 'root' from REDACTED_IP:40562
+[  129.858179] [116] Jan 01 00:02:09 Exit (root) from <REDACTED_IP:40562>: Disconnect received
+[  134.989446] openkvm: alive 120s/3600s, watchdog0 state=inactive timeleft=26
+[  140.082135] [120] Jan 01 00:02:19 Child connection from REDACTED_IP:49026
+[  140.089596] [120] Jan 01 00:02:19 Exit before auth from <REDACTED_IP:49026>: Exited normally
+[  144.676304] [121] Jan 01 00:02:24 Child connection from REDACTED_IP:36496
+[  144.888779] [121] Jan 01 00:02:24 Bad password attempt for 'root' from REDACTED_IP:36496
+[  144.999282] openkvm: alive 130s/3600s, watchdog0 state=inactive timeleft=26
+[  145.118794] [121] Jan 01 00:02:25 Exit before auth from <REDACTED_IP:36496>: (user 'root', 1 fails): Exited normally
+[  145.118816] 
+[  150.003877] [122] Jan 01 00:02:29 Child connection from REDACTED_IP:36512
+[  150.216560] [122] Jan 01 00:02:30 Password auth succeeded for 'root' from REDACTED_IP:36512
+[  150.247112] [122] Jan 01 00:02:30 Exit (root) from <REDACTED_IP:36512>: Disconnect received
+[  155.009139] openkvm: alive 140s/3600s, watchdog0 state=inactive timeleft=26
+[  165.018928] openkvm: alive 150s/3600s, watchdog0 state=inactive timeleft=26
+[  175.028734] openkvm: alive 160s/3600s, watchdog0 state=inactive timeleft=26
+[  185.036223] [132] Jan 01 00:03:04 Child connection from REDACTED_IP:39880
+[  185.043254] openkvm: alive 170s/3600s, watchdog0 state=inactive timeleft=26
+[  185.043640] [132] Jan 01 00:03:04 Exit before auth from <REDACTED_IP:39880>: Exited normally
+[  189.844571] [133] Jan 01 00:03:09 Child connection from REDACTED_IP:39888
+[  190.058280] [133] Jan 01 00:03:09 Bad password attempt for 'root' from REDACTED_IP:39888
+[  190.189050] [133] Jan 01 00:03:10 Exit before auth from <REDACTED_IP:39888>: (user 'root', 1 fails): Exited normally
+[  190.189073] 
+[  195.053399] openkvm: alive 180s/3600s, watchdog0 state=inactive timeleft=26
+[  195.293532] [134] Jan 01 00:03:15 Child connection from REDACTED_IP:35250
+[  195.506541] [134] Jan 01 00:03:15 Password auth succeeded for 'root' from REDACTED_IP:35250
+[  195.524375] [134] Jan 01 00:03:15 Exit (root) from <REDACTED_IP:35250>: Disconnect received
+[  199.543391] [137] Jan 01 00:03:19 Child connection from REDACTED_IP:35252
+[  199.550750] [137] Jan 01 00:03:19 Exit before auth from <REDACTED_IP:35252>: Exited normally
+[  204.017050] [138] Jan 01 00:03:23 Child connection from REDACTED_IP:35268
+[  204.227904] [138] Jan 01 00:03:24 Bad password attempt for 'root' from REDACTED_IP:35268
+[  204.426464] [138] Jan 01 00:03:24 Exit before auth from <REDACTED_IP:35268>: (user 'root', 1 fails): Exited normally
+[  204.426487] 
+[  205.063360] openkvm: alive 190s/3600s, watchdog0 state=inactive timeleft=26
+[  209.189333] [139] Jan 01 00:03:29 Child connection from REDACTED_IP:45034
+[  209.400626] [139] Jan 01 00:03:29 Password auth succeeded for 'root' from REDACTED_IP:45034
+[  211.285369] [139] Jan 01 00:03:31 Exit (root) from <REDACTED_IP:45034>: Disconnect received
+[  215.073547] openkvm: alive 200s/3600s, watchdog0 state=inactive timeleft=26
+[  225.083404] openkvm: alive 210s/3600s, watchdog0 state=inactive timeleft=26
+[  235.093225] openkvm: alive 220s/3600s, watchdog0 state=inactive timeleft=26
+[  238.265810] [141] Jan 01 00:03:58 Child connection from REDACTED_IP:46968
+[  238.273201] [141] Jan 01 00:03:58 Exit before auth from <REDACTED_IP:46968>: Exited normally
+[  242.937823] [142] Jan 01 00:04:02 Child connection from REDACTED_IP:46978
+[  243.148974] [142] Jan 01 00:04:03 Bad password attempt for 'root' from REDACTED_IP:46978
+[  243.291234] [142] Jan 01 00:04:03 Exit before auth from <REDACTED_IP:46978>: (user 'root', 1 fails): Exited normally
+[  243.291258] 
+[  245.103200] openkvm: alive 230s/3600s, watchdog0 state=inactive timeleft=26
+[  247.859283] [143] Jan 01 00:04:07 Child connection from REDACTED_IP:43458
+[  248.068202] [143] Jan 01 00:04:07 Password auth succeeded for 'root' from REDACTED_IP:43458
+[  248.083191] [143] Jan 01 00:04:07 Exit (root) from <REDACTED_IP:43458>: Disconnect received
+[  255.113234] openkvm: alive 240s/3600s, watchdog0 state=inactive timeleft=26
+[  263.855910] [146] Jan 01 00:04:23 Child connection from REDACTED_IP:52414
+[  263.863285] [146] Jan 01 00:04:23 Exit before auth from <REDACTED_IP:52414>: Exited normally
+[  265.123106] openkvm: alive 250s/3600s, watchdog0 state=inactive timeleft=26
+[  268.805252] [147] Jan 01 00:04:28 Child connection from REDACTED_IP:42612
+[  269.019543] [147] Jan 01 00:04:28 Bad password attempt for 'root' from REDACTED_IP:42612
+[  269.169868] [147] Jan 01 00:04:29 Exit before auth from <REDACTED_IP:42612>: (user 'root', 1 fails): Exited normally
+[  269.169892] 
+[  274.264051] [148] Jan 01 00:04:34 Child connection from REDACTED_IP:37926
+[  274.475752] [148] Jan 01 00:04:34 Password auth succeeded for 'root' from REDACTED_IP:37926
+[  274.491911] [148] Jan 01 00:04:34 Exit (root) from <REDACTED_IP:37926>: Disconnect received
+[  275.133071] openkvm: alive 260s/3600s, watchdog0 state=inactive timeleft=25
+[  285.143192] openkvm: alive 270s/3600s, watchdog0 state=inactive timeleft=25
+[  288.604895] [151] Jan 01 00:04:48 Child connection from REDACTED_IP:54638
+[  288.612275] [151] Jan 01 00:04:48 Exit before auth from <REDACTED_IP:54638>: Exited normally
+[  293.271615] [152] Jan 01 00:04:53 Child connection from REDACTED_IP:54652
+[  293.485157] [152] Jan 01 00:04:53 Bad password attempt for 'root' from REDACTED_IP:54652
+[  293.678784] [152] Jan 01 00:04:53 Exit before auth from <REDACTED_IP:54652>: (user 'root', 1 fails): Exited normally
+[  293.678807] 
+[  295.159189] openkvm: alive 280s/3600s, watchdog0 state=inactive timeleft=25
+[  298.188650] [153] Jan 01 00:04:58 Child connection from REDACTED_IP:39328
+[  298.402782] [153] Jan 01 00:04:58 Password auth succeeded for 'root' from REDACTED_IP:39328
+[  300.408733] [153] Jan 01 00:05:00 Exit (root) from <REDACTED_IP:39328>: Disconnect received
+[  305.169091] openkvm: alive 290s/3600s, watchdog0 state=inactive timeleft=25
+[  315.178855] openkvm: alive 300s/3600s, watchdog0 state=inactive timeleft=25
+[  325.188674] openkvm: alive 310s/3600s, watchdog0 state=inactive timeleft=25
+[  335.198504] openkvm: alive 320s/3600s, watchdog0 state=inactive timeleft=25
+[  336.137254] [160] Jan 01 00:05:36 Child connection from REDACTED_IP:42132
+[  336.144628] [160] Jan 01 00:05:36 Exit before auth from <REDACTED_IP:42132>: Exited normally
+[  340.428259] [161] Jan 01 00:05:40 Child connection from REDACTED_IP:42136
+[  340.640308] [161] Jan 01 00:05:40 Bad password attempt for 'root' from REDACTED_IP:42136
+[  340.811940] [161] Jan 01 00:05:40 Exit before auth from <REDACTED_IP:42136>: (user 'root', 1 fails): Exited normally
+[  340.811963] 
+[  345.208346] openkvm: alive 330s/3600s, watchdog0 state=inactive timeleft=25
+[  345.386912] [162] Jan 01 00:05:45 Child connection from REDACTED_IP:37896
+[  345.597625] [162] Jan 01 00:05:45 Password auth succeeded for 'root' from REDACTED_IP:37896

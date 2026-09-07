@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * NanoKVM-Pro mainline bring-up init (#75, epic #26).
+ * NanoKVM-Pro mainline bring-up init (#75, #76, #77; epic #26).
  *
  * PID 1 of the initramfs baked into `.#kernel-mainline`. It is not a boot
- * loader for anything: the mainline kernel has no storage driver yet (#76), so
- * there is no root filesystem to switch to. Its only job is to be OBSERVABLE
- * from the vendor system that boots after it.
+ * loader for anything: there is no mainline root filesystem to switch to yet
+ * (#78). Its job is to be OBSERVABLE from the vendor system that boots after
+ * it -- and, since #77, to be reachable while it runs.
+ *
+ * #77 added, in order: bring eth0 up with the MAC harvested off the vendor
+ * rootfs #76 already mounts, take a DHCP lease (the same lease, because the
+ * same MAC), prove a round trip, and start dropbear with root's password hash
+ * harvested from the same place. So tools/kvmssh reaches the mainline system
+ * at the address and password it already knows, and no credential of any kind
+ * is built into the image.
  *
  * There is no serial console on this unit (the UART0 pads are hidden), so a
  * first mainline boot has no live output at all. Three channels replace it,
@@ -37,14 +44,19 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <net/if.h>
+#include <net/if_arp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/reboot.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -76,6 +88,10 @@
 #define MS_REBOOTING		(1u << 15)	/* reboot(2) is about to be called */
 #define MS_BLKDEV		(1u << 16)	/* #76: the eMMC produced a partitioned block device */
 #define MS_ROOTFS_RO		(1u << 17)	/* #76: ext4 on it mounted read-only and read */
+#define MS_NET_LINK		(1u << 18)	/* #77: eth0 exists and the PHY negotiated carrier */
+#define MS_NET_ADDR		(1u << 19)	/* #77: a DHCP lease was taken and configured */
+#define MS_NET_PING		(1u << 20)	/* #77: ICMP round trip to another host on the LAN */
+#define MS_SSHD			(1u << 21)	/* #77: dropbear started */
 
 /*
  * Storage probe (#76). Read-only throughout: the eMMC carries the running
@@ -115,20 +131,55 @@
 #define LOG_STASH_HDR		32			/* magic, then a u32 length at +24 */
 
 /*
+ * Network bring-up (#77). The interface name is the kernel's own: there is no
+ * udev in here, so the one stmmac netdev is eth0.
+ */
+#define NET_IFACE		"eth0"
+#define NET_CARRIER_SECONDS	20
+#define DHCP_RESULT		"/run/dhcp.result"
+#define SSH_HOST_KEY		"/etc/dropbear/host_key_ed25519"
+
+/*
+ * Identity is HARVESTED, never built in. The vendor rootfs on the eMMC carries
+ * both facts this program needs, and #76's probe already mounts it read-only:
+ *
+ *   /etc/network/interfaces  "hwaddress ether ..."  -- eth0's provisioned MAC
+ *   /etc/shadow              root's password hash
+ *
+ * Taking the vendor MAC means the DHCP server hands back the same lease, so
+ * the mainline system answers on the address tools/kvmssh already knows;
+ * taking the hash means it answers to the same password. Neither ever touches
+ * the build, the Nix store or this repository.
+ */
+#define VENDOR_IFACES_FILE	PROBE_MNT "/etc/network/interfaces"
+#define VENDOR_SHADOW_FILE	PROBE_MNT "/etc/shadow"
+
+/*
  * How long to stay alive before rebooting, blinking throughout.
  *
  * This is the watchdog test, not a courtesy to whoever is watching the LED.
  * U-Boot arms wdt0 at 30 s per stage, so anything under a minute proves only
  * that the board can boot -- it says nothing about whether the driver adopted
  * the running dog and the watchdog core is petting it. Outliving the
- * bootloader's arm by 2x is the evidence.
+ * bootloader's arm by 2x is the evidence. #77 lengthened it from 120 s because
+ * the dwell is now also the window in which a human logs in over SSH.
+ *
+ * Touching KEEPALIVE_FILE from that shell extends the dwell to the hard cap,
+ * which exists so that a forgotten session still lands the board back on slot
+ * A rather than leaving it on a rootfs-less kernel indefinitely.
  */
-#define DWELL_SECONDS		120
+#define DWELL_SECONDS		300
+#define DWELL_MAX_SECONDS	3600
+#define KEEPALIVE_FILE		"/run/keepalive"
 
 /* One liveness line to the log every this many seconds of the dwell. */
 #define HEARTBEAT_SECONDS	10
 
 static int kmsg_fd = -1;
+
+/* Harvested off the vendor rootfs by probe_storage(); see VENDOR_*_FILE. */
+static char harvest_mac[24];
+static char harvest_shadow[512];
 
 /* ------------------------------------------------------------------------- */
 
@@ -177,6 +228,42 @@ static int read_line(const char *path, char *buf, size_t len)
 	buf[n] = '\0';
 
 	return 0;
+}
+
+/*
+ * Read a whole (small) file into buf, NUL-terminated. Returns the byte count,
+ * or -1. Used for the two vendor-rootfs files and the DHCP result.
+ */
+static ssize_t slurp(const char *path, char *buf, size_t len)
+{
+	int fd = open(path, O_RDONLY | O_CLOEXEC);
+	ssize_t total = 0, n;
+
+	if (fd < 0)
+		return -1;
+	while ((size_t)total < len - 1) {
+		n = read(fd, buf + total, len - 1 - (size_t)total);
+		if (n <= 0)
+			break;
+		total += n;
+	}
+	close(fd);
+	buf[total] = '\0';
+
+	return total;
+}
+
+/* Copy one whitespace-delimited token out of s into out. */
+static void copy_token(const char *s, char *out, size_t len)
+{
+	size_t i = 0;
+
+	while (*s == ' ' || *s == '\t')
+		s++;
+	while (i < len - 1 && *s && *s != ' ' && *s != '\t' && *s != '\n' &&
+	       *s != '\r')
+		out[i++] = *s++;
+	out[i] = '\0';
 }
 
 static void nap(long sec, long nsec)
@@ -362,6 +449,60 @@ static int find_partition(const char *want, unsigned *maj, unsigned *min)
 }
 
 /*
+ * Take the board's two identity facts off the mounted vendor rootfs (#77).
+ * Called with PROBE_MNT still mounted, read-only.
+ *
+ * The MAC is a provisioning-time literal in /etc/network/interfaces -- it is
+ * NOT derived from the SoC UID at boot, whatever the vendor's USB-gadget
+ * scripts do for their own NCM/RNDIS addresses. So reading the file is not a
+ * shortcut around a computation; it is the only place the value exists.
+ *
+ * The hash is logged by length only. Nothing here ever prints it.
+ */
+static void harvest_identity(void)
+{
+	static char buf[16384];
+	char *p;
+
+	if (slurp(VENDOR_IFACES_FILE, buf, sizeof(buf)) > 0) {
+		p = strstr(buf, "hwaddress ether");
+		if (p) {
+			copy_token(p + sizeof("hwaddress ether") - 1,
+				   harvest_mac, sizeof(harvest_mac));
+			kmsg_hex("openkvm: net: harvested MAC, length: ",
+				 (uint32_t)strlen(harvest_mac));
+		}
+	}
+	if (!harvest_mac[0])
+		kmsg("openkvm: net: WARNING no hwaddress in the vendor "
+		     "interfaces file; the lease will not be the usual one\n");
+
+	if (slurp(VENDOR_SHADOW_FILE, buf, sizeof(buf)) > 0) {
+		for (p = buf; p && *p; ) {
+			char *eol = strchr(p, '\n');
+
+			if (strncmp(p, "root:", 5) == 0) {
+				size_t n = eol ? (size_t)(eol - p)
+					       : strlen(p);
+
+				if (n < sizeof(harvest_shadow) - 2) {
+					memcpy(harvest_shadow, p, n);
+					harvest_shadow[n] = '\n';
+					harvest_shadow[n + 1] = '\0';
+				}
+				break;
+			}
+			p = eol ? eol + 1 : NULL;
+		}
+		kmsg_hex("openkvm: net: harvested root shadow entry, length: ",
+			 (uint32_t)strlen(harvest_shadow));
+	}
+	if (!harvest_shadow[0])
+		kmsg("openkvm: net: WARNING no root entry in the vendor "
+		     "shadow file; SSH password login will fail\n");
+}
+
+/*
  * Wait for the eMMC rootfs partition, then mount it read-only and read it.
  *
  * Everything here is deliberately non-fatal: this is a bring-up probe, and a
@@ -447,8 +588,267 @@ static void probe_storage(volatile uint8_t *chipmode)
 	if (entries > 2 && chipmode)
 		wr32(chipmode + BACKUP0_SET_OFF, MS_ROOTFS_RO);
 
+	harvest_identity();
+
 	/* Leave nothing mounted: the next thing this board does is reboot. */
 	(void)umount(PROBE_MNT);
+}
+
+/* --- network + shell (#77) ------------------------------------------------ */
+
+/*
+ * fork/exec/wait, with the child's stdout and stderr pointed at the kernel log
+ * so that udhcpc's and dropbear's own diagnostics end up in the stash and the
+ * ramoops console alongside everything else. Returns the child's exit status,
+ * or -1.
+ */
+static int run(const char *path, char *const argv[])
+{
+	int status = 0;
+	pid_t pid = fork();
+
+	if (pid < 0)
+		return -1;
+
+	if (pid == 0) {
+		/*
+		 * The kernel could not open an initial console for /init (no
+		 * /dev/console on this board: "unable to open an initial
+		 * console" is in every boot log), so fds 0-2 are NOT open and
+		 * kmsg_fd may well BE fd 0. Hence the order: point 1 and 2 at
+		 * the kernel log FIRST, then give the child a real stdin from
+		 * /dev/null. Doing it the other way round would overwrite
+		 * kmsg_fd with /dev/null before it had been duplicated.
+		 */
+		int null_fd;
+
+		if (kmsg_fd >= 0) {
+			(void)dup2(kmsg_fd, STDOUT_FILENO);
+			(void)dup2(kmsg_fd, STDERR_FILENO);
+		}
+		null_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+		if (null_fd >= 0 && null_fd != STDIN_FILENO)
+			(void)dup2(null_fd, STDIN_FILENO);
+		execv(path, argv);
+		_exit(127);
+	}
+
+	if (waitpid(pid, &status, 0) != pid)
+		return -1;
+
+	return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+/*
+ * Give eth0 the vendor MAC and bring it up.
+ *
+ * The MAC has to be set while the interface is DOWN, which it is: nothing in
+ * here has touched it and there is no udev or systemd to have done so.
+ */
+static int net_configure_link(void)
+{
+	unsigned int m[6];
+	struct ifreq ifr;
+	int s, i;
+
+	s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (s < 0) {
+		kmsg_hex("openkvm: net: socket failed, errno: ",
+			 (uint32_t)errno);
+		return -1;
+	}
+
+	if (harvest_mac[0] &&
+	    sscanf(harvest_mac, "%x:%x:%x:%x:%x:%x",
+		   &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) == 6) {
+		memset(&ifr, 0, sizeof(ifr));
+		strncpy(ifr.ifr_name, NET_IFACE, IFNAMSIZ - 1);
+		ifr.ifr_hwaddr.sa_family = ARPHRD_ETHER;
+		for (i = 0; i < 6; i++)
+			ifr.ifr_hwaddr.sa_data[i] = (char)(m[i] & 0xff);
+		if (ioctl(s, SIOCSIFHWADDR, &ifr) != 0)
+			kmsg_hex("openkvm: net: SIOCSIFHWADDR errno: ",
+				 (uint32_t)errno);
+	}
+
+	memset(&ifr, 0, sizeof(ifr));
+	strncpy(ifr.ifr_name, NET_IFACE, IFNAMSIZ - 1);
+	if (ioctl(s, SIOCGIFFLAGS, &ifr) != 0) {
+		kmsg_hex("openkvm: net: no " NET_IFACE ", errno: ",
+			 (uint32_t)errno);
+		close(s);
+		return -1;
+	}
+	ifr.ifr_flags |= IFF_UP;
+	if (ioctl(s, SIOCSIFFLAGS, &ifr) != 0) {
+		kmsg_hex("openkvm: net: SIOCSIFFLAGS errno: ",
+			 (uint32_t)errno);
+		close(s);
+		return -1;
+	}
+	close(s);
+
+	return 0;
+}
+
+/* Milliseconds waited for carrier, or -1 if it never came up. */
+static int net_wait_carrier(void)
+{
+	int waited = 0;
+	char v[8];
+
+	while (waited < NET_CARRIER_SECONDS * 1000) {
+		if (read_line("/sys/class/net/" NET_IFACE "/carrier", v,
+			      sizeof(v)) == 0 && v[0] == '1')
+			return waited;
+		nap(0, 200000000L);
+		waited += 200;
+	}
+
+	return -1;
+}
+
+/*
+ * The whole network step. Returns 0 once there is an address; the milestone
+ * bits record how far it actually got, because "carrier but no lease" and "no
+ * carrier at all" are completely different faults and the register is the only
+ * channel that survives a board that then wedges.
+ */
+static void bring_up_network(volatile uint8_t *chipmode)
+{
+	char *const dhcp_argv[] = {
+		"busybox", "udhcpc", "-i", (char *)NET_IFACE,
+		"-s", "/etc/udhcpc.script", "-f", "-q", "-n",
+		"-t", "8", "-T", "2", NULL
+	};
+	char result[128], router[64];
+	int carrier_ms, rc;
+	char *p;
+
+	if (net_configure_link() != 0)
+		return;
+
+	carrier_ms = net_wait_carrier();
+	if (carrier_ms < 0) {
+		kmsg("openkvm: net: FAIL -- no carrier on " NET_IFACE "\n");
+		return;
+	}
+	kmsg_hex("openkvm: net: carrier up after ms: ",
+		 (uint32_t)carrier_ms);
+	{
+		char msg[128], speed[16], duplex[16];
+
+		if (read_line("/sys/class/net/" NET_IFACE "/speed", speed,
+			      sizeof(speed)) != 0)
+			strcpy(speed, "?");
+		if (read_line("/sys/class/net/" NET_IFACE "/duplex", duplex,
+			      sizeof(duplex)) != 0)
+			strcpy(duplex, "?");
+		snprintf(msg, sizeof(msg),
+			 "openkvm: net: link %s Mbit/s %s duplex\n",
+			 speed, duplex);
+		kmsg(msg);
+	}
+	if (chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_NET_LINK);
+
+	(void)unlink(DHCP_RESULT);
+	rc = run("/bin/busybox", dhcp_argv);
+	if (rc != 0)
+		kmsg_hex("openkvm: net: udhcpc exit: ", (uint32_t)rc);
+
+	if (slurp(DHCP_RESULT, result, sizeof(result)) <= 0) {
+		kmsg("openkvm: net: FAIL -- no DHCP lease\n");
+		return;
+	}
+	{
+		char msg[192];
+
+		snprintf(msg, sizeof(msg),
+			 "openkvm: net: lease (address netmask router): %s",
+			 result);
+		kmsg(msg);
+	}
+	if (chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_NET_ADDR);
+
+	/*
+	 * Prove a packet actually went out and came back. The DHCP exchange is
+	 * already that proof at the UDP level, but an ICMP round trip to the
+	 * router also exercises ARP, the route, and the receive path with a
+	 * unicast frame -- which is what "the MAC works", rather than "the MAC
+	 * transmits", actually means.
+	 */
+	router[0] = '\0';
+	p = strchr(result, ' ');
+	if (p)
+		p = strchr(p + 1, ' ');
+	if (p)
+		copy_token(p, router, sizeof(router));
+	if (router[0] && strcmp(router, "none") != 0) {
+		char *const ping_argv[] = {
+			"busybox", "ping", "-c", "3", "-W", "2", router, NULL
+		};
+
+		rc = run("/bin/busybox", ping_argv);
+		kmsg_hex("openkvm: net: ping the router, exit: ",
+			 (uint32_t)rc);
+		if (rc == 0 && chipmode)
+			wr32(chipmode + BACKUP0_SET_OFF, MS_NET_PING);
+	}
+}
+
+/*
+ * Write the account files dropbear authenticates against. /etc/passwd and
+ * /etc/group ship in the cpio; the hash does not, and is written here from
+ * what harvest_identity() read off the eMMC.
+ */
+static void write_shadow(void)
+{
+	int fd;
+
+	if (!harvest_shadow[0])
+		return;
+
+	fd = open("/etc/shadow", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+		  0600);
+	if (fd < 0) {
+		kmsg_hex("openkvm: net: cannot write /etc/shadow, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+	(void)write(fd, harvest_shadow, strlen(harvest_shadow));
+	close(fd);
+}
+
+static void start_sshd(volatile uint8_t *chipmode)
+{
+	char *const key_argv[] = {
+		"dropbearkey", "-t", "ed25519", "-f",
+		(char *)SSH_HOST_KEY, NULL
+	};
+	/*
+	 * No -F: dropbear daemonises itself and run() reaps the parent, which
+	 * is what makes this call return. The daemon is reparented to us, and
+	 * the dwell loop below reaps its session children.
+	 */
+	char *const argv[] = {
+		"dropbear", "-r", (char *)SSH_HOST_KEY, "-E", "-p", "22", NULL
+	};
+	int rc;
+
+	write_shadow();
+
+	rc = run("/bin/dropbearkey", key_argv);
+	if (rc != 0) {
+		kmsg_hex("openkvm: sshd: dropbearkey exit: ", (uint32_t)rc);
+		return;
+	}
+
+	rc = run("/bin/dropbear", argv);
+	kmsg_hex("openkvm: sshd: dropbear exit: ", (uint32_t)rc);
+	if (rc == 0 && chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_SSHD);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -459,10 +859,18 @@ int main(void)
 	int memfd, i;
 
 	/*
-	 * Make the two device nodes rather than requiring devtmpfs. Both are
-	 * fixed majors/minors, so this works on the barest possible kernel.
+	 * devtmpfs first, for everything dropbear needs (/dev/ptmx,
+	 * /dev/urandom, /dev/null) -- an initramfs gets no automatic mount of
+	 * it. Then mknod the two nodes this program itself cannot do without,
+	 * which succeeds whether or not devtmpfs is there and costs nothing
+	 * when it is (EEXIST). Both are fixed majors/minors, so the fallback
+	 * works on the barest possible kernel.
 	 */
 	(void)mkdir("/dev", 0755);
+	(void)mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
+	(void)mkdir("/dev/pts", 0755);
+	(void)mount("devpts", "/dev/pts", "devpts", 0,
+		    "gid=5,mode=620,ptmxmode=0666");
 	(void)mknod("/dev/kmsg", S_IFCHR | 0600, makedev(1, 11));
 	(void)mknod("/dev/mem", S_IFCHR | 0600, makedev(1, 1));
 
@@ -582,6 +990,18 @@ int main(void)
 	 */
 	probe_storage(chipmode);
 
+	/*
+	 * Milestone 2c (#77): the network, then a shell on it. /sys is mounted
+	 * here rather than in the dwell block below because the carrier and
+	 * link-speed reads need it -- the watchdog readout that used to mount
+	 * it just inherits the mount.
+	 */
+	if (mount("sysfs", "/sys", "sysfs", 0, NULL) != 0)
+		kmsg("openkvm: WARNING: /sys mount failed; no carrier or "
+		     "watchdog readout\n");
+	bring_up_network(chipmode);
+	start_sshd(chipmode);
+
 	if (stash) {
 		uint32_t used = stash_klog(stash);
 
@@ -603,15 +1023,33 @@ int main(void)
 	{
 		volatile void *led = gpio0 ? gpio0 + GPIO0_LED_OFF : NULL;
 		uint32_t base = led ? rd32(led) & ~(GPIO_DR | GPIO_DDR) : 0;
-		long elapsed = 0, next_beat = 0;
+		long elapsed = 0, next_beat = 0, limit = DWELL_SECONDS * 1000L;
 		char msg[256], left[32], state[32];
 
 		if (!led)
 			kmsg("openkvm: WARNING: cannot map GPIO0; no LED\n");
-		if (mount("sysfs", "/sys", "sysfs", 0, NULL) != 0)
-			kmsg("openkvm: WARNING: /sys mount failed; no watchdog readout\n");
 
-		while (elapsed < DWELL_SECONDS * 1000) {
+		while (elapsed < limit) {
+			/*
+			 * PID 1 reaps. dropbear's session children are ours
+			 * once its daemon was reparented here.
+			 */
+			while (waitpid(-1, NULL, WNOHANG) > 0)
+				;
+
+			/*
+			 * An SSH session that wants more than the default
+			 * dwell says so by creating this file. The cap is
+			 * absolute: a forgotten session still ends with the
+			 * board back on slot A.
+			 */
+			if (limit < DWELL_MAX_SECONDS * 1000L &&
+			    access(KEEPALIVE_FILE, F_OK) == 0) {
+				limit = DWELL_MAX_SECONDS * 1000L;
+				kmsg("openkvm: dwell extended to the cap by "
+				     KEEPALIVE_FILE "\n");
+			}
+
 			if (elapsed >= next_beat) {
 				if (read_line("/sys/class/watchdog/watchdog0/timeleft",
 					      left, sizeof(left)) != 0)
@@ -620,8 +1058,9 @@ int main(void)
 					      state, sizeof(state)) != 0)
 					strcpy(state, "?");
 				snprintf(msg, sizeof(msg),
-					 "openkvm: alive %lds/%ds, watchdog0 state=%s timeleft=%s\n",
-					 elapsed / 1000, DWELL_SECONDS, state, left);
+					 "openkvm: alive %lds/%lds, watchdog0 state=%s timeleft=%s\n",
+					 elapsed / 1000, limit / 1000, state,
+					 left);
 				kmsg(msg);
 				next_beat += HEARTBEAT_SECONDS * 1000;
 			}
@@ -659,6 +1098,16 @@ int main(void)
 	 * stops, resets the SoC anyway within its timeout. Either way the next
 	 * boot is slot A.
 	 */
+	/*
+	 * Last stash, so that everything the dwell produced -- the watchdog
+	 * countdowns, dropbear's session log, anything a shell provoked --
+	 * is in DRAM before the reset. The ramoops console zone has it too,
+	 * but that zone is 16 KiB and this one is 32.
+	 */
+	if (stash)
+		kmsg_hex("openkvm: kernel log final stash, bytes: ",
+			 stash_klog(stash));
+
 	if (chipmode)
 		wr32(chipmode + BACKUP0_SET_OFF, MS_REBOOTING);
 	kmsg("openkvm: rebooting via the restart handler\n");

@@ -1,0 +1,402 @@
+6,0,0,-;Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+5,1,0,-;Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+4,2,0,-;KASLR disabled due to lack of seed
+6,3,0,-;Machine model: Sipeed NanoKVM-Pro
+5,4,0,-;Memory limited to 824MB
+6,5,0,-;earlycon: uart8250 at MMIO32 0x0000000004880000 (options '')
+6,6,0,-;printk: legacy bootconsole [uart8250] enabled
+6,7,0,-;efi: UEFI not found.
+6,8,0,-;OF: reserved mem: 0x0000000040040000..0x000000004007ffff (256 KiB) nomap non-reusable atf@40040000
+6,9,0,-;OF: reserved mem: 0x0000000044200000..0x00000000461fffff (32768 KiB) nomap non-reusable optee@44200000
+6,10,0,-;OF: reserved mem: 0x0000000048000000..0x00000000480dffff (896 KiB) nomap non-reusable vendor-pstore@48000000
+6,11,0,-;OF: reserved mem: 0x00000000480e0000..0x00000000480e7fff (32 KiB) map non-reusable ramoops@480e0000
+6,12,0,-;OF: reserved mem: 0x00000000480e8000..0x00000000480effff (32 KiB) map non-reusable bringup-log@480e8000
+6,13,0,-;NUMA: Faking a node at [mem 0x0000000040000000-0x00000000737fffff]
+6,14,0,-;NODE_DATA(0) allocated [mem 0x73676c40-0x7367933f]
+6,15,0,-;cma: Reserved 32 MiB at 0x0000000071600000
+6,16,0,-;psci: probing for conduit method from DT.
+6,17,0,-;psci: PSCIv1.1 detected in firmware.
+6,18,0,-;psci: Using standard PSCI v0.2 function IDs
+6,19,0,-;psci: Trusted OS migration not required
+6,20,0,-;psci: SMC Calling Convention v1.2
+6,21,0,-;Zone ranges:
+6,22,0,-;  DMA      [mem 0x0000000040000000-0x00000000737fffff]
+6,23,0,-;  DMA32    empty
+6,24,0,-;  Normal   empty
+6,25,0,-;Movable zone start for each node
+6,26,0,-;Early memory node ranges
+6,27,0,-;  node   0: [mem 0x0000000040000000-0x000000004003ffff]
+6,28,0,-;  node   0: [mem 0x0000000040040000-0x000000004007ffff]
+6,29,0,-;  node   0: [mem 0x0000000040080000-0x00000000441fffff]
+6,30,0,-;  node   0: [mem 0x0000000044200000-0x00000000461fffff]
+6,31,0,-;  node   0: [mem 0x0000000046200000-0x0000000047ffffff]
+6,32,0,-;  node   0: [mem 0x0000000048000000-0x00000000480dffff]
+6,33,0,-;  node   0: [mem 0x00000000480e0000-0x00000000737fffff]
+6,34,0,-;Initmem setup node 0 [mem 0x0000000040000000-0x00000000737fffff]
+6,35,0,-;On node 0, zone DMA: 18432 pages in unavailable ranges
+6,36,0,-;percpu: Embedded 26 pages/cpu s66904 r8192 d31400 u106496
+7,37,0,-;pcpu-alloc: s66904 r8192 d31400 u106496 alloc=26*4096
+7,38,0,-;pcpu-alloc: [0] 0 [0] 1 
+6,39,0,-;Detected VIPT I-cache on CPU0
+6,40,0,-;CPU features: detected: ARM erratum 845719
+6,41,0,-;alternatives: applying boot alternatives
+5,42,0,-;Kernel command line: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+5,43,0,-;Unknown kernel command line parameters "board_id=0x5,boot_reason=0x04,initcall_debug=0 logomode=vo0@dsi_dpi_video", will be passed to user space.
+6,44,0,-;printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+6,45,0,-;Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+6,46,0,-;Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+6,47,0,-;software IO TLB: SWIOTLB bounce buffer size adjusted to 0MB
+6,48,0,-;software IO TLB: area num 2.
+6,49,0,-;software IO TLB: mapped [mem 0x0000000070580000-0x0000000070680000] (1MB)
+6,50,0,-;Fallback order for Node 0: 0 
+6,51,0,-;Built 1 zonelists, mobility grouping on.  Total pages: 210944
+6,52,0,-;Policy zone: DMA
+6,53,0,-;mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+6,54,0,-;SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+6,55,0,-;rcu: Preemptible hierarchical RCU implementation.
+6,56,0,-;rcu: \x09RCU event tracing is enabled.
+6,57,0,-;rcu: \x09RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=2.
+6,58,0,-;\x09Trampoline variant of Tasks RCU enabled.
+6,59,0,-;\x09Tracing variant of Tasks RCU enabled.
+6,60,0,-;rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+6,61,0,-;rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+6,62,0,-;RCU Tasks: Setting shift to 1 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=2.
+6,63,0,-;NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+6,64,0,-;Root IRQ handler: gic_handle_irq
+6,65,0,-;rcu: srcu_init: Setting srcu_struct sizes based on contention.
+6,66,0,-;arch_timer: cp15 timer running at 24.00MHz (virt).
+6,67,0,-;clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+6,68,0,-;sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+6,69,8410,-;Console: colour dummy device 80x25
+6,70,12959,-;Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+6,71,23249,-;pid_max: default: 32768 minimum: 301
+6,72,28121,-;Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+6,73,35545,-;Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+6,74,43725,-;VFS: Finished mounting rootfs on nullfs
+6,75,50540,-;rcu: Hierarchical SRCU implementation.
+6,76,55401,-;rcu: \x09Max phase no-delay instances is 1000.
+6,77,60861,-;Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+6,78,69513,-;EFI services will not be available.
+6,79,74277,-;smp: Bringing up secondary CPUs ...
+6,80,79420,-;Detected VIPT I-cache on CPU1
+6,81,79558,-;CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+6,82,79723,-;smp: Brought up 1 node, 2 CPUs
+6,83,94430,-;SMP: Total of 2 processors activated.
+6,84,99146,-;CPU: All CPU(s) started at EL1
+6,85,103302,-;CPU features: detected: 32-bit EL0 Support
+6,86,108458,-;CPU features: detected: 32-bit EL1 Support
+6,87,113624,-;CPU features: detected: CRC32 instructions
+6,88,118787,-;CPU features: detected: PMUv3
+6,89,122861,-;alternatives: applying system-wide alternatives
+6,90,130087,-;Memory: 709028K/843776K available (19392K kernel code, 5246K rwdata, 14628K rodata, 5952K init, 718K bss, 98972K reserved, 32768K cma-reserved)
+6,91,144963,-;devtmpfs: initialized
+6,92,151467,-;clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+6,93,161292,-;posixtimers hash table entries: 1024 (order: 2, 16384 bytes, linear)
+6,94,168747,-;futex hash table entries: 512 (32768 bytes on 1 NUMA nodes, total 32 KiB, linear).
+6,95,177962,-;21216 pages in range for non-PLT usage
+6,96,177984,-;512736 pages in range for PLT usage
+6,97,184880,-;DMI: not present or invalid.
+6,98,195966,-;NET: Registered PF_NETLINK/PF_ROUTE protocol family
+6,99,203300,-;DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+6,100,211154,-;audit: initializing netlink subsys (disabled)
+5,101,216893,-;audit: type=2000 audit(0.164:1): state=initialized audit_enabled=0 res=1
+6,102,218085,-;thermal_sys: Registered thermal governor 'step_wise'
+6,103,224709,-;thermal_sys: Registered thermal governor 'power_allocator'
+6,104,230834,-;cpuidle: using governor menu
+6,105,241674,-;hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+6,106,248568,-;ASID allocator initialised with 65536 entries
+6,107,256399,-;Serial: AMBA PL011 UART driver
+6,108,261924,-;pstore: Using crash dump compression: deflate
+6,109,267393,-;printk: legacy console [ramoops-1] enabled
+6,110,272926,-;pstore: Registered ramoops as persistent store backend
+6,111,279124,-;ramoops: using 0x8000@0x480e0000, ecc: 0
+6,112,297741,-;HugeTLB: registered 1.00 GiB page size, pre-allocated 0 pages
+6,113,304594,-;HugeTLB: 0 KiB vmemmap can be freed for a 1.00 GiB page
+6,114,310880,-;HugeTLB: registered 32.0 MiB page size, pre-allocated 0 pages
+6,115,317685,-;HugeTLB: 0 KiB vmemmap can be freed for a 32.0 MiB page
+6,116,323970,-;HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+6,117,330774,-;HugeTLB: 0 KiB vmemmap can be freed for a 2.00 MiB page
+6,118,337058,-;HugeTLB: registered 64.0 KiB page size, pre-allocated 0 pages
+6,119,343862,-;HugeTLB: 0 KiB vmemmap can be freed for a 64.0 KiB page
+6,120,352577,-;ACPI: Interpreter disabled.
+6,121,358625,-;iommu: Default domain type: Translated
+6,122,363464,-;iommu: DMA domain TLB invalidation policy: strict mode
+5,123,370051,-;SCSI subsystem initialized
+7,124,374092,-;libata version 3.00 loaded.
+6,125,378233,-;usbcore: registered new interface driver usbfs
+6,126,383778,-;usbcore: registered new interface driver hub
+6,127,389142,-;usbcore: registered new device driver usb
+6,128,394889,-;pps_core: LinuxPPS API ver. 1 registered
+6,129,399888,-;pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+6,130,409060,-;PTP clock support registered
+6,131,413151,-;EDAC MC: Ver: 3.0.0
+6,132,416836,-;scmi_core: SCMI protocol bus registered
+6,133,422737,-;FPGA manager framework
+6,134,427516,-;vgaarb: loaded
+6,135,430928,-;clocksource: Switched to clocksource arch_sys_counter
+5,136,437390,-;VFS: Disk quotas dquot_6.6.0
+6,137,441373,-;VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+6,138,448851,-;pnp: PnP ACPI: disabled
+6,139,459305,-;NET: Registered PF_INET protocol family
+6,140,464410,-;IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+6,141,472842,-;tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+6,142,481271,-;Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+6,143,489047,-;TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+6,144,496869,-;TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+6,145,504313,-;TCP: Hash tables configured (established 8192 bind 8192)
+6,146,510844,-;UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+6,147,517699,-;NET: Registered PF_UNIX/PF_LOCAL protocol family
+6,148,523973,-;RPC: Registered named UNIX socket transport module.
+6,149,529953,-;RPC: Registered udp transport module.
+6,150,534675,-;RPC: Registered tcp transport module.
+6,151,539396,-;RPC: Registered tcp-with-tls transport module.
+6,152,544900,-;RPC: Registered tcp NFSv4.1 backchannel transport module.
+6,153,551372,-;PCI: CLS 0 bytes, default 64
+6,154,555649,-;kvm [1]: HYP mode not available
+5,155,561491,-;Initialise system trusted keyrings
+6,156,567237,-;workingset: timestamp_bits=42 (anon: 38) max_order=18 bucket_order=0 (anon: 0)
+6,157,576198,-;squashfs: version 4.0 (2009/01/31) Phillip Lougher
+5,158,582591,-;NFS: Registering the id_resolver key type
+5,159,587738,-;Key type id_resolver registered
+5,160,591943,-;Key type id_legacy registered
+6,161,596007,-;nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+6,162,602731,-;nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+6,163,610477,-;9p: Installing v9fs 9p2000 file system support
+5,164,616268,-;Key type asymmetric registered
+5,165,620409,-;Asymmetric key parser 'x509' registered
+6,166,625380,-;Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+6,167,632802,-;io scheduler mq-deadline registered
+6,168,637351,-;io scheduler kyber registered
+6,169,641421,-;io scheduler bfq registered
+6,170,655669,-;ledtrig-cpu: registered to indicate activity on CPUs
+6,171,692711,-;Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+6,172,702750,-;printk: legacy console [ttyS0] disabled
+6,173,708072,-;4880000.serial: ttyS0 at MMIO 0x4880000 (irq = 13, base_baud = 13000000) is a 16550A
+6,174,716957,-;printk: legacy console [ttyS0] enabled
+6,175,726577,-;printk: legacy bootconsole [uart8250] disabled
+6,176,745581,-;msm_serial: driver initialized
+6,177,750581,-;SuperH (H)SCI(F) driver initialized
+6,178,755399,-;STM32 USART driver initialized
+6,179,768467,-;loop: module loaded
+6,180,773014,-;megasas: 07.734.00.00-rc1
+6,181,784321,-;tun: Universal TUN/TAP device driver, 1.6
+6,182,790680,-;thunder_xcv, ver 1.0
+6,183,794071,-;thunder_bgx, ver 1.0
+6,184,797364,-;nicpf, ver 1.0
+6,185,801801,-;e1000: Intel(R) PRO/1000 Network Driver
+6,186,806749,-;e1000: Copyright (c) 1999-2006 Intel Corporation.
+6,187,812576,-;e1000e: Intel(R) PRO/1000 Network Driver
+6,188,817557,-;e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+6,189,823530,-;igb: Intel(R) Gigabit Ethernet Network Driver
+6,190,828944,-;igb: Copyright (c) 2007-2014 Intel Corporation.
+6,191,834587,-;igbvf: Intel(R) Gigabit Virtual Function Network Driver
+6,192,840870,-;igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+6,193,847422,-;sky2: driver version 1.30
+6,194,852440,-;axera-dwmac 104c0000.ethernet: IRQ eth_wake_irq not found
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,195,858955,-;axera-dwmac 104c0000.ethernet: IRQ sfty not found
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,196,967248,-;axera-dwmac 104c0000.ethernet: User ID: 0x10, Synopsys ID: 0x52
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,197,974284,-;axera-dwmac 104c0000.ethernet: \x09DWMAC4/5
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,198,979312,-;axera-dwmac 104c0000.ethernet: DMA HW capability register supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,199,986639,-;axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,200,993530,-;axera-dwmac 104c0000.ethernet: RX Checksum Offload Engine supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,201,1000854,-;axera-dwmac 104c0000.ethernet: TX Checksum insertion supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,202,1007743,-;axera-dwmac 104c0000.ethernet: Wake-Up On Lan supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,203,1014114,-;axera-dwmac 104c0000.ethernet: Enable RX Mitigation via HW Watchdog Timer
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,204,1021979,-;axera-dwmac 104c0000.ethernet: device MAC address 86:9a:eb:c4:7c:40
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,205,1029308,-;axera-dwmac 104c0000.ethernet: Enabled L3L4 Flow TC (entries=4)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,206,1036286,-;axera-dwmac 104c0000.ethernet: Enabled RFS Flow TC (entries=10)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,207,1043274,-;axera-dwmac 104c0000.ethernet: Enabling HW TC (entries=256, max_off=256)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,208,1051033,-;axera-dwmac 104c0000.ethernet: TSO supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,209,1056360,-;axera-dwmac 104c0000.ethernet: TSO feature enabled
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,210,1062208,-;axera-dwmac 104c0000.ethernet: SPH feature enabled
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,211,1068055,-;axera-dwmac 104c0000.ethernet: Using 40/40 bits DMA host/device width
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,212,1082705,-;VFIO - User Level meta-driver version: 0.3
+6,213,1092271,-;usbcore: registered new interface driver usb-storage
+6,214,1102671,-;i2c_dev: i2c /dev entries driver
+6,215,1113696,-;ax630c-wdt 4840000.watchdog: instance 0 at 24000000 Hz, timeout 60s, max 357s
+ SUBSYSTEM=platform
+ DEVICE=+platform:4840000.watchdog
+6,216,1136077,-;SMCCC: SOC_ID: ARCH_SOC_ID not implemented, skipping ....
+6,217,1144230,-;usbcore: registered new interface driver usbhid
+6,218,1149878,-;usbhid: USB HID core driver
+6,219,1161453,-;optee: probing for conduit method.
+6,220,1163044,-;mmc0: SDHCI controller on 1b40000.mmc [1b40000.mmc] using ADMA 64-bit
+6,221,1166023,-;optee: revision 3.21
+6,222,1173490,-;mmc1: SDHCI controller on 104e0000.mmc [104e0000.mmc] using ADMA 64-bit
+6,223,1173939,-;optee: initialized driver
+6,224,1191938,-;NET: Registered PF_INET6 protocol family
+6,225,1198210,-;Segment Routing with IPv6
+6,226,1201986,-;In-situ OAM (IOAM) with IPv6
+6,227,1205996,-;NET: Registered PF_PACKET protocol family
+6,228,1211152,-;9pnet: Installing 9P2000 support
+5,229,1215555,-;Key type dns_resolver registered
+6,230,1232915,-;registered taskstats version 1
+5,231,1237999,-;Loading compiled-in X.509 certificates
+6,232,1252811,-;Demotion targets for Node 0: null
+6,233,1269281,-;clk: Disabling unused clocks
+6,234,1273555,-;PM: genpd: Disabling unused power domains
+3,235,1278686,-;Warning: unable to open an initial console.
+6,236,1286606,-;Freeing unused kernel memory: 5952K
+6,237,1291368,-;Run /init as init process
+7,238,1295063,-;  with arguments:
+7,239,1298034,-;    /init
+7,240,1300320,-;  with environment:
+7,241,1303473,-;    HOME=/
+7,242,1305836,-;    TERM=linux
+7,243,1308554,-;    board_id=0x5,boot_reason=0x04,initcall_debug=0
+7,244,1314399,-;    logomode=vo0@dsi_dpi_video
+12,245,1319402,-;openkvm: mainline bring-up init (#75) running
+12,246,1325164,-;openkvm: /proc/cmdline: mem=824M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x04,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1024K(env),6144K(logo),6144K(logo_b),1024K(optee),1024K(optee_b),1024K(dtb),1024K(dtb_b),65536K(kernel),65536K(kernel_b),131072K(boot),30255360K(rootfs) logomode=vo0@dsi_dpi_video
+12,247,1369710,-;openkvm: /proc/version: Linux version 7.1.3-nanokvm (nix@nanokvm) (aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT Thu Jan  1 00:00:00 UTC 1970
+12,248,1387187,-;openkvm: BACKUP0 after milestone 1: 0x00001018
+12,249,1393651,-;openkvm: kernel log stashed, bytes: 0x00004524
+4,250,1427372,-;mmc0: invalid driver type, default to driver type B
+4,251,1434153,-;mmc0: invalid driver type, default to driver type B
+4,252,1452531,-;mmc0: invalid driver type, default to driver type B
+4,253,1458473,-;mmc0: invalid driver type, default to driver type B
+4,254,1464424,-;mmc0: invalid driver type, default to driver type B
+6,255,2486008,-;mmc0: new HS200 MMC card at address 0001
+6,256,2491820,-;mmcblk0: mmc0:0001 AT3SFB 29.1 GiB
+6,257,2497833,-; mmcblk0: p1(spl) p2(ddrinit) p3(atf) p4(atf_b) p5(uboot) p6(uboot_b) p7(env) p8(logo) p9(logo_b) p10(optee) p11(optee_b) p12(dtb) p13(dtb_b) p14(kernel) p15(kernel_b) p16(boot) p17(rootfs)
+6,258,2518254,-;mmcblk0boot0: mmc0:0001 AT3SFB 4.00 MiB
+6,259,2525387,-;mmcblk0boot1: mmc0:0001 AT3SFB 4.00 MiB
+6,260,2532359,-;mmcblk0rpmb: mmc0:0001 AT3SFB 4.00 MiB, chardev (511:0)
+12,261,2600121,-;openkvm: part:major minor  #blocks  name
+12,262,2605137,-;openkvm: part: 179        0   30539776 mmcblk0
+12,263,2610640,-;openkvm: part: 179        1        768 mmcblk0p1
+12,264,2616314,-;openkvm: part: 179        2        512 mmcblk0p2
+12,265,2621987,-;openkvm: part: 179        3        256 mmcblk0p3
+12,266,2627667,-;openkvm: part: 179        4        256 mmcblk0p4
+12,267,2633340,-;openkvm: part: 179        5       1536 mmcblk0p5
+12,268,2639015,-;openkvm: part: 179        6       1536 mmcblk0p6
+12,269,2644687,-;openkvm: part: 179        7       1024 mmcblk0p7
+12,270,2650362,-;openkvm: part: 179        8       6144 mmcblk0p8
+12,271,2656035,-;openkvm: part: 179        9       6144 mmcblk0p9
+12,272,2661708,-;openkvm: part: 179       10       1024 mmcblk0p10
+12,273,2667467,-;openkvm: part: 179       11       1024 mmcblk0p11
+12,274,2673226,-;openkvm: part: 179       12       1024 mmcblk0p12
+12,275,2678987,-;openkvm: part: 179       13       1024 mmcblk0p13
+12,276,2684747,-;openkvm: part: 179       14      65536 mmcblk0p14
+12,277,2690507,-;openkvm: part: 179       15      65536 mmcblk0p15
+12,278,2696267,-;openkvm: part: 179       16     131072 mmcblk0p16
+12,279,2702028,-;openkvm: part: 179       17   30255360 mmcblk0p17
+12,280,2707788,-;openkvm: part: 179       32       4096 mmcblk0boot0
+12,281,2713720,-;openkvm: part: 179       64       4096 mmcblk0boot1
+12,282,2719758,-;openkvm: storage: mmcblk0p17 found after ms: 0x000004b0
+12,283,2726041,-;openkvm: storage: major: 0x000000b3
+12,284,2730591,-;openkvm: storage: minor: 0x00000011
+6,285,2746512,-;EXT4-fs (mmcblk0p17): mounted filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b ro with ordered data mode. Quota mode: none.
+12,286,2759483,-;openkvm: storage: OK -- root entries: 0x00000022
+12,287,2766101,-;openkvm: net: harvested MAC, length: 0x00000011
+12,288,2775231,-;openkvm: net: harvested root shadow entry, length: 0x00000062
+6,289,2782399,-;EXT4-fs (mmcblk0p17): unmounting filesystem 57f8f4bc-abf4-655f-bf67-946fc0f9f25b.
+6,290,2793277,-;axera-dwmac 104c0000.ethernet eth0: Register MEM_TYPE_PAGE_POOL RxQ-0
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,291,2826964,-;axera-dwmac 104c0000.ethernet eth0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,292,2849070,-;axera-dwmac 104c0000.ethernet eth0: No Safety Features support found
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,293,2857008,-;axera-dwmac 104c0000.ethernet eth0: IEEE 1588-2008 Advanced Timestamp supported
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,294,2865673,-;axera-dwmac 104c0000.ethernet eth0: registered PTP clock
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,295,2872061,-;axera-dwmac 104c0000.ethernet eth0: configuring for phy/rgmii link mode
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+6,296,5980316,-;axera-dwmac 104c0000.ethernet eth0: Link is Up - 1Gbps/Full - flow control off
+ SUBSYSTEM=platform
+ DEVICE=+platform:104c0000.ethernet
+12,297,6109325,-;openkvm: net: carrier up after ms: 0x00000c80
+12,298,6114908,-;openkvm: net: link 1000 Mbit/s full duplex
+12,299,6122072,-;udhcpc: started, v1.37.0
+12,300,6143006,-;udhcpc: broadcasting discover
+12,301,8177120,-;udhcpc: broadcasting discover
+12,302,10205104,-;udhcpc: broadcasting discover
+12,303,12233114,-;udhcpc: broadcasting discover
+12,304,14259163,-;udhcpc: broadcasting discover
+12,305,16293101,-;udhcpc: broadcasting discover
+12,306,18321093,-;udhcpc: broadcasting discover
+12,307,20349108,-;udhcpc: broadcasting discover
+12,308,22384539,-;udhcpc: no lease, failing
+12,309,22388617,-;openkvm: net: udhcpc exit: 0x00000001
+12,310,22393427,-;openkvm: net: FAIL -- no DHCP lease
+12,311,22399164,-;Waiting for kernel randomness to be initialised...
+5,312,24110936,-;random: crng init done
+12,313,24115796,-;Generating 256 bit ed25519 key, this may take a while...
+12,314,24138581,-;Public key portion is:
+12,315,24142297,-;ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINgkEMxFmpd9i/79gXdjIGpsJ+30vOWlmwMyiVj9Wz1h root@(none)\x0aFingerprint: SHA256:P+n+9vwl7fmiZS2TgW7X+Oimmcnt8+bGuCAzbf9rPyM
+12,316,24161258,-;openkvm: sshd: dropbear exit: 0x00000000
+12,317,24161776,-;[77] Jan 01 00:00:24 Running in background
+12,318,24167579,-;openkvm: kernel log re-stashed, bytes: 0x00005959
+12,319,24177488,-;openkvm: alive 0s/300s, watchdog0 state=inactive timeleft=26
+12,320,34187131,-;openkvm: alive 10s/300s, watchdog0 state=inactive timeleft=26
+12,321,44196842,-;openkvm: alive 20s/300s, watchdog0 state=inactive timeleft=26
+12,322,54206541,-;openkvm: alive 30s/300s, watchdog0 state=inactive timeleft=26
+12,323,64216259,-;openkvm: alive 40s/300s, watchdog0 state=inactive timeleft=26
+12,324,74225970,-;openkvm: alive 50s/300s, watchdog0 state=inactive timeleft=26
+12,325,84235662,-;openkvm: alive 60s/300s, watchdog0 state=inactive timeleft=26
+12,326,94245366,-;openkvm: alive 70s/300s, watchdog0 state=inactive timeleft=26
+12,327,104255090,-;openkvm: alive 80s/300s, watchdog0 state=inactive timeleft=26
+12,328,114264773,-;openkvm: alive 90s/300s, watchdog0 state=inactive timeleft=26
+12,329,124274491,-;openkvm: alive 100s/300s, watchdog0 state=inactive timeleft=26
+12,330,134284252,-;openkvm: alive 110s/300s, watchdog0 state=inactive timeleft=26
+12,331,144294045,-;openkvm: alive 120s/300s, watchdog0 state=inactive timeleft=26
+12,332,154303843,-;openkvm: alive 130s/300s, watchdog0 state=inactive timeleft=26
+12,333,164313634,-;openkvm: alive 140s/300s, watchdog0 state=inactive timeleft=26
+12,334,174323423,-;openkvm: alive 150s/300s, watchdog0 state=inactive timeleft=26
+12,335,184333229,-;openkvm: alive 160s/300s, watchdog0 state=inactive timeleft=26
+12,336,194343044,-;openkvm: alive 170s/300s, watchdog0 state=inactive timeleft=26
+12,337,204352780,-;openkvm: alive 180s/300s, watchdog0 state=inactive timeleft=26
+12,338,214362568,-;openkvm: alive 190s/300s, watchdog0 state=inactive timeleft=26
+12,339,224372354,-;openkvm: alive 200s/300s, watchdog0 state=inactive timeleft=26
+12,340,234382151,-;openkvm: alive 210s/300s, watchdog0 state=inactive timeleft=26
+12,341,244391970,-;openkvm: alive 220s/300s, watchdog0 state=inactive timeleft=26
+12,342,254401783,-;openkvm: alive 230s/300s, watchdog0 state=inactive timeleft=26
+12,343,264411573,-;openkvm: alive 240s/300s, watchdog0 state=inactive timeleft=26
+12,344,274421387,-;openkvm: alive 250s/300s, watchdog0 state=inactive timeleft=26
+12,345,284431177,-;openkvm: alive 260s/300s, watchdog0 state=inactive timeleft=26
+12,346,294440970,-;openkvm: alive 270s/300s, watchdog0 state=inactive timeleft=26
+12,347,304450784,-;openkvm: alive 280s/300s, watchdog0 state=inactive timeleft=26
+12,348,314460587,-;openkvm: alive 290s/300s, watchdog0 state=inactive timeleft=26
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          

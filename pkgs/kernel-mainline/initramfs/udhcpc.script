@@ -1,0 +1,26 @@
+#!/bin/sh
+# udhcpc lease handler for the mainline bring-up initramfs (#77).
+#
+# busybox ifconfig/route rather than `ip`: udhcpc hands the mask over as a
+# dotted quad ($subnet), which iproute2 syntax cannot take without converting
+# it to a prefix length first.
+#
+# /run/dhcp.result is the channel back to /init, which is waiting on this
+# process: "<address> <netmask> <router>", one line, only ever written after
+# the address is actually on the interface.
+
+case "$1" in
+	bound|renew)
+		/bin/busybox ifconfig "$interface" "$ip" netmask "${subnet:-255.255.255.0}" up
+		if [ -n "$router" ]; then
+			/bin/busybox route del default gw 0.0.0.0 dev "$interface" 2>/dev/null
+			/bin/busybox route add default gw "$router" dev "$interface"
+		fi
+		echo "$ip ${subnet:-255.255.255.0} ${router:-none}" > /run/dhcp.result
+		;;
+	deconfig)
+		/bin/busybox ifconfig "$interface" 0.0.0.0
+		;;
+esac
+
+exit 0

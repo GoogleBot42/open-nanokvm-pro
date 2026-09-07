@@ -214,6 +214,19 @@ static const struct clk_ops ax630c_mux_ops = {
 	.determine_rate = clk_hw_determine_rate_no_reparent,
 };
 
+/*
+ * The same mux, for the rows that opt into being re-pointed by a rate request
+ * (AX630C_MUX_RC). __clk_mux_determine_rate picks the parent whose rate is
+ * closest to the request without exceeding it, and the core then performs the
+ * switch. The RGMII transmit clock is the case this exists for: link speed
+ * changes have to move that mux, and nothing else on the SoC may.
+ */
+static const struct clk_ops ax630c_mux_reparent_ops = {
+	.get_parent = ax630c_mux_get_parent,
+	.set_parent = ax630c_mux_set_parent,
+	.determine_rate = __clk_mux_determine_rate,
+};
+
 /* --- divider ------------------------------------------------------------ */
 
 /*
@@ -400,7 +413,8 @@ static struct clk_hw *ax630c_register_one(struct device *dev,
 
 	switch (info->type) {
 	case AX630C_MUX:
-		init.ops = &ax630c_mux_ops;
+		init.ops = info->mux.reparent ? &ax630c_mux_reparent_ops
+					     : &ax630c_mux_ops;
 		init.parent_names = info->parents;
 		init.num_parents = info->num_parents;
 		break;

@@ -69,6 +69,14 @@ struct ax630c_clk {
 			u32 offset;
 			u8 shift;
 			u8 width;
+			/*
+			 * Whether clk_set_rate() on this mux (or on a
+			 * CLK_SET_RATE_PARENT descendant of it) may switch its
+			 * parent. Off by default: most of these muxes select
+			 * between clock domains that firmware fixed, and a
+			 * consumer's rate request must not silently move one.
+			 */
+			bool reparent;
 		} mux;
 		struct {
 			u32 offset;
@@ -124,6 +132,18 @@ struct ax630c_alias_map {
 	  .parents = (_parents), .num_parents = ARRAY_SIZE(_parents),	\
 	  .flags = CLK_SET_RATE_PARENT,					\
 	  .mux = { .offset = (_off), .shift = (_shift), .width = (_width) } }
+
+/*
+ * A mux a consumer is allowed to re-point with clk_set_rate(). Deliberately
+ * WITHOUT CLK_SET_RATE_PARENT: the choice this mux makes is between parents
+ * that are themselves fixed, so the rate request stops here and turns into a
+ * parent switch rather than propagating further up and changing a PLL.
+ */
+#define AX630C_MUX_RC(_id, _name, _parents, _off, _shift, _width)	\
+	{ .id = (_id), .type = AX630C_MUX, .name = (_name),		\
+	  .parents = (_parents), .num_parents = ARRAY_SIZE(_parents),	\
+	  .mux = { .offset = (_off), .shift = (_shift),			\
+		   .width = (_width), .reparent = true } }
 
 #define AX630C_DIV_C(_id, _name, _parent, _off, _shift, _width, _upd)	\
 	{ .id = (_id), .type = AX630C_DIV, .name = (_name),		\

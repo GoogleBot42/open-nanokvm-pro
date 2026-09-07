@@ -49,7 +49,8 @@ anything U-Boot did not already clock (Ethernet, USB) comes up. The three
 video drivers are ours already and were written for this move.
 
 **Minimum set to boot NixOS on eMMC and reach SSH over Ethernet:** the mainline
-core + `8250_dw` + `sdhci-cadence` + `stmmac` (+ a JLSemi PHY) + the **`ax_wdt`
+core + `8250_dw` + `sdhci-cadence` + `stmmac` (+ mainline's realtek PHY driver
+— see #77 in §8; the DT's JLSemi compatible is wrong) + the **`ax_wdt`
 port** (mandatory: U-Boot arms a 30 s hardware watchdog right before `booti`,
 and PSCI on this ATF has no `SYSTEM_RESET` — reboot *is* the watchdog), with
 clocks/resets/pinmux left as firmware configured them (`fixed-clock`s) for the
@@ -194,8 +195,8 @@ have / can be dropped).
 | eMMC | `axera,sdhc` @`0x1B40000` (`mmc0`), HS400-ES, 8-bit, `cdns,phy-*` tuning props, 3 resets (`prst`/`arst`/`cardrst`), hw-reset GPIO2_A23 | `drivers/mmc/host/sdhci-axera.c` 1208 LOC | **Cadence SD4HC** — the vendor file is `sdhci-cadence.c` (Socionext header intact, `sdhci_cdns_*` names kept) with Axera additions; DT already uses the mainline `cdns,phy-*` properties (V) | `sdhci-cadence` (`cdns,sd4hc`) + `clocks =` (vendor gates by hand via `ax_set_mmc_clk`) + **no `resets`** — mainline binds index 0 as the *card* `RST_n`, so listing the vendor's `prst` there makes error recovery assert the controller's own APB reset; use `reset-gpios = <&gpio2 23 GPIO_ACTIVE_LOW>` for the real card reset. Tuning is byte-identical to upstream; the 1208-vs-675 gap is clock/reset integration plus dead code, not Axera tuning. Stock `sdhci-cadence` drives this IP — the only code needed is a 15-line `drv_data` entry for `SDHCI_QUIRK2_PRESET_VALUE_BROKEN`. See [sdhci-model-20260906.md](reference/mainline/sdhci-model-20260906.md) | S–M | **boot** |
 | SD | `axera,sdhc` @`0x104E0000` (`mmc1`), UHS to SDR104, `broken-cd` | same | same | same | S | opt (test path) |
 | SDIO | `axera,sdhc` @`0x104D0000` (`mmc2`), no-1.8V, WiFi | same | same | same | S | opt (WiFi) |
-| Ethernet MAC | `axera,dwmac-4.10a` @`0x104C0000`, 5 clocks, 3 resets, `phy-mode = "rgmii"`, `snps,dwmac-mdio` | `drivers/net/ethernet/stmicro/stmmac/dwmac-axera-plat.c` 187 LOC glue over stmmac | **Synopsys DWMAC 4.10a** (V) | stmmac `dwmac-generic` or a ~100-line glue (clock names, PHY reset GPIO1_A27) | S–M | **boot** (SSH) |
-| Ethernet PHY | `ethernet-phy-id937c.4030` (JLSemi **JL2101**), 20 `jl2xxx,*` tuning props | `drivers/net/phy/jlsemi.c` 561 + `jlsemi-core.c` 3043 LOC | no JLSemi driver in mainline (V); the generic C22 PHY driver drives RGMII PHYs fine unless RGMII delays must be set in-PHY | try genphy first; else a describing-subagent spec of the RGMII-delay/LED registers → small driver | S–M | **boot** (SSH) |
+| Ethernet MAC | `axera,dwmac-4.10a` @`0x104C0000`, 5 clocks, 3 resets, `phy-mode = "rgmii"`, `snps,dwmac-mdio` | `drivers/net/ethernet/stmicro/stmmac/dwmac-axera-plat.c` 187 LOC glue over stmmac | **Synopsys DWMAC 4.10a** (V) | **DONE (#77)**: `dwmac-axera.c`, ~230 lines over mainline stmmac — four of the five clocks, the PHY-interface select and block reset as flash-syscon bits, an RGMII tx-clock hook, and a register poke for PHY reset GPIO1_A27 until #81 | S–M | **boot** (SSH) |
+| Ethernet PHY | `ethernet-phy-id937c.4030` (JLSemi **JL2101**), 20 `jl2xxx,*` tuning props | `drivers/net/phy/jlsemi.c` 561 + `jlsemi-core.c` 3043 LOC | **The part is a Realtek RTL8211F, not a JL2101** — PHYID 0x001cc916 read over MDIO 2026-09-06 (V). The vendor DT's `ethernet-phy-id*` compatible forces the MDIO core to skip the bus read, so the JLSemi driver binds to a Realtek chip and works only because it programs almost nothing | **DONE (#77)**: mainline's own realtek driver, with `phy-mode = "rgmii-id"` — the RTL8211F's two 2 ns delays are pin-strapped on and mainline's driver *writes* them to match phy-mode. No JLSemi driver is needed or wanted | S | **boot** (SSH) |
 | WiFi/BT | `aicsemi,aic_bsp` (reset GPIO1_A29) + SDIO | `drivers/net/wireless/aic8800/` (`aic8800_bsp/btlpm/fdrv`, `=m`) | out-of-tree vendor GPL driver, see §1 | carry `radxa-pkg/aic8800` on a ≤ 7.2 kernel + the firmware blob; or drop | M | opt |
 | USB | `axera,dwc3` glue → `snps,dwc3` @`0x8000000`, `dr_mode = "otg"`, `extcon` = `linux,extcon-usb-gpio` (GPIO1_A4), `phy_type = "utmi"`, high-speed only | `drivers/usb/dwc3/dwc3-axera.c` 531 LOC ("DesignWare USB3 OF Simple Glue Layer"); PHY handling is one `USB2_PHY_SW_RST` bit (V) | **Synopsys DWC3** (V) | `dwc3` + `dwc3-of-simple`-class glue (one reset bit + clocks); gadget functions the app uses (`hid`, `mass_storage`, `ncm`, `uac2`, `acm`) are all mainline configfs — only `f_udisp` (USB display) is vendor and unused | M | KVM (HID) |
 
@@ -469,10 +470,10 @@ the kernel needs them:
    off unless someone enables them; `fixed-clock`s suffice only for what
    U-Boot already used — UART, eMMC) → then the full clk driver.
 5. `sdhci-cadence` on eMMC.
-6. `stmmac` DWMAC 4.10a + JL2101 PHY (genphy first; `phy-mode = "rgmii"`
-   without `-id` means the vendor PHY driver programs the RGMII delay — a
-   link that trains but corrupts is the failure signature if genphy is not
-   enough).
+6. `stmmac` DWMAC 4.10a + the board's PHY. Settled by #77: the PHY is a
+   Realtek RTL8211F (the vendor DT's JL2101 compatible is wrong), mainline's
+   realtek driver claims it, and `phy-mode` must be `rgmii-id` — a link that
+   trains but passes nothing is that property being wrong.
 7. NixOS stage 1/2 from p17; identity from nvmem (or a fixed MAC for the first
    boot).
 
@@ -512,8 +513,9 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 ## 8. Child issues
 
 Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
-lives as a comment on #26. **#74 and #75 are done** (see "What exists now" at the end
-of this section); #80's source half is written but unbooted; everything else is open.
+lives as a comment on #26. **#74, #75, #76 and #77 are done** (see "What exists
+now" at the end of this section), and #80's source half is written and
+boot-proven; everything else is open.
 
 1. **#74 Mainline kernel build scaffolding (flake, config, in-repo DT)** —
    Add `.#kernel-mainline` on a pinned stable (≤ 7.2 while aic8800 is wanted)
@@ -543,10 +545,12 @@ of this section); #80's source half is written but unbooted; everything else is 
    `clock-controller` nodes rather than adding separate ones.
    **Still open: root on SD p2, blocked on there being no SD card in the
    device.** Depends on: #75.
-4. **#77 Ethernet: DWMAC 4.10a glue + JL2101 PHY** — stmmac
-   `dwmac-generic`/tiny glue with the five clock names + PHY reset GPIO;
-   genphy first, JLSemi RGMII-delay/LED spec only if link fails. Exit: SSH.
-   Depends on: #76.
+4. **#77 Ethernet: DWMAC 4.10a glue + JL2101 PHY** — DONE 2026-09-06,
+   device-proven: `dwmac-axera.c` over mainline stmmac, gigabit, and an SSH
+   shell on the mainline kernel through `tools/kvmssh`. The PHY half of the
+   filed scope evaporated — the part is a Realtek RTL8211F, not a JL2101, and
+   mainline's own driver claims it once `phy-mode` says `rgmii-id`. See "What
+   exists now" at the end of this section. Depends on: #76.
 5. **#78 NixOS appliance on mainline (unstable pin), identity, env config** —
    Move `nixos/appliance.nix` off `nixpkgs-rootfs`; NixOS initrd replaces the
    vendor `/init`; `/boot` vfat contract; `device_key` → MAC/hostname from the
@@ -811,6 +815,98 @@ Two things the run corrected:
 there is no card in the device — so rooting a mainline system from SD, the half
 of #76 that gives #77 a shell, is blocked on hardware.
 
+### What exists now (#77, 2026-09-06) — ETHERNET UP, SSH ON MAINLINE
+
+**`tools/kvmssh` reaches a mainline kernel on this board, over Ethernet, at the
+same address and with the same password as the vendor system.** Gigabit, full
+duplex, 111 MB/s over raw TCP, 0 % loss over 100 pings, zero interface errors
+after 321 MiB. Evidence, both runs and the device reads that explain them:
+[reference/mainline/ethernet-boot-20260906/](reference/mainline/ethernet-boot-20260906/).
+
+The MAC needed no reverse engineering. It is a stock Synopsys DWMAC 4.10a,
+mainline stmmac drives it, and `drivers/net/ethernet/stmicro/stmmac/dwmac-axera.c`
+is ~230 lines whose whole job is three fields in the flash syscon at
+`0x1003_0000` that live outside the MAC's own window: `+0x28[10:9]` selects RGMII
+on the external pads, `+0x14` bit 8 is the block reset, and `+0x00[5:4]` is the
+transmit-clock mux. Four things are worth carrying forward.
+
+**The PHY is not what the device tree says it is.** The vendor DT declares
+`compatible = "ethernet-phy-id937c.4030"` — a JLSemi JL2101 — on the PHY node,
+and an `ethernet-phy-id*` compatible makes the MDIO core skip the bus read
+entirely. Asked directly over MDIO, the part answers PHYID1 `0x001c`, PHYID2
+`0xc916`: a **Realtek RTL8211F**. So the vendor has been binding a JLSemi driver
+to a Realtek chip for the life of this product, and it works only because that
+driver programs almost nothing. Mainline reads the real ID and binds its own
+realtek driver. There is no JL2101 driver to write; that half of #77's filed
+scope does not exist.
+
+**`phy-mode` must be `rgmii-id`, and getting it wrong is invisible.** The
+RTL8211F's two 2 ns delays come up enabled from pin-strapping — measured on the
+running vendor system, page 0xd08 TXCR bit 8 and RXCR bit 3 both set — and
+nothing in the vendor stack ever writes them. Mainline's realtek driver is not
+so passive: `rtl8211f_config_rgmii_delay()` writes both bits to match
+`phy-mode`, so `"rgmii"` *disables* the delays the board is built around. Run 1
+had it: the link trained, reported `1Gbps/Full`, dropbear came up, and not one
+DHCP packet completed a round trip. **A link that trains and passes nothing is
+an RGMII delay problem, always.** The two runs differ in this property alone.
+
+**One clock has to move at runtime, and #80's driver refused to move it.** The
+RGMII transmit clock is a three-input mux (`epll_5m` / `epll_50m` / `epll_250m`
+= 10 / 100 / 1000 Mbit), and the block halves it, so the gate carries exactly
+twice `rgmii_clock()`. Two consequences: stmmac's generic
+`stmmac_set_clk_tx_rate()` cannot be used (it would ask for 125 MHz and get
+`epll_50m`, the nearest input at or below), and the mux must be able to
+re-parent under `clk_set_rate()`. #80 registered every mux with
+`clk_hw_determine_rate_no_reparent`, which is the right default — these muxes
+mostly select between domains firmware fixed — so #77 adds an opt-in
+`AX630C_MUX_RC` variant using `__clk_mux_determine_rate` and marks exactly one
+row with it. The glue logs what it got (`RGMII tx clock 250000000 Hz (asked
+250000000)`) because a mux that silently did not move looks precisely like the
+delay bug above.
+
+**Four clocks, not the vendor's five, and no `resets`.** `rmii_phy` drives the
+on-chip EPHY, which this board does not use and which firmware leaves held in
+reset (`+0x14` bit 9) and shut down (`+0x20` bit 0); naming it in DT would power
+a block with nothing on the other end. The vendor's three reset lines go through
+a controller mainline does not have — the MAC's own block reset is one syscon
+bit, pulsed at probe, and the other two belong to that unused EPHY. The PHY's
+own RSTn is GPIO1_A27 and there is no GPIO controller until #81, so the glue
+takes the line's register address from DT (`axera,phy-reset-mmio`) and pokes it;
+that property is a `TODO(#81)` that becomes `reset-gpios` on the PHY node.
+
+The initramfs grew the other half of the answer. `/init` is still one static
+musl binary, but the cpio now also carries static busybox and dropbear, and
+after #76's storage probe mounts the eMMC rootfs read-only `/init` **harvests
+two facts off it**: the MAC out of `/etc/network/interfaces` and root's password
+hash out of `/etc/shadow`. Same MAC means the same DHCP lease, so the mainline
+system answers on the address `tools/kvmssh` already knows; same hash means it
+answers to the same password. No credential is built into the image, the Nix
+store or this repository. (The eth0 MAC is a provisioning-time literal in that
+file — it is *not* derived from the SoC UID at boot, whatever the vendor's
+USB-gadget scripts do for their own NCM addresses. Deriving it properly is #78.)
+Static dropbear pulls in libxcrypt, which is what makes this work at all: the
+vendor hashes root's password with yescrypt and musl's own `crypt()` cannot
+verify that.
+
+Milestone bits 18–21 are new — carrier up, address configured, ICMP round trip,
+dropbear started — so the clear-mask is now **`0x3FF000`** and a fully
+successful run reads `0x003FF014`. The dwell is 300 s rather than 120, because
+it is now also the window in which a human logs in; `touch /run/keepalive` from
+that shell raises it to a one-hour cap, and nothing raises it past that. The
+safety argument is unchanged and untouched: nothing re-arms `SLOTB_BOOTABLE`, so
+every exit path still lands the next boot on slot A.
+
+One #76 caveat this run turned up: on a mainline boot the flash syscon's SD and
+SDIO **card muxes** (`0x1003_0000` bits [19:18] and [17:16]) read 0, not the 3
+measured under the vendor stack — the vendor's own mmc driver writes that 3.
+#76 deliberately leaves both muxes unregistered and parents their dividers
+straight onto `npll_400m`, which describes the vendor's state and not the state
+a mainline boot is actually in. Nothing depended on it (there is no SD card in
+the device), but whoever does root-on-SD should check it first.
+
+Not proven: PTP, wake-on-LAN, suspend/resume, and any MAC that is not harvested
+from the vendor rootfs.
+
 ---
 
 ## 9. Device reads wanted
@@ -866,9 +962,14 @@ branch; `lt6911_manage` bus 0 / `0x2b` / pin numbers; the AX650 LKML series
 (fetched the v2 cover via marc.info); the empty state of mainline/linux-next/
 U-Boot for Axera.
 
-**Inferred (marked in §2):** that genphy suffices for the JL2101 (the vendor
+**Inferred (marked in §2):** ~~that genphy suffices for the JL2101 (the vendor
 driver programs RGMII delay and an errata patch — a "links but corrupts"
-outcome is the tell); that the mainline `pwm-dwc` core matches (register
+outcome is the tell)~~ — **settled and half wrong, #77, 2026-09-06**: there is
+no JL2101 on this board (it is a Realtek RTL8211F, PHYID 0x001cc916 read over
+MDIO) and the vendor driver programs *no* RGMII delay at all, because its
+operation mode is a compile-time NONE. The "links but corrupts" outcome was the
+tell, and it happened — for the opposite reason, mainline's realtek driver
+clearing delays the vendor left strapped on. That the mainline `pwm-dwc` core matches (register
 offsets compared, OF glue status on the target kernel unchecked); that the
 CSI-2 controller is Cadence CSI2RX-derived (blob symbol names + two register
 offsets); that designware-i2s PIO is enough for HDMI audio without a `dma_per`

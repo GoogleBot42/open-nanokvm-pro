@@ -1,0 +1,9 @@
+config DWMAC_AXERA
+	tristate "Axera AX630C dwmac support"
+	depends on OF && HAS_IOMEM
+	select MFD_SYSCON
+	help
+	  Support for the Synopsys DWMAC 4.10a on Axera AX620E-family SoCs
+	  (AX630C). The MAC itself is stock; this glue programs the PHY
+	  interface select, the block reset and the RGMII transmit clock mux,
+	  all of which live in the SoC's flash system syscon.

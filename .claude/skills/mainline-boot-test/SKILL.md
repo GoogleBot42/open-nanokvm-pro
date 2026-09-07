@@ -97,7 +97,7 @@ previous byte count compares the wrong range and reports a spurious mismatch
 ## 4. Arm slot B and go
 
 ```
-tools/kvmssh 'devmem 0x0239002C 32 0x3F000
+tools/kvmssh 'devmem 0x0239002C 32 0x3FF000
   /etc/init.d/S99checkboot systemB
   sync'
 tools/kvmssh 'sync; reboot'
@@ -176,19 +176,34 @@ tools/kvmssh 'devmem 0x02390024'
 
 | Value | Meaning |
 |---|---|
-| `0x0003f014` | every milestone + slot A re-armed — full success |
-| `0x0000?014` / `0x000??014` with fewer bits | got that far and died; see the table below |
+| `0x003ff014` | every milestone + slot A re-armed — full success |
+| `0x00???014` with fewer bits | got that far and died; see the table below |
 | `0x00000014` | never reached userspace — go straight to the ramoops console |
 
-Bits: 12 = `/init` running and `/dev/mem` works, 13 = kernel log stashed,
-14 = dwell completed (this is the watchdog proof), 15 = `reboot(2)` called,
-16 = the eMMC produced a partitioned block device (#76), 17 = ext4 on it
-mounted read-only and read (#76).
+| Bit | Set when |
+|---|---|
+| 12 | `/init` is running and `/dev/mem` works |
+| 13 | the kernel log was stashed |
+| 14 | the dwell completed — this is the watchdog proof |
+| 15 | `reboot(2)` was called |
+| 16 | the eMMC produced a partitioned block device (#76) |
+| 17 | ext4 on it mounted read-only and was read (#76) |
+| 18 | `eth0` exists and the PHY negotiated carrier (#77) |
+| 19 | a DHCP lease was taken and configured (#77) |
+| 20 | an ICMP round trip to another host on the LAN succeeded (#77) |
+| 21 | dropbear started (#77) |
 
-Note the storage bits are set *before* the dwell, so `0x00033014` — storage
-good, dwell and reboot missing — means the board died during the dwell with
-storage working, which is a watchdog problem, not a storage one. The two
-questions are independent by construction.
+Note the storage and network bits are set *before* the dwell, so `0x003f3014` —
+everything up to the network good, dwell and reboot missing — means the board
+died during the dwell, which is a watchdog problem, not a storage or network
+one. The questions are independent by construction.
+
+Since #77 the board is also **reachable while it dwells**: `/init` gives eth0
+the MAC it reads out of the vendor rootfs, so DHCP hands back the same lease
+and `tools/kvmssh` works unchanged. `uname -r` is the oracle for which slot
+answered — `7.1.3-nanokvm` is the mainline kernel, `4.19.125` is slot A. The
+dwell is 300 s; `touch /run/keepalive` from that shell extends it to a
+one-hour cap, and nothing extends it past that.
 
 ```
 # the whole kernel log, verbatim, as /init copied it (record format)
@@ -232,7 +247,7 @@ tools/kvmssh 'cd /root/pre75
   dd if=p13-dtb_b.bak    of=/dev/mmcblk0p13 bs=1M conv=fsync
   dd if=p15-kernel_b.bak of=/dev/mmcblk0p15 bs=1M conv=fsync
   sync; echo 3 > /proc/sys/vm/drop_caches'
-tools/kvmssh 'devmem 0x0239002C 32 0x3F000'  # clear the milestone bits
+tools/kvmssh 'devmem 0x0239002C 32 0x3FF000'  # clear the milestone bits
 ```
 
 Verify both restores from the medium against the step-2 md5s, and confirm

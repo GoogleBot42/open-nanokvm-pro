@@ -372,6 +372,51 @@
 		};
 
 		/*
+		 * Ethernet MAC (#77) -- a stock Synopsys DWMAC 4.10a. The
+		 * second compatible is not decoration: stmmac_probe_config_dt()
+		 * keys DWMAC_CORE_GMAC4 and PMT off "snps,dwmac-4.10a", and
+		 * dwmac-generic is linked last precisely so a vendor glue named
+		 * first in the list wins the bind.
+		 *
+		 * FOUR clocks, not the vendor's five. "rmii_phy" drives the
+		 * on-chip EPHY, which this board does not use and which
+		 * firmware leaves both held in reset and shut down (flash
+		 * syscon +0x14 bit 9 and +0x20 bit 0, measured 2026-09-06).
+		 * A clock in this list is a clock the driver enables, so
+		 * naming that one would power a block the board has no use for.
+		 *
+		 * NO `resets`. The vendor DT lists three (emac, ephy,
+		 * ephy_shutdown) through a reset controller mainline does not
+		 * have; the MAC's own block reset is one syscon bit and the
+		 * glue pulses it at probe. The two EPHY lines are for the block
+		 * above.
+		 *
+		 * Interrupt names: "macirq" only. The vendor node names three
+		 * (macirq, eth_wake_irq, eth_lpi) against ONE interrupt, so the
+		 * second and third resolve to the same line -- stmmac then
+		 * treats the shared line as a wake source. One name, one line.
+		 *
+		 * Board-specific properties (phy-mode, the MDIO bus, the PHY
+		 * reset line) are in the board dts; this node is the SoC.
+		 */
+		gmac: ethernet@104c0000 {
+			compatible = AX630C_DWMAC_COMPAT, "snps,dwmac-4.10a";
+			reg = <0x0 0x104c0000 0x0 0x10000>;
+			interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "macirq";
+			clocks = <&flash_clk AX630C_ACLK_EMAC_EB>,
+				 <&flash_clk AX630C_CLK_EMAC_PTP_REF_EB>,
+				 <&flash_clk AX630C_CLK_EMAC_RGMII_TX_EB>,
+				 <&flash_clk AX630C_EPHY_CLK_EB>;
+			clock-names = "stmmaceth", "ptp_ref", "tx", "ephy";
+			axera,flash-syscon = <&flash_clk>;
+			rx-fifo-depth = <32768>;
+			tx-fifo-depth = <16384>;
+			snps,tso;
+			status = "disabled";
+		};
+
+		/*
 		 * DesignWare APB UARTs. 8250_dw binds these unmodified; the
 		 * vendor's 8250_axera.c is a fork of it. clock-frequency
 		 * replaces a clocks phandle until the clk driver lands (#80).

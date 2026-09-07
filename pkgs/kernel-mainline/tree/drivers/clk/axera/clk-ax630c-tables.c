@@ -438,8 +438,16 @@ static const char * const ax630c_clk_flash_glb_sel_parents[] = {
 };
 
 /*
- * Sits on epll_5m on the running device, which is correct for a 10 Mbit/s
- * RGMII link (2.5 MHz x 2) -- not a model defect, do not "fix" it (spec 4/#9).
+ * Sits on epll_5m at reset and after the bootloader, which is correct for a
+ * 10 Mbit/s RGMII link (2.5 MHz x 2) -- not a model defect, do not "fix" it
+ * (spec 4/#9). The three inputs are the three link speeds, so this is the one
+ * mux a consumer must be able to re-point: the DWMAC glue (#77) does it from
+ * set_clk_tx_rate() at every link-up. Hence AX630C_MUX_RC below.
+ *
+ * The 2x is real hardware, not a modelling artefact: the field read 2
+ * (epll_250m) on the running device while the vendor stack held a gigabit
+ * link, whose TXC is 125 MHz (measured 2026-09-06). It is also why the glue
+ * cannot use stmmac's generic set_clk_tx_rate helper.
  */
 static const char * const ax630c_clk_emac_rgmii_tx_sel_parents[] = {
 	"epll_5m", "epll_50m", "epll_250m",
@@ -450,7 +458,7 @@ static const struct ax630c_clk ax630c_flash_clks[] = {
 	AX630C_MUX_C(AX630C_CLK_NX_VO1_SEL, "clk_nx_vo1_sel", ax630c_vo1_parents, 0x00, 14, 2),
 	AX630C_MUX_C(AX630C_CLK_NX_VO0_SEL, "clk_nx_vo0_sel", ax630c_vo0_parents, 0x00, 12, 2),
 	AX630C_MUX_C(AX630C_CLK_FLASH_GLB_SEL, "clk_flash_glb_sel", ax630c_clk_flash_glb_sel_parents, 0x00, 6, 3),
-	AX630C_MUX_C(AX630C_CLK_EMAC_RGMII_TX_SEL, "clk_emac_rgmii_tx_sel", ax630c_clk_emac_rgmii_tx_sel_parents, 0x00, 4, 2),
+	AX630C_MUX_RC(AX630C_CLK_EMAC_RGMII_TX_SEL, "clk_emac_rgmii_tx_sel", ax630c_clk_emac_rgmii_tx_sel_parents, 0x00, 4, 2),
 	AX630C_MUX_C(AX630C_CLK_1X_VO1_SEL, "clk_1x_vo1_sel", ax630c_vo1_parents, 0x00, 2, 2),
 	AX630C_MUX_C(AX630C_CLK_1X_VO0_SEL, "clk_1x_vo0_sel", ax630c_vo0_parents, 0x00, 0, 2),
 

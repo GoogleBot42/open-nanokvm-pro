@@ -56,4 +56,14 @@
  */
 #define AX630C_SDHCI_COMPAT		"axera,ax630c-sd4hc"
 
+/*
+ * Ethernet MAC (#77). Same shape as the SD host above: the IP is a stock
+ * Synopsys DWMAC 4.10a and mainline stmmac drives it, but unlike the SD host
+ * this one needs real glue -- the PHY interface select, the block reset and
+ * the RGMII transmit clock mux all live in the flash syscon, outside the MAC's
+ * window. So the vendor-prefixed compatible is the one the driver matches; the
+ * generic "snps,dwmac-4.10a" second entry documents the IP for a reader.
+ */
+#define AX630C_DWMAC_COMPAT		"axera,ax630c-dwmac"
+
 #endif /* _DTS_AX630C_COMPAT_H */
