@@ -194,6 +194,16 @@
 #define AX630C_RST_FLASH_BT_DPI0_FLASH_DPU_1X          14
 #define AX630C_RST_FLASH_BT_DPI0_FLASH_DPU_NX          15
 #define AX630C_RST_FLASH_ETH0_EPHY_SHUTDOWN            16
-#define AX630C_RST_FLASH_NR                            17
+/*
+ * #82. SW_RST0 bits 24 and 25, appended rather than sorted into the bit order
+ * above so that no existing id moves. Neither line has a vendor DT consumer --
+ * the vendor dwc3 glue writes the two bits through the set/clear aliases by
+ * hand -- so the names are the glue's own (USB2_PHY_SW_RST, USB2_VCC_SW_RST)
+ * with the _SW_RST suffix stripped, exactly as the wdt lines above took theirs
+ * from the watchdog spec.
+ */
+#define AX630C_RST_FLASH_USB2_PHY                      17
+#define AX630C_RST_FLASH_USB2_VCC                      18
+#define AX630C_RST_FLASH_NR                            19
 
 #endif /* _DT_BINDINGS_RESET_AX630C_H */

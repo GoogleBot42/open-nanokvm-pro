@@ -1,0 +1,13 @@
+config USB_DWC3_AXERA
+	tristate "Axera AX630C (AX620E) Platform"
+	depends on OF && COMMON_CLK
+	default USB_DWC3
+	select MFD_SYSCON
+	help
+	  Support USB2 functionality on Axera AX620E-family SoCs (AX630C).
+	  The controller is a stock DesignWare USB3 core in a high-speed-only
+	  configuration; this glue drives its three clocks, its two software
+	  resets and the VBUSVALID indication, all of which live in the SoC's
+	  flash system syscon rather than in the core's own register window.
+
+	  Say 'Y' or 'M' if you have one such device.

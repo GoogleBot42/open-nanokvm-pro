@@ -102,6 +102,18 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q 'axera,periph-syscon' ${board}.decompiled.dts \
       && fail "wdt0 still carries the pre-#80 syscon phandle"
 
+    # #82: the USB pair. The glue node is worthless without its child (nothing
+    # would bind the controller) and the child is worthless without the "ref"
+    # clock (the core would program the wrong frequency adjustment and the
+    # error is invisible until a host times a transfer). Both are one edit away
+    # from being lost silently, so assert them.
+    grep -q 'compatible = "snps,dwc3"' ${board}.decompiled.dts \
+      || fail "the dwc3 core node is missing (the glue populates nothing)"
+    grep -q 'clock-names = "ref"' ${board}.decompiled.dts \
+      || fail "the dwc3 core node lost its 24 MHz ref clock"
+    grep -q 'dr_mode = "peripheral"' ${board}.decompiled.dts \
+      || fail "the dwc3 core node is not in peripheral mode"
+
     # #80: the pin states of the boot device. A state that fails to apply takes
     # the consumer's probe down with it, and for eMMC that is the rootfs.
     grep -q 'pinctrl-0' ${board}.decompiled.dts || fail "no pin states at all"

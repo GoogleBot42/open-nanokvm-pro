@@ -13,7 +13,8 @@
  * USB, video and audio all arrive with the child issues that port their
  * drivers (#76 storage, #77 net, #80 clk/pinctrl, #81 GPIO, #82 USB, #83
  * video, #84 display/audio). Adding a node here before its driver exists only
- * creates a DT that lies.
+ * creates a DT that lies. Storage, network, USB and the clock/pin/reset
+ * providers have landed; GPIO, video, display and audio have not.
  */
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
@@ -156,7 +157,10 @@
 		 * so a pad cannot be silently re-muxed out from under a driver
 		 * and a second claimant gets -EBUSY instead of a corrupted
 		 * bus. Only nodes that exist get a state; the rest arrive with
-		 * their drivers (#77 RGMII, #81 GPIO, #82 USB, #83/#84 video).
+		 * their drivers (#77 RGMII, #81 GPIO, #83/#84 video). USB
+		 * arrived without one on purpose -- its only pin group is the
+		 * host-mode OVRCUR/POWER_EN pair, which this board does not
+		 * wire; see the usb node below.
 		 *
 		 * Three rules the driver enforces, worth knowing before adding
 		 * one:
@@ -585,6 +589,90 @@
 			tx-fifo-depth = <16384>;
 			snps,tso;
 			status = "disabled";
+		};
+
+		/*
+		 * USB 2.0 (#82) -- a stock Synopsys DWC3, high-speed only, and
+		 * the reason this product exists: the port presents a keyboard,
+		 * a mouse and a disk to the machine the KVM controls.
+		 *
+		 * TWO nodes, the dwc3-of-simple arrangement upstream uses for
+		 * exactly this hardware shape (rockchip, xilinx, hisilicon).
+		 * The outer node is the glue: it owns the three clock gates,
+		 * the two software resets and the VBUSVALID bit, none of which
+		 * live in the controller's own window. The inner node is the
+		 * core, and mainline's dwc3 binds it unmodified.
+		 *
+		 * The split is not cosmetic. The core node names the 24 MHz
+		 * reference as "ref" so dwc3_ref_clk_period() can derive
+		 * GUCTL.REFCLKPER and the two GFLADJ fields from
+		 * clk_get_rate() -- which lands on 0x29, 0x7f0 and 0xa, the
+		 * three constants the vendor glue hardcodes. Handing the core
+		 * `snps,ref-clock-period-ns` instead would set REFCLKPER right
+		 * and the frequency adjustment to zero, because the core would
+		 * believe the reference is 24.39 MHz rather than 24.
+		 *
+		 * dr_mode = "peripheral", not the vendor's "otg". OTG here is
+		 * ID detection on a raw GPIO (GPIO1_A4) through
+		 * linux,extcon-usb-gpio, and there is no GPIO controller node
+		 * until #81. Peripheral is also what the appliance actually
+		 * wants: nothing is ever plugged INTO this port.
+		 *
+		 * TODO(#81): add
+		 *   extcon_usb: extcon-usb {
+		 *           compatible = "linux,extcon-usb-gpio";
+		 *           id-gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
+		 *   };
+		 * and put dr_mode = "otg"; extcon = <&extcon_usb>; back on the
+		 * core node. The glue already clears VBUSVALID for host mode;
+		 * what it does not yet do is follow a role change at runtime.
+		 *
+		 * No pinctrl-0. The pin controller's "usb" group is MICN_R_D /
+		 * MICP_R_D muxed to USB_OVRCUR / USB_POWER_EN -- host-side
+		 * overcurrent and VBUS-enable signals. The vendor board dts
+		 * never claims them either, and both pads use the EN/SE pull
+		 * encoding the section 1.4 trap is about.
+		 *
+		 * snps,dis-u2-freeclk-exists-quirk is carried over from the
+		 * vendor node verbatim: this integration has no USB2 free
+		 * running clock, and telling the core otherwise makes it wait
+		 * for one that never ticks.
+		 */
+		usb: usb@8000000 {
+			compatible = AX630C_DWC3_COMPAT;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			/*
+			 * An explicit identity translation of the core's own
+			 * window rather than a bare `ranges;`. Both describe
+			 * the same hardware, but dtc's simple_bus_reg check
+			 * cannot derive an address from an empty ranges and
+			 * warns -- upstream board files hit this too and the
+			 * kernel's own dtc invocation simply disables the
+			 * check. Spelling the window out keeps our build
+			 * warning-free without turning a check off.
+			 */
+			ranges = <0x0 0x8000000 0x0 0x8000000 0x0 0x100000>;
+			clocks = <&flash_clk AX630C_BUS_CLK_USB_EB>,
+				 <&flash_clk AX630C_USB_REF_ALT_CLK_EB>;
+			clock-names = "bus", "ref_alt";
+			resets = <&flash_clk AX630C_RST_FLASH_USB2_PHY>,
+				 <&flash_clk AX630C_RST_FLASH_USB2_VCC>;
+			reset-names = "phy", "vcc";
+			axera,flash-syscon = <&flash_clk>;
+			status = "okay";
+
+			dwc3: usb@8000000 {
+				compatible = "snps,dwc3";
+				reg = <0x0 0x8000000 0x0 0x100000>;
+				interrupts = <GIC_SPI 76 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&flash_clk AX630C_CLK_USB_REF_EB>;
+				clock-names = "ref";
+				dr_mode = "peripheral";
+				phy_type = "utmi";
+				maximum-speed = "high-speed";
+				snps,dis-u2-freeclk-exists-quirk;
+			};
 		};
 
 		/*

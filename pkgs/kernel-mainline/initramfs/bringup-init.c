@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * NanoKVM-Pro mainline bring-up init (#75, #76, #77; epic #26).
+ * NanoKVM-Pro mainline bring-up init (#75, #76, #77, #82; epic #26).
  *
  * PID 1 of the initramfs baked into `.#kernel-mainline`. It is not a boot
  * loader for anything: there is no mainline root filesystem to switch to yet
@@ -92,6 +92,9 @@
 #define MS_NET_ADDR		(1u << 19)	/* #77: a DHCP lease was taken and configured */
 #define MS_NET_PING		(1u << 20)	/* #77: ICMP round trip to another host on the LAN */
 #define MS_SSHD			(1u << 21)	/* #77: dropbear started */
+#define MS_UDC			(1u << 22)	/* #82: a USB device controller registered */
+#define MS_GADGET		(1u << 23)	/* #82: a HID gadget was built and bound to it */
+#define MS_USB_ATTACHED		(1u << 24)	/* #82: a host enumerated and configured it */
 
 /*
  * Storage probe (#76). Read-only throughout: the eMMC carries the running
@@ -138,6 +141,46 @@
 #define NET_CARRIER_SECONDS	20
 #define DHCP_RESULT		"/run/dhcp.result"
 #define SSH_HOST_KEY		"/etc/dropbear/host_key_ed25519"
+
+/*
+ * USB gadget (#82). Three questions, deliberately separated, because they fail
+ * for completely different reasons and only the third depends on anything
+ * outside this board:
+ *
+ *   MS_UDC          the dwc3 glue probed, the core bound, and a device
+ *                   controller registered. Pure kernel-side.
+ *   MS_GADGET       every function driver usbdev.sh needs is present, a HID
+ *                   keyboard gadget was assembled through configfs, and
+ *                   writing the controller's name to g0/UDC succeeded --
+ *                   which is what starts the gadget and pulls up D+.
+ *   MS_USB_ATTACHED the UDC reached state "configured": a host on the other
+ *                   end of the cable enumerated us and selected a
+ *                   configuration.
+ *
+ * That last one is the only one a bad cable can take away, and the physical
+ * USB link on this unit has been unreliable since 2026-09-05 (#42 was a
+ * physical fault). So a run with 22 and 23 set and 24 clear says "the port
+ * works, look at the cable", not "USB is broken".
+ */
+#define CONFIGFS_MNT		"/sys/kernel/config"
+#define GADGET_DIR		CONFIGFS_MNT "/usb_gadget/g0"
+#define UDC_CLASS_DIR		"/sys/class/udc"
+#define UDC_WAIT_SECONDS	10
+#define UDC_POLL_MS		200
+/* How long to give a host to enumerate once the gadget is bound. */
+#define USB_ATTACH_SECONDS	15
+
+/*
+ * Linux Foundation's own gadget vendor/product pair, the one every configfs
+ * example uses. Deliberately not a Sipeed id: this gadget is not the vendor's
+ * and must not claim to be. `lsusb` on the attached host shows it as "Linux
+ * Foundation Multifunction Composite Gadget", and the product string below
+ * makes it unmistakable.
+ */
+#define GADGET_VID		"0x1d6b"
+#define GADGET_PID		"0x0104"
+#define GADGET_PRODUCT		"NanoKVM-Pro mainline bring-up"
+#define GADGET_MANUFACTURER	"open-nanokvm-pro"
 
 /*
  * Identity is HARVESTED, never built in. The vendor rootfs on the eMMC carries
@@ -851,6 +894,302 @@ static void start_sshd(volatile uint8_t *chipmode)
 		wr32(chipmode + BACKUP0_SET_OFF, MS_SSHD);
 }
 
+/* --- USB gadget (#82) ---------------------------------------------------- */
+
+/*
+ * The USB HID boot-protocol keyboard report descriptor, verbatim from
+ * Documentation/usb/gadget_hid.rst. 63 bytes: an 8-bit modifier bitmap, one
+ * reserved byte, 5 LED output bits plus 3 bits of padding, and six key codes.
+ * It is the same shape as usbdev.sh's hid.GS0 because there is only one shape
+ * a boot keyboard can have -- this copy comes from the kernel's own
+ * documentation, not from the vendor script.
+ */
+static const unsigned char hid_keyboard_report[] = {
+	0x05, 0x01,		/* USAGE_PAGE (Generic Desktop)		*/
+	0x09, 0x06,		/* USAGE (Keyboard)			*/
+	0xa1, 0x01,		/* COLLECTION (Application)		*/
+	0x05, 0x07,		/*   USAGE_PAGE (Keyboard)		*/
+	0x19, 0xe0,		/*   USAGE_MINIMUM (LeftControl)	*/
+	0x29, 0xe7,		/*   USAGE_MAXIMUM (Right GUI)		*/
+	0x15, 0x00,		/*   LOGICAL_MINIMUM (0)		*/
+	0x25, 0x01,		/*   LOGICAL_MAXIMUM (1)		*/
+	0x75, 0x01,		/*   REPORT_SIZE (1)			*/
+	0x95, 0x08,		/*   REPORT_COUNT (8)			*/
+	0x81, 0x02,		/*   INPUT (Data,Var,Abs)		*/
+	0x95, 0x01,		/*   REPORT_COUNT (1)			*/
+	0x75, 0x08,		/*   REPORT_SIZE (8)			*/
+	0x81, 0x03,		/*   INPUT (Cnst,Var,Abs)		*/
+	0x95, 0x05,		/*   REPORT_COUNT (5)			*/
+	0x75, 0x01,		/*   REPORT_SIZE (1)			*/
+	0x05, 0x08,		/*   USAGE_PAGE (LEDs)			*/
+	0x19, 0x01,		/*   USAGE_MINIMUM (Num Lock)		*/
+	0x29, 0x05,		/*   USAGE_MAXIMUM (Kana)		*/
+	0x91, 0x02,		/*   OUTPUT (Data,Var,Abs)		*/
+	0x95, 0x01,		/*   REPORT_COUNT (1)			*/
+	0x75, 0x03,		/*   REPORT_SIZE (3)			*/
+	0x91, 0x03,		/*   OUTPUT (Cnst,Var,Abs)		*/
+	0x95, 0x06,		/*   REPORT_COUNT (6)			*/
+	0x75, 0x08,		/*   REPORT_SIZE (8)			*/
+	0x15, 0x00,		/*   LOGICAL_MINIMUM (0)		*/
+	0x25, 0x65,		/*   LOGICAL_MAXIMUM (101)		*/
+	0x05, 0x07,		/*   USAGE_PAGE (Keyboard)		*/
+	0x19, 0x00,		/*   USAGE_MINIMUM (Reserved)		*/
+	0x29, 0x65,		/*   USAGE_MAXIMUM (Application)	*/
+	0x81, 0x00,		/*   INPUT (Data,Ary,Abs)		*/
+	0xc0			/* END_COLLECTION			*/
+};
+
+/*
+ * Write @len bytes to @path, creating nothing. Every configfs attribute below
+ * goes through here; returns 0 on success. Failures are logged with errno by
+ * the caller, because in configfs an EINVAL on one attribute and an ENODEV on
+ * another mean entirely different things.
+ */
+static int write_all(const char *path, const void *buf, size_t len)
+{
+	int fd = open(path, O_WRONLY | O_CLOEXEC);
+	ssize_t n;
+
+	if (fd < 0)
+		return -1;
+	n = write(fd, buf, len);
+	close(fd);
+
+	return (n == (ssize_t)len) ? 0 : -1;
+}
+
+static int write_str(const char *path, const char *s)
+{
+	return write_all(path, s, strlen(s));
+}
+
+/* Build "<GADGET_DIR>/<tail>" into buf and return it, for the calls below. */
+static const char *gpath(char *buf, size_t len, const char *tail)
+{
+	snprintf(buf, len, GADGET_DIR "/%s", tail);
+	return buf;
+}
+
+/*
+ * Find the one USB device controller. dwc3 registers it from its own probe, so
+ * it is normally there before this runs -- but the glue populates the core
+ * node asynchronously and a poll costs nothing. Returns 0 and fills @name.
+ */
+static int find_udc(char *name, size_t len)
+{
+	int waited;
+
+	for (waited = 0; waited < UDC_WAIT_SECONDS * 1000;
+	     waited += UDC_POLL_MS) {
+		DIR *d = opendir(UDC_CLASS_DIR);
+		struct dirent *e;
+
+		if (d) {
+			while ((e = readdir(d))) {
+				if (e->d_name[0] == '.')
+					continue;
+				snprintf(name, len, "%s", e->d_name);
+				closedir(d);
+				return 0;
+			}
+			closedir(d);
+		}
+		nap(0, UDC_POLL_MS * 1000000L);
+	}
+
+	return -1;
+}
+
+/*
+ * Create and immediately remove each function directory usbdev.sh will want.
+ * This is a presence test for the function drivers, not a configuration: a
+ * mkdir under functions/ instantiates the driver, so a name that is not
+ * compiled in fails with ENOENT right here rather than three months later on
+ * an appliance whose mouse does not work. Returns the number found.
+ */
+static int probe_gadget_functions(void)
+{
+	static const char *const want[] = {
+		"hid.probe", "mass_storage.probe", "ncm.probe",
+		"uac2.probe", "acm.probe",
+	};
+	char path[256];
+	size_t i;
+	int found = 0;
+
+	for (i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+		char tail[64];
+
+		snprintf(tail, sizeof(tail), "functions/%s", want[i]);
+		gpath(path, sizeof(path), tail);
+
+		if (mkdir(path, 0755) == 0) {
+			found++;
+			(void)rmdir(path);
+		} else {
+			char msg[192];
+
+			snprintf(msg, sizeof(msg),
+				 "openkvm: usb: function %s unavailable, errno %d\n",
+				 want[i], errno);
+			kmsg(msg);
+		}
+	}
+
+	return found;
+}
+
+/*
+ * The whole USB step. Everything here is best-effort: a board that cannot
+ * build a gadget must still reach the dwell, because the dwell is the
+ * watchdog evidence and #75's proof has to survive every later addition.
+ */
+static void bring_up_gadget(volatile uint8_t *chipmode)
+{
+	char udc[64], path[256], msg[256], state[64];
+	int found, waited;
+
+	(void)mkdir(CONFIGFS_MNT, 0755);
+	if (mount("configfs", CONFIGFS_MNT, "configfs", 0, NULL) != 0 &&
+	    errno != EBUSY) {
+		kmsg_hex("openkvm: usb: configfs mount failed, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	if (find_udc(udc, sizeof(udc)) != 0) {
+		kmsg("openkvm: usb: no UDC in " UDC_CLASS_DIR
+		     " -- the dwc3 glue or core did not bind\n");
+		return;
+	}
+
+	snprintf(msg, sizeof(msg), "openkvm: usb: UDC is %s\n", udc);
+	kmsg(msg);
+	if (chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_UDC);
+
+	if (mkdir(GADGET_DIR, 0755) != 0) {
+		kmsg_hex("openkvm: usb: cannot create the gadget, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	found = probe_gadget_functions();
+	snprintf(msg, sizeof(msg),
+		 "openkvm: usb: %d of 5 usbdev.sh function drivers present\n",
+		 found);
+	kmsg(msg);
+
+	/* Device descriptor. */
+	(void)write_str(gpath(path, sizeof(path), "idVendor"), GADGET_VID);
+	(void)write_str(gpath(path, sizeof(path), "idProduct"), GADGET_PID);
+	(void)write_str(gpath(path, sizeof(path), "bcdUSB"), "0x0200");
+	(void)write_str(gpath(path, sizeof(path), "bcdDevice"), "0x0100");
+
+	/* English (0x409) strings. The serial is the slot the kernel booted. */
+	(void)mkdir(gpath(path, sizeof(path), "strings"), 0755);
+	if (mkdir(gpath(path, sizeof(path), "strings/0x409"), 0755) == 0) {
+		(void)write_str(gpath(path, sizeof(path),
+				      "strings/0x409/manufacturer"),
+				GADGET_MANUFACTURER);
+		(void)write_str(gpath(path, sizeof(path),
+				      "strings/0x409/product"),
+				GADGET_PRODUCT);
+		(void)write_str(gpath(path, sizeof(path),
+				      "strings/0x409/serialnumber"), "slotb");
+	}
+
+	/*
+	 * One HID keyboard, boot protocol. Not the full three-interface set
+	 * usbdev.sh builds: this is the enumeration oracle, and one interface
+	 * that either appears on the host or does not is a cleaner answer than
+	 * five that might each fail differently. The presence test above
+	 * already covers the other four function drivers.
+	 */
+	if (mkdir(gpath(path, sizeof(path), "functions/hid.GS0"), 0755) != 0) {
+		kmsg_hex("openkvm: usb: cannot create hid.GS0, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+	(void)write_str(gpath(path, sizeof(path), "functions/hid.GS0/protocol"),
+			"1");
+	(void)write_str(gpath(path, sizeof(path), "functions/hid.GS0/subclass"),
+			"1");
+	(void)write_str(gpath(path, sizeof(path),
+			      "functions/hid.GS0/report_length"), "8");
+	if (write_all(gpath(path, sizeof(path),
+			    "functions/hid.GS0/report_desc"),
+		      hid_keyboard_report, sizeof(hid_keyboard_report)) != 0) {
+		kmsg_hex("openkvm: usb: report_desc write failed, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	(void)mkdir(gpath(path, sizeof(path), "configs"), 0755);
+	if (mkdir(gpath(path, sizeof(path), "configs/c.1"), 0755) != 0) {
+		kmsg_hex("openkvm: usb: cannot create configs/c.1, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+	(void)mkdir(gpath(path, sizeof(path), "configs/c.1/strings"), 0755);
+	if (mkdir(gpath(path, sizeof(path), "configs/c.1/strings/0x409"),
+		  0755) == 0)
+		(void)write_str(gpath(path, sizeof(path),
+				      "configs/c.1/strings/0x409/configuration"),
+				"HID");
+	(void)write_str(gpath(path, sizeof(path), "configs/c.1/MaxPower"),
+			"100");
+
+	if (symlink(GADGET_DIR "/functions/hid.GS0",
+		    gpath(path, sizeof(path), "configs/c.1/hid.GS0")) != 0) {
+		kmsg_hex("openkvm: usb: cannot link the function, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	/*
+	 * Binding. Writing the controller's name here is what starts the
+	 * gadget: the composite core builds the descriptors, dwc3 enables the
+	 * pullup and, if VBUSVALID is set, the host sees a device appear. An
+	 * EINVAL at this line and nowhere else means the descriptors are bad;
+	 * an ENODEV means the UDC went away.
+	 */
+	if (write_str(gpath(path, sizeof(path), "UDC"), udc) != 0) {
+		kmsg_hex("openkvm: usb: binding to the UDC failed, errno: ",
+			 (uint32_t)errno);
+		return;
+	}
+
+	kmsg("openkvm: usb: HID keyboard gadget bound\n");
+	if (chipmode)
+		wr32(chipmode + BACKUP0_SET_OFF, MS_GADGET);
+
+	/*
+	 * Whether a host is on the other end. This is the ONLY step here that
+	 * depends on the cable, so it gets its own bit and its own timeout,
+	 * and it never fails the run.
+	 */
+	snprintf(path, sizeof(path), UDC_CLASS_DIR "/%s/state", udc);
+	for (waited = 0; waited < USB_ATTACH_SECONDS * 1000; waited += 500) {
+		if (read_line(path, state, sizeof(state)) == 0 &&
+		    !strcmp(state, "configured")) {
+			kmsg("openkvm: usb: host enumerated and configured us\n");
+			if (chipmode)
+				wr32(chipmode + BACKUP0_SET_OFF,
+				     MS_USB_ATTACHED);
+			return;
+		}
+		nap(0, 500000000L);
+	}
+
+	if (read_line(path, state, sizeof(state)) != 0)
+		strcpy(state, "?");
+	snprintf(msg, sizeof(msg),
+		 "openkvm: usb: no host after %ds, UDC state=%s (check the cable)\n",
+		 USB_ATTACH_SECONDS, state);
+	kmsg(msg);
+}
+
 /* ------------------------------------------------------------------------- */
 
 int main(void)
@@ -1001,6 +1340,14 @@ int main(void)
 		     "watchdog readout\n");
 	bring_up_network(chipmode);
 	start_sshd(chipmode);
+
+	/*
+	 * Milestone 2d (#82): the USB gadget. After the network on purpose --
+	 * this is the step that can sit for USB_ATTACH_SECONDS waiting on a
+	 * host that may not be there, and a shell on the board is a much better
+	 * place to debug that from than a milestone bit two boots later.
+	 */
+	bring_up_gadget(chipmode);
 
 	if (stash) {
 		uint32_t used = stash_klog(stash);
