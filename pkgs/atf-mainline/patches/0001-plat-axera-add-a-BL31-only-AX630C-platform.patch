@@ -1,0 +1,779 @@
+plat/axera: add a BL31-only AX630C platform
+
+The Axera AX630C (AX620E family) is a dual Cortex-A53 SoC with a GIC-400.
+It boots from an on-chip ROM into a vendor first-stage loader that trains
+DRAM, brings up the clock tree and UART0, loads the boot images from flash
+and enters BL31 at EL3 with the MMU off, passing an ordinary bl_params_t v2
+chain in x0 and the standard platform cookie in x3. Nothing here is
+RESET_TO_BL31.
+
+BL31 is the only image this platform builds: no SPD, no BL32, and no secure
+service beyond PSCI. It links at 0x40040000, the fixed address the loader
+enters, inside the 256 KiB window that address opens.
+
+The SoC has no CPU power controller. Each core owns a pair of scratch
+registers in the system-global block that act as a release mailbox: a core
+that is not running waits on WFE, reloads its pair on each wake, and
+branches to the 40-bit address it finds there once it is non-zero. The boot
+ROM leaves the secondary core in exactly that loop, so CPU_ON is a mailbox
+write and an SEV, and CPU_OFF re-enters the same loop from BL31.
+
+SYSTEM_RESET arms watchdog 0 with a reload of zero, which is the only reset
+on this SoC that reaches the whole chip. There is no SYSTEM_OFF, because
+nothing inside the SoC can remove its own supply.
+---
+diff -Naur tfa-orig/plat/axera/ax630c/aarch64/ax630c_helpers.S tfa/plat/axera/ax630c/aarch64/ax630c_helpers.S
+--- a/plat/axera/ax630c/aarch64/ax630c_helpers.S	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/aarch64/ax630c_helpers.S	2026-09-07 22:09:24.104437362 -0600
+@@ -0,0 +1,50 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#include <arch.h>
++#include <asm_macros.S>
++
++#include <ax630c_def.h>
++#include <platform_def.h>
++
++	.globl	plat_my_core_pos
++	.globl	plat_crash_console_init
++	.globl	plat_crash_console_putc
++	.globl	plat_crash_console_flush
++
++	/* -------------------------------------------------------------
++	 * Both cores are Aff0 of the single cluster, so the linear core
++	 * position is MPIDR_EL1.Aff0.
++	 * -------------------------------------------------------------
++	 */
++func plat_my_core_pos
++	mrs	x0, mpidr_el1
++	and	x0, x0, #MPIDR_CPU_MASK
++	ret
++endfunc plat_my_core_pos
++
++	/* -------------------------------------------------------------
++	 * The crash console is the boot console: UART0, already
++	 * configured by the first-stage loader and by BL31, so the
++	 * crash path only needs the base address.
++	 * -------------------------------------------------------------
++	 */
++func plat_crash_console_init
++	mov_imm	x0, AX630C_UART0_BASE
++	mov_imm	x1, AX630C_UART0_CLK_IN_HZ
++	mov_imm	x2, AX630C_UART0_BAUDRATE
++	b	console_16550_core_init
++endfunc plat_crash_console_init
++
++func plat_crash_console_putc
++	mov_imm	x1, AX630C_UART0_BASE
++	b	console_16550_core_putc
++endfunc plat_crash_console_putc
++
++func plat_crash_console_flush
++	mov_imm	x0, AX630C_UART0_BASE
++	b	console_16550_core_flush
++endfunc plat_crash_console_flush
+diff -Naur tfa-orig/plat/axera/ax630c/ax630c_bl31_setup.c tfa/plat/axera/ax630c/ax630c_bl31_setup.c
+--- a/plat/axera/ax630c/ax630c_bl31_setup.c	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/ax630c_bl31_setup.c	2026-09-07 22:16:02.358087911 -0600
+@@ -0,0 +1,153 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#include <assert.h>
++
++#include <arch_helpers.h>
++#include <common/bl_common.h>
++#include <common/debug.h>
++#include <drivers/console.h>
++#include <drivers/generic_delay_timer.h>
++#include <drivers/ti/uart/uart_16550.h>
++#include <lib/xlat_tables/xlat_tables_compat.h>
++#include <plat/common/platform.h>
++
++#include <ax630c_def.h>
++#include <ax630c_private.h>
++#include <platform_def.h>
++
++/*
++ * The AX630C boots from an on-chip ROM into a vendor first-stage loader that
++ * trains DRAM, brings up the clock tree and the console UART, and then loads
++ * BL31 and BL33 from flash. It hands BL31 an ordinary bl_params_t v2 chain in
++ * x0 and the standard platform cookie in x3, so this platform is a plain
++ * non-RESET_TO_BL31 port: everything below either copies the entry point
++ * information it was given, or configures the two blocks the loader leaves
++ * alone (the GIC, and BL31's own translation tables).
++ */
++
++static console_t ax630c_console;
++
++static entry_point_info_t bl32_ep_info;
++static entry_point_info_t bl33_ep_info;
++
++/*******************************************************************************
++ * Return the entry point information for the next image in the requested
++ * security state, or NULL if there is no such image. This platform builds no
++ * BL32, but honours one if the loader supplies it.
++ ******************************************************************************/
++struct entry_point_info *bl31_plat_get_next_image_ep_info(uint32_t type)
++{
++	entry_point_info_t *ep_info;
++
++	assert(sec_state_is_valid(type));
++
++	ep_info = (type == NON_SECURE) ? &bl33_ep_info : &bl32_ep_info;
++
++	return (ep_info->pc != 0UL) ? ep_info : NULL;
++}
++
++void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
++				u_register_t arg2, u_register_t arg3)
++{
++	bl_params_t *params_from_bl2 = (bl_params_t *)arg0;
++	bl_params_node_t *node;
++
++	console_16550_register(AX630C_UART0_BASE, AX630C_UART0_CLK_IN_HZ,
++			       AX630C_UART0_BAUDRATE, &ax630c_console);
++
++	assert(arg3 == ARM_BL31_PLAT_PARAM_VAL);
++	assert(params_from_bl2 != NULL);
++	assert(params_from_bl2->h.type == PARAM_BL_PARAMS);
++	assert(params_from_bl2->h.version >= VERSION_2);
++
++	if ((params_from_bl2 == NULL) ||
++	    (params_from_bl2->h.type != PARAM_BL_PARAMS) ||
++	    (params_from_bl2->h.version < VERSION_2)) {
++		panic();
++	}
++
++	for (node = params_from_bl2->head; node != NULL;
++	     node = node->next_params_info) {
++		if (node->image_id == BL32_IMAGE_ID) {
++			bl32_ep_info = *node->ep_info;
++		} else if (node->image_id == BL33_IMAGE_ID) {
++			bl33_ep_info = *node->ep_info;
++		}
++	}
++
++	if (bl33_ep_info.pc == 0UL) {
++		ERROR("BL31: no BL33 entry point\n");
++		panic();
++	}
++
++	/*
++	 * BL33 is entered the way Linux expects to be: the device tree address
++	 * in x0 -- which is arg2, and which this SoC's loader always leaves at
++	 * zero -- and x1 to x3 zero. A U-Boot BL33 must therefore carry its own
++	 * device tree.
++	 */
++	bl33_ep_info.args.arg0 = (u_register_t)arg2;
++	bl33_ep_info.args.arg1 = 0UL;
++	bl33_ep_info.args.arg2 = 0UL;
++	bl33_ep_info.args.arg3 = 0UL;
++}
++
++void bl31_platform_setup(void)
++{
++	/*
++	 * The generic timer is already running -- the loader programmed
++	 * CNTFRQ_EL0 -- but TF-A's delay timer needs to be told about it before
++	 * udelay() works. SYSTEM_RESET is the only caller.
++	 */
++	generic_delay_timer_init();
++
++	ax630c_gic_driver_init();
++	ax630c_gic_init();
++}
++
++void bl31_plat_runtime_setup(void)
++{
++	console_flush();
++}
++
++/*
++ * Everything BL31 touches after the MMU is on. The loader has already
++ * configured the clock tree, DRAM and the console pads; BL31 needs the GIC it
++ * owns, the peripheral window that holds UART0 and WDT0, and the system-global
++ * block that holds the CPU release mailbox.
++ */
++static const mmap_region_t ax630c_mmap[] = {
++	MAP_REGION_FLAT(AX630C_GIC_BASE, AX630C_GIC_SIZE,
++			MT_DEVICE | MT_RW | MT_SECURE),
++	MAP_REGION_FLAT(AX630C_PERIPH_BASE, AX630C_PERIPH_SIZE,
++			MT_DEVICE | MT_RW | MT_SECURE),
++	MAP_REGION_FLAT(AX630C_SYS_GLB_BASE, AX630C_SYS_GLB_SIZE,
++			MT_DEVICE | MT_RW | MT_NS),
++	{0}
++};
++
++void bl31_plat_arch_setup(void)
++{
++	const mmap_region_t bl_regions[] = {
++		MAP_REGION_FLAT(BL31_BASE, BL31_END - BL31_BASE,
++				MT_MEMORY | MT_RW | MT_SECURE),
++		MAP_REGION_FLAT(BL_CODE_BASE, BL_CODE_END - BL_CODE_BASE,
++				MT_CODE | MT_RO | MT_SECURE),
++		MAP_REGION_FLAT(BL_RO_DATA_BASE,
++				BL_RO_DATA_END - BL_RO_DATA_BASE,
++				MT_RO_DATA | MT_RO | MT_SECURE),
++		{0}
++	};
++
++	setup_page_tables(bl_regions, ax630c_mmap);
++	enable_mmu_el3(0);
++}
++
++unsigned int plat_get_syscnt_freq2(void)
++{
++	return SYS_COUNTER_FREQ;
++}
+diff -Naur tfa-orig/plat/axera/ax630c/ax630c_gicv2.c tfa/plat/axera/ax630c/ax630c_gicv2.c
+--- a/plat/axera/ax630c/ax630c_gicv2.c	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/ax630c_gicv2.c	2026-09-07 22:08:38.205266009 -0600
+@@ -0,0 +1,50 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#include <drivers/arm/gicv2.h>
++#include <plat/common/platform.h>
++
++#include <ax630c_def.h>
++#include <ax630c_private.h>
++#include <platform_def.h>
++
++/*
++ * A GIC-400 with no interrupts routed to EL3: BL31 owns the distributor only
++ * so that PSCI can bring a core's CPU interface up and down. Leaving
++ * interrupt_props empty makes gicv2_distif_init() configure every SPI as
++ * Group 1, which is what the normal world expects to find.
++ */
++static const gicv2_driver_data_t ax630c_gic_data = {
++	.gicd_base = AX630C_GICD_BASE,
++	.gicc_base = AX630C_GICC_BASE,
++};
++
++void ax630c_gic_driver_init(void)
++{
++	gicv2_driver_init(&ax630c_gic_data);
++}
++
++void ax630c_gic_init(void)
++{
++	gicv2_distif_init();
++	gicv2_pcpu_distif_init();
++	gicv2_cpuif_enable();
++}
++
++void ax630c_gic_cpuif_enable(void)
++{
++	gicv2_cpuif_enable();
++}
++
++void ax630c_gic_cpuif_disable(void)
++{
++	gicv2_cpuif_disable();
++}
++
++void ax630c_gic_pcpu_init(void)
++{
++	gicv2_pcpu_distif_init();
++}
+diff -Naur tfa-orig/plat/axera/ax630c/ax630c_pm.c tfa/plat/axera/ax630c/ax630c_pm.c
+--- a/plat/axera/ax630c/ax630c_pm.c	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/ax630c_pm.c	2026-09-07 22:09:15.445404895 -0600
+@@ -0,0 +1,180 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#include <assert.h>
++
++#include <arch_helpers.h>
++#include <common/debug.h>
++#include <drivers/delay_timer.h>
++#include <lib/mmio.h>
++#include <lib/psci/psci.h>
++#include <plat/common/platform.h>
++
++#include <ax630c_def.h>
++#include <ax630c_private.h>
++#include <platform_def.h>
++
++/*
++ * CPU_ON / CPU_OFF on the AX630C are a release mailbox, not a power
++ * controller. Each core owns a pair of scratch registers in the system-global
++ * block; a core that is not running spins on WFE, reloads its pair on every
++ * wake, and branches to the 40-bit address it finds there once it is
++ * non-zero. The boot ROM parks the secondary core in exactly that loop before
++ * BL31 ever runs, so the first CPU_ON needs no more than a mailbox write and
++ * an SEV, and a core taken offline by CPU_OFF re-enters the same loop from
++ * here.
++ */
++
++static uintptr_t ax630c_sec_entrypoint;
++
++uintptr_t ax630c_cpu_entry_lo(unsigned int core_pos)
++{
++	return (core_pos == 0U) ? AX630C_CPU0_ENTRY_LO : AX630C_CPU1_ENTRY_LO;
++}
++
++uintptr_t ax630c_cpu_entry_hi(unsigned int core_pos)
++{
++	return (core_pos == 0U) ? AX630C_CPU0_ENTRY_HI : AX630C_CPU1_ENTRY_HI;
++}
++
++static void ax630c_set_cpu_entry(unsigned int core_pos, uintptr_t entry)
++{
++	mmio_write_32(ax630c_cpu_entry_hi(core_pos),
++		      (uint32_t)((uint64_t)entry >> 32));
++	mmio_write_32(ax630c_cpu_entry_lo(core_pos),
++		      (uint32_t)((uint64_t)entry & 0xFFFFFFFFULL));
++	dsbsy();
++}
++
++/*
++ * Park this core in the same WFE loop the boot ROM uses, and branch wherever
++ * the next CPU_ON points it. Runs with the MMU off and the caches already
++ * flushed by the PSCI framework, so every access here is a plain physical
++ * one.
++ */
++void __dead2 ax630c_park_and_wait_for_release(void)
++{
++	unsigned int core_pos = plat_my_core_pos();
++	uintptr_t lo = ax630c_cpu_entry_lo(core_pos);
++	uintptr_t hi = ax630c_cpu_entry_hi(core_pos);
++	uint64_t entry;
++
++	ax630c_set_cpu_entry(core_pos, 0UL);
++
++	do {
++		wfe();
++		entry = ((uint64_t)mmio_read_32(hi) << 32) |
++			(uint64_t)mmio_read_32(lo);
++	} while (entry == 0ULL);
++
++	__asm__ volatile ("br %0" : : "r" (entry));
++
++	panic();
++}
++
++/*******************************************************************************
++ * PSCI handlers.
++ ******************************************************************************/
++
++static int ax630c_pwr_domain_on(u_register_t mpidr)
++{
++	int core_pos = plat_core_pos_by_mpidr(mpidr);
++
++	if (core_pos < 0) {
++		return PSCI_E_INVALID_PARAMS;
++	}
++
++	ax630c_set_cpu_entry((unsigned int)core_pos, ax630c_sec_entrypoint);
++
++	/* Kick the target out of its WFE. */
++	sev();
++
++	return PSCI_E_SUCCESS;
++}
++
++static void ax630c_pwr_domain_off(const psci_power_state_t *target_state)
++{
++	assert(target_state->pwr_domain_state[MPIDR_AFFLVL0] ==
++	       PLAT_LOCAL_STATE_OFF);
++
++	ax630c_gic_cpuif_disable();
++}
++
++static void ax630c_pwr_domain_pwr_down(const psci_power_state_t *target_state)
++{
++	/*
++	 * The core is about to leave BL31's address space and wait in the
++	 * ROM-style release loop. It re-enters through the warm boot entry
++	 * point, which expects the reset state, so drop the MMU here.
++	 */
++	disable_mmu_el3();
++
++	ax630c_park_and_wait_for_release();
++}
++
++static void ax630c_pwr_domain_on_finish(const psci_power_state_t *target_state)
++{
++	assert(target_state->pwr_domain_state[MPIDR_AFFLVL0] ==
++	       PLAT_LOCAL_STATE_OFF);
++
++	ax630c_gic_pcpu_init();
++	ax630c_gic_cpuif_enable();
++}
++
++/*
++ * SYSTEM_RESET. Watchdog 0 is the only reset on this SoC that reaches the
++ * whole chip; earlier firmware leaves its clock running and routes its expiry
++ * to a chip reset, so arming it with a reload of zero resets within
++ * microseconds. Enable first, then load, so the reload strobe lands on a
++ * counter that is already running.
++ */
++static void __dead2 ax630c_system_reset(void)
++{
++	uintptr_t wdt = AX630C_WDT0_BASE;
++
++	console_flush();
++
++	mmio_write_32(wdt + AX630C_WDT_EN, AX630C_WDT_EN_ENABLE);
++
++	mmio_write_32(wdt + AX630C_WDT_TORR, 0U);
++	mmio_write_32(wdt + AX630C_WDT_TORR_LOAD, AX630C_WDT_TORR_LOAD_STROBE);
++	udelay(1);
++	mmio_write_32(wdt + AX630C_WDT_TORR_LOAD, 0U);
++
++	/*
++	 * WDT_CRR and WDT_TORR_LOAD cross a clock domain and are level
++	 * sensitive rather than write-one-to-pulse: assert, hold for longer
++	 * than one counter-clock period, deassert.
++	 */
++	mmio_write_32(wdt + AX630C_WDT_CRR, AX630C_WDT_CRR_KICK);
++	udelay(1);
++	mmio_write_32(wdt + AX630C_WDT_CRR, 0U);
++
++	while (true) {
++		wfi();
++	}
++}
++
++/*
++ * No SYSTEM_OFF: nothing on this SoC can remove its own supply. The board's
++ * power switch is upstream of the AX630C and is not reachable from EL3.
++ */
++static const plat_psci_ops_t ax630c_psci_ops = {
++	.pwr_domain_on = ax630c_pwr_domain_on,
++	.pwr_domain_off = ax630c_pwr_domain_off,
++	.pwr_domain_pwr_down = ax630c_pwr_domain_pwr_down,
++	.pwr_domain_on_finish = ax630c_pwr_domain_on_finish,
++	.system_reset = ax630c_system_reset,
++};
++
++int plat_setup_psci_ops(uintptr_t sec_entrypoint,
++			const plat_psci_ops_t **psci_ops)
++{
++	ax630c_sec_entrypoint = sec_entrypoint;
++	*psci_ops = &ax630c_psci_ops;
++
++	return 0;
++}
+diff -Naur tfa-orig/plat/axera/ax630c/ax630c_topology.c tfa/plat/axera/ax630c/ax630c_topology.c
+--- a/plat/axera/ax630c/ax630c_topology.c	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/ax630c_topology.c	2026-09-07 22:08:46.995298680 -0600
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#include <arch.h>
++#include <arch_helpers.h>
++#include <lib/psci/psci.h>
++
++#include <platform_def.h>
++
++/* One cluster, two cores. */
++static const unsigned char ax630c_power_domain_tree_desc[] = {
++	PLATFORM_CLUSTER_COUNT,
++	PLATFORM_MAX_CPUS_PER_CLUSTER,
++};
++
++const unsigned char *plat_get_power_domain_tree_desc(void)
++{
++	return ax630c_power_domain_tree_desc;
++}
++
++/*
++ * Both cores sit at affinity level 0 of the single cluster, so the linear
++ * position is Aff0. Every other affinity field must be zero: PSCI validates
++ * CPU_ON targets through this function and expects -1 for an MPIDR that names
++ * no CPU on this SoC.
++ */
++int plat_core_pos_by_mpidr(u_register_t mpidr)
++{
++	unsigned int cluster_id, cpu_id;
++
++	mpidr &= MPIDR_AFFINITY_MASK;
++	if ((mpidr & ~(MPIDR_CLUSTER_MASK | MPIDR_CPU_MASK)) != 0U) {
++		return -1;
++	}
++
++	cluster_id = (unsigned int)MPIDR_AFFLVL1_VAL(mpidr);
++	cpu_id = (unsigned int)MPIDR_AFFLVL0_VAL(mpidr);
++
++	if ((cluster_id >= PLATFORM_CLUSTER_COUNT) ||
++	    (cpu_id >= PLATFORM_MAX_CPUS_PER_CLUSTER)) {
++		return -1;
++	}
++
++	return (int)cpu_id;
++}
+diff -Naur tfa-orig/plat/axera/ax630c/include/ax630c_def.h tfa/plat/axera/ax630c/include/ax630c_def.h
+--- a/plat/axera/ax630c/include/ax630c_def.h	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/include/ax630c_def.h	2026-09-07 22:07:26.707003016 -0600
+@@ -0,0 +1,65 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#ifndef AX630C_DEF_H
++#define AX630C_DEF_H
++
++#include <lib/utils_def.h>
++
++#define AX630C_SIZE_K(n)		((n) * UL(1024))
++#define AX630C_SIZE_M(n)		((n) * UL(1024) * UL(1024))
++
++/*
++ * Peripheral window. One flat mapping covers every device BL31 touches
++ * outside the GIC and the system-global block: UART0 at 0x04880000 and
++ * WDT0 at 0x04840000 both live here.
++ */
++#define AX630C_PERIPH_BASE		UL(0x04800000)
++#define AX630C_PERIPH_SIZE		AX630C_SIZE_M(56)
++
++/* Console: UART0, a 16550 clocked from pclk_top (cpll_208m). */
++#define AX630C_UART0_BASE		UL(0x04880000)
++#define AX630C_UART0_CLK_IN_HZ		U(208000000)
++#define AX630C_UART0_BAUDRATE		U(115200)
++
++/* GIC-400: distributor at +0x1000, CPU interface at +0x2000. */
++#define AX630C_GIC_BASE			UL(0x01850000)
++#define AX630C_GIC_SIZE			AX630C_SIZE_K(32)
++#define AX630C_GICD_BASE		(AX630C_GIC_BASE + UL(0x1000))
++#define AX630C_GICC_BASE		(AX630C_GIC_BASE + UL(0x2000))
++
++/*
++ * System-global block. Four scratch ("dummy SW") registers in it are the
++ * SoC's CPU release mailbox: a core parked in the boot ROM's WFE loop polls
++ * its own pair and branches to the 40-bit address it finds there.
++ */
++#define AX630C_SYS_GLB_BASE		UL(0x02340000)
++#define AX630C_SYS_GLB_SIZE		AX630C_SIZE_K(64)
++
++#define AX630C_CPU1_ENTRY_LO		(AX630C_SYS_GLB_BASE + UL(0xDC))
++#define AX630C_CPU1_ENTRY_HI		(AX630C_SYS_GLB_BASE + UL(0xE0))
++#define AX630C_CPU0_ENTRY_LO		(AX630C_SYS_GLB_BASE + UL(0xE4))
++#define AX630C_CPU0_ENTRY_HI		(AX630C_SYS_GLB_BASE + UL(0xE8))
++
++/*
++ * Watchdog 0. The SoC has no other software reset that reaches the whole
++ * chip, so PSCI SYSTEM_RESET drives this block. Earlier firmware leaves its
++ * clock ungated and routes its expiry to a chip reset.
++ *
++ * The counter interrupts on the first expiry and resets on the second, and
++ * WDT_TORR counts in units of 64Ki ticks, so a reload of zero resets within
++ * microseconds on either counter source.
++ */
++#define AX630C_WDT0_BASE		UL(0x04840000)
++#define AX630C_WDT_EN			U(0x00)
++#define AX630C_WDT_EN_ENABLE		U(0x1)
++#define AX630C_WDT_TORR			U(0x0c)
++#define AX630C_WDT_TORR_LOAD		U(0x18)
++#define AX630C_WDT_TORR_LOAD_STROBE	U(0x1)
++#define AX630C_WDT_CRR			U(0x30)
++#define AX630C_WDT_CRR_KICK		U(0x61696370)
++
++#endif /* AX630C_DEF_H */
+diff -Naur tfa-orig/plat/axera/ax630c/include/ax630c_private.h tfa/plat/axera/ax630c/include/ax630c_private.h
+--- a/plat/axera/ax630c/include/ax630c_private.h	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/include/ax630c_private.h	2026-09-07 22:07:54.421104355 -0600
+@@ -0,0 +1,26 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#ifndef AX630C_PRIVATE_H
++#define AX630C_PRIVATE_H
++
++#include <stdint.h>
++
++#include <lib/psci/psci.h>
++
++void ax630c_gic_driver_init(void);
++void ax630c_gic_init(void);
++void ax630c_gic_cpuif_enable(void);
++void ax630c_gic_cpuif_disable(void);
++void ax630c_gic_pcpu_init(void);
++
++/* Address of the CPU release mailbox belonging to core @core_pos. */
++uintptr_t ax630c_cpu_entry_lo(unsigned int core_pos);
++uintptr_t ax630c_cpu_entry_hi(unsigned int core_pos);
++
++void __dead2 ax630c_park_and_wait_for_release(void);
++
++#endif /* AX630C_PRIVATE_H */
+diff -Naur tfa-orig/plat/axera/ax630c/include/plat_macros.S tfa/plat/axera/ax630c/include/plat_macros.S
+--- a/plat/axera/ax630c/include/plat_macros.S	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/include/plat_macros.S	2026-09-07 22:07:48.994893561 -0600
+@@ -0,0 +1,17 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#ifndef PLAT_MACROS_S
++#define PLAT_MACROS_S
++
++	/*
++	 * Print platform-specific state on a crash. Nothing here yet: the
++	 * generic register dump is what this platform has to say.
++	 */
++	.macro plat_crash_print_regs
++	.endm
++
++#endif /* PLAT_MACROS_S */
+diff -Naur tfa-orig/plat/axera/ax630c/include/platform_def.h tfa/plat/axera/ax630c/include/platform_def.h
+--- a/plat/axera/ax630c/include/platform_def.h	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/include/platform_def.h	2026-09-07 22:07:44.950069634 -0600
+@@ -0,0 +1,78 @@
++/*
++ * Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#ifndef PLATFORM_DEF_H
++#define PLATFORM_DEF_H
++
++#include <arch.h>
++#include <plat/common/common_def.h>
++
++#include <ax630c_def.h>
++
++/*******************************************************************************
++ * Platform binary types for linking
++ ******************************************************************************/
++#define PLATFORM_LINKER_FORMAT		"elf64-littleaarch64"
++#define PLATFORM_LINKER_ARCH		aarch64
++
++/*******************************************************************************
++ * Generic platform constants
++ ******************************************************************************/
++#define PLATFORM_STACK_SIZE		UL(0x800)
++
++/* The generic timer is fed from the 24 MHz crystal. */
++#define SYS_COUNTER_FREQ		U(24000000)
++
++/* One cluster of two Cortex-A53s. */
++#define PLATFORM_CLUSTER_COUNT		U(1)
++#define PLATFORM_CORE_COUNT		U(2)
++#define PLATFORM_MAX_CPUS_PER_CLUSTER	U(2)
++
++/*
++ * BL31 implements CPU_ON/CPU_OFF and SYSTEM_RESET only. There is no cluster
++ * or system power-down path, so the deepest power domain the platform
++ * describes is the cluster.
++ */
++#define PLAT_MAX_PWR_LVL		MPIDR_AFFLVL1
++#define PLAT_MAX_RET_STATE		U(1)
++#define PLAT_MAX_OFF_STATE		U(2)
++
++#define PLAT_LOCAL_STATE_RUN		U(0)
++#define PLAT_LOCAL_STATE_RET		U(1)
++#define PLAT_LOCAL_STATE_OFF		U(2)
++
++/*
++ * Cookie the loader passes in x3. It is the stock TF-A value and is only
++ * checked by a debug build.
++ */
++#define ARM_BL31_PLAT_PARAM_VAL		ULL(0x0f1e2d3c4b5a6978)
++
++/*******************************************************************************
++ * BL31 specific defines.
++ *
++ * The first-stage loader stages the 1 KiB image header at 0x4003FC00 and
++ * enters the payload immediately after it, at a fixed 0x40040000. The `atf`
++ * flash partition, and hence the DRAM window BL31 owns, is 256 KiB.
++ ******************************************************************************/
++#define BL31_BASE			UL(0x40040000)
++#define BL31_SIZE			UL(0x00040000)
++#define BL31_LIMIT			(BL31_BASE + BL31_SIZE)
++
++/*******************************************************************************
++ * Platform specific page table and MMU setup constants
++ ******************************************************************************/
++#define PLAT_PHY_ADDR_SPACE_SIZE	(ULL(1) << 32)
++#define PLAT_VIRT_ADDR_SPACE_SIZE	(ULL(1) << 32)
++#define MAX_XLAT_TABLES			U(6)
++#define MAX_MMAP_REGIONS		U(8)
++
++/*******************************************************************************
++ * Cache line size, used to align the PSCI mailboxes.
++ ******************************************************************************/
++#define CACHE_WRITEBACK_SHIFT		U(6)
++#define CACHE_WRITEBACK_GRANULE		(U(1) << CACHE_WRITEBACK_SHIFT)
++
++#endif /* PLATFORM_DEF_H */
+diff -Naur tfa-orig/plat/axera/ax630c/platform.mk tfa/plat/axera/ax630c/platform.mk
+--- a/plat/axera/ax630c/platform.mk	1969-12-31 17:00:00.000000000 -0700
++++ b/plat/axera/ax630c/platform.mk	2026-09-07 22:14:07.379410689 -0600
+@@ -0,0 +1,48 @@
++#
++# Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
++#
++# SPDX-License-Identifier: BSD-3-Clause
++#
++
++include drivers/arm/gic/v2/gicv2.mk
++include lib/xlat_tables_v2/xlat_tables.mk
++
++AX630C_PLAT		:=	plat/axera/ax630c
++
++PLAT_INCLUDES		:=	-I${AX630C_PLAT}/include
++
++BL31_SOURCES		+=	${GICV2_SOURCES}				\
++				${XLAT_TABLES_LIB_SRCS}				\
++				drivers/delay_timer/delay_timer.c		\
++				drivers/delay_timer/generic_delay_timer.c	\
++				drivers/ti/uart/aarch64/16550_console.S		\
++				lib/cpus/aarch64/cortex_a53.S			\
++				plat/common/plat_gicv2.c			\
++				plat/common/plat_psci_common.c			\
++				${AX630C_PLAT}/aarch64/ax630c_helpers.S		\
++				${AX630C_PLAT}/ax630c_bl31_setup.c		\
++				${AX630C_PLAT}/ax630c_gicv2.c			\
++				${AX630C_PLAT}/ax630c_pm.c			\
++				${AX630C_PLAT}/ax630c_topology.c
++
++# BL31 is loaded from flash by a vendor first-stage loader and entered with a
++# bl_params_t v2 chain, so it is an ordinary loaded BL31, not a reset vector.
++RESET_TO_BL31		:=	0
++
++# Two Cortex-A53s, released one at a time through the CPU mailbox: the
++# secondary is still in the boot ROM's WFE loop when BL31 starts.
++COLD_BOOT_SINGLE_CPU	:=	1
++
++# Cortex-A53 r0p4 and earlier; applies to every revision, so always on.
++ERRATA_A53_1530924	:=	1
++
++# No cluster-level coherency management and no SVE in the normal world.
++HW_ASSISTED_COHERENCY	:=	0
++USE_COHERENT_MEM	:=	0
++ENABLE_SVE_FOR_NS	:=	0
++
++# BL33 is a Linux-style payload: x0 carries the device tree address (zero on
++# this SoC, so BL33 must be self-contained) and x1-x3 are zero.
++ARM_LINUX_KERNEL_AS_BL33	:=	1
++$(eval $(call assert_boolean,ARM_LINUX_KERNEL_AS_BL33))
++$(eval $(call add_define,ARM_LINUX_KERNEL_AS_BL33))

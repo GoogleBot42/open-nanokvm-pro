@@ -2259,3 +2259,153 @@ since whether that pad is muxed to UART1 on this board is a device question.
 - Whether `part_cmdline.c` is acceptable upstream, or stays a carried patch.
 
 ---
+
+### 11.9 Rung 0: mainline BL31 — what exists
+
+`.#atf-mainline` builds **upstream TF-A v2.15.0** with a new
+`plat/axera/ax630c`, and packages it byte-for-byte the way the vendor
+`atf_bl31_signed.bin` is packaged, so a later rung can `dd` it into `atf_b`.
+`nix build .#checks.x86_64-linux.atf-mainline` asserts the result.
+**Nothing here has run on hardware.**
+
+The ladder was revised on 2026-09-08 (Jeremy): no SD rungs, and no AXDL where a
+`dd` will do — the boot source is a `chip_mode` strap, so an SD boot needs
+hands on the board every time and buys nothing over an eMMC write to a `_b`
+slot. §11.7's table predates that; the rung-1 procedure below is the current
+one.
+
+Sources: `pkgs/atf-mainline.nix`, `pkgs/atf-mainline/patches/`,
+`pkgs/atf-mainline/verify.py`. `pkgs/boot.nix` is untouched — the mainline
+build calls the SDK's `ax_gzip` and `sec_boot_AX620E_sign.py` directly, with
+the same arguments the vendor ATF Makefile uses.
+
+**The patch series** (upstream-shaped, applied with `patch -p1`; the platform
+is 715 lines across ten files, and no upstream file is modified except the
+docs index):
+
+| Patch | Files | LOC |
+|---|---|---:|
+| `0001-plat-axera-add-a-BL31-only-AX630C-platform` | `platform.mk` | 48 |
+| | `include/platform_def.h` | 78 |
+| | `include/ax630c_def.h` | 65 |
+| | `include/ax630c_private.h` | 26 |
+| | `include/plat_macros.S` | 17 |
+| | `ax630c_bl31_setup.c` | 153 |
+| | `ax630c_gicv2.c` | 50 |
+| | `ax630c_pm.c` | 180 |
+| | `ax630c_topology.c` | 48 |
+| | `aarch64/ax630c_helpers.S` | 50 |
+| `0002-docs-plat-document-the-Axera-AX630C-platform` | `docs/plat/ax630c.rst` (new) + one line in `docs/plat/index.rst` | 52 |
+| **total** | | **767** |
+
+Upstreaming needs one thing this series does not carry: a
+`docs/about/maintainers.rst` entry, which needs a person's name.
+
+That is close to §11.3's ~780-line estimate, and it drops the suspend/resume
+half of the vendor platform entirely (`ax620e_on_ram_func.S` and the twelve
+`drivers/*_sys` files, 1 552 lines, all of it sleep and wake).
+
+**Constants, and where each came from.**
+
+| Constant | Value | Source |
+|---|---|---|
+| BL31 entry / link address | `0x40040000` | `ATF_IMG_ADDR`, `[SDK]/build/projects/AX630C_…/partition_ab.mak:5`; the SPL enters `ram_ops + sizeof(img_header)` (§11.2) |
+| BL31 window / `atf` partition | 256 KiB | `ATF_IMG_PKG_SIZE` = `0x40000` (`partition_ab.mak:6`), `ATF_PARTITION_SIZE = 256K` (`:23`), and the `blkdevparts=` clause |
+| BL33 entry, EL1h, `x0 = 0` | `0x5C000400` | supplied by the SPL in the `bl_params_t` chain (`bl1/driver/atf/atf.c:11-40`); the platform passes it through and, under `ARM_LINUX_KERNEL_AS_BL33`, sets `x0 = hw_config` = the SPL's x2 = 0 |
+| loader cookie in x3 | `0x0f1e2d3c4b5a6978` | `ARM_BL31_PLAT_PARAM_VAL`, `spl_main.c:351` |
+| GIC-400 | `0x01850000`, GICD `+0x1000`, GICC `+0x2000` | vendor `plat/axera/ax620e/include/ax620e_def.h` |
+| UART0 console | `0x04880000`, 208 MHz, 115200 8N1 | same header (`AX620E_UART_CLOCK`); the SPL leaves the pads muxed and the port configured (§11.2) |
+| generic timer | 24 MHz | `SYS_COUNTER_FREQ`, vendor `platform_def.h`; the SPL writes `CNTFRQ_EL0` |
+| CPUs | 1 cluster × 2 Cortex-A53 | `PLATFORM_CORE_COUNT`, vendor `platform_def.h` |
+| CPU release mailbox | `0x02340000 + 0xDC/0xE0` (core 1), `+0xE4/0xE8` (core 0) | `COMM_SYS_DUMMY_SW0..3`, vendor `ax620e_common_sys_glb.h`; the same addresses appear in `bl1/board/arch/arm64/common.S:13-14`, and `bl1`'s own non-ATF secondary-core loop (`start.S:178-192`) implements the identical WFE/poll/branch protocol the boot ROM uses |
+| WDT0 | `0x04840000`; `EN 0x00`, `TORR 0x0c`, `TORR_LOAD 0x18`, `CRR 0x30`, kick word `0x61696370` | `pkgs/kernel-mainline/tree/drivers/watchdog/ax630c_wdt.c`, whose model is hardware-measured (#80). Two stages of 64Ki ticks each, so a reload of 0 resets within microseconds |
+| header magic / capability | `0x55543322` / `0x54FAFE` | `sec_boot_AX620E_sign.py:163`, `[SDK]/boot/atf/Makefile:88` |
+
+**What the platform deliberately does *not* do.** The vendor's
+`bl31_platform_setup()` also runs `pmu_init()`, `chip_top_set()` (PLL wake-wait
+tuning and GPIO interrupt masking), clock auto-gating writes, an EIC wakeup
+mask, `firewall_config()`, `sema_config()` and `mmio_write_32(EFUSE_CTRL, 0)`.
+Every one of those is suspend/resume or OP-TEE support. `sema_config()` is
+`#if 0` in the vendor source and the firewall's only region is the OP-TEE one,
+so dropping BL32 drops both (§11.3). Not writing `EFUSE_CTRL` is strictly more
+permissive than the vendor, so nothing that works today can stop working.
+`SYSTEM_OFF` is not implemented: nothing inside the SoC can remove its own
+supply.
+
+**One codegen trap worth recording.** `udelay()` without
+`generic_delay_timer_init()` is not a no-op — `timer_ops` is provably NULL, so
+GCC treats the call as undefined behaviour and deletes *everything after it*.
+The first build silently emitted a `SYSTEM_RESET` that programmed half the
+watchdog and then fell through into the next function. The build is clean and
+the fix is one call; the only reason it was caught is that the disassembly was
+read. Read it again after any change to this platform.
+
+**What the check asserts** (`checks.<system>.atf-mainline`, 15 assertions, all
+read back out of the artefacts):
+
+- the ELF's entry point and its first LOAD segment are both `0x40040000`, and
+  the whole image spans 57 344 B of the 256 KiB window;
+- the signed image is **14 456 B**, inside the 256 KiB `atf` partition;
+- the Axera header's magic, capability word and RSA-2048 key descriptor match
+  the vendor `atf_bl31_signed.bin` this repo builds, field for field;
+- `img_size` equals the payload length, and both header checksums recompute
+  with the SPL's arithmetic (32-bit wrapping sums of little-endian words:
+  the payload for `img_check_sum`, header words 2..253 for `check_sum`);
+- the last eight header bytes are zero, which is the only reason the SPL's
+  2..255 sum and the signing tool's 2..253 sum agree (§11.2).
+
+**Rung 1: the slot-B hardware test.** Reversible, unattended, no AXDL. It
+proves the GIC, the PSCI mailbox, the second-core bring-up and the BL33
+handoff, with the vendor U-Boot and the vendor kernel unchanged above it.
+
+Slot B selects the `_b` copy of *every* A/B stage, so `uboot_b` (p6),
+`kernel_b` (p15) and `dtb_b` (p13) must hold **working vendor images** before
+the run. A previous mainline-kernel test may have left them otherwise; restore
+them first (`/root/pre75` on the device holds the backups from #75/#76).
+
+1. Build and copy: `nix build .#atf-mainline`, then
+   `tools/kvmscp result/images/atf_bl31_mainline_signed.bin :/root/`.
+2. Back up `atf_b` and write it. **`atf_b` is `/dev/mmcblk0p4`; `atf` (slot A,
+   the recovery copy) is p3 and must not be touched.**
+   ```
+   dd if=/dev/mmcblk0p4 of=/root/atf_b.orig bs=256K count=1
+   dd if=/root/atf_bl31_mainline_signed.bin of=/dev/mmcblk0p4 conv=fsync
+   sync; echo 3 > /proc/sys/vm/drop_caches
+   head -c $(stat -c%s /root/atf_bl31_mainline_signed.bin) /dev/mmcblk0p4 | md5sum
+   md5sum /root/atf_bl31_mainline_signed.bin
+   ```
+   The two md5s must match. Take the byte count from `stat` every time — the
+   image size changes between builds.
+3. Arm slot B with the vendor script, never a raw `SLOTB` poke (a raw poke
+   leaves `SLOTB_BOOTABLE` clear and silently falls back to A):
+   ```
+   /etc/init.d/S99checkboot systemB
+   reboot
+   ```
+4. **The oracle** is the vendor system coming back on Ethernet with both CPUs
+   up through PSCI:
+   ```
+   fw_printenv bootsystem          # B
+   nproc                           # 2
+   dmesg | grep -iE 'psci|CPU1|Booting Trusted|BL31'
+   cat /sys/devices/system/cpu/cpu1/online   # 1
+   ```
+   `dmesg` should show `psci: probing for conduit method`, `psci: PSCIv1.x
+   detected`, and `CPU1: Booted secondary processor`. A single-CPU boot with
+   `psci: failed to boot CPU1` means the mailbox handoff is wrong and is the
+   one interesting failure mode.
+   Also expected, and not a fault: the `optee` driver no longer finds a TEE.
+   The vendor SPL still loads OP-TEE to `0x44200000`, but a BL31 built with no
+   SPD never enters it.
+5. Prove `SYSTEM_RESET`, which the vendor BL31 never implemented: from the
+   booted slot-B system, `reboot` should now go through PSCI rather than the
+   watchdog shim. The board coming back is the whole test.
+6. Return to slot A: `/etc/init.d/S99checkboot systemA; reboot`, then restore
+   `atf_b` from `/root/atf_b.orig` if the run is finished with.
+
+**Failure is cheap.** A BL31 that hangs never reaches U-Boot, so nothing
+re-arms `SLOTB_BOOTABLE`; the SPL consumed it on the way in, and the next boot
+— clean, watchdog or power cycle — is slot A with the vendor BL31 in p3.
+Recovery is a power cycle, not AXDL.
+
+---
