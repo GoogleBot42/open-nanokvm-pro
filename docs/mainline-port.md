@@ -3408,3 +3408,84 @@ afterwards — register and DRAM both go with the power, the rule rung 2e
 recorded. `uboot_b` holds the rung-2g build, `/boot` the payload with
 `boot.panic_on_fail panic=10`, p7 the two variables `arm-slotb.sh` sets, and
 `/root/rung2/restore.sh` undoes all three.
+
+### What exists now (rung 2h, 2026-09-08) — 1.8 V WITHOUT HS200, READY FOR HARDWARE
+
+Built and checked, **not yet run** — the board was dark when this was written.
+Rung 2g found the cause (U-Boot drives a 1.8 V eMMC at 3.3 V); this is the fix
+that reaches 1.8 V without the HS200 tuning that hung the board.
+
+#### There were two `IS_SD` gates, not one
+
+Rung 2g's patch 0008 removed the outer one, in
+`sdhci_cdns_set_control_reg()`. Reading further: `sdhci_set_voltage()` itself
+gates the actual register write the same way, in **both** arms —
+
+```c
+		case MMC_SIGNAL_VOLTAGE_180:
+			... vqmmc regulator handling, card-type agnostic ...
+			if (IS_SD(mmc)) {
+				ctrl |= SDHCI_CTRL_VDD_180;
+				sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+			}
+```
+
+so even with 0008 applied and `mmc->signal_voltage` at 180, an eMMC never gets
+the bit. The regulator handling immediately above it is *not* card-type
+gated, which is the giveaway: the supply gets switched and the controller is
+not told to follow. **Patch 0009** drops both conditionals.
+
+#### And the core never asks for 1.8 V below HS200
+
+`mmc_set_initial_state()` asks for 3.3 V and falls back to 1.8 V "if it fails".
+The fallback cannot fire: the host-side switch runs through
+`->set_control_reg()`, which returns `void`, so `mmc_set_signal_voltage()`
+reports success whichever way it went. The only other path to 1.8 V is
+`mmc_select_hs200()` — which is exactly the tuning trap.
+
+**Patch 0010** asks the supply instead. If `vqmmc-supply` cannot produce
+something near 3.3 V, select 1.8 V directly. Boards with no `vqmmc-supply`, and
+boards whose supply can do 3.3 V, are untouched.
+
+#### The device tree now describes the rail
+
+A fixed `regulator-fixed` at 1800000 µV, wired as the eMMC's `vqmmc-supply`,
+with `CONFIG_DM_REGULATOR` and `CONFIG_DM_REGULATOR_FIXED`. That is the honest
+description of this hardware — the part is wired for 1.8 V VCCQ and there is
+nothing to switch — and it is what makes patch 0010 fire. **`mmc-hs200-1_8v`
+stays out**, still commented in the node with rung 2g's reason.
+
+Verified in the built artefacts, not just the patch: the DTB carries
+`regulator-vqmmc-emmc` at `0x1b7740`, the `vqmmc-supply` phandle on the eMMC
+node and `fixed-emmc-driver-type = <4>`, with no `mmc-hs200` property anywhere;
+the config carries all three symbols.
+
+#### Who sets VDD_180 on slot A — still unanswered, and rung 3 needs it
+
+Rung 2f's register dump showed `HOST_CONTROL2 = 0x3008` with `VDD_180` set, but
+**that dump was taken from a fully booted Linux**, long after its own MMC stack
+had configured the controller. It cannot say whether the first-stage loader
+leaves the bit set or whether Linux set it. Rung 2g's evidence points at Linux:
+`/sys/kernel/debug/mmc0/ios` reports HS200, and U-Boot's own probe log shows the
+firmware leaving `HRS06 = 0x06` with TUNE zero — an untuned controller, not one
+handed over ready to run.
+
+The probe log line now also prints **SRS15**, read before U-Boot touches the
+controller, so the next run answers it directly. **Rung 3 must know**: if the
+SPL does not set `VDD_180`, then promoting mainline U-Boot to slot A means the
+1.8 V switch has to happen in U-Boot on the boot that reads the kernel — which
+is exactly what patches 0009 and 0010 do, and it needs to work before slot A is
+touched.
+
+#### Ready for hardware
+
+Signed image staged, `184 488` bytes, md5 `a58170a18afe0a89b0ba9a190e9bdf62`.
+`nix build .#checks.x86_64-linux.uboot-mainline` passes. The run is the standard
+one: write `uboot_b`, hash-verify from the medium, confirm `/boot` still holds
+`Image`, the dtb and `extlinux/*.conf` with `boot.panic_on_fail panic=10`, clear
+milestone bits with `0xFFFFF000`, arm slot B, bounded poll.
+
+Oracle, in order: no `Transfer data timeout` in the console buffer; `SRS15`
+in the probe line showing whether the firmware had `VDD_180`; `extlinux.conf`
+read; the appliance on Ethernet with `SMC Calling Convention v1.5`;
+`/proc/cmdline` equal to the `APPEND`; register bits 28+29 plus Linux's.
