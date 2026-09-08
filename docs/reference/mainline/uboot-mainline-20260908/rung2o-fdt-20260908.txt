@@ -1,0 +1,111 @@
+Rung 2o (#89), 2026-09-08. U-Boot console read from CONFIG_PRE_CONSOLE_BUFFER
+at 0x480e8000 after the board returned to slot A. All rounds used the appliance
+kernel (Image md5 7fb2938e258210be998eda44c854ee54, 51132928 bytes) and the
+mainline dtb with /soc/watchdog@4840000 disabled (ax630c-nowdt.dtb, md5
+53aadeda4f4261f64a8f6ae36c371000, 12121 bytes after fdtput repack).
+
+U-Boot: d9ea2231e41ba9b85e3fe700087305b8 (console variant, #91 stopgap).
+
+===========================================================================
+Payload provenance -- nothing was stale
+===========================================================================
+.#kernel-mainline-appliance  Image  7fb2938e258210be998eda44c854ee54  51132928
+.#dtb-mainline               dtb    dcfd46f14a6e49849492fac41d58cafe  16213
+Both identical to what rung 2n already had staged in /root/rung2/.
+
+Board's own slot-A identity:
+  NixOS 26.11pre-git, Linux kvm-6d73 7.1.3-nanokvm aarch64
+  /proc/cmdline = mem=512M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000
+    board_id=0x5,boot_reason=0x00,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1
+    root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=... logomode=vo0@dsi_dpi_video
+
+===========================================================================
+ROUND 1 -- sysboot with the appliance payload. Slot register 0xB0000015.
+===========================================================================
+1262 bytes read in 25 ms (48.8 KiB/s)
+Retrieving file: /extlinux/extlinux.conf
+NanoKVM-Pro (mainline chain, appliance)
+1:	NixOS appliance, mainline 7.1.3
+Enter choice: 1:	NixOS appliance, mainline 7.1.3
+Retrieving file: /Image
+Error reading cluster
+Skipping nixos for failure retrieving kernel
+resetting ...
+
+===========================================================================
+ROUND 2 -- explicit load + booti. DARK for 18 minutes, no watchdog reset.
+===========================================================================
+The dtb has the watchdog node disabled, so ax630c_wdt never probes -- but that
+also leaves clk_wdt0_eb without a consumer, and clk_disable_unused gates it off
+at late_initcall. The counter stops; the dog cannot fire. Recovered by power.
+
+===========================================================================
+ROUND 3 -- same, plus clk_ignore_unused. Recovery at 337 s (300 s reload +
+boot). Slot register 0x70000014 -- bits 28, 29, 30, NO failure bit.
+===========================================================================
+51132928 bytes read in 105328 ms (473.6 KiB/s)
+12121 bytes read in 45 ms (262.7 KiB/s)
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+Working FDT set to 49200000
+WARNING:
+The 'fdt_high' environment variable is set to ~0. This is known to cause
+boot failures due to placement of DT at non-8-byte-aligned addresses.
+This system will likely fail to boot. Unset the 'fdt_high' environment
+variable and submit a fix upstream.
+   Using Device Tree in place at 0000000049200000, end 0000000049205f58
+Working FDT set to 49200000
+Starting kernel ...
+
+  /sys/fs/pstore empty -- the kernel died before ramoops probed.
+
+===========================================================================
+ROUND 4 -- fdt_high removed. Slot register 0xB0000015.
+===========================================================================
+Loading Environment from MMC... Transfer data timeout
+  -> built-in default bootcmd ran instead of the stored one
+Retrieving file: /Image
+Transfer data timeout
+Error reading cluster
+Skipping nixos for failure retrieving kernel
+
+===========================================================================
+ROUND 5 -- retries on each load. Slot register 0x70000015 -- 28, 29, 30, no
+failure bit. THE DIAGNOSIS.
+===========================================================================
+51132928 bytes read in 105326 ms (473.6 KiB/s)
+12121 bytes read in 45 ms (262.7 KiB/s)
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+Working FDT set to 49200000
+   Loading Device Tree to 000000007e68c000, end 000000007e691f58 ... OK
+Working FDT set to 7e68c000
+Starting kernel ...
+
+  0x7e68c000 is at ~1006 MB. The cmdline says mem=512M, so the kernel's memory
+  ends at 0x60000000. U-Boot relocates the FDT against its own ram_top, which is
+  the real 1 GiB, and hands the kernel a device tree it cannot map. It dies
+  before any console and before ramoops -- which is why pstore was empty every
+  time.
+
+  Fix: fdt_high = 0x5f000000, a real ceiling under the kernel's limit.
+
+===========================================================================
+ROUND 6 (over budget) -- fdt_high=0x5f000000. Slot register 0xB0000014.
+===========================================================================
+Loading Environment from MMC... Transfer data timeout
+  -> built-in default bootcmd ran; the corrected bootcmd never executed.
+Retrieving file: /Image
+Error reading cluster
+Skipping nixos for failure retrieving kernel
+
+===========================================================================
+The environment read is flaky
+===========================================================================
+Rounds 3 and 5: env read OK, stored bootcmd ran.
+Rounds 4 and 6: "Loading Environment from MMC... Transfer data timeout".
+
+Roughly half. Every failure is a single-block read under the #91 stopgap, so
+the stopgap is not "single block always works" -- it has a residual failure
+rate, and at ~100 000 blocks per kernel that rate is visible as
+"Error reading cluster" partway through /Image.
