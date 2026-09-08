@@ -29,23 +29,30 @@ diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
 index 1111111..2222222 100644
 --- a/drivers/mmc/sdhci-cadence.c
 +++ b/drivers/mmc/sdhci-cadence.c
-@@ -145,11 +145,14 @@
+@@ -145,11 +145,21 @@
  	writel(tmp, plat->hrs_addr + SDHCI_CDNS_HRS06);
- 
+
  	/*
 -	 * For SD cards, program standard SDHCI Host Control2 UHS/voltage
 -	 * registers for UHS-I support.
-+	 * Program the standard SDHCI Host Control2 signal-voltage and UHS
-+	 * timing bits. This is not SD-only: an eMMC in HS200 or HS400 runs its
-+	 * I/O at 1.8 V, and SDHCI_CTRL_VDD_180 is set nowhere else, so gating
-+	 * this on IS_SD() leaves such a card being driven at 3.3 V. The bus
-+	 * still enumerates -- CMD is one line and tolerant -- and then every
-+	 * data transfer fails.
++	 * Signal voltage is needed for every card type: an eMMC in HS200 or
++	 * HS400 runs its I/O at 1.8 V, and SDHCI_CTRL_VDD_180 is set nowhere
++	 * else in this driver, so gating it on IS_SD() leaves such a card
++	 * being driven at 3.3 V. The bus still enumerates -- CMD is one line
++	 * and tolerant -- and then every data transfer fails.
++	 *
++	 * The UHS timing field is a different matter and stays SD-only. On
++	 * this controller the bus timing is selected through HRS06 above, and
++	 * Linux's sdhci-cadence likewise programs the standard UHS field only
++	 * for SD. Writing both leaves the eMMC described twice, once per
++	 * register.
  	 */
 -	if (IS_SD(mmc))
 -		sdhci_set_control_reg(host);
-+	sdhci_set_control_reg(host);
- 
++	sdhci_set_voltage(host);
++	if (IS_SD(mmc))
++		sdhci_set_uhs_timing(host);
+
  	if (SDHCI_GET_VERSION(host) >= SDHCI_SPEC_420)
  		sdhci_cdns6_phy_adj(mmc->dev, plat, mmc->selected_mode);
 -- 

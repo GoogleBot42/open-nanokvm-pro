@@ -72,6 +72,7 @@ let
     ./uboot-mainline/patches/0009-mmc-sdhci-vdd180-is-not-sd-only.patch
     ./uboot-mainline/patches/0010-mmc-start-at-the-vqmmc-signal-voltage.patch
     ./uboot-mainline/patches/0011-mmc-sdhci-vqmmc-already-at-target-is-not-a-failure.patch
+    ./uboot-mainline/patches/0012-mmc-sdhci-do-not-clear-a-dt-declared-8-bit-bus.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not

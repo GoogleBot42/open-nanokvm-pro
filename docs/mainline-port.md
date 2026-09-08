@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer still fails. Five upstream U-Boot bugs found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure); the signal voltage was necessary but not sufficient. Measured: the SPL leaves `SRS15 = 0`, so 1.8 V is Linux's own switch and rung 3 cannot inherit it. Thirty-seven runs. See "What exists now (rung 2)" through "(rung 2h)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer still fails. **Seven** upstream U-Boot bugs found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, and `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus). Rung 2i diffed the full SD4HC register table against the working Linux: base clock, PHY delays, divider, timeout, driver type, signal voltage, bus width and `HRS06` mode now all match, and the card still answers CMD18 in TRAN and never drives data. What is left is V4 mode, which mainline U-Boot does not implement at all. Forty-two runs. See "What exists now (rung 2)" through "(rung 2i)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3631,3 +3631,82 @@ Console image `185 424` bytes, md5 `0a7668570265e28fbd2f8104e748b90b`. Shipping
 image and `checks.uboot-mainline` unchanged and green — the dump is in the
 console variant only. The run is the standard one, and the Linux-side dump is
 taken **before** anything is written.
+
+### What exists now (rung 2i, 2026-09-08) — the register tables agree, the data path still doesn't
+
+Five hardware rounds. The full table from both sides is banked in
+[`RUNG2I.md`](reference/mainline/uboot-mainline-20260908/RUNG2I.md) and the
+verbatim console in
+[`emmc-registers-rung2i-20260908.txt`](reference/mainline/uboot-mainline-20260908/emmc-registers-rung2i-20260908.txt).
+
+**The base clock is not the problem, and never was.** `CPU_SYS_GLB` reads
+`mux0 = 0x73` (sel 3 = `npll_400m`) and `div0 = 1` on *both* sides, so SDMCLK is
+200 MHz under U-Boot exactly as under Linux, and `CAPS0`'s `0xC8` is honest.
+Every PHY delay register either driver writes reads back identical. So do the
+clock divider (2 → 50 MHz), the timeout counter (`0x0e`), the driver type and
+`HRS06`'s mode field (4, HS200 — U-Boot and Linux both promote the eMMC to
+HS200 off `CAPS1`'s SDR104 bit, which is what upstream sdhci does in both trees).
+
+Two more upstream bugs, both confirmed by the register that changed:
+
+- **The UHS timing field is SD-only; the signal voltage is not.** Rung 2h
+  removed the whole `if (IS_SD(mmc))` around `sdhci_set_control_reg()`, which
+  also made U-Boot write the standard `UHS_MODE` field for an eMMC:
+  `HOST_CONTROL2` read `0x000b` where Linux reads `0x3008`. On this controller
+  the bus timing lives in `HRS06`, and Linux's sdhci-cadence never writes the
+  standard field for eMMC. Patch `0008` now splits it into an unconditional
+  `sdhci_set_voltage()` and an `IS_SD()`-gated `sdhci_set_uhs_timing()`.
+  Measured `0x000b` → `0x0008`.
+- **`sdhci_setup_cfg()` clears a DT-declared 8-bit bus.** `mmc_of_parse()` sets
+  `MMC_MODE_8BIT` from `bus-width = <8>`; `sdhci_setup_cfg()` then takes it
+  away again whenever `CAPS0` bit 18 is clear. For a soldered eMMC the routing
+  is a board fact only the device tree knows, and Linux's sdhci only ever ORs
+  `MMC_CAP_8_BIT_DATA` in. This controller's `CAPS0` is `0x176ac8b2` — bit 18
+  clear — while the board wires all eight lines and Linux runs it 8-bit. New
+  patch `0012`. Measured `HOST_CONTROL` `0x16` → `0x34`, byte-identical to
+  Linux.
+
+That makes **seven** upstream U-Boot bugs found and fixed in rung 2.
+
+What the failure looks like now: the card sits in TRAN and answers CMD18
+(`SRS 0x10 = 0x00000900`), `DAT[3:0]` read high, no transfer becomes active, and
+the only error raised is `DATA_TIMEOUT` — **not** an ADMA error, so the
+descriptor table is being fetched and parsed. Two differences survive the diff,
+and neither is a register to flip:
+
+1. **V4 mode.** Linux sets `HOST_CONTROL2` bits 12 and 13 (Host Version 4 mode,
+   64-bit addressing) and runs 64-bit ADMA2 descriptors. Mainline U-Boot has no
+   V4-mode support at all: `SDHCI_CTRL_V4_MODE` does not exist in
+   `include/sdhci.h`, and `SDHCI_SPEC_400` appears only as a version constant.
+   Implementing it is the obvious rung-2j candidate.
+2. **`HRS06` tune 17 vs Linux's 15.** `sdhci_cdns_execute_tuning()` sweeps the
+   tuning points with real CMD21 reads and *finds a window*, so some data
+   transfer completes during identification while the 1 MiB environment read
+   never starts. That contradiction is the sharpest lead in the rung.
+
+One round dropped `CONFIG_MMC_SDHCI_ADMA` to force the PIO path and separate
+"descriptor format" from "bus". The board **hung** — no reset, no milestone —
+and the power cycle that recovered it destroyed the pre-console buffer, so the
+round banked nothing and the question is still open. The defconfig is back to
+ADMA + `ADMA_FORCE_32BIT`; the tree rebuilds to md5
+`30b9bb38ad3ba769131665b0373b2f30`, the image rounds 3 and 4 were measured on.
+
+Two method facts worth more than the rung:
+
+- **`tools/kvmssh`'s pre-probe can lie.** It skips an IP when
+  `bash -c "echo > /dev/tcp/$ip/22"` fails, and that redirection is blocked in
+  some sandboxes — so it reports `tcp/22 unreachable` for a board that is up and
+  answering on that very port. A healthy board was power-cycled on that false
+  negative, costing the pre-console buffer of a finished run. Confirm with a
+  second probe (`socat - TCP:$ip:22 </dev/null` returns the SSH banner) before
+  calling a board dark.
+- **A hung board banks nothing.** A power cycle clears the slot register and
+  DRAM, so every volatile channel has to be read before cycling. Any rung whose
+  failure mode can hang needs its evidence written to eMMC — U-Boot's console
+  buffer copied to a scratch area on the boot partition, or the milestone stored
+  in the environment.
+
+Device left on slot A, register `0x00000014`, `uboot_b` / p7 / `/boot` restored
+byte-for-byte (p6 `1521dc39f8a50e726c708fde2c8edce2`, p7
+`6a579b4ea52ced8ea7ab8cafe2b5102a`), `checkboot` `Result=success`, `nanokvm`
+active, web 200.
