@@ -1,0 +1,334 @@
+From d512f686ed61a20073bcc8f3209aa4cd400b8c08 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 7 Sep 2026 22:36:43 -0600
+Subject: [PATCH 3/5] arm: dts: add the AX630C and the Sipeed NanoKVM-Pro
+
+U-Boot's own description of the SoC rather than a sync of the Linux one: the
+AX630C clock, reset and pin-control bindings are not upstream in Linux yet,
+and U-Boot programs none of those blocks anyway, so every clock here is a
+fixed rate that firmware has already set. Only the console UART, the two
+SD4HC instances that carry a filesystem and the syscon word that resets the
+chip are described.
+
+The board adds the memory node, the console, and four reserved regions: the
+lowest DRAM page, which a DDR retrain engine may rewrite once a second; the
+resident TF-A and OP-TEE images; and the pstore window Linux reads back
+across a reset.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ arch/arm/dts/Makefile                       |   2 +
+ arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi |  22 +++
+ arch/arm/dts/ax630c-nanokvm-pro.dts         |  97 ++++++++++++
+ arch/arm/dts/ax630c.dtsi                    | 154 ++++++++++++++++++++
+ 4 files changed, 275 insertions(+)
+ create mode 100644 arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi
+ create mode 100644 arch/arm/dts/ax630c-nanokvm-pro.dts
+ create mode 100644 arch/arm/dts/ax630c.dtsi
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index 2b65cd91..a61f650f 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -1,5 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0+
+ 
++dtb-$(CONFIG_TARGET_AX630C_NANOKVM_PRO) += ax630c-nanokvm-pro.dtb
++
+ dtb-$(CONFIG_TARGET_SMARTWEB) += at91sam9260-smartweb.dtb
+ dtb-$(CONFIG_TARGET_TAURUS) += at91sam9g20-taurus.dtb
+ dtb-$(CONFIG_TARGET_CORVUS) += at91sam9g45-corvus.dtb
+diff --git a/arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi b/arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi
+new file mode 100644
+index 00000000..268f25df
+--- /dev/null
++++ b/arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * U-Boot additions for the Sipeed NanoKVM-Pro.
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * The console has to bind before relocation or the first thing this board
++ * prints is its banner, on a unit whose UART is on hidden pads and whose only
++ * other channel is a register bit.
++ */
++
++&{/soc} {
++	bootph-all;
++};
++
++&uart0 {
++	bootph-all;
++};
++
++&common_syscon {
++	bootph-all;
++};
+diff --git a/arch/arm/dts/ax630c-nanokvm-pro.dts b/arch/arm/dts/ax630c-nanokvm-pro.dts
+new file mode 100644
+index 00000000..e4eff15e
+--- /dev/null
++++ b/arch/arm/dts/ax630c-nanokvm-pro.dts
+@@ -0,0 +1,97 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Sipeed NanoKVM-Pro (Axera AX630C).
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ */
++
++/dts-v1/;
++
++#include "ax630c.dtsi"
++
++/ {
++	model = "Sipeed NanoKVM-Pro";
++	compatible = "sipeed,nanokvm-pro", "axera,ax630c";
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	/*
++	 * 1 GiB. The vendor device tree claims 3 GiB and relies on a runtime
++	 * mem= to cut it down; every NanoKVM-Pro variant is 1 GiB.
++	 */
++	memory@40000000 {
++		device_type = "memory";
++		reg = <0x0 0x40000000 0x0 0x40000000>;
++	};
++
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		/*
++		 * The first-stage loader may arm a DDR retrain engine that
++		 * rewrites the lowest page once a second (the vendor U-Boot
++		 * reports its first DRAM bank as starting at 0x40001000, which
++		 * is that engine and nothing else). Whether it is armed
++		 * depends on the DRAM part fitted, which no source settles, so
++		 * reserve the page unconditionally: it costs 4 KiB.
++		 */
++		ddr-retrain@40000000 {
++			reg = <0x0 0x40000000 0x0 0x1000>;
++			no-map;
++		};
++
++		/* TF-A BL31, resident. */
++		atf@40040000 {
++			reg = <0x0 0x40040000 0x0 0x40000>;
++			no-map;
++		};
++
++		/*
++		 * OP-TEE BL32, resident and firewalled by BL31. Nothing in
++		 * this stack calls it, but the secure world is using the
++		 * region whether or not the normal world talks to it.
++		 */
++		optee@44200000 {
++			reg = <0x0 0x44200000 0x0 0x2000000>;
++			no-map;
++		};
++
++		/*
++		 * The pstore/ramoops window. Linux reads it back across a
++		 * reset to recover a boot that produced no console output, and
++		 * the pre-console buffer this port banks its earliest output
++		 * in lives in its tail -- see CONFIG_PRE_CON_BUF_ADDR.
++		 */
++		pstore@48000000 {
++			reg = <0x0 0x48000000 0x0 0xf0000>;
++			no-map;
++		};
++	};
++};
++
++&uart0 {
++	status = "okay";
++};
++
++&emmc {
++	status = "okay";
++};
++
++&sd {
++	status = "okay";
++};
++
++/*
++ * Not described: the gigabit MAC. U-Boot needs no network to boot this board
++ * -- the kernel, the device tree and the root filesystem are all on the eMMC
++ * -- and the AX630C's DWMAC needs a glue driver plus clock and reset writes
++ * that no U-Boot provider exists for yet. When it is added the PHY is a
++ * Realtek RTL8211F at MDIO address 1 and `phy-mode` must be "rgmii-id": both
++ * 2 ns delays are pin-strapped on, and mainline's realtek driver clears
++ * whichever one the mode does not ask for. The failure mode is a link that
++ * trains, reports 1 Gbps full duplex, and passes not one frame.
++ */
+diff --git a/arch/arm/dts/ax630c.dtsi b/arch/arm/dts/ax630c.dtsi
+new file mode 100644
+index 00000000..d6980dc6
+--- /dev/null
++++ b/arch/arm/dts/ax630c.dtsi
+@@ -0,0 +1,154 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Axera AX630C (AX620E family).
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * This is U-Boot's own description of the SoC, not a copy of the Linux one,
++ * and it is deliberately smaller: U-Boot is BL33 here, and by the time it runs
++ * the first-stage loader has already locked the PLLs, set every clock mux,
++ * ungated the console UART and the eMMC controller and muxed their pads. So
++ * every clock below is a fixed-clock stating the rate firmware left running,
++ * and there is no clock, reset or pin controller at all. When the AX630C clock
++ * and pinctrl bindings land in Linux this file should be replaced by a sync of
++ * the Linux device tree plus a -u-boot.dtsi; until then a provider-less DT is
++ * both smaller and honest about what U-Boot programs, which is nothing.
++ */
++
++/ {
++	compatible = "axera,ax630c";
++	#address-cells = <2>;
++	#size-cells = <2>;
++
++	aliases {
++		serial0 = &uart0;
++		mmc0 = &emmc;
++		mmc1 = &sd;
++	};
++
++	psci {
++		compatible = "arm,psci-1.0";
++		method = "smc";
++	};
++
++	/*
++	 * TF-A on this SoC implements CPU_ON/CPU_OFF but not SYSTEM_RESET, so
++	 * `reset` goes straight at the chip's own software-reset bit -- the
++	 * same one the vendor U-Boot and the mainline Linux DT use.
++	 */
++	reboot {
++		compatible = "syscon-reboot";
++		regmap = <&common_syscon>;
++		offset = <0xa8>;
++		mask = <0x1>;
++		value = <0x1>;
++	};
++
++	soc {
++		compatible = "simple-bus";
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		/*
++		 * eMMC. A stock Cadence SD4HC: mainline's sdhci-cadence binds
++		 * `cdns,sd4hc` unmodified, reads the PHY delays below out of
++		 * the DT and takes its base clock from the controller's own
++		 * CAPS0 (200 MHz on this silicon), so no glue and no clock
++		 * phandle are needed. Firmware leaves the controller running
++		 * at 8-bit HS -- it is how this image was loaded.
++		 *
++		 * Pinned to 50 MHz for the same reason the Linux DT is: the
++		 * HS200+ read-gap tuning walks HRS37/HRS38, registers that
++		 * appear in no AX630C source, and a retry storm on a board
++		 * with no console is indistinguishable from a hang.
++		 */
++		emmc: mmc@1b40000 {
++			compatible = "cdns,sd4hc";
++			reg = <0x0 0x1b40000 0x0 0x10000>;
++			bus-width = <8>;
++			non-removable;
++			no-sd;
++			no-sdio;
++			disable-wp;
++			cap-mmc-highspeed;
++			max-frequency = <50000000>;
++			cdns,phy-input-delay-sd-highspeed = <2>;
++			cdns,phy-input-delay-legacy = <4>;
++			cdns,phy-input-delay-sd-uhs-sdr12 = <1>;
++			cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
++			cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
++			cdns,phy-input-delay-sd-uhs-ddr50 = <2>;
++			cdns,phy-input-delay-mmc-highspeed = <2>;
++			cdns,phy-input-delay-mmc-ddr = <2>;
++			cdns,phy-dll-delay-sdclk = <45>;
++			cdns,phy-dll-delay-sdclk-hsmmc = <31>;
++			cdns,phy-dll-delay-strobe = <18>;
++			status = "disabled";
++		};
++
++		/*
++		 * SD card slot. no-1-8-v is a cap, not an oversight: UHS on
++		 * this SoC needs the pad I/O-voltage domain switched in a
++		 * syscon word that no upstream code writes, so a card that
++		 * negotiated 1.8 V signalling would be talking to 3.3 V pads.
++		 */
++		sd: mmc@104e0000 {
++			compatible = "cdns,sd4hc";
++			reg = <0x0 0x104e0000 0x0 0x10000>;
++			bus-width = <4>;
++			no-mmc;
++			no-sdio;
++			no-1-8-v;
++			disable-wp;
++			broken-cd;
++			cap-sd-highspeed;
++			max-frequency = <50000000>;
++			cdns,phy-input-delay-sd-highspeed = <2>;
++			cdns,phy-input-delay-legacy = <3>;
++			cdns,phy-input-delay-sd-uhs-sdr12 = <3>;
++			cdns,phy-input-delay-sd-uhs-sdr25 = <2>;
++			cdns,phy-input-delay-sd-uhs-sdr50 = <1>;
++			cdns,phy-input-delay-sd-uhs-ddr50 = <1>;
++			cdns,phy-dll-delay-sdclk = <0>;
++			status = "disabled";
++		};
++
++		/*
++		 * COMM_SYS_GLB. Only the chip software-reset bit at +0xa8 is
++		 * used here; the block also holds clock gates the firmware has
++		 * already set.
++		 */
++		common_syscon: syscon@2340000 {
++			compatible = "syscon", "simple-mfd";
++			reg = <0x0 0x2340000 0x0 0x10000>;
++		};
++
++		/*
++		 * uart0 is the boot console on hidden pads; uart1 is on an
++		 * exposed header pin but is not muxed to it by firmware and
++		 * has never been shown to work on this board. 208 MHz is the
++		 * rate the first-stage loader leaves on pclk_top, and it is
++		 * stated rather than looked up because U-Boot has no clock
++		 * provider for this SoC. The integer divisor 113 puts 115200
++		 * out by 0.14 %.
++		 */
++		uart0: serial@4880000 {
++			compatible = "snps,dw-apb-uart";
++			reg = <0x0 0x4880000 0x0 0x400>;
++			reg-shift = <2>;
++			reg-io-width = <4>;
++			clock-frequency = <208000000>;
++			status = "disabled";
++		};
++
++		uart1: serial@4881000 {
++			compatible = "snps,dw-apb-uart";
++			reg = <0x0 0x4881000 0x0 0x400>;
++			reg-shift = <2>;
++			reg-io-width = <4>;
++			clock-frequency = <208000000>;
++			status = "disabled";
++		};
++	};
++};
+-- 
+2.55.0
+

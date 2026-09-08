@@ -1,0 +1,100 @@
+From b3fb5e2d2c731b97c040416ce51ea025b5526e45 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 7 Sep 2026 22:36:43 -0600
+Subject: [PATCH 2/5] board: axera: add the Sipeed NanoKVM-Pro
+
+An AX630C IP-KVM: 1 GiB DRAM, an 8-bit eMMC on a Cadence SD4HC, a Realtek
+RTL8211F on RGMII and an LT6911UXC HDMI receiver. Everything the board file
+would normally program is already done by the time BL33 runs, so it only
+names the board.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ board/axera/ax630c/Kconfig     |  9 +++++++++
+ board/axera/ax630c/MAINTAINERS | 10 ++++++++++
+ board/axera/ax630c/Makefile    |  5 +++++
+ board/axera/ax630c/ax630c.c    | 27 +++++++++++++++++++++++++++
+ 4 files changed, 51 insertions(+)
+ create mode 100644 board/axera/ax630c/Kconfig
+ create mode 100644 board/axera/ax630c/MAINTAINERS
+ create mode 100644 board/axera/ax630c/Makefile
+ create mode 100644 board/axera/ax630c/ax630c.c
+
+diff --git a/board/axera/ax630c/Kconfig b/board/axera/ax630c/Kconfig
+new file mode 100644
+index 00000000..972a131c
+--- /dev/null
++++ b/board/axera/ax630c/Kconfig
+@@ -0,0 +1,9 @@
++if TARGET_AX630C_NANOKVM_PRO
++
++config SYS_BOARD
++	default "ax630c"
++
++config SYS_CONFIG_NAME
++	default "ax630c"
++
++endif
+diff --git a/board/axera/ax630c/MAINTAINERS b/board/axera/ax630c/MAINTAINERS
+new file mode 100644
+index 00000000..f42799b2
+--- /dev/null
++++ b/board/axera/ax630c/MAINTAINERS
+@@ -0,0 +1,10 @@
++AX630C BOARDS
++M:	open-nanokvm-pro <https://github.com/GoogleBot42/open-nanokvm-pro>
++S:	Maintained
++F:	arch/arm/dts/ax630c.dtsi
++F:	arch/arm/dts/ax630c-nanokvm-pro.dts
++F:	arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi
++F:	arch/arm/mach-axera/
++F:	board/axera/ax630c/
++F:	configs/ax630c_nanokvm_pro_defconfig
++F:	include/configs/ax630c.h
+diff --git a/board/axera/ax630c/Makefile b/board/axera/ax630c/Makefile
+new file mode 100644
+index 00000000..863301ea
+--- /dev/null
++++ b/board/axera/ax630c/Makefile
+@@ -0,0 +1,5 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# Copyright (C) 2026 open-nanokvm-pro contributors
++
++obj-y += ax630c.o
+diff --git a/board/axera/ax630c/ax630c.c b/board/axera/ax630c/ax630c.c
+new file mode 100644
+index 00000000..9ab719a6
+--- /dev/null
++++ b/board/axera/ax630c/ax630c.c
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Sipeed NanoKVM-Pro (Axera AX630C).
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * U-Boot is BL33 here and inherits a configured SoC: the vendor first-stage
++ * loader trains DRAM, locks the PLLs, sets every clock mux, muxes the console
++ * and eMMC pads and leaves the eMMC controller running, and TF-A's BL31 then
++ * enters this image at EL1h with x0 = 0. There is nothing left for a board
++ * file to program, which is why this one only names the board.
++ */
++
++#include <init.h>
++#include <stdio.h>
++
++int board_init(void)
++{
++	return 0;
++}
++
++int checkboard(void)
++{
++	puts("Board: Sipeed NanoKVM-Pro (Axera AX630C)\n");
++
++	return 0;
++}
+-- 
+2.55.0
+

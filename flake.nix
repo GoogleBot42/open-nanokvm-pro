@@ -558,6 +558,16 @@
           inherit base-axp boot kernel-slot-image dtb-slot-image rootfs;
         };
 
+        # ---- mainline U-Boot (#89 rung 0) ----------------------------------
+        #
+        # Upstream U-Boot 2026.07 plus a five-patch AX630C board port, wrapped
+        # in the same axgzip + signed-header container the vendor's
+        # u-boot_signed.bin uses, so it can be dd'd into `uboot_b` and boot-
+        # tested from slot B. Additive: no image or update output references
+        # it yet. docs/mainline-port.md 11.10.
+        axSign = callPkg ./pkgs/ax-sign.nix { };
+        uboot-mainline = callPkg ./pkgs/uboot-mainline.nix { inherit axSign; };
+
         # Non-destructive microSD boot image (dd-able .img): boots the whole
         # from-source stack from a card, eMMC untouched. Byte-matched to the
         # official v1.0.15 SD image; builds its own UART0 boot chain + SD-root
@@ -590,6 +600,7 @@
             update-package
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
+            uboot-mainline
             firmware-image nixos-firmware-image sd-image
             edid axdl;
 
@@ -611,6 +622,14 @@
           # atf_bl31_signed.bin field for field with both checksums
           # recomputed (#89).
           atf-mainline = atf-mainline.verify;
+          # Mainline U-Boot (#89 rung 0): it links where the SPL jumps, the
+          # signed image fits the `uboot` partition and carries the AX header
+          # magic, the device tree reserves what belongs to other stages, and
+          # the new blkdevparts= partition driver -- compiled from the shipped
+          # source -- yields the same table nixos/emmc-partitions.nix does.
+          uboot-mainline = callPkg ./pkgs/uboot-mainline-check.nix {
+            inherit uboot-mainline;
+          };
           # The eMMC partition map, parsed out of the blkdevparts= clause that
           # defines it, with the root/boot partition numbers and the U-Boot
           # environment offset asserted against the values docs record (#78).
