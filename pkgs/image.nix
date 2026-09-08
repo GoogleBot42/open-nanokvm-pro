@@ -23,8 +23,16 @@
 # SWAPPED IN (from source):
 #   dtb (reserved-mem patched), kernel partition image, SPL/FSBL, DDR-init header,
 #   ATF bl31 A/B, OP-TEE bl32 A/B, U-Boot A/B, overlaid rootfs.
+# THE ENV PARTITION IS NOT A MEMBER AT ALL. The base .axp ships no environment
+# image: its only env entry is an `ERASEENV` action with `select="0"`, i.e.
+# disabled. So a vendor flash LEAVES p7 EXACTLY AS IT WAS, and on a board that
+# has never been flashed U-Boot falls back to the default environment compiled
+# into u-boot_signed.bin -- which pkgs/boot.nix builds from source. Nothing in
+# this file writes an environment, and nothing in the vendor bundle does either.
+# (`.#nixos-firmware-image` does: nixos/axp-image.nix + pkgs/uboot-env.nix.)
+#
 # KEPT VENDOR (stock members stay in the .axp):
-#   env, logo/logo_b, bootfs.fat32, eip_ax620e.bin, the FDL1/FDL2 host download
+#   logo/logo_b, bootfs.fat32, eip_ax620e.bin, the FDL1/FDL2 host download
 #   agents, the partition XML, and the rootfs BASE (Ubuntu-arm64 -- only our
 #   libkvm + kernel modules are overlaid). FDL1/FDL2 are AXDL host agents (not
 #   stored partitions); pkgs/boot.nix does build them from source, but swapping
@@ -141,8 +149,10 @@ pkgs.stdenvNoCC.mkDerivation {
       rootfs : ubuntu_rootfs_sparse.ext4  (Ubuntu base + our libkvm.so
                + our kernel modules merged with ax_*.ko, depmod'd)      [pkgs/rootfs.nix]
     VENDOR (kept from the base .axp):
-      env, logo/logo_b, bootfs.fat32, eip_ax620e.bin, fdl1/fdl2 download agents,
-      partition XML. rootfs BASE is vendor Ubuntu-arm64 (only the overlays above
+      logo/logo_b, bootfs.fat32, eip_ax620e.bin, fdl1/fdl2 download agents,
+      partition XML. The env partition is untouched by any flash of this
+      bundle -- it carries no environment member (only a disabled ERASEENV).
+      rootfs BASE is vendor Ubuntu-arm64 (only the overlays above
       are ours). The whole from-source boot chain (SPL/DDR/ATF/OP-TEE/U-Boot) is
       signed with the SDK's committed repo dev keys; boots on OPEN (SECURE_BOOT_EN
       efuse unburned) boards -- see pkgs/boot.nix.

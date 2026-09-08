@@ -108,6 +108,14 @@
         # Whole AX630C boot chain (SPL/DDR-init + ATF + OP-TEE + U-Boot) from
         # source; the boot-* selectors below expose subsets of its images.
         boot = callPkg ./pkgs/boot.nix { };
+
+        # The three stored partitions the shipping 4.19 `firmware-image` still
+        # inherits from Sipeed's release bundle, built from source instead --
+        # they are what makes `.#nixos-firmware-image` a from-scratch .axp
+        # rather than a member swap.
+        uboot-env = callPkg ./pkgs/uboot-env.nix { inherit boot; };
+        logo = callPkg ./pkgs/logo.nix { };
+        bootfs = callPkg ./pkgs/bootfs.nix { inherit version; };
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
@@ -401,7 +409,13 @@
           nanokvm-server = nanokvm-server-libgpiod;
           inherit nanokvm-gpio nanokvm-web nanokvm-display version;
         };
-        nixos-appliance = callPkg ./nixos/rootfs.nix nixosApplianceArgs;
+        # The shipped variant also carries the .axp builder: nixos/image-axp.nix
+        # defines `system.build.axpImage` from this configuration's own closure,
+        # which is what `.#nixos-firmware-image` is.
+        nixos-appliance = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+          applianceModules = [ ./nixos/image-axp.nix ];
+          imageBuilder = applianceAxpImage;
+        });
         nixos-appliance-loop = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
           variant = "loop-image";
           applianceModules = [ ./nixos/loop-test.nix ];
@@ -436,18 +450,22 @@
         # The mainline kernel with the appliance's stage-1 initrd baked into
         # the Image, and the slot-B pair that flashes it. One kernel build per
         # root variant, because the initrd differs.
-        mkApplianceKernel = appliance: variant:
+        # Takes the initrd CPIO rather than the appliance derivation, so the
+        # .axp builder can call it from inside the module system with the
+        # initrd that configuration produces -- and land on the same store path
+        # as `.#kernel-mainline-appliance` here.
+        mkApplianceKernel = initrdCpio: variant:
           callPkg ./pkgs/kernel-mainline.nix {
-            initramfsCpio = "${appliance.initrd}";
+            initramfsCpio = "${initrdCpio}";
             initramfsCompression = "ZSTD";
             inherit variant;
           };
         kernel-mainline-appliance =
-          mkApplianceKernel nixos-appliance "appliance";
+          mkApplianceKernel nixos-appliance.initrd "appliance";
         kernel-mainline-appliance-loop =
-          mkApplianceKernel nixos-appliance-loop "appliance-loop";
+          mkApplianceKernel nixos-appliance-loop.initrd "appliance-loop";
         kernel-mainline-appliance-qemu =
-          mkApplianceKernel nixos-appliance-qemu "appliance-qemu";
+          mkApplianceKernel nixos-appliance-qemu.initrd "appliance-qemu";
 
         # `nix run .#nixos-appliance-qemu-run` -- boots the appliance under
         # qemu-system-aarch64 on a throwaway copy of the rootfs image. The one
@@ -506,6 +524,29 @@
         kernel-mainline-appliance-loop-slot-image =
           mkApplianceSlotImage kernel-mainline-appliance-loop "appliance-loop";
 
+        # ---- the NixOS appliance's .axp, built FROM SCRATCH (#78/#26) -------
+        #
+        # Not a member swap on Sipeed's bundle: nixos/lib/make-axp-image.nix
+        # writes the manifest and the ZIP itself, and every partition it stores
+        # comes from this flake. It is a FUNCTION of a system closure, called
+        # from inside the module system by nixos/image-axp.nix -- so
+        # `.#nixos-firmware-image` and
+        # `.#nixosConfigurations.nanokvm-pro.config.system.build.axpImage` are
+        # one derivation, and the image can never disagree with the system it
+        # images.
+        applianceAxpImage = import ./nixos/axp-image.nix {
+          inherit pkgs project version boot uboot-env logo bootfs;
+          dtbSlotImage = dtb-mainline-slot-image;
+          artifacts = import ./nixos/lib/appliance-artifacts.nix {
+            inherit pkgs;
+            nixpkgs = inputs.nixpkgs;
+          };
+          mkKernel = initrd: mkApplianceKernel initrd "appliance";
+          mkSlotImage = kern: mkApplianceSlotImage kern "appliance";
+        };
+        nixos-firmware-image =
+          nixos-appliance.eval.config.system.build.axpImage;
+
         # Final flashable .axp: our dtb/kernel/boot-chain/rootfs member-swapped
         # into a copy of the base .axp (pure zip rewrite).
         firmware-image = callPkg ./pkgs/image.nix {
@@ -543,7 +584,8 @@
             nanokvm-web nanokvm-display libsns-dummy
             update-package
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
-            firmware-image sd-image
+            uboot-env logo bootfs
+            firmware-image nixos-firmware-image sd-image
             edid axdl;
 
           default = firmware-image;

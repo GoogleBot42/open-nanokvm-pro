@@ -1,0 +1,3 @@
+bootdelay=0
+baudrate=115200
+bootsystem=A
