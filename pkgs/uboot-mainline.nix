@@ -165,6 +165,86 @@ let
     		ax630c_dbg_word(13, AX630C_TICKS()); \
     		if (_call()) { \'
 
+    # Inside the page-table build. .rela.dyn is provably intact and
+    # board_init_r() is entered, so what is left is setup_pgtables() itself:
+    # one memset of a 4 KiB table at the top of DRAM, then a block PTE per
+    # mem_map entry. None of these use a static -- BSS before relocation is
+    # the trap this build exists to avoid, and create_table() runs both
+    # before and after.
+    substituteInPlace arch/arm/cpu/armv8/cache_v8.c --replace-fail \
+      'static u64 *create_table(void)
+    {
+    	u64 *new_table = (u64*)gd->arch.tlb_fillptr;
+    	u64 pt_len = MAX_PTE_ENTRIES * sizeof(u64);' \
+      'void ax630c_dbg_word(unsigned int idx, unsigned int val);
+
+    static u64 *create_table(void)
+    {
+    	u64 *new_table = (u64*)gd->arch.tlb_fillptr;
+    	u64 pt_len = MAX_PTE_ENTRIES * sizeof(u64);
+
+    	ax630c_dbg_word(50, (unsigned int)(uintptr_t)new_table);
+    	ax630c_dbg_word(51, (unsigned int)pt_len);'
+
+    substituteInPlace arch/arm/cpu/armv8/cache_v8.c --replace-fail \
+      '	/* Mark all entries as invalid */
+    	memset(new_table, 0, pt_len);
+
+    	return new_table;' \
+      '	/* Mark all entries as invalid */
+    	ax630c_dbg_word(52, 0x11111111);
+    	memset(new_table, 0, pt_len);
+    	ax630c_dbg_word(53, 0x22222222);
+
+    	return new_table;'
+
+    substituteInPlace arch/arm/cpu/armv8/cache_v8.c --replace-fail \
+      'static void add_map(struct mm_region *map)
+    {
+    	u64 attrs = map->attrs | PTE_TYPE_BLOCK | PTE_BLOCK_AF;' \
+      'static void add_map(struct mm_region *map)
+    {
+    	u64 attrs = map->attrs | PTE_TYPE_BLOCK | PTE_BLOCK_AF;
+
+    	ax630c_dbg_word(54, (unsigned int)map->virt);
+    	ax630c_dbg_word(55, (unsigned int)map->size);'
+
+    substituteInPlace arch/arm/cpu/armv8/cache_v8.c --replace-fail \
+      'static void map_range(u64 virt, u64 phys, u64 size, int level,
+    		      u64 *table, u64 attrs)
+    {
+    	u64 map_size = BIT_ULL(level2shift(level));
+    	int i, idx;' \
+      'static void map_range(u64 virt, u64 phys, u64 size, int level,
+    		      u64 *table, u64 attrs)
+    {
+    	u64 map_size = BIT_ULL(level2shift(level));
+    	int i, idx;
+
+    	ax630c_dbg_word(56, (unsigned int)virt);
+    	ax630c_dbg_word(57, (unsigned int)size);
+    	ax630c_dbg_word(58, (unsigned int)level);
+    	ax630c_dbg_word(59, (unsigned int)(uintptr_t)table);'
+
+    # Validate .rela.dyn twice: on entry to board_init_f, and as the last thing
+    # before relocate_code() reads it. Intact then corrupt names the window;
+    # corrupt at both ends would mean the first-stage loader or BL31 did it.
+    substituteInPlace common/board_f.c --replace-fail \
+      '	INITCALL(setup_mon_len);' \
+      '	INITCALL(ax630c_rela_early);
+    	INITCALL(setup_mon_len);'
+
+    substituteInPlace common/board_f.c --replace-fail \
+      '	INITCALL(cyclic_unregister_all);' \
+      '	INITCALL(cyclic_unregister_all);
+    	INITCALL(ax630c_rela_late);'
+
+    substituteInPlace common/board_f.c --replace-fail \
+      '#include <init.h>' \
+      '#include <init.h>
+    int ax630c_rela_early(void);
+    int ax630c_rela_late(void);'
+
     # Did relocate_code() return, and is the code that follows it running from
     # the relocated image? board_init_r() is the first C the relocated image
     # executes, and its own address settles the second question: `&board_init_r`
@@ -179,32 +259,6 @@ let
     	ax630c_dbg_word(28, (unsigned int)(uintptr_t)__builtin_return_address(0));
 
     	gd->flags &= ~(GD_FLG_SERIAL_READY | GD_FLG_LOG_READY);'
-
-    # And name every device-tree node as driver model binds it: the first
-    # eight characters of the node name, as two words, plus a running count.
-    # `initr_dm` is one initcall but hundreds of binds, so the initcall line
-    # number alone stops being enough once the hang is inside it.
-    substituteInPlace drivers/core/lists.c --replace-fail \
-      '	if (devp)
-    		*devp = NULL;
-    	name = ofnode_get_name(node);' \
-      '	if (devp)
-    		*devp = NULL;
-    	name = ofnode_get_name(node);
-    	{
-    		extern void ax630c_dbg_word(unsigned int idx, unsigned int val);
-    		static unsigned int ax630c_bind_count;
-    		unsigned int w0 = 0, w1 = 0;
-    		int ax_i;
-
-    		for (ax_i = 0; ax_i < 4 && name[ax_i]; ax_i++)
-    			w0 |= (unsigned int)name[ax_i] << (8 * ax_i);
-    		for (; ax_i < 8 && name[ax_i]; ax_i++)
-    			w1 |= (unsigned int)name[ax_i] << (8 * (ax_i - 4));
-    		ax630c_dbg_word(14, w0);
-    		ax630c_dbg_word(15, w1);
-    		ax630c_dbg_word(16, ++ax630c_bind_count);
-    	}'
 
     substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
       'int dram_init(void)
@@ -242,7 +296,10 @@ let
     #include <asm/system.h>
     #include <asm/armv8/mmu.h>
 
-    DECLARE_GLOBAL_DATA_PTR;'
+    DECLARE_GLOBAL_DATA_PTR;
+
+    void ax630c_milestone(unsigned int bit);
+    void ax630c_dbg_word(unsigned int idx, unsigned int val);'
 
     substituteInPlace board/axera/ax630c/ax630c.c --replace-fail \
       'int board_init(void)
@@ -263,6 +320,22 @@ let
     	       (unsigned long long)gd->ram_size,
     	       (unsigned long long)gd->ram_top,
     	       (unsigned long)gd->mon_len);
+
+    	/*
+    	 * Where is this image REALLY running? Pre-relocation, so these
+    	 * PC-relative addresses are the load address the first-stage loader
+    	 * chose, and they must equal the link addresses (CONFIG_TEXT_BASE =
+    	 * 0x5C000400) or every offset computed from CONFIG_TEXT_BASE is wrong
+    	 * by the difference.
+    	 */
+    	{
+    		extern char _start[], __image_copy_start[], __image_copy_end[];
+
+    		ax630c_dbg_word(70, (unsigned int)(uintptr_t)_start);
+    		ax630c_dbg_word(71, (unsigned int)(uintptr_t)__image_copy_start);
+    		ax630c_dbg_word(72, (unsigned int)(uintptr_t)__image_copy_end);
+    		ax630c_dbg_word(73, 0x50524521);
+    	}
 
     	return gd->ram_top;
     }
@@ -293,33 +366,108 @@ let
     	ax630c_dbg_word(8, (u32)gd->reloc_off);
     	ax630c_dbg_word(9, (u32)(uintptr_t)gd);
     	ax630c_dbg_word(10, (u32)gd->flags);
+
+    	/*
+    	 * The only loop in get_tcr() walks mem_map until it finds the zero
+    	 * terminator, so a mem_map pointer that survived relocation wrong, or a
+    	 * terminator that did not, is an unbounded walk into memory no slave
+    	 * answers. Dump the pointer, where it lives, and all three entries.
+    	 */
+    	{
+    		extern struct mm_region *mem_map;
+
+    		ax630c_dbg_word(60, (u32)(uintptr_t)mem_map);
+    		ax630c_dbg_word(61, (u32)(uintptr_t)&mem_map);
+    		ax630c_dbg_word(62, (u32)mem_map[0].virt);
+    		ax630c_dbg_word(63, (u32)mem_map[0].size);
+    		ax630c_dbg_word(64, (u32)mem_map[1].virt);
+    		ax630c_dbg_word(65, (u32)mem_map[1].size);
+    		ax630c_dbg_word(66, (u32)mem_map[2].size);
+    		ax630c_dbg_word(67, (u32)mem_map[2].attrs);
+    		ax630c_dbg_word(68, (u32)mem_map[0].attrs);
+    		ax630c_dbg_word(69, (u32)mem_map[1].attrs);
+    	}
+
+    	/*
+    	 * Post-relocation load address. Word 74 minus word 71 is the offset the
+    	 * code is ACTUALLY running at, and it must equal gd->reloc_off in
+    	 * word 8. A difference there is the whole bug: fixups land where
+    	 * reloc_off says, PC-relative reads look where the code is.
+    	 */
+    	{
+    		extern char __image_copy_start[];
+
+    		ax630c_dbg_word(74, (u32)(uintptr_t)__image_copy_start);
+    		ax630c_dbg_word(75, (u32)gd->relocaddr);
+    		ax630c_dbg_word(76, 0x504F5354);
+    	}
+
     	ax630c_dbg_word(0, 0x55424D31);		/* "UBM1", written last */
     }
 
     /*
-     * Does relocation work? Three answers, from relocated code:
-     *   17  the address of a static -- PC-relative, so it needs no fixup and
-     *       must land in the relocated image
-     *   18  that static read back after a write -- proves BSS is where the
-     *       code thinks it is, and was cleared
-     *   19  the address of a function, likewise PC-relative
-     *   20  `mem_map`, an initialised pointer in .data. THIS one needs an
-     *       R_AARCH64_RELATIVE fixup, so it is the actual test: a value near
-     *       0x5C0xxxxx means .rela.dyn was not applied and every absolute
-     *       pointer in the image still points at the unrelocated copy.
+     * Is .rela.dyn intact? BSS overlays it on arm64 -- __bss_start,
+     * __rel_dyn_start and __image_copy_end are all the same address
+     * (0x5C04FAD0 in this build) -- so a pre-relocation write to any BSS
+     * variable lands on a relocation entry, and relocate_code() then applies a
+     * garbage fixup. That is why U-Boot forbids BSS before relocation, and it
+     * is exactly the failure whose position moves with image layout.
+     *
+     * Every entry should be R_AARCH64_RELATIVE (r_info = 0x403) with an
+     * r_offset inside the copied image, so the table validates itself and
+     * needs no host-side comparison to say "corrupt". The sum is recorded too,
+     * for the case where it is corrupt into a still-plausible value.
+     *
+     * Uses only registers and stack: a static of its own would be the very
+     * thing it is looking for.
+     *
+     * Words, from `base`: count, bad, sum, first bad index, its r_offset,
+     * its r_info.
      */
-    static unsigned int ax630c_reloc_probe;
-
-    static void ax630c_check_reloc(void)
+    static void ax630c_check_rela(unsigned int base)
     {
-    	extern struct mm_region *mem_map;
+    	extern char __rel_dyn_start[], __rel_dyn_end[], __image_copy_start[],
+    		    __image_copy_end[];
+    	unsigned long *p = (unsigned long *)__rel_dyn_start;
+    	unsigned long *end = (unsigned long *)__rel_dyn_end;
+    	unsigned long lo = (unsigned long)__image_copy_start;
+    	unsigned long hi = (unsigned long)__image_copy_end;
+    	unsigned int n = 0, bad = 0, sum = 0;
 
-    	ax630c_reloc_probe = 0xA5A5A5A5;
-    	ax630c_dbg_word(17, (unsigned int)(uintptr_t)&ax630c_reloc_probe);
-    	ax630c_dbg_word(18, ax630c_reloc_probe);
-    	ax630c_dbg_word(19, (unsigned int)(uintptr_t)&ax630c_milestone);
-    	ax630c_dbg_word(20, (unsigned int)(uintptr_t)mem_map);
-    	ax630c_dbg_word(21, (unsigned int)(uintptr_t)&mem_map);
+    	for (; p + 3 <= end; p += 3, n++) {
+    		unsigned long off = p[0], info = p[1], add = p[2];
+
+    		sum += (unsigned int)off + (unsigned int)info +
+    		       (unsigned int)add;
+
+    		if (info != 0x403UL || off < lo || off >= hi) {
+    			if (!bad) {
+    				ax630c_dbg_word(base + 3, n);
+    				ax630c_dbg_word(base + 4, (unsigned int)off);
+    				ax630c_dbg_word(base + 5, (unsigned int)info);
+    			}
+    			bad++;
+    		}
+    	}
+
+    	ax630c_dbg_word(base + 0, n);
+    	ax630c_dbg_word(base + 1, bad);
+    	ax630c_dbg_word(base + 2, sum);
+    }
+
+    int ax630c_rela_early(void);
+    int ax630c_rela_late(void);
+
+    int ax630c_rela_early(void)
+    {
+    	ax630c_check_rela(32);
+    	return 0;
+    }
+
+    int ax630c_rela_late(void)
+    {
+    	ax630c_check_rela(40);
+    	return 0;
     }
 
     #ifndef AX630C_NO_MMU
@@ -391,7 +539,6 @@ let
     {
     	ax630c_milestone(14);
     	ax630c_dump_gd();
-    	ax630c_check_reloc();
     	icache_enable();
     	ax630c_milestone(15);
 
@@ -419,7 +566,6 @@ let
     {
     	ax630c_milestone(14);
     	ax630c_dump_gd();
-    	ax630c_check_reloc();
     	icache_enable();
     	ax630c_milestone(15);
     	ax630c_milestone(25);
