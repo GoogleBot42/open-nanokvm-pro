@@ -90,7 +90,7 @@ a store path from it appears.
 | 7 | `env` | `uboot_env.bin` | `pkgs/uboot-env.nix` — `mkenvimage` over `pkgs/uboot-env.txt`, with `bootargs` lifted out of our own `u-boot.bin` |
 | 2 | `ddrinit` | `ddrinit_…_signed.bin` | `pkgs/boot.nix` |
 | 3/4 | `atf` / `atf_b` | `atf_bl31_signed.bin`, `atf_b_bl31_signed.bin` | `pkgs/boot.nix` (TF-A 2.7) |
-| 5/6 | `uboot` / `uboot_b` | `u-boot_signed.bin`, `u-boot_b_signed.bin` | `pkgs/boot.nix` (U-Boot 2020.04) |
+| 5/6 | `uboot` / `uboot_b` | `u-boot_signed.bin`, `u-boot_b_signed.bin` | `pkgs/boot.nix` (U-Boot 2020.04). **Carries one closed payload: the EIP-130 crypto-engine firmware (`cmd/axera/cipher/eip130_fw.h`, ~78 KB), linked in by `CONFIG_CMD_AXERA_CIPHER=y`; byte-verified present in `u-boot.bin` and `fdl2.bin` 2026-09-07, absent from SPL and OP-TEE. Nothing on the boot path calls it. Policy violation, removal tracked in #90.** |
 | 8/9 | `logo` / `logo_b` | `logo.bmp`, `logo_b.bmp` | `pkgs/logo.nix` — generated 800×480 24-bpp BMP |
 | 10/11 | `optee` / `optee_b` | `optee_signed.bin`, `optee_b_signed.bin` | `pkgs/boot.nix` (OP-TEE 3.21) |
 | 12/13 | `dtb` / `dtb_b` | `…_signed.dtb`, `…_b_signed.dtb` | `dts/` → `pkgs/dtb-mainline.nix` → `pkgs/slot-image.nix` |
