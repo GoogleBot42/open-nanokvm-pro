@@ -682,6 +682,44 @@ let
     }'
 
     echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
+
+    # Rung 2f: dump the SD4HC register file from U-Boot, to diff against the
+    # same registers read from the running Linux that drives this eMMC fine.
+    # Upstream sdhci-cadence touches only HRS04/05/06; the working controller
+    # has HRS00/01/02 non-zero, so what the first-stage loader left there and
+    # what U-Boot leaves there is the question.
+    substituteInPlace drivers/mmc/sdhci-cadence.c --replace-fail \
+      '#include <reset.h>' \
+      '#include <reset.h>
+
+    void ax630c_sd4hc_dump(void *hrs, const char *when)
+    {
+    	int i;
+
+    	printf("sd4hc %s:", when);
+    	for (i = 0; i <= 0x18; i += 4)
+    		printf(" H%02x=%08x", i, readl((char *)hrs + i));
+    	printf("\n  srs:");
+    	printf(" 28=%08x", readl((char *)hrs + 0x200 + 0x28));
+    	printf(" 2c=%08x", readl((char *)hrs + 0x200 + 0x2c));
+    	printf(" 3c=%08x", readl((char *)hrs + 0x200 + 0x3c));
+    	printf(" 40=%08x", readl((char *)hrs + 0x200 + 0x40));
+    	printf(" 44=%08x\n", readl((char *)hrs + 0x200 + 0x44));
+    }'
+
+    substituteInPlace drivers/mmc/sdhci-cadence.c --replace-fail \
+      '	upriv->mmc = &plat->mmc;
+    	host->mmc->priv = host;
+
+    	return sdhci_probe(dev);' \
+      '	upriv->mmc = &plat->mmc;
+    	host->mmc->priv = host;
+
+    	ax630c_sd4hc_dump(plat->hrs_addr, "after phy_init");
+    	ret = sdhci_probe(dev);
+    	ax630c_sd4hc_dump(plat->hrs_addr, "after sdhci_probe");
+
+    	return ret;'
   '';
   # -------------------------------------------------------------------------
   # dcacheOff = true: never switch the MMU on.
