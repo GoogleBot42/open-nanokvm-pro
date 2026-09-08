@@ -1,0 +1,48 @@
+CONFIG_PRE_CONSOLE_BUFFER contents at 0x480e8000, read from slot A after the
+last slot-B attempt (2026-09-08, #89 rung 2, .#uboot-mainline-debug).
+
+Read back with:
+  dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=2 | tr -d '\000'
+
+The `ram_base` / `probe` lines are this build's own instrumentation
+(pkgs/uboot-mainline.nix, debugMilestones = true), printed from
+board_get_usable_ram_top(); the rest is stock U-Boot output. The trailing
+"ing os ' bad magic" is a fragment of an earlier boot left in DRAM -- the
+zeroing pass before each run goes through the kernel's cacheable linear map
+and a chip reset discards it, so only the head of this buffer is fresh.
+
+----------------------------------------------------------------------
+
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  ram_base 40000000 size 40000000 top 80000000 mon_len 59100
+probe 5ff00000=1111111111111111 7ff00000=2222222222222222
+probe 7fff0000=3333333333333333 7ffff000=4444444444444444 pgtsize 4000
+1 GiB
+ing os ' bad magic
+
+----------------------------------------------------------------------
+
+What each line proves:
+
+  banner            the vendor SPL loaded a mainline-U-Boot BL33 out of
+                    uboot_b, mainline BL31 entered it at EL1h in AArch64, and
+                    U-Boot's own console_init_f() ran
+  Model:/Board:     show_board_info() and the board file's checkboard()
+  ram_base/size/top gd from fdtdec_setup_mem_size_base(): base 0x40000000,
+                    1 GiB, relocation target 0x80000000, monitor 0x59100 long
+  probe 5ff/7ff     0x5ff00000 and 0x7ff00000 hold different values, so the
+                    gigabyte the device tree declares is real and does not
+                    alias -- the DT is right and the vendor U-Boot's
+                    ram_size = 0x80000000 is the wrong number, not ours
+  probe 7fff/7ffff  the last 64 KiB of DRAM, where arm_reserve_mmu() puts the
+                    page tables, is writable and reads back
+  pgtsize 4000      get_page_table_size() = 16 KiB, so tlb_addr works out to
+                    (0x80000000 - 0x4000) & ~0xFFFF = 0x7FFF0000
+  1 GiB             show_dram_config(), the last stock line before relocation
+
+Nothing after "1 GiB" is from this boot. board_init_r() would next print
+"U-Boot code: ..." from initr_announce(); it never got there.

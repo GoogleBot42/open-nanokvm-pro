@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | U-Boot milestone bits 28-31, then SSH on the appliance. A hang costs a power cycle (slot A), never AXDL |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs — banner, board, DRAM sizing, relocation — and hangs in `mmu_setup()` before the MMU comes on.** Nothing past that: no eMMC, no env, no extlinux. Eight runs, every one self-recovered to slot A. See "What exists now (rung 2)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -2767,3 +2767,151 @@ with `nanokvm-checkboot` enabled and active, no failed units, web 200.
 so slot B is now a working mainline-BL31 rescue slot rather than a vendor twin.
 `dtb_b` and `kernel_b` are restored to the flashed appliance images and hash
 verified. Backups and every image used are in `/root/rung1/` on the device.
+
+### What exists now (rung 2, 2026-09-08) — MAINLINE U-BOOT RUNS, DOES NOT FINISH
+
+**Upstream U-Boot 2026.07 with our AX630C port starts on this SoC.** Loaded out
+of `uboot_b` by the vendor SPL, entered by the rung-1 mainline BL31, it prints
+its banner, identifies the board, reads the memory node, sizes DRAM and
+relocates itself to the top of it. Then it hangs in `mmu_setup()` — the arm64
+page-table build — and never enables the MMU. Nothing downstream ran: no eMMC
+probe, no environment, no `extlinux.conf`, no kernel.
+
+Eight slot-B boots. Every one of them came back on slot A by itself in ~110 s;
+the board never needed a hand, and slot A, `p3`, `p5` and the rootfs were never
+written. Full run log, per-attempt milestone reads and the harness:
+[`docs/reference/mainline/uboot-mainline-20260908/`](reference/mainline/uboot-mainline-20260908/README.md).
+
+| Question | Answer |
+|---|---|
+| Does the SPL → mainline BL31 → mainline U-Boot handoff work? | **Yes** — the banner proves AArch64 at EL1h with a working stack, console and device tree |
+| Does the board file / SoC layer work? | **Yes** — `Model:`, `Board:`, `dram_init`, `dram_init_banksize` all correct |
+| Does `relocate_code()` work? | **Yes** — `enable_caches()` runs from the relocated image |
+| Does the MMU come up? | **No** — `mmu_setup()` never returns |
+| eMMC, `part_cmdline`, the env, `bootcount`, extlinux? | **Untested** — all of them live past the hang |
+
+#### How far it gets, and how that was measured
+
+`.#uboot-mainline-debug` (`pkgs/uboot-mainline.nix`, `debugMilestones = true`)
+is the sibling of rung 1's `.#atf-mainline-debug`: the shipping image plus
+milestone writes to the SET alias of the slot register, one per stage. Where
+BL31's version needed seven new call sites, U-Boot's needs none — every point is
+a hook U-Boot already calls (`dram_init`, `board_init`, `board_early_init_r`,
+`misc_init_r`, `board_late_init`) or a `__weak` function the board file can
+replace (`enable_caches`, `mmu_setup`, `board_get_usable_ram_top`,
+`arm_reserve_mmu`). Six builds narrowed it in six boots:
+
+```
+0x00003014   dram_init, dram_init_banksize            (12, 13)
+0x0000F014   + relocate_code returned, icache on      (14, 15)
+0x0020F014   + TLB invalidated; dcache_enable did not return   (21)
+0x0C20F014   + mmu_setup entered, get_tcr returned    (26, 27)
+             ... setup_pgtables never returns
+```
+
+**`printf()` is dead after relocation on this board, and that is worth
+remembering.** `CONFIG_PRE_CONSOLE_BUFFER` is a *pre*-relocation channel: even
+with `GD_FLG_HAVE_CONSOLE` cleared, so that `puts()` can only reach the buffer
+and never `serial_putc()` with the stale pre-relocation device, not one
+character of six `printf()`s inside `mmu_setup()` reached `0x480e8000`. Two
+consequences: the pre-console buffer bounds the failure from above (it stops at
+`show_dram_config()`, and `initr_announce()` is the next thing stock U-Boot
+would print), and post-relocation evidence has to go through the slot register.
+
+The buffer is also only reliable at its head. Zeroing it before a run goes
+through the kernel's cacheable linear map and a chip reset discards dirty lines,
+so stale text from earlier boots survives past whatever the current one wrote.
+
+#### Three facts the instrumentation established on the way
+
+**The board has 1 GiB of DRAM and it does not alias.** Written and read back
+pre-relocation, MMU off: `0x5ff00000` and `0x7ff00000` hold different values, as
+do `0x7fff0000` and `0x7ffff000`. So `dts/ax630c-nanokvm-pro.dts`'s
+`memory@40000000` is right — and the vendor U-Boot's hardcoded
+`gd->ram_size = 0x80000000` (`board/axera/ax620e_emmc/ax620e_emmc.c`, 2 GiB) is a
+number the hardware does not back. It gets away with it because it relocates to
+`0xC0000000` and never touches what it claims. §11.6's open question about the
+DDR part is answered for this unit as far as size goes.
+
+**The page tables land at `0x7FFF0000`, in memory that was probed writable in the
+same boot.** `get_page_table_size()` returns `0x4000`, `gd->ram_top` is
+`0x80000000`, so `arm_reserve_mmu()` puts them in the last 64 KiB-aligned
+16 KiB. Every input to the thing that hangs is sane.
+
+**The 4 GiB `mem_map` was wrong, and fixing it changed nothing.** The port
+mapped `0x40000000 + 0x100000000` as cacheable normal memory over 1 GiB of
+DRAM — an invitation to a speculative access no slave answers. `dram_init()` now
+shrinks the entry to `gd->ram_size` (patch 0001), which is correct regardless;
+the run after it reproduced the previous one exactly. Worth keeping, not the
+cause.
+
+#### The shared environment is a trap for rung 3
+
+Mainline U-Boot and the vendor-derived U-Boot read the same environment at p7,
+and **a valid stored environment replaces the built-in default wholesale** —
+`env_import()` calls `himport_r()` without `H_NOCLEAR`. What is stored on this
+device is `baudrate`, `bootargs`, `bootcmd=axera_boot`, `bootdelay=0`,
+`bootsystem=A`, `fdtcontroladdr`. So a mainline U-Boot booting against it has no
+`bootcmd` it understands, no `preboot`, and none of `CFG_EXTRA_ENV_SETTINGS` —
+not `bootpart`, not `kernel_addr_r`, not the milestone variables. The defconfig's
+`CONFIG_BOOTCOMMAND` and `CONFIG_PREBOOT` are dead text against a populated
+environment.
+
+Rung 3 and the final layout need either `env default -a; saveenv` on the first
+mainline boot, or an environment partition the vendor U-Boot does not share.
+
+For rung 2 that was handled by setting exactly two variables with `fw_setenv`,
+both provably invisible to the vendor U-Boot on slot A — and it is worth
+recording *why* they are safe, because it is not obvious:
+
+- `preboot`: the vendor defconfig never sets `CONFIG_USE_PREBOOT`, so its
+  `main_loop()` does not run the variable at all.
+- `bootcmd`: the vendor's `setup_boot_mode()`
+  (`cmd/axera/setup_boot/setup_boot.c`) runs from `board_late_init()` and
+  `env_set("bootcmd", ...)`s on every path *before* autoboot, then `env_save()`s.
+  A stored `bootcmd` is overwritten before it can run, and self-heals on the
+  next slot-A boot.
+
+The test `bootcmd` was therefore made self-contained — `setenv` for every
+address it needs, then `load` and `sysboot` on `mmc 0:16` — so no third variable
+had to be stored. `preboot` also armed WDT0 exactly as the vendor
+`board_late_init()` does (`TORR = 0x2aea`, strobe `TORR_LOAD`, mux to 24 MHz,
+`EN = 1`; 60 s), which would have rescued a hang past that point: the mainline
+kernel already adopts and pets a U-Boot-armed WDT0 today
+(`/sys/class/watchdog/watchdog0/timeleft` counts and reloads on the shipping
+appliance), so it costs nothing.
+
+#### Where to pick it up
+
+The hang is inside `mmu_setup()`, after `get_tcr()` and at or before
+`setup_pgtables()` returning. `setup_pgtables()` does two things nothing else
+had made this board do from relocated code: `memset()` 4 KiB at `0x7FFF0000`,
+and walk `mem_map` writing block PTEs. The first `printf()` placed in the same
+region also produces nothing, so "an ordinary DRAM write from relocated code,
+MMU off" is the common shape.
+
+Next probe, in order:
+
+1. **Install milestone-writing exception vectors.** `do_bad_sync` and friends
+   currently `printf()`, which on this board is silence — so a synchronous abort
+   and a bus hang are indistinguishable. A handler that writes a bit tells them
+   apart in one boot, and the `~40 s` the board spends in slot B before resetting
+   looks much more like an AXI timeout than a spin.
+2. **Check the relocation of data pointers.** `mem_map` is a `.data` pointer
+   fixed up by `.rela.dyn`; reading it through `get_tcr()` worked, but the
+   stopping point moved by one step between otherwise identical runs, and that
+   non-determinism has to come from somewhere.
+3. **Try `enable_caches()` as a no-op** — U-Boot arm64 is built `-mstrict-align`
+   precisely so it can run with the MMU off, and a board that boots that way,
+   slowly, would separate "the MMU code is wrong" from "everything after
+   relocation is wrong".
+
+#### Device end state
+
+Slot register `0x00000014`, `bootsystem=A`, `atf_b` still holding the rung-1
+`.#atf-mainline`, `uboot_b` restored to the vendor image and hash-verified from
+the medium (`1521dc39f8a50e726c708fde2c8edce2` over 1 536 KiB), the environment
+restored byte-for-byte (`6a579b4ea52ced8ea7ab8cafe2b5102a` over 1 MiB), `/boot`
+back to its single `ver` file, `nanokvm-checkboot` enabled and active, no failed
+units, web 200. Every image, backup and script used is in `/root/rung2/` on the
+device.
