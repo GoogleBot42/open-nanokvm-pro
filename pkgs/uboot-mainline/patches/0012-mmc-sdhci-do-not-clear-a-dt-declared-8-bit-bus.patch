@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 8 Sep 2026 00:00:00 -0600
+Subject: [PATCH] mmc: sdhci: do not clear a DT-declared 8-bit bus
+
+sdhci_setup_cfg() clears MMC_MODE_8BIT whenever the controller's
+capabilities word does not advertise 8-bit support -- after mmc_of_parse()
+has already set it from the device tree's "bus-width". For an embedded
+eMMC that is backwards. How many data lines are routed is a board fact,
+the device tree is the only thing that knows it, and Linux's sdhci treats
+it that way: it ORs MMC_CAP_8_BIT_DATA in from the capability bit and
+never takes it away.
+
+Cadence SD4HC on the Axera AX630C is a live example. Its CAPS is
+0x176ac8b2, bit 18 clear, while the NanoKVM-Pro wires all eight data
+lines and Linux runs the part 8-bit. U-Boot dropped to four, and the
+controller's HOST_CONTROL read back 0x16 where Linux's reads 0x34.
+
+Only ever add the capability, matching Linux.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mmc/sdhci.c b/drivers/mmc/sdhci.c
+--- a/drivers/mmc/sdhci.c
++++ b/drivers/mmc/sdhci.c
+@@ -982,8 +982,8 @@
+ 
+ 	/* Since Host Controller Version3.0 */
+ 	if (SDHCI_GET_VERSION(host) >= SDHCI_SPEC_300) {
+-		if (!(caps & SDHCI_CAN_DO_8BIT))
+-			cfg->host_caps &= ~MMC_MODE_8BIT;
++		if (caps & SDHCI_CAN_DO_8BIT)
++			cfg->host_caps |= MMC_MODE_8BIT;
+ 	}
+ 
+ 	if (host->quirks & SDHCI_QUIRK_BROKEN_HISPD_MODE) {
+-- 
+2.55.0

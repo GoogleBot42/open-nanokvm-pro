@@ -72,6 +72,7 @@ let
     ./uboot-mainline/patches/0009-mmc-sdhci-vdd180-is-not-sd-only.patch
     ./uboot-mainline/patches/0010-mmc-start-at-the-vqmmc-signal-voltage.patch
     ./uboot-mainline/patches/0011-mmc-sdhci-vqmmc-already-at-target-is-not-a-failure.patch
+    ./uboot-mainline/patches/0012-mmc-sdhci-do-not-clear-a-dt-declared-8-bit-bus.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -670,9 +671,87 @@ let
     #include <stdio.h>' \
       '#include <init.h>
     #include <stdio.h>
+    #include <linux/bitops.h>
+    #include <linux/delay.h>
+    #include <asm/io.h>
     #include <asm/global_data.h>
 
     DECLARE_GLOBAL_DATA_PTR;
+
+    /*
+     * Rung 2i: one register dump of the eMMC controller, taken from
+     * board_late_init() -- which runs after initr_env(), so the environment
+     * read has already failed and the controller is in the state that failed
+     * it. Once, from a cold call site: an earlier attempt to take the same
+     * measurement from sdhci_cdns_set_control_reg(), which the MMC core calls
+     * on every set_ios, took the board dark.
+     *
+     * eMMC (0x1B40000) ONLY. The SD slot at 0x104E0000 is never touched.
+     * 0x1900000 is the CPU system-global block -- always on, and the block the
+     * first-stage loader programs the card clock in.
+     */
+    #define AX630C_EMMC_HRS		0x01B40000UL
+    #define AX630C_EMMC_SRS		(AX630C_EMMC_HRS + 0x200)
+    #define AX630C_CPU_SYS_GLB	0x01900000UL
+
+    /* HRS04 is the PHY access port: address in [5:0], RD in 25, ACK in 26. */
+    static int ax630c_phy_read(unsigned int addr)
+    {
+    	void *reg = (void *)(AX630C_EMMC_HRS + 0x10);
+    	u32 tmp;
+    	int i;
+
+    	writel(addr & 0x3f, reg);
+    	writel((addr & 0x3f) | BIT(25), reg);
+
+    	for (i = 0; i < 10; i++) {
+    		tmp = readl(reg);
+    		if (tmp & BIT(26))
+    			break;
+    		udelay(10);
+    	}
+
+    	writel(addr & 0x3f, reg);
+
+    	if (!(tmp & BIT(26)))
+    		return -1;
+
+    	return (tmp >> 16) & 0xff;
+    }
+
+    static void ax630c_emmc_dump(void)
+    {
+    	int i;
+
+    	printf("== emmc dump ==\n");
+
+    	printf("SRS");
+    	for (i = 0; i <= 0x44; i += 4) {
+    		if (i && !(i % 16))
+    			printf("\nSRS");
+    		printf(" %02x=%08x", i, readl((void *)(AX630C_EMMC_SRS + i)));
+    	}
+
+    	printf("\nHRS");
+    	for (i = 0; i <= 0x28; i += 4) {
+    		if (i && !(i % 16))
+    			printf("\nHRS");
+    		printf(" %02x=%08x", i, readl((void *)(AX630C_EMMC_HRS + i)));
+    	}
+
+    	printf("\nPHY");
+    	for (i = 0; i <= 0x0d; i++) {
+    		if (i && !(i % 8))
+    			printf("\nPHY");
+    		printf(" %02x=%3d", i, ax630c_phy_read(i));
+    	}
+
+    	printf("\nGLB mux0=%08x eb0=%08x div0=%08x\n",
+    	       readl((void *)(AX630C_CPU_SYS_GLB + 0x00)),
+    	       readl((void *)(AX630C_CPU_SYS_GLB + 0x04)),
+    	       readl((void *)(AX630C_CPU_SYS_GLB + 0x0c)));
+    	printf("== end ==\n");
+    }
 
     /*
      * Everything printed from here on goes to CONFIG_PRE_CONSOLE_BUFFER and
@@ -682,6 +761,7 @@ let
     int board_late_init(void)
     {
     	gd->flags &= ~GD_FLG_HAVE_CONSOLE;
+    	ax630c_emmc_dump();
 
     	return 0;
     }'
