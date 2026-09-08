@@ -224,7 +224,7 @@ index 00000000..957d58c6
 +	"initrd_high=0xffffffffffffffff\0"				\
 +	"fdt_high=0xffffffffffffffff\0"					\
 +	"bootdev=0\0"							\
-+	"bootpart=16\0"							\
++	"bootpart=10\0"		/* HEX: dev:part is base 16, so p16 */	\
 +	"extlinux_cfg=/extlinux/extlinux.conf\0"			\
 +	"extlinux_fallback=/extlinux/extlinux-fallback.conf\0"		\
 +	AX630C_MILESTONE_ENV

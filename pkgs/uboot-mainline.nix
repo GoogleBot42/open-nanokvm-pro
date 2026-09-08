@@ -65,6 +65,7 @@ let
     ./uboot-mainline/patches/0003-arm-dts-add-the-AX630C-and-the-Sipeed-NanoKVM-Pro.patch
     ./uboot-mainline/patches/0004-disk-add-a-blkdevparts-command-line-partition-driver.patch
     ./uboot-mainline/patches/0005-configs-add-ax630c_nanokvm_pro_defconfig.patch
+    ./uboot-mainline/patches/0006-board_f-keep-TEXT_BASE-page-offset-on-arm64.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -509,18 +510,13 @@ let
     		gd->arch.tlb_fillptr = gd->arch.tlb_addr;
     		printf("mmu: setup_pgtables\n");
     		/*
-    		 * printf() is dead post-relocation on this board (measured),
-    		 * so publish the page-table address through the register
-    		 * instead: clear bits 12..31, then set the bits of the address
-    		 * itself. If
-    		 * setup_pgtables() never returns, the slot register reads back
-    		 * as the exact address it was writing to.
+    		 * The scratchpad, not the milestone register: a run that gets
+    		 * this far may go all the way, and the register has to be left
+    		 * carrying bits 28-29 from U-Boot and the Linux bits below them.
     		 */
-    		writel(0xFFFFF000U, (void *)0x0239002CUL);
-    		writel((u32)gd->arch.tlb_addr & 0xFFFFF000U,
-    		       (void *)0x02390028UL);
+    		ax630c_dbg_word(80, (unsigned int)gd->arch.tlb_addr);
     		setup_pgtables();
-    		writel(0xFFFFF000U, (void *)0x0239002CUL);
+    		ax630c_dbg_word(81, (unsigned int)gd->arch.tlb_fillptr);
     		ax630c_milestone(29);
     		printf("mmu: pgtables done, fill %llx\n",
     		       (unsigned long long)gd->arch.tlb_fillptr);
@@ -596,6 +592,36 @@ let
     	return 0;
     }'
 
+    # Map the pstore window uncached, and send every later character to the
+    # pre-console buffer. Once dcache_enable() succeeds -- which it now does --
+    # writel() to the scratchpad and pre_console_putc() both land in the cache
+    # and a chip reset throws them away, so the two channels this rung is built
+    # on go dark at exactly the moment the boot starts working. A Device
+    # mapping over the reserved pstore window fixes both, and clearing
+    # GD_FLG_HAVE_CONSOLE in board_late_init() makes putc() take the
+    # pre_console_putc() path for the rest of the boot -- which turns 8 KiB of
+    # reserved DRAM into a real console log on a board that has none.
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      '	}, {
+    		/* Terminator */' \
+      '	}, {
+    		/* #89 debug: the pstore window, uncached. */
+    		.virt = 0x48000000UL,
+    		.phys = 0x48000000UL,
+    		.size = 0x00100000UL,
+    		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
+    			 PTE_BLOCK_NON_SHARE |
+    			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+    	}, {
+    		/* Terminator */'
+
+    substituteInPlace board/axera/ax630c/ax630c.c --replace-fail \
+      '	ax630c_milestone(20);
+    	return 0;' \
+      '	ax630c_milestone(20);
+    	gd->flags &= ~GD_FLG_HAVE_CONSOLE;
+    	return 0;'
+
     cat >> configs/${defconfig} <<'EOF'
     CONFIG_BOARD_EARLY_INIT_R=y
     CONFIG_MISC_INIT_R=y
@@ -653,7 +679,12 @@ let
     blkdevparts = layout.blkdevparts;
     envOffset = layout.hex layout.env.offset;
     envSize = layout.hex layout.env.size;
-    bootPart = toString layout.bootfs.number;
+    # HEXADECIMAL, and this is not a typo. Every U-Boot command that takes a
+    # `dev:part` string parses the partition with base 16
+    # (`blk_get_device_part_str()`), so `mmc 0:16` addresses partition 0x16 =
+    # 22 and the boot dies with "** Invalid partition 22 **". Measured on
+    # hardware 2026-09-08. p16 is `mmc 0:10`.
+    bootPart = lib.toLower (lib.toHexString layout.bootfs.number);
 
     postPatch = ''
       patchShebangs tools scripts
@@ -677,9 +708,9 @@ let
       grep -qx "CONFIG_ENV_SIZE=$envSize" "$cfg" \
         || { echo "ERROR: could not set CONFIG_ENV_SIZE in $cfg" >&2; exit 1; }
 
-      grep -q "bootpart=[0-9][0-9]*" "$hdr" \
+      grep -q "bootpart=[0-9a-f][0-9a-f]*" "$hdr" \
         || { echo "ERROR: no bootpart default in $hdr (did the port move it?)" >&2; exit 1; }
-      sed -i "s|bootpart=[0-9][0-9]*|bootpart=$bootPart|" "$hdr"
+      sed -i "s|bootpart=[0-9a-f][0-9a-f]*|bootpart=$bootPart|" "$hdr"
       grep -qF "bootpart=$bootPart" "$hdr" \
         || { echo "ERROR: could not set bootpart in $hdr" >&2; exit 1; }
 

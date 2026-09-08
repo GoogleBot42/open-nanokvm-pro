@@ -115,7 +115,11 @@ pkgs.runCommand "uboot-mainline-check"
     # bring-up initramfs (#75-#82) and the appliance self-test (#78), and a
     # bootloader bit that drifted down into that range would silently forge
     # somebody else's evidence rather than fail.
-    for want in 'bootpart=${toString layout.bootfs.number}' 'bootlimit=3' \
+    # bootpart is HEXADECIMAL: every U-Boot command that takes a `dev:part`
+    # string parses the partition with base 16, so p16 is `mmc 0:10`. Getting
+    # this wrong is not a build error -- the board reports
+    # "** Invalid partition 22 **" and resets (measured 2026-09-08).
+    for want in 'bootpart=${lib.toLower (lib.toHexString layout.bootfs.number)}' 'bootlimit=3' \
                 'msreg_set=0x02390028' 'preboot=mw.l' 'altbootcmd=mw.l' \
                 'ms_uboot=0x10000000' 'ms_extlinux=0x20000000' \
                 'ms_altboot=0x40000000' 'ms_failed=0x80000000'; do

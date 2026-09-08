@@ -1,0 +1,71 @@
+From 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 8 Sep 2026 02:20:00 -0600
+Subject: [PATCH 6/6] board_f: keep TEXT_BASE's page offset when reserving
+ U-Boot on arm64
+
+arm64 addresses every symbol with an adrp/:lo12: pair. adrp supplies the page
+of the runtime PC and :lo12: adds the page offset the linker recorded, so the
+pair only evaluates correctly when the image has been relocated by a whole
+number of 4 KiB pages.
+
+reserve_uboot() rounds gd->relocaddr down to a page. When CONFIG_TEXT_BASE is
+itself page aligned that keeps the relocation offset a page multiple and all is
+well, which is why this has never been noticed. It is not always page aligned:
+a boot ROM that loads an image behind a fixed-size header enters it at that
+offset, and the image must be linked there. The AX630C's first-stage loader
+uses a 1 KiB signed header, so CONFIG_TEXT_BASE is 0x5C000400.
+
+With a page-aligned relocaddr of 0x7FF96000 the offset becomes 0x23F95C00,
+which is not a multiple of 4 KiB. relocate_code() and the .rela.dyn fixups use
+that offset exactly, so pointers in .data are written to, and with, the right
+addresses -- but each adrp/:lo12: pair computes its symbol a page off in one
+direction or the other, depending on whether its own page offset carries. The
+result is code that reads relocated globals from the wrong place: on this board
+mem_map came back pointing into .text, and the first user of it, get_tcr(),
+walked machine code looking for the end of the memory map.
+
+Keep CONFIG_TEXT_BASE's page offset in relocaddr so the relocation offset stays
+a page multiple. The reservation moves down by at most one page, which the
+following reserve_* calls inherit.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ common/board_f.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/common/board_f.c b/common/board_f.c
+index 1111111..2222222 100644
+--- a/common/board_f.c
++++ b/common/board_f.c
+@@ -469,6 +469,28 @@
+ 		 */
+ 		gd->relocaddr -= gd->mon_len;
+ 		gd->relocaddr &= ~(4096 - 1);
++
++#ifdef CONFIG_TEXT_BASE
++		/*
++		 * arm64 addresses every symbol with an adrp/:lo12: pair: adrp
++		 * supplies the page of the runtime PC and :lo12: adds the
++		 * link-time page offset. That is only correct when the image is
++		 * relocated by a whole number of pages. CONFIG_TEXT_BASE is not
++		 * always page aligned -- a boot ROM that enters an image past a
++		 * fixed-size header links it at that offset -- and rounding
++		 * relocaddr down to a page then leaves a relocation offset that
++		 * is not a multiple of 4 KiB. The .rela.dyn fixups still use the
++		 * exact offset, but every adrp/:lo12: pair lands a page off in
++		 * one direction or the other depending on its own page offset,
++		 * so relocated pointers read back as whatever happens to sit
++		 * there. Keep TEXT_BASE's page offset instead.
++		 */
++		if (IS_ENABLED(CONFIG_ARM64) &&
++		    (CONFIG_TEXT_BASE & (4096 - 1))) {
++			gd->relocaddr -= 4096;
++			gd->relocaddr += CONFIG_TEXT_BASE & (4096 - 1);
++		}
++#endif
+ 	#if defined(CONFIG_E500) || defined(CONFIG_MIPS)
+ 		/* round down to next 64 kB limit so that IVPR stays aligned */
+ 		gd->relocaddr &= ~(65536 - 1);
+-- 
+2.55.0
