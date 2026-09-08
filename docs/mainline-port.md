@@ -2200,12 +2200,21 @@ whether it is needed; add it to §9.
 
 ### 11.7 The ladder
 
+**Superseded from rung 1 on (Jeremy, 2026-09-08): no SD rungs.** The boot
+source is the `chip_mode` strap, so an SD boot needs a physical strap every
+time and buys nothing over an eMMC write that the slot register already makes
+reversible. The revised ladder is (1) mainline BL31 in `atf_b`; (2) mainline
+U-Boot in `uboot_b` + extlinux on p16 → the NixOS appliance; (3) promote to
+slot A; (4) the new layout applied in place, SPL written last; (5) the
+`bootcount` rollback drill. §11.10 has rung 2's exact procedure. Rung 0 is
+unchanged and its U-Boot half is done.
+
 Every rung below the last is reversible, and the first three write nothing to
 the eMMC.
 
 | # | Rung | Proves | Serial-less evidence |
 |---|---|---|---|
-| 0 | `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
+| 0 | `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only. **U-Boot half DONE — §11.10** |
 | 1 | **SD card**: vendor SD-SPL + **mainline BL31** + vendor U-Boot + vendor kernel | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff | the board reaches the vendor userspace → DHCP → SSH. Card removal reverts |
 | 2 | **SD card**: vendor SD-SPL + mainline BL31 + **mainline U-Boot** + extlinux → mainline kernel + NixOS | the whole new chain end to end, including the board port, `part_cmdline`, sdhci-cadence and the `rgmii-id` PHY question | SSH on the mainline appliance (#77/#78 already prove that path); card removal reverts |
 | 3 | **eMMC, existing 17-partition layout**: mainline BL31 → `atf`, mainline U-Boot → `uboot`, keeping the vendor kernel slots | the eMMC read path and the signed-header packaging, without touching the layout | as rung 1. Recovery: AXDL |
@@ -2257,5 +2266,170 @@ since whether that pad is muxed to UART1 on this board is a device question.
 - `axi_dma_hw_init()` is called unconditionally from vendor `arch_cpu_init()`;
   is it needed before eMMC access, or vestigial?
 - Whether `part_cmdline.c` is acceptable upstream, or stays a carried patch.
+
+---
+
+### 11.10 Rung 0: mainline U-Boot — what exists
+
+**`nix build .#uboot-mainline` produces a signed, `dd`-able BL33 built from
+upstream U-Boot 2026.07 plus five patches.** Nothing here has run on hardware;
+rung 0 is "it compiles, it links where the SPL jumps, and it fits".
+
+| | |
+|---|---|
+| Upstream | U-Boot **2026.07** (`ftp.denx.de`, sha256 `0gi4y60y…`) — the current release, the tree §11.1 diffed the vendor fork against, and the one our nixpkgs pin builds `ubootTools` from |
+| Port | **881 lines** across 5 patches, `pkgs/uboot-mainline/patches/` |
+| Raw `u-boot.bin` | 372 KB (device tree appended) |
+| `u-boot_mainline_signed.bin` | **182 536 bytes** of the 1536 KiB `uboot` partition — 12 % |
+| Entry point | `0x5C000400`, read back out of the ELF by the build and again by the check |
+| Build | `pkgs/uboot-mainline.nix`; signing helper `pkgs/ax-sign.nix`; gate `nix build .#checks.x86_64-linux.uboot-mainline` |
+
+#### The patch series
+
+| Patch | LOC | Replaces, from §11.1 |
+|---|---:|---|
+| `0001-arm-add-Axera-AX620E-AX630C-SoC-support` | 168 | `mach-axera/ax620e/{ax620e,board,chip_config,timer,pll_config}.c` (1 217 LOC) and `emmc_sd_phy.c`/`dphyrx.c`/`pwm_common.c` (652 LOC, dead or callerless). What survives is a memory map, two `fdtdec` DRAM hooks, a Kconfig and `include/configs/ax630c.h` |
+| `0002-board-axera-add-the-Sipeed-NanoKVM-Pro` | 51 | `board/axera/ax620e_emmc/{ax620e_emmc.c,pinmux.c}` (493 LOC + a 133-entry pad table). The board file is now `board_init` returning 0 and a `checkboard` that prints a name — everything else was already programmed by bl1 |
+| `0003-arm-dts-add-the-AX630C-and-the-Sipeed-NanoKVM-Pro` | 275 | the vendor's U-Boot dtsi, and with it the raw `writel()` clock/reset/pinctrl gating scattered through `mach-axera` |
+| `0004-disk-add-a-blkdevparts-command-line-partition-driver` | 343 | genuinely new — §11.5's `part_cmdline.c`. Mainline has amiga/dos/efi/iso/mac and nothing that reads `blkdevparts=` |
+| `0005-configs-add-ax630c_nanokvm_pro_defconfig` | 44 | `AX630C_..._uboot_defconfig` **and** `build/tools/config2defconfig.py`, the harvester that rewrote that defconfig in place so the effective config never appeared on disk |
+
+Dropped outright, and not replaced by anything: `cmd/axera/**` (~40 000 LOC of
+FDL2, flashing, OTA and diagnostics — `mmc`, `ext4load`, `tftpboot` and
+`bootstd` cover it), `drivers/video/axera/**` plus the six compiled-in boot
+logos (~52 000 LOC for two displays this appliance does not use before Linux),
+and `cmd/axera/cipher/eip130_fw.h` — the 78 KB closed EIP-130 firmware blob
+that rides inside the shipping `u-boot.bin` (`docs/provenance.md`). **The
+mainline image carries no blob at all.**
+
+#### Two drivers that cost zero lines
+
+`sdhci-cadence` binds `cdns,sd4hc` unmodified. It needs **no clock phandle**:
+`sdhci_setup_cfg()` takes the base clock from the controller's own CAPS0, which
+reads 200 MHz on this silicon, and `reset_get_bulk()` failing on a node with no
+`resets` is a no-op. So the eMMC is device tree only — 1 512 lines of vendor
+fork replaced by 30 lines of DT. Same story for the console: `ns16550` takes
+`clock-frequency = <208000000>` straight from the node, and the integer divisor
+113 puts 115200 out by 0.14 %, which is why the vendor's 16-line DLF
+fractional-divisor patch is not needed either.
+
+#### The defconfig, and the five entries that are load-bearing
+
+- `CONFIG_TEXT_BASE=0x5C000400`. Not negotiable: the address is a compile-time
+  constant in bl1 and the 1 KiB image header carries no load address (§11.2).
+- `CONFIG_PRE_CON_BUF_ADDR=0x480e8000`, 8 KiB. **This shares the window the #75
+  bring-up initramfs stashes its kernel log in**, deliberately. Everything from
+  `0x48000000` to `0x480F0000` is already spoken for — the vendor's own ramoops
+  zones to `0x480e0000`, ours to `0x480e8000`, the log stash to `0x480f0000` —
+  and the two writers here are naturally exclusive in time: U-Boot fills the
+  buffer before Linux exists, and the stash overwrites it only on a boot that
+  got far enough that the U-Boot log is no longer the interesting artifact.
+  Anything above `0x480F0000` is ordinary DRAM to the vendor kernel and would
+  be destroyed by the very system you power-cycle into to read it. If the
+  overlap ever becomes unacceptable, shrink `LOG_STASH_SIZE` to `0x6000` and
+  move the buffer to `0x480EE000`.
+- `preboot` and `bootcmd` write **bits 25–29** of `0x02390024` through its
+  write-1-to-set alias at `0x02390028`, with `mw.l` — zero new code, exactly as
+  §11.7 proposed. **Not bits 12–15**, which the ladder's own wording suggested:
+  §8 assigns 12–24 to Linux (`MS_USERSPACE` … `MS_USB_ATTACHED`) and 30–31 to
+  the vendor OTA flags, so writing 12–15 from U-Boot would make "the bootloader
+  ran" and "userspace ran" indistinguishable. The five bits are
+  `ms_uboot` 25 (preboot reached — console, environment and relocation all
+  worked), `ms_bootcmd` 26 (bootcmd started), `ms_extlinux` 27 (extlinux.conf
+  read, about to boot), `ms_failed` 28 (nothing booted, resetting),
+  `ms_altboot` 29 (bootlimit hit, the fallback config is running). Each is an
+  environment variable, so the assignment is changeable with `fw_setenv`.
+- `CONFIG_BOOTCOUNT_LIMIT` + `CONFIG_BOOTCOUNT_ENV`, `BOOTLIMIT=3`, and an
+  `altbootcmd` that boots `/extlinux/extlinux-fallback.conf`. One trap:
+  `bootcount_env` only counts **while `upgrade_available` is non-zero** — the
+  RAUC/swupdate convention — so a generation switch must
+  `fw_setenv upgrade_available 1` and the health check must clear it along with
+  `bootcount`. And `bootlimit`/`altbootcmd` must be set in the *defconfig*, not
+  in `CFG_EXTRA_ENV_SETTINGS`: `env_default.h` emits the Kconfig values ahead of
+  the board's, and the first definition of a name wins, so a copy in the header
+  is dead text. (It was, for one build.)
+- Standard boot, **not `CONFIG_DISTRO_DEFAULTS`**, which 2026.07 marks
+  deprecated with "do not use on new boards". `bootcmd` still addresses the
+  boot partition explicitly (`sysboot mmc ${bootdev}:${bootpart}`), because
+  `bootpart` is a variable the layout sets rather than a scan result.
+
+#### One layout, injected, asserted
+
+`pkgs/uboot-mainline.nix` takes the `blkdevparts=` clause, the environment's
+offset and size, and the boot partition number from
+`nixos/emmc-partitions.nix`, which parses them out of the `bootargs` line of
+`dts/ax630c-nanokvm-pro.dts` — and asserts each substitution landed. The
+defconfig in the patch carries the same values as its upstream-visible default,
+so the two cannot silently disagree, and `checks.uboot-mainline` greps the
+linked binary for `bootpart=16` to prove the injection reached the image and
+not just the config file.
+
+The check also compiles **the shipped `disk/part_cmdline.c`** — the package
+installs it to `$out/src/` for exactly this — against a small host shim, and
+runs it against a table generated from `nixos/emmc-partitions.nix`. Two
+independent parsers of one string, asserted equal, including `@offset`, the
+`ro` suffix, the `-` remainder, five malformed clauses that must be rejected,
+and a device the clause does not name. Growing one partition by a megabyte in
+the clause makes it fail, which was checked rather than assumed.
+
+#### Deferred, with reasons
+
+- **Ethernet.** U-Boot needs no network to boot this board — kernel, DT and
+  root are all on the eMMC — and a `dwc_eth_qos` glue would need the clock and
+  reset writes that no U-Boot provider exists for. The DT records what a future
+  glue must know: RTL8211F at MDIO 1, and `phy-mode = "rgmii-id"` (§11.6).
+- **A watchdog.** §11.5 wants WDT0 armed before `booti` so a kernel that never
+  reaches userspace increments `bootcount` instead of hanging. ~120 LOC,
+  mirroring #75's Linux driver. Until it exists, a hung kernel hangs.
+- **Clock, reset and pinctrl providers.** The largest unscoped item in §11.1,
+  and still unscoped. Rung 0 does not need them: firmware leaves everything
+  U-Boot touches already running, which the fixed-clocks in the DT state
+  explicitly. They become necessary the moment U-Boot has to bring up a block
+  firmware leaves off — ethernet, USB.
+- **USB, display, the boot logo, FDL2, the cipher block, secure boot.** All
+  dropped, none needed. A pre-Linux splash, if ever wanted, is the SPI panel
+  and ~300 LOC; the Linux-side `fb_jd9853` (#84) is the real display path.
+- **The AX630C SoC binding.** U-Boot carries no bindings of its own; the
+  `axera,ax630c` compatible and the clock/pinctrl schemas belong with #80's
+  Linux submission (#87).
+- **Everything about hardware.** No line of this has executed on the board.
+
+#### Rung 2: the slot-B procedure
+
+Rung 1 (mainline BL31 into `atf_b`) is the sibling TF-A work and must land
+first — this U-Boot is entered by whatever BL31 is in the active slot, so
+rung 2 exercises both at once.
+
+1. Build: `nix build .#uboot-mainline` and the TF-A rung's `atf_b` image.
+2. On the device, from the running vendor system, write both B slots and
+   hash-verify **from the medium** (drop caches first, or you verify the page
+   cache):
+   `dd if=u-boot_mainline_signed.bin of=/dev/mmcblk0 bs=512 seek=$((0x340000/512)) conv=fsync`
+   — `uboot_b` is p6 at byte offset `0x340000`, 1536 KiB, per
+   `nixos/emmc-partitions.nix` (`.#checks.x86_64-linux.emmc-partition-map`
+   prints the whole map); the ATF image goes to `atf_b`, p4 at `0x180000`,
+   256 KiB.
+3. Put the NixOS generation on **p16** (`boot`, currently vfat): the kernel,
+   the dtb and `extlinux/extlinux.conf`, plus `extlinux/extlinux-fallback.conf`
+   as a copy of it. `/boot` moves to ext4 only with the new layout (§11.5);
+   until then U-Boot reads it with `CONFIG_FS_FAT`, which the defconfig has via
+   `BOOT_DEFAULTS`.
+4. Set the slot: `devmem 0x02390028 32 0x28` (SLOTB | SLOTB_BOOTABLE), then
+   reboot. The BOOTABLE bit is consume-once and the register clears on power
+   loss, so **every failure path lands the next boot on slot A** — a hang costs
+   a power cycle, never AXDL.
+5. Read the result back from slot A:
+   - `devmem 0x02390024` — bits 25–29 say how far U-Boot got, bits 12+ how far
+     Linux did. `0x16000000` (25, 26, 28) is "U-Boot ran, `bootcmd` ran,
+     nothing booted" — no `extlinux.conf` on p16. `0x0E000000` (25, 26, 27)
+     plus Linux bits above it is the good path. Nothing set at all means BL31
+     never reached BL33, which is rung 1's problem, not this one's.
+   - `dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=2` — the
+     pre-console buffer, which is the only channel if U-Boot died before its
+     console came up.
+   - If it worked, the appliance is on the network and #77/#78's path applies:
+     SSH in.
+6. `fw_printenv bootcount` afterwards says how many attempts the bootloader
+   made — but only if `upgrade_available` was set, see above.
 
 ---
