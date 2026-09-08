@@ -586,6 +586,16 @@
           debugMilestones = true;
         };
 
+        # The shipping image plus the pre-console capture, and nothing that
+        # writes the slot register -- so a run that succeeds leaves the
+        # register reading exactly as the shipping bit assignment says, while
+        # a run that fails still leaves a full U-Boot log in reserved DRAM.
+        # This is the variant to reach for on this board.
+        uboot-mainline-console = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          consoleToBuffer = true;
+        };
+
         # The MMU is never switched on, so the boot walks straight past rung
         # 2's mmu_setup() hang and exercises what the rung is actually for --
         # sdhci-cadence, part_cmdline, the environment, extlinux, booti. Slow,
@@ -629,7 +639,7 @@
             update-package
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
-            uboot-mainline uboot-mainline-debug
+            uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu
             firmware-image nixos-firmware-image sd-image
             edid axdl;

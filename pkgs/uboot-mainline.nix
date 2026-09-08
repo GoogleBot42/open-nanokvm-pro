@@ -1,6 +1,7 @@
 { pkgs, crossPkgs, axSign
 , debugMilestones ? false
 , dcacheOff ? false
+, consoleToBuffer ? false
 , ... }:
 
 # ===========================================================================
@@ -629,6 +630,59 @@ let
     EOF
   '';
 
+
+  # -------------------------------------------------------------------------
+  # consoleToBuffer = true: the full U-Boot log, without the milestone writes.
+  #
+  # Same two changes the debug build carries -- the pstore window mapped
+  # uncached so writes survive dcache_enable(), and GD_FLG_HAVE_CONSOLE cleared
+  # in board_late_init() so putc() keeps taking the pre_console_putc() path --
+  # but nothing that touches the A/B slot register. That matters once a run can
+  # succeed: the register then carries only U-Boot's bits 28-31 and Linux's
+  # 12-27, so it reads as the shipping assignment says it should, while the
+  # console log stays available if it does not.
+  #
+  # Mutually exclusive with debugMilestones, which contains this patch already.
+  # -------------------------------------------------------------------------
+  consolePostPatch = ''
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      '	}, {
+    		/* Terminator */' \
+      '	}, {
+    		/* #89: the pstore window, uncached, so the pre-console buffer
+    		 * keeps reaching DRAM once the dcache is on. */
+    		.virt = 0x48000000UL,
+    		.phys = 0x48000000UL,
+    		.size = 0x00100000UL,
+    		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
+    			 PTE_BLOCK_NON_SHARE |
+    			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+    	}, {
+    		/* Terminator */'
+
+    substituteInPlace board/axera/ax630c/ax630c.c --replace-fail \
+      '#include <init.h>
+    #include <stdio.h>' \
+      '#include <init.h>
+    #include <stdio.h>
+    #include <asm/global_data.h>
+
+    DECLARE_GLOBAL_DATA_PTR;
+
+    /*
+     * Everything printed from here on goes to CONFIG_PRE_CONSOLE_BUFFER and
+     * nowhere else. This board has no reachable console; the buffer is the
+     * only one it has.
+     */
+    int board_late_init(void)
+    {
+    	gd->flags &= ~GD_FLG_HAVE_CONSOLE;
+
+    	return 0;
+    }'
+
+    echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
+  '';
   # -------------------------------------------------------------------------
   # dcacheOff = true: never switch the MMU on.
   #
@@ -658,8 +712,11 @@ let
 
   variant = assert lib.assertMsg (!dcacheOff || debugMilestones)
     "uboot-mainline: dcacheOff needs debugMilestones -- the enable_caches() it flips is in that patch";
+    assert lib.assertMsg (!(consoleToBuffer && debugMilestones))
+      "uboot-mainline: consoleToBuffer and debugMilestones are exclusive -- the debug patch already carries the console capture";
     lib.optionalString debugMilestones "-debug"
-    + lib.optionalString dcacheOff "-nommu";
+    + lib.optionalString dcacheOff "-nommu"
+    + lib.optionalString consoleToBuffer "-console";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -717,7 +774,8 @@ let
       echo "layout: $blkdevparts"
       echo "layout: env at $envOffset size $envSize, /boot is p$bootPart"
     '' + lib.optionalString debugMilestones milestonePostPatch
-      + lib.optionalString dcacheOff dcacheOffPostPatch;
+      + lib.optionalString dcacheOff dcacheOffPostPatch
+      + lib.optionalString consoleToBuffer consolePostPatch;
 
     makeFlags = [
       "ARCH=arm"

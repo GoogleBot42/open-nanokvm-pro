@@ -17,8 +17,8 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
  arch/arm/mach-axera/Kconfig  | 27 ++++++++++++++
  arch/arm/mach-axera/Makefile |  5 +++
  arch/arm/mach-axera/soc.c    | 63 ++++++++++++++++++++++++++++++++
- include/configs/ax630c.h     | 72 ++++++++++++++++++++++++++++++++++++
- 6 files changed, 184 insertions(+)
+ include/configs/ax630c.h     | 100 +++++++++++++++++++++++++++++++++++
+ 6 files changed, 212 insertions(+)
  create mode 100644 arch/arm/mach-axera/Kconfig
  create mode 100644 arch/arm/mach-axera/Makefile
  create mode 100644 arch/arm/mach-axera/soc.c
@@ -188,7 +188,7 @@ new file mode 100644
 index 00000000..957d58c6
 --- /dev/null
 +++ b/include/configs/ax630c.h
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,100 @@
 +/* SPDX-License-Identifier: GPL-2.0+ */
 +/*
 + * Axera AX630C boards.
@@ -258,7 +258,35 @@ index 00000000..957d58c6
 +	"ms_uboot=0x10000000\0"		/* 28: preboot reached */	\
 +	"ms_extlinux=0x20000000\0"	/* 29: extlinux.conf read */	\
 +	"ms_altboot=0x40000000\0"	/* 30: bootlimit hit */		\
-+	"ms_failed=0x80000000\0"	/* 31: nothing booted */
++	"ms_failed=0x80000000\0"	/* 31: nothing booted */		\
++	AX630C_WDT_ENV
++
++/*
++ * Arm WDT0 before handing off, so a boot that hangs anywhere after `preboot`
++ * resets the board instead of stranding it. This SoC's console UART is on
++ * hidden pads; an unattended board that hangs is a board somebody has to walk
++ * to.
++ *
++ * NOT WIRED INTO `preboot` YET, and the reason is a measurement: running this
++ * from `preboot` with TORR = 0x80be reset the board about one second later,
++ * during the autoboot countdown. So TORR is not the raw `freq >> 16` down
++ * count this value assumed -- the vendor's own 0x2AEA yields 60 s, and 0x80be
++ * should have been longer, not shorter. The register needs characterising
++ * before U-Boot arms it; until then a boot that hangs strands the board, which
++ * is the lesser risk of the two.
++ *
++ * The sequence itself is the vendor bootloader's, which Linux is known to
++ * inherit cleanly: program the timeout, strobe TORR_LOAD, select the 24 MHz
++ * source, then enable. Linux's ax630c-wdt adopts a running WDT0 and the
++ * watchdog core pets it from then on.
++ *
++ * Written with `mw` so the port needs no watchdog driver to be safe. A real
++ * UCLASS_WDT driver replacing this is a separate change.
++ */
++#define AX630C_WDT_ENV							\
++	"wdt_arm=mw.l 0x0484000c 0x80be; mw.l 0x04840018 1;"		\
++		" mw.l 0x04840018 0; mw.l 0x048700a8 0x80000;"		\
++		" mw.l 0x04840000 1\0"
 +
 +#endif /* __AX630C_H */
 -- 
