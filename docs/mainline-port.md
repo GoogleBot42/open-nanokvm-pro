@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs — banner, board, DRAM sizing — and then `relocate_code()` never delivers control to `board_init_r()`.** `board_init_f` finishes in 0.12 s; nothing past it: no eMMC, no env, no extlinux. Fourteen runs, every one self-recovered to slot A with no hands. See "What exists now (rung 2)" and "(rung 2b)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs — banner, board, DRAM sizing, relocation — and then relocates to `0x7FF96400` while `gd->relocaddr` says `0x7FF96000`.** Every relocated `.data` pointer is 0x400 out, `mem_map` reads as code, and the first thing to dereference one (`mmu_setup`) hangs. `board_init_f` finishes in 0.135 s; nothing past it. Twenty runs, every one self-recovered to slot A with no hands. See "What exists now (rung 2)", "(rung 2b)" and "(rung 2c)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3004,3 +3004,78 @@ unconditionally while the stubs that would satisfy them sit inside the same
    that gap; if the copy length and the relocation bounds disagree about it,
    the relocated image is short by an amount that varies with build content —
    which is exactly the observed layout sensitivity.
+
+### What exists now (rung 2c, 2026-09-08) — THE RELOCATION OFFSET IS WRONG BY 0x400
+
+Six more slot-B boots. Full log and numbers:
+[`docs/reference/mainline/uboot-mainline-20260908/RUNG2C.md`](reference/mainline/uboot-mainline-20260908/RUNG2C.md).
+
+**U-Boot relocates itself to `0x7FF96400`, while `gd->relocaddr` says
+`0x7FF96000` and `gd->reloc_off` says `0x23F95C00`.** The image loads exactly
+where it is linked (`_start` runs at `0x5C000400`), so the 0x400 appears during
+relocation, not before it: the code ends up running, and the fixups end up
+applied, at `+0x23F96000`, while U-Boot's own bookkeeping records
+`+0x23F95C00`.
+
+**That is why every earlier diagnosis pointed at the MMU.** `mem_map` is an
+ordinary `.data` pointer whose ELF relocation is correct
+(`00005c04f0a0 R_AARCH64_RELATIVE 5c04f0a8`), but on the board it reads
+`0x7FFAFB98` — into `.text` — and its entries come back as AArch64
+instructions (`0xA9BF7BFD` is `stp x29, x30, [sp, #-16]!`). The only loop in
+`get_tcr()` walks `mem_map` until it finds a zero terminator, so it either runs
+off into addresses no slave answers, or terminates by luck on a run of zeros
+and hands `setup_pgtables()` nonsense regions to map. Both were observed; they
+are the same bug. `mmu_setup()` is simply the first code to dereference a
+relocated `.data` pointer.
+
+**The failure is deterministic.** The same binary was run twice — the one thing
+eight earlier boots never did, because each used a different build. Identical
+slot register, identical initcall line, elapsed times 0.1353 s and 0.1352 s.
+The apparent non-determinism of rungs 2 and 2b was "different binary, different
+layout, different garbage".
+
+#### `.rela.dyn` is intact, and rung 2b's failure was self-inflicted
+
+A validator that walks the table checking every entry
+(`R_AARCH64_RELATIVE`, `r_info = 0x403`, `r_offset` inside the copied image) and
+sums it, run on entry to `board_init_f` and again as the last initcall before
+`relocate_code()`, returns **1656 entries, 0 malformed, sum `0x765D50B4` at both
+ends — identical to the same sum computed on the host from the ELF.** Nothing
+clobbers the relocation table in the shipping path.
+
+But BSS really does overlay it —
+`__image_copy_end = __rel_dyn_start = __bss_start = 0x5C04FAD0` — and rung 2b
+hit exactly that: its device-name tracer used a `static` inside
+`lists_bind_fdt()`, which **`initf_dm()` calls before relocation**, so the write
+landed on a relocation entry. That is why those builds died in `relocate_code()`
+and why one added static moved the failure; it is also why the counter read back
+as `0x5C04EAC7`, a link-time address, i.e. the content of a relocation entry.
+Removing it put relocation back.
+
+**Instrumentation for a pre-relocation code path may not use a static.**
+Everything in this rung writes through `writel()` to a fixed address instead.
+
+#### What is now excluded
+
+The load address (`_start` runs at its link address), the relocation table
+(validated twice against the host), the toolchain (the ELF's relocation is
+correct), the MMU and the page-table window, DRAM size and aliasing (rung 2b),
+and the watchdog (rung 2b).
+
+#### Next probe
+
+`arch/arm/lib/crt0_64.S` loads the copy destination and the return-address
+adjustment from the same struct, and `relocate_code` recomputes
+`x9 = x0 - _TEXT_BASE`. For the code to run at `+0x23F96000` while
+`gd->reloc_off` reads `0x23F95C00`, `x0` must have been `0x7FF96400`. Two
+candidates, one round apart:
+
+1. **`asm-offsets` disagreeing with `struct global_data`** — `GD_RELOCADDR` or
+   `GD_RELOC_OFF` naming a neighbouring field. Check
+   `include/generated/asm-offsets.h` against the struct first; it is free.
+2. `gd->relocaddr` changing between `setup_reloc` (`board_f.c:1010`) and the
+   branch, or `new_gd` not being the struct the later dump reads.
+
+Four scratchpad words from `crt0_64.S` immediately before `b relocate_code`
+(x0 and x9 as loaded) and two from the top of `relocate_code` (x0, and x9 after
+`subs`) separate them.
