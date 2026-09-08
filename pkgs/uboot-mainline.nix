@@ -71,6 +71,7 @@ let
     ./uboot-mainline/patches/0008-mmc-sdhci-cadence-program-host-control2-for-emmc.patch
     ./uboot-mainline/patches/0009-mmc-sdhci-vdd180-is-not-sd-only.patch
     ./uboot-mainline/patches/0010-mmc-start-at-the-vqmmc-signal-voltage.patch
+    ./uboot-mainline/patches/0011-mmc-sdhci-vqmmc-already-at-target-is-not-a-failure.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not

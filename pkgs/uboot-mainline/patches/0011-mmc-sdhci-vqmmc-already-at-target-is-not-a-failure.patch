@@ -1,0 +1,78 @@
+From 708192a3b4c5d6e7f8091a2b3c4d5e6f70819200 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 10:05:00 -0600
+Subject: [PATCH 11/11] mmc: sdhci: a vqmmc supply already at the target is not
+ a failure
+
+sdhci_set_voltage() calls regulator_set_value() on vqmmc unconditionally and
+gives up on error. A fixed regulator has no set_value op at all -- see
+fixed_regulator_ops, which provides get_value, get_current, get_enable and
+set_enable and nothing else -- so asking it for the very level it is
+permanently sitting at returns an error, and the function returns before
+writing SDHCI_CTRL_VDD_180.
+
+The board then runs with its supply at 1.8 V and its controller still driving
+3.3 V signalling, which is worse than either alone: it enumerates the card and
+fails every data transfer. Observed on an AX630C, whose eMMC I/O rail is a
+fixed 1.8 V regulator, as six "failed to set vqmmc-voltage to 1.8V" lines
+followed by "Transfer data timeout".
+
+Check the current value first and skip the write when it already matches, the
+way Linux's mmc_regulator_set_vqmmc() does. A rail that cannot change but is
+already correct is a success.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci.c | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mmc/sdhci.c b/drivers/mmc/sdhci.c
+index 5555555..6666666 100644
+--- a/drivers/mmc/sdhci.c
++++ b/drivers/mmc/sdhci.c
+@@ -549,6 +549,25 @@
+ 	sdhci_writew(host, reg, SDHCI_HOST_CONTROL2);
+ }
+ 
++#if CONFIG_IS_ENABLED(DM_REGULATOR)
++/*
++ * Move the I/O supply to @uV, tolerating a supply that is already there.
++ *
++ * A board whose vqmmc rail is a fixed regulator has no set_value op at all, so
++ * regulator_set_value() returns an error for a level the rail is permanently
++ * sitting at. Treating that as a failure aborts the voltage switch and leaves
++ * the controller driving the bus at the wrong level. Check first, the way
++ * Linux's mmc_regulator_set_vqmmc() does.
++ */
++static int sdhci_set_vqmmc(struct mmc *mmc, int uV)
++{
++	if (regulator_get_value(mmc->vqmmc_supply) == uV)
++		return 0;
++
++	return regulator_set_value(mmc->vqmmc_supply, uV);
++}
++#endif
++
+ void sdhci_set_voltage(struct sdhci_host *host)
+ {
+ 	if (IS_ENABLED(CONFIG_MMC_IO_VOLTAGE)) {
+@@ -566,7 +585,7 @@
+ 					return;
+ 				}
+ 
+-				if (regulator_set_value(mmc->vqmmc_supply, 3300000)) {
++				if (sdhci_set_vqmmc(mmc, 3300000)) {
+ 					pr_err("failed to set vqmmc-voltage to 3.3V\n");
+ 					return;
+ 				}
+@@ -597,7 +616,7 @@
+ 					return;
+ 				}
+ 
+-				if (regulator_set_value(mmc->vqmmc_supply, 1800000)) {
++				if (sdhci_set_vqmmc(mmc, 1800000)) {
+ 					pr_err("failed to set vqmmc-voltage to 1.8V\n");
+ 					return;
+ 				}
+-- 
+2.55.0
