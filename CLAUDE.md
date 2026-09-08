@@ -203,6 +203,12 @@ Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/devi
 - **Blob policy (2026-09-04):** the aic8800 wireless *firmware* is the only closed
   content allowed on the image. No closed userspace, no closed `.ko`, ever. NixOS
   goes **straight to mainline** (no 4.19 NixOS stage; the custom A/B scheme dies with it).
+- **Mainline everything (2026-09-07):** kernel, U-Boot, and TF-A where a port is
+  tractable. Patches are fine, but against upstream, never a vendor fork; the
+  SDK's U-Boot 2020.04 / TF-A 2.7 forks are a stopgap. Partition layout: the
+  simplest that works (no A/B twins; extlinux generations carry the kernel).
+  Reflashing over AXDL is a bench trip, never a brick, so "recovery = AXDL"
+  means "needs Jeremy", not "dangerous".
 - Concise, confident prose — no hedging, no over-explaining (applies to docs, READMEs,
   commit messages).
 - On hardware: prefer the reversible method first, even if it's "only short-term";
