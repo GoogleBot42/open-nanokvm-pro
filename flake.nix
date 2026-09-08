@@ -586,6 +586,16 @@
           debugMilestones = true;
         };
 
+        # The MMU is never switched on, so the boot walks straight past rung
+        # 2's mmu_setup() hang and exercises what the rung is actually for --
+        # sdhci-cadence, part_cmdline, the environment, extlinux, booti. Slow,
+        # a diagnostic, never a shipped image; carries the milestone writes.
+        uboot-mainline-nommu = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          debugMilestones = true;
+          dcacheOff = true;
+        };
+
         # Non-destructive microSD boot image (dd-able .img): boots the whole
         # from-source stack from a card, eMMC untouched. Byte-matched to the
         # official v1.0.15 SD image; builds its own UART0 boot chain + SD-root
@@ -620,6 +630,7 @@
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug
+            uboot-mainline-nommu
             firmware-image nixos-firmware-image sd-image
             edid axdl;
 

@@ -1,5 +1,6 @@
 { pkgs, crossPkgs, axSign
 , debugMilestones ? false
+, dcacheOff ? false
 , ... }:
 
 # ===========================================================================
@@ -114,13 +115,96 @@ let
       '#include <asm/armv8/mmu.h>
     #include <asm/io.h>
 
-    /* #89 rung 2 boot-evidence channel -- see pkgs/uboot-mainline.nix. */
+    /* #89 rung 2 boot-evidence channels -- see pkgs/uboot-mainline.nix. */
     #define AX630C_DBG_SLOT_SET	0x02390028UL
+    #define AX630C_DBG_SCRATCH	0x480EC000UL
 
     void ax630c_milestone(unsigned int bit)
     {
     	writel(1U << bit, (void *)AX630C_DBG_SLOT_SET);
+    }
+
+    /*
+     * A sixteen-word scratchpad in the spare tail of the pstore window, for
+     * the values a single register bit cannot carry. writel() is a Device
+     * store with the MMU off, so it reaches DRAM without a cache flush -- and
+     * whether it reaches DRAM at all, from relocated code, is itself one of
+     * the things being measured.
+     */
+    void ax630c_dbg_word(unsigned int idx, unsigned int val)
+    {
+    	writel(val, (void *)(AX630C_DBG_SCRATCH + 4 * idx));
     }'
+
+    # Number every initcall. board_init_f() and board_init_r() are both an
+    # ordered list of INITCALL(x), and the macro is one place -- so recording
+    # __LINE__ before each call turns "it hung somewhere after relocation" into
+    # a line number in common/board_[fr].c, for every stage, at the cost of one
+    # store per initcall. The two files' line ranges do not overlap, so the
+    # number alone says which phase as well as which call.
+    substituteInPlace include/initcall.h --replace-fail \
+      '#define INITCALL(_call) \
+    	do { \
+    		if (_call()) { \' \
+      'void ax630c_dbg_word(unsigned int idx, unsigned int val);
+
+    /*
+     * The generic timer is running at 24 MHz before BL33 is entered (the
+     * first-stage loader writes CNTFRQ_EL0), so CNTPCT_EL0 is a free
+     * stopwatch. Recorded next to the line number, it separates the two
+     * explanations for a boot that stops: a hang leaves a small elapsed
+     * count, a timeout leaves one close to whatever period cut it off.
+     * 32 bits of a 24 MHz counter wrap every 179 s.
+     */
+
+    #define AX630C_TICKS() ({ unsigned long __t; asm volatile("mrs %0, cntpct_el0" : "=r" (__t)); (unsigned int)__t; })
+
+    #define INITCALL(_call) \
+    	do { \
+    		ax630c_dbg_word(12, __LINE__); \
+    		ax630c_dbg_word(13, AX630C_TICKS()); \
+    		if (_call()) { \'
+
+    # Did relocate_code() return, and is the code that follows it running from
+    # the relocated image? board_init_r() is the first C the relocated image
+    # executes, and its own address settles the second question: `&board_init_r`
+    # taken from inside it is PC-relative, so it IS the program counter.
+    substituteInPlace common/board_r.c --replace-fail \
+      '	gd->flags &= ~(GD_FLG_SERIAL_READY | GD_FLG_LOG_READY);' \
+      '	ax630c_dbg_word(23, 0xB00DB00D);
+    	ax630c_dbg_word(24, AX630C_TICKS());
+    	ax630c_dbg_word(25, (unsigned int)(uintptr_t)new_gd);
+    	ax630c_dbg_word(26, (unsigned int)dest_addr);
+    	ax630c_dbg_word(27, (unsigned int)(uintptr_t)&board_init_r);
+    	ax630c_dbg_word(28, (unsigned int)(uintptr_t)__builtin_return_address(0));
+
+    	gd->flags &= ~(GD_FLG_SERIAL_READY | GD_FLG_LOG_READY);'
+
+    # And name every device-tree node as driver model binds it: the first
+    # eight characters of the node name, as two words, plus a running count.
+    # `initr_dm` is one initcall but hundreds of binds, so the initcall line
+    # number alone stops being enough once the hang is inside it.
+    substituteInPlace drivers/core/lists.c --replace-fail \
+      '	if (devp)
+    		*devp = NULL;
+    	name = ofnode_get_name(node);' \
+      '	if (devp)
+    		*devp = NULL;
+    	name = ofnode_get_name(node);
+    	{
+    		extern void ax630c_dbg_word(unsigned int idx, unsigned int val);
+    		static unsigned int ax630c_bind_count;
+    		unsigned int w0 = 0, w1 = 0;
+    		int ax_i;
+
+    		for (ax_i = 0; ax_i < 4 && name[ax_i]; ax_i++)
+    			w0 |= (unsigned int)name[ax_i] << (8 * ax_i);
+    		for (; ax_i < 8 && name[ax_i]; ax_i++)
+    			w1 |= (unsigned int)name[ax_i] << (8 * (ax_i - 4));
+    		ax630c_dbg_word(14, w0);
+    		ax630c_dbg_word(15, w1);
+    		ax630c_dbg_word(16, ++ax630c_bind_count);
+    	}'
 
     substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
       'int dram_init(void)
@@ -174,40 +258,11 @@ let
      */
     phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
     {
-    	volatile u64 *lo = (volatile u64 *)0x5ff00000UL;
-    	volatile u64 *hi = (volatile u64 *)0x7ff00000UL;
-
     	printf("ram_base %llx size %llx top %llx mon_len %lx\n",
     	       (unsigned long long)gd->ram_base,
     	       (unsigned long long)gd->ram_size,
     	       (unsigned long long)gd->ram_top,
     	       (unsigned long)gd->mon_len);
-
-    	/*
-    	 * Is the top half of the declared gigabyte real? These two addresses
-    	 * alias each other on a 512 MiB part and are independent on a 1 GiB
-    	 * one. MMU off here, so both accesses are Device-nGnRnE and aligned.
-    	 */
-    	*lo = 0x1111111111111111ULL;
-    	*hi = 0x2222222222222222ULL;
-    	printf("probe 5ff00000=%llx 7ff00000=%llx\n",
-    	       (unsigned long long)*lo, (unsigned long long)*hi);
-
-    	/*
-    	 * arm_reserve_mmu() puts the page tables in the last 64 KiB-aligned
-    	 * PGTABLE_SIZE of DRAM, so probe exactly there -- and print the size,
-    	 * which is what fixes the address.
-    	 */
-    	{
-    		volatile u64 *pt = (volatile u64 *)0x7fff0000UL;
-    		volatile u64 *end = (volatile u64 *)0x7ffff000UL;
-
-    		*pt = 0x3333333333333333ULL;
-    		*end = 0x4444444444444444ULL;
-    		printf("probe 7fff0000=%llx 7ffff000=%llx pgtsize %llx\n",
-    		       (unsigned long long)*pt, (unsigned long long)*end,
-    		       (unsigned long long)get_page_table_size());
-    	}
 
     	return gd->ram_top;
     }
@@ -217,6 +272,57 @@ let
      * GD_FLG_SERIAL_READY at the top of board_init_r, so a printf() here would
      * reach serial_putc() with a stale device pointer. Bits only.
      */
+    void ax630c_dbg_word(unsigned int idx, unsigned int val);
+
+    /*
+     * Everything a milestone bit cannot say, dumped to the scratchpad the
+     * moment board_init_r() hands control to a board hook. Word 0 is a magic
+     * so a stale window cannot be mistaken for a fresh one; its presence also
+     * answers, on its own, whether a plain DRAM store from relocated code
+     * reaches DRAM at all.
+     */
+    static void ax630c_dump_gd(void)
+    {
+    	ax630c_dbg_word(1, (u32)gd->arch.tlb_addr);
+    	ax630c_dbg_word(2, (u32)(gd->arch.tlb_addr >> 32));
+    	ax630c_dbg_word(3, (u32)gd->arch.tlb_size);
+    	ax630c_dbg_word(4, (u32)gd->relocaddr);
+    	ax630c_dbg_word(5, (u32)gd->ram_top);
+    	ax630c_dbg_word(6, (u32)gd->ram_size);
+    	ax630c_dbg_word(7, (u32)gd->start_addr_sp);
+    	ax630c_dbg_word(8, (u32)gd->reloc_off);
+    	ax630c_dbg_word(9, (u32)(uintptr_t)gd);
+    	ax630c_dbg_word(10, (u32)gd->flags);
+    	ax630c_dbg_word(0, 0x55424D31);		/* "UBM1", written last */
+    }
+
+    /*
+     * Does relocation work? Three answers, from relocated code:
+     *   17  the address of a static -- PC-relative, so it needs no fixup and
+     *       must land in the relocated image
+     *   18  that static read back after a write -- proves BSS is where the
+     *       code thinks it is, and was cleared
+     *   19  the address of a function, likewise PC-relative
+     *   20  `mem_map`, an initialised pointer in .data. THIS one needs an
+     *       R_AARCH64_RELATIVE fixup, so it is the actual test: a value near
+     *       0x5C0xxxxx means .rela.dyn was not applied and every absolute
+     *       pointer in the image still points at the unrelocated copy.
+     */
+    static unsigned int ax630c_reloc_probe;
+
+    static void ax630c_check_reloc(void)
+    {
+    	extern struct mm_region *mem_map;
+
+    	ax630c_reloc_probe = 0xA5A5A5A5;
+    	ax630c_dbg_word(17, (unsigned int)(uintptr_t)&ax630c_reloc_probe);
+    	ax630c_dbg_word(18, ax630c_reloc_probe);
+    	ax630c_dbg_word(19, (unsigned int)(uintptr_t)&ax630c_milestone);
+    	ax630c_dbg_word(20, (unsigned int)(uintptr_t)mem_map);
+    	ax630c_dbg_word(21, (unsigned int)(uintptr_t)&mem_map);
+    }
+
+    #ifndef AX630C_NO_MMU
     void mmu_enable(void);
     void setup_pgtables(void);
     u64 get_tcr(u64 *pips, u64 *pva_bits);
@@ -284,6 +390,8 @@ let
     void enable_caches(void)
     {
     	ax630c_milestone(14);
+    	ax630c_dump_gd();
+    	ax630c_check_reloc();
     	icache_enable();
     	ax630c_milestone(15);
 
@@ -299,6 +407,24 @@ let
     	set_sctlr(get_sctlr() | CR_C);	/* SCTLR.C = 1 */
     	ax630c_milestone(25);
     }
+    #else
+    /*
+     * AX630C_NO_MMU: never call dcache_enable(), so the MMU stays off and the
+     * whole of board_init_r runs with data accesses as Device-nGnRnE. Slow,
+     * and it decouples the rest of the boot from the page-table bug -- rung 2
+     * can be finished without solving it. cleanup_before_linux() later calls
+     * dcache_disable(), which returns immediately when SCTLR.C is clear.
+     */
+    void enable_caches(void)
+    {
+    	ax630c_milestone(14);
+    	ax630c_dump_gd();
+    	ax630c_check_reloc();
+    	icache_enable();
+    	ax630c_milestone(15);
+    	ax630c_milestone(25);
+    }
+    #endif
 
     int board_init(void)
     {
@@ -331,8 +457,40 @@ let
     EOF
   '';
 
+  # -------------------------------------------------------------------------
+  # dcacheOff = true: never switch the MMU on.
+  #
+  # Rung 2 measured mainline U-Boot hanging inside mmu_setup(), the arm64
+  # page-table build, before SCTLR.M is ever set. Everything the rung actually
+  # exists to prove -- sdhci-cadence on this eMMC, part_cmdline, the
+  # environment, bootcount, extlinux, booti -- is downstream of that, so this
+  # variant decouples the two: board_init_r runs with data accesses as
+  # Device-nGnRnE and the boot proceeds. Slow, and not what ships.
+  #
+  # NOT `CONFIG_SYS_DCACHE_OFF`. That looks like the right switch and does not
+  # link on arm64 in 2026.07: `boot/bootm_os.c` and `cmd/elf.c` call
+  # `dcache_enable()` / `dcache_disable()` unconditionally, and the stubs that
+  # would satisfy them are inside the same `#if` the config turns off. Skipping
+  # the call from our own `enable_caches()` is the same thing at runtime and
+  # leaves every symbol defined. `cleanup_before_linux()`'s later
+  # `dcache_disable()` returns immediately with SCTLR.C clear.
+  #
+  # Implies debugMilestones: the override it flips lives in that patch.
+  # -------------------------------------------------------------------------
+  dcacheOffPostPatch = ''
+    substituteInPlace include/configs/ax630c.h --replace-fail \
+      '#define CFG_SYS_SDRAM_BASE		0x40000000' \
+      '#define AX630C_NO_MMU			1
+    #define CFG_SYS_SDRAM_BASE		0x40000000'
+  '';
+
+  variant = assert lib.assertMsg (!dcacheOff || debugMilestones)
+    "uboot-mainline: dcacheOff needs debugMilestones -- the enable_caches() it flips is in that patch";
+    lib.optionalString debugMilestones "-debug"
+    + lib.optionalString dcacheOff "-nommu";
+
   raw = pkgs.stdenv.mkDerivation {
-    pname = "nanokvm-pro-uboot-mainline" + lib.optionalString debugMilestones "-debug";
+    pname = "nanokvm-pro-uboot-mainline" + variant;
     inherit version src patches;
 
     # U-Boot manages its own flags; the cc-wrapper must not inject PIE,
@@ -381,7 +539,8 @@ let
 
       echo "layout: $blkdevparts"
       echo "layout: env at $envOffset size $envSize, /boot is p$bootPart"
-    '' + lib.optionalString debugMilestones milestonePostPatch;
+    '' + lib.optionalString debugMilestones milestonePostPatch
+      + lib.optionalString dcacheOff dcacheOffPostPatch;
 
     makeFlags = [
       "ARCH=arm"
@@ -438,14 +597,14 @@ let
   };
 
   signed = axSign.signImage {
-    pname = "nanokvm-pro-uboot-mainline-signed" + lib.optionalString debugMilestones "-debug";
+    pname = "nanokvm-pro-uboot-mainline-signed" + variant;
     name = "u-boot_mainline_signed.bin";
     payload = "${raw}/images/u-boot.bin";
     maxSize = ubootPart.size;
   };
 in
 
-pkgs.runCommand "nanokvm-pro-uboot-mainline${lib.optionalString debugMilestones "-debug"}-${version}"
+pkgs.runCommand "nanokvm-pro-uboot-mainline${variant}-${version}"
   {
     inherit version;
     passthru = {
