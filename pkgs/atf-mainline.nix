@@ -1,0 +1,200 @@
+{ pkgs, crossPkgs, maix_ax620e_sdk, boot-atf, ... }:
+
+# ===========================================================================
+# Mainline Trusted Firmware-A BL31 for the AX630C (#89 rung 0).
+#
+# Upstream TF-A v2.15.0, plus a new `plat/axera/ax630c` platform carried as a
+# patch series in ./atf-mainline/patches (upstream-shaped: one commit adds the
+# platform, one adds its documentation). Nothing else in the tree is touched --
+# see docs/mainline-port.md 11.9 for the constants table and where each number
+# came from.
+#
+# BL31 only. No SPD, no BL32/OP-TEE, no secure services beyond PSCI CPU_ON /
+# CPU_OFF / SYSTEM_RESET. The vendor first-stage loader hands BL31 a stock
+# bl_params_t v2 chain in x0 with the standard cookie in x3, so this is an
+# ordinary loaded (non-RESET_TO_BL31) platform -- the SPL needs no change at
+# all to boot it (docs/mainline-port.md 11.2).
+#
+# Packaging matches the vendor `atf_bl31_signed.bin` byte protocol exactly,
+# because the SPL is what reads it:
+#   bl31.bin -> ax_gzip -9 -> bl31_axgzip.bin -> sec_boot_AX620E_sign.py
+#     -cap 0x54FAFE -key_bit 2048 with the SDK's committed dev keys
+# which is the recipe in [SDK]/boot/atf/Makefile:82-89 for SUPPPORT_GZIPD=TRUE
+# (which this project sets, project.mak:23). The SPL rejects a raw payload --
+# every stage but DDRINIT goes through the gzipd hardware -- so the axgzip step
+# is mandatory, not an optimisation.
+#
+# The result is a drop-in replacement for the `atf` / `atf_b` partition:
+# 256 KiB, entered at 0x40040000.
+#
+# ax_gzip is a prebuilt x86-64 static host tool shipped in the SDK, so this
+# derivation only builds on x86_64-linux -- same constraint as pkgs/boot.nix.
+# ===========================================================================
+
+let
+  crossPrefix = crossPkgs.stdenv.cc.targetPrefix; # aarch64-unknown-linux-gnu-
+
+  tfaVersion = "2.15.0";
+
+  tfaSrc = pkgs.fetchFromGitHub {
+    owner = "ARM-software";
+    repo = "arm-trusted-firmware";
+    rev = "v${tfaVersion}";
+    hash = "sha256-pFisArv6snepJ1qWmjckbr0O2Jg4WMhUkN3exgdyb+c=";
+  };
+
+  # sec_boot_AX620E_sign.py needs `rsa`; nothing else in the sign path does.
+  pythonEnv = pkgs.python3.withPackages (ps: [ ps.rsa ]);
+
+  # BL31 window / `atf` partition, from
+  # [SDK]/build/projects/AX630C_emmc_arm64_k419_sipeed_nanokvm/partition_ab.mak:5-6,23.
+  bl31Base = 1074003968; # 0x40040000
+  atfPartitionSize = 262144; # 256 KiB
+
+  atf-mainline = pkgs.stdenv.mkDerivation {
+    pname = "atf-mainline";
+    version = "tfa-${tfaVersion}-ax630c";
+
+    src = tfaSrc;
+
+    patches = [
+      ./atf-mainline/patches/0001-plat-axera-add-a-BL31-only-AX630C-platform.patch
+      ./atf-mainline/patches/0002-docs-plat-document-the-Axera-AX630C-platform.patch
+    ];
+
+    # TF-A manages its own freestanding flags; the cc-wrapper must not inject
+    # PIE / fortify / stack-protector into an EL3 image.
+    hardeningDisable = [ "all" ];
+    enableParallelBuilding = true;
+
+    nativeBuildInputs = [
+      crossPkgs.buildPackages.gcc13
+      crossPkgs.buildPackages.binutils
+      pkgs.gnumake
+      pythonEnv
+    ];
+
+    dontConfigure = true;
+
+    makeFlags = [
+      "PLAT=ax630c"
+      "ARCH=aarch64"
+      "CROSS_COMPILE=${crossPrefix}"
+      # TF-A 2.15's toolchain detection reads CC/CPP/AS/LD/OC/OD/AR straight
+      # out of the environment, and stdenv puts the NATIVE tools there --
+      # `CC=gcc` alone gets you "gcc: error: unrecognized command-line option
+      # '-mstrict-align'". A make-command-line assignment beats the
+      # environment, so name every one of them.
+      "CC=${crossPrefix}gcc"
+      "CPP=${crossPrefix}gcc"
+      "AS=${crossPrefix}gcc"
+      "LD=${crossPrefix}gcc"
+      "OC=${crossPrefix}objcopy"
+      "OD=${crossPrefix}objdump"
+      "AR=${crossPrefix}ar"
+      "DEBUG=0"
+      # 20 = LOG_LEVEL_NOTICE: the banner and errors, nothing per-boot chatty.
+      "LOG_LEVEL=20"
+      "bl31"
+    ];
+
+    installPhase = ''
+      runHook preInstall
+
+      rel="build/ax630c/release"
+      test -f "$rel/bl31.bin" || { echo "ERROR: no bl31.bin at $rel" >&2; exit 1; }
+
+      mkdir -p "$out/images" "$out/debug"
+      cp "$rel/bl31.bin"      "$out/images/atf_bl31_mainline.bin"
+      cp "$rel/bl31/bl31.elf" "$out/debug/atf_bl31_mainline.elf"
+      cp "$rel/bl31/bl31.map" "$out/debug/atf_bl31_mainline.map"
+
+      # --- axgzip + sign, exactly as the vendor ATF Makefile does ----------
+      # ax_gzip writes <stem>_axgzip.bin beside its input, so work on a copy.
+      work="$TMPDIR/sign"
+      mkdir -p "$work"
+      cp "$rel/bl31.bin" "$work/bl31.bin"
+      "${maix_ax620e_sdk}/tools/ax_gzip_tool/ax_gzip" -9 "$work/bl31.bin"
+      test -f "$work/bl31_axgzip.bin" || \
+        { echo "ERROR: ax_gzip produced no bl31_axgzip.bin" >&2; exit 1; }
+
+      python3 "${maix_ax620e_sdk}/build/tools/imgsign/sec_boot_AX620E_sign.py" \
+        -i "$work/bl31_axgzip.bin" \
+        -pub "${maix_ax620e_sdk}/tools/imgsign/public.pem" \
+        -prv "${maix_ax620e_sdk}/tools/imgsign/private.pem" \
+        -o "$out/images/atf_bl31_mainline_signed.bin" \
+        -cap 0x54FAFE -key_bit 2048
+
+      test -f "$out/images/atf_bl31_mainline_signed.bin" || \
+        { echo "ERROR: sign step produced no output" >&2; exit 1; }
+
+      # Fail in-build, never on the device: the signed image must fit the
+      # 256 KiB `atf` partition, and the raw image must fit the 256 KiB DRAM
+      # window the SPL enters at 0x40040000.
+      raw=$(stat -c %s "$out/images/atf_bl31_mainline.bin")
+      signed=$(stat -c %s "$out/images/atf_bl31_mainline_signed.bin")
+      echo "BL31 raw: $raw B   signed: $signed B   (limit ${toString atfPartitionSize} B)"
+      if [ "$raw" -gt ${toString atfPartitionSize} ]; then
+        echo "ERROR: bl31.bin ($raw B) does not fit the 256 KiB BL31 window" >&2
+        exit 1
+      fi
+      if [ "$signed" -gt ${toString atfPartitionSize} ]; then
+        echo "ERROR: signed image ($signed B) exceeds the 256 KiB atf partition" >&2
+        exit 1
+      fi
+
+      runHook postInstall
+    '';
+
+    dontFixup = true;
+
+    passthru = {
+      inherit tfaVersion bl31Base atfPartitionSize;
+      src = tfaSrc;
+      verify = verify;
+    };
+
+    meta = {
+      description =
+        "Mainline TF-A ${tfaVersion} BL31 for the Axera AX630C, signed for the atf partition";
+      license = pkgs.lib.licenses.bsd3;
+      platforms = [ "x86_64-linux" ];
+    };
+  };
+
+  # -------------------------------------------------------------------------
+  # checks.<system>.atf-mainline
+  #
+  # Everything asserted here is a property of the artefact, read back out of
+  # the built files: the ELF's entry and link address, the signed image's
+  # size, and every field of the Axera 1 KiB header -- including the two
+  # checksums, recomputed, and the magic compared against the vendor
+  # atf_bl31_signed.bin this repo builds from the SDK.
+  # -------------------------------------------------------------------------
+  verify = pkgs.runCommand "atf-mainline-verify"
+    {
+      nativeBuildInputs = [ pkgs.python3 crossPkgs.buildPackages.binutils ];
+      meta.platforms = [ "x86_64-linux" ];
+    }
+    ''
+      set -eu
+      elf="${atf-mainline}/debug/atf_bl31_mainline.elf"
+      img="${atf-mainline}/images/atf_bl31_mainline_signed.bin"
+      vendor="${boot-atf}/atf_bl31_signed.bin"
+
+      echo "== ELF entry / link address =="
+      ${crossPrefix}readelf -h "$elf" > headers.txt
+      ${crossPrefix}readelf -lW "$elf" > phdrs.txt
+      cat headers.txt phdrs.txt
+
+      python3 ${./atf-mainline/verify.py} \
+        --elf-headers headers.txt \
+        --elf-phdrs phdrs.txt \
+        --image "$img" \
+        --vendor-image "$vendor" \
+        --entry ${toString bl31Base} \
+        --max-size ${toString atfPartitionSize} \
+        | tee "$out"
+    '';
+in
+atf-mainline

@@ -1,0 +1,69 @@
+docs/plat: document the Axera AX630C platform
+
+Platform summary, the PSCI subset the port implements and why, and the
+build command.
+---
+--- a/docs/plat/ax630c.rst	1969-12-31 17:00:00.000000000 -0700
++++ b/docs/plat/ax630c.rst	1969-12-31 17:00:00.000000000 -0700
+@@ -0,0 +1,51 @@
++Axera AX630C
++============
++
++The Axera AX630C (AX620E family) is a dual Cortex-A53 SoC with a GIC-400,
++found on boards such as the Sipeed NanoKVM-Pro and MaixCAM2.
++
++This port provides BL31 only. The SoC boots from an on-chip ROM into a vendor
++first-stage loader, which trains DRAM, brings up the clock tree and the console
++UART, loads the boot images from flash and enters BL31 at EL3 with the MMU off.
++That loader passes an ordinary ``bl_params_t`` v2 chain in ``x0`` and the
++standard platform cookie in ``x3``, so no ``RESET_TO_BL31`` handling is needed.
++
++Platform summary
++----------------
++
++======================== =========================================
++CPUs                     2 x Cortex-A53, one cluster
++Interrupt controller     GIC-400 at ``0x01850000``
++Console                  UART0 (16550) at ``0x04880000``, 208 MHz
++Generic timer            24 MHz
++BL31 load address        ``0x40040000``, in a 256 KiB window
++BL32                     none
++BL33 entry               supplied by the loader
++======================== =========================================
++
++PSCI support
++------------
++
++``CPU_ON``, ``CPU_OFF`` and ``SYSTEM_RESET``.
++
++The SoC has no CPU power controller. Each core owns a pair of scratch
++registers in the system-global block that act as a release mailbox: a core that
++is not running waits on ``WFE``, reloads its pair on each wake, and branches to
++the 40-bit address it finds there once it is non-zero. The boot ROM leaves the
++secondary core in exactly that loop, so ``CPU_ON`` is a mailbox write and an
++``SEV``, and ``CPU_OFF`` re-enters the same loop from BL31.
++
++``SYSTEM_RESET`` arms watchdog 0 with a reload of zero. That is the only reset
++on this SoC that reaches the whole chip. There is no ``SYSTEM_OFF``: nothing
++inside the SoC can remove its own supply.
++
++Building
++--------
++
++.. code:: shell
++
++    make CROSS_COMPILE=aarch64-none-elf- PLAT=ax630c bl31
++
++The resulting ``bl31.bin`` is loaded verbatim to ``0x40040000``. How it is
++wrapped for flash is a property of the loader on a given board, not of this
++port.
+--- a/docs/plat/index.rst	2026-09-07 22:07:07.532993756 -0600
++++ b/docs/plat/index.rst	2026-09-07 22:18:08.918037542 -0600
+@@ -10,6 +10,7 @@
+    amd-versal2
+    arm/index
+    ast2700
++   ax630c
+    meson-axg
+    meson-gxbb
+    meson-gxl

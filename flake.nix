@@ -121,6 +121,11 @@
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
         boot-uboot = callPkg ./pkgs/boot-uboot.nix { inherit boot; };
 
+        # Mainline TF-A BL31 with our own plat/axera/ax630c (#89 rung 0),
+        # signed for the `atf` partition exactly like the vendor BL31 above.
+        # Untested on hardware -- see docs/mainline-port.md 11.9.
+        atf-mainline = callPkg ./pkgs/atf-mainline.nix { inherit boot-atf; };
+
         # Embedded kernel initramfs (static busybox + e2fsck from nixpkgs, the
         # vendor /init script kept verbatim). Baked into the kernel Image.
         initramfs = callPkg ./pkgs/initramfs.nix { };
@@ -566,7 +571,7 @@
           inherit
             toolchain
             axera-libs ax-ko-blobs
-            boot boot-fsbl boot-atf boot-optee boot-uboot
+            boot boot-fsbl boot-atf boot-optee boot-uboot atf-mainline
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
             initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-slot-image dtb-mainline-slot-image
@@ -600,6 +605,12 @@
           # The mainline DT asserts its own boot contract (FDT slack, the
           # blkdevparts= clause, the ATF/OP-TEE reservations) -- #74.
           mainline-dtb = dtb-mainline;
+          # Mainline TF-A BL31 for the AX630C: it builds, the ELF's entry and
+          # link address are 0x40040000, the signed image fits the 256 KiB
+          # `atf` partition, and its Axera header matches the vendor
+          # atf_bl31_signed.bin field for field with both checksums
+          # recomputed (#89).
+          atf-mainline = atf-mainline.verify;
           # The eMMC partition map, parsed out of the blkdevparts= clause that
           # defines it, with the root/boot partition numbers and the U-Boot
           # environment offset asserted against the values docs record (#78).
