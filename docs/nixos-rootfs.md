@@ -481,6 +481,125 @@ does not exist — and the only symptom is a `cp` with no source operand.
 
 ---
 
+## The image builder — `.#nixos-firmware-image`
+
+A flashable `.axp`, built **from scratch**. The shipping 4.19 `.#firmware-image`
+takes Sipeed's release bundle and rewrites members inside it; this one takes no
+vendor bundle at all, and the packer fails the build if a `nanokvm-pro-base`
+store path turns up among its inputs. Per-member provenance:
+[provenance.md](provenance.md#the-nixos-appliance-image-nixos-firmware-image).
+How to flash it and what to expect:
+[flashing-and-recovery.md](flashing-and-recovery.md#flashing-the-nixos-appliance-image).
+
+### Shape
+
+Modelled on the way nixpkgs builds images (`sd-image.nix`, `image/repart.nix`):
+a partition spec, a per-partition source, and the image exposed as
+`system.build.<image>` on the configuration it images.
+
+```
+nixos/lib/make-axp-image.nix   the container: manifest + ZIP, board-agnostic
+nixos/axp-image.nix            the member list: which derivation feeds which partition
+nixos/image-axp.nix            a module: system.build.axpImage
+```
+
+`.#nixos-firmware-image` **is**
+`.#nixosConfigurations.nanokvm-pro.config.system.build.axpImage` — one
+derivation, reached two ways, so the image can never describe a system other
+than the one it contains.
+
+### The manifest is derived, not written
+
+`<Partitions>` and every `<Block id=>` come from
+[`nixos/emmc-partitions.nix`](#6-the-emmc-map-and-etcfw_envconfig), which parses
+the single `blkdevparts=mmcblk0:` clause in `dts/ax630c-nanokvm-pro.dts` — the
+same string U-Boot parses to find `kernel`/`dtb`/`rootfs` by name and the kernel
+turns into `/dev/mmcblk0pN`. The flasher's partition table and the kernel command
+line therefore cannot disagree; there is one source and it is the device tree.
+
+The container format was learned from the SDK's own packer
+(`tools/mkaxp/make_axp_v2.py`), from the vendor bundle's central directory, and
+from `axdl-rs` — the open host flasher this flake ships. It is a flat deflate
+ZIP: one XML manifest, one member per image, `<File>` naming the member exactly.
+Facts worth keeping, all of them read out of the flasher rather than assumed:
+
+- **FDL1 and FDL2 are found by their `name` ATTRIBUTE**, not by `<Type>` or
+  `<ID>`, and their `<Block>` must carry no `id` so it resolves to an absolute
+  RAM address.
+- **`select="0"` does not skip an image.** It is parsed and discarded — an
+  unwanted image is *removed*, not deselected. `flag` is likewise dead.
+- **Only `Type=CODE` images are written.** `INIT`, `EIP` and `ERASEFLASH`
+  entries are never used, which is why this image ships no `eip_ax620e.bin`.
+- **Every `<Img>` needs all of** `flag`, `name`, `select`, `<ID>`, `<Type>`,
+  `<Block>` with both `<Base>` and `<Size>`, `<File>` (may be empty),
+  `<Auth algo=>` and `<Description>`: the deserializer declares no defaults, so
+  an omission is a hard parse error. An unknown `<Type>` gets past serde and
+  then panics on an `unwrap`.
+- **`<Base>` and `<Size>` are always parsed as hex**, with or without `0x`.
+- **`<Partition size>` is passed to the device unscaled**; `unit="2"` is the
+  only thing that makes it KiB.
+- The write size comes from the ZIP member's uncompressed size, not from
+  `<Block><Size>`.
+
+### Adding a partition
+
+Add it to the `blkdevparts=` clause in the DTS (which is the real change — it
+is the partition table), then give `nixos/axp-image.nix` a `partitionImages`
+entry naming a member and a file, and put the partition name in `imgOrder`
+where it should be written. Nothing else needs editing: the manifest, the
+size assertions and the check all follow from the map.
+
+### What is asserted
+
+At pack time: every member fits its partition; the Axera 1 KB signed header is
+present and its `img_size` fits (`<=`, not `==` — the SPL is padded to its flash
+slot and the DDR-init image is a header with no payload); each A/B pair is one
+image and is bound to the right partition; no input comes from the vendor
+bundle.
+
+At `nix flake check` time, `nixos-axp-manifest` opens the finished `.axp` and
+re-checks all of it against the partition map and the flasher's parsing rules —
+written from `axdl-rs` rather than from the packer, so the two failing to agree
+is a build failure.
+
+**A/B slots carry no slot identity.** Every A/B pair in the vendor v1.0.15
+bundle is byte-identical — kernel, dtb, OP-TEE, U-Boot and ATF alike — and the
+signed header has no slot field. A slot image is bound to its slot by the
+partition it lands in and by `bootsystem`; there is nothing else to get right,
+and `pkgs/slot-image.nix`'s `kernel_b.bin` file name is cosmetic.
+
+### The environment, the logo and `/boot`
+
+Three stored partitions had never been built from source, because the overlay
+image inherited them. All three now are, and each turned out to be simpler than
+expected:
+
+- **`env` is not a member of the vendor bundle at all.** Its only env entry is a
+  disabled `ERASEENV`, so a stock flash leaves the partition as it found it and
+  U-Boot repopulates it — the download engine writes `bootargs` after the
+  repartition step, and `set_slot_ab`/`update_cmdline` write the rest on every
+  boot. Ours is `mkenvimage` over three committed lines, plus `bootargs` lifted
+  verbatim out of the `u-boot.bin` this flake builds. `bootdelay=0` and
+  `baudrate=115200` are U-Boot's *entire* compiled-in default environment (no
+  `CONFIG_USE_BOOTARGS`, no `CONFIG_BOOTCOMMAND`), asserted against that same
+  binary. A wrong env self-heals: `get_part_info()` falls back to the compiled-in
+  `BOOTARGS_EMMC` whenever `bootargs` is missing or has no `blkdevparts`, and a
+  bad CRC just loads the default. An all-zero env partition boots this board to
+  slot A.
+- **The logo is a plain BMP** — no Axera header, no signature. U-Boot's loader
+  checks `BM`, the bit depth, and a whitelist of six geometries, computes the
+  stride with no row padding, and **discards its own return value at the call
+  site**. So a bad logo costs a console line, the ` logomode=` cmdline suffix and
+  a reserved-memory node, nothing more; and the board's actual front panel (the
+  172×320 JD9853 SPI TFT) is painted from an array compiled into U-Boot and
+  never touches this partition.
+- **`/boot` ships `ver` and nothing else.** The vendor's other four files are a
+  MaixPy settings file and three flags consumed by the vendor `/init`. It must
+  stay writable — every USB-gadget feature is a flag file there —
+  [see the contract](#4-boot--p16-vfat-and-it-must-stay-writable).
+
+---
+
 ## Approaches weighed
 
 Recorded because the reasoning outlived the constraint that produced it.
@@ -513,16 +632,22 @@ configuration until (a) is hardware-proven.
 ## What is built
 
 ```
-nixos/appliance.nix        NixOS module: the NanoKVM-Pro appliance
-nixos/emmc-partitions.nix  the blkdevparts= parser: p16/p17, A/B slots, fw_env
-nixos/rootfs.nix           eval-config -> closure -> rootless ext4 (+ sparse, + initrd)
-nixos/qemu-test.nix        the same appliance retargeted at qemu-system-aarch64
-nixos/loop-test.nix        the reversible on-device root: loop image, no re-arm
+nixos/appliance.nix           NixOS module: the NanoKVM-Pro appliance
+nixos/emmc-partitions.nix     the blkdevparts= parser: p16/p17, A/B slots, fw_env
+nixos/rootfs.nix              eval-config -> closure -> rootless ext4 (+ sparse, + initrd)
+nixos/lib/appliance-artifacts.nix  those two artifacts, as pure functions of the closure
+nixos/qemu-test.nix           the same appliance retargeted at qemu-system-aarch64
+nixos/loop-test.nix           the reversible on-device root: loop image, no re-arm
+nixos/image-axp.nix           system.build.axpImage
+nixos/axp-image.nix           the .axp's member list, per partition
+nixos/lib/make-axp-image.nix  the .axp packer (manifest + ZIP)
+nixos/lib/verify-axp.py       reads the finished .axp back -- `nix flake check`
 ```
 
 ```bash
 nix build .#nixos-appliance        # root = the eMMC rootfs partition (p17)
 nix build .#nixos-appliance-loop   # root = an image FILE loop-mounted off p17
+nix build .#nixos-firmware-image   # the flashable .axp of the first one
 nix run   .#nixos-appliance-qemu-run
 
 # result/nixos_rootfs.ext4          raw (dd / debugfs / QEMU)

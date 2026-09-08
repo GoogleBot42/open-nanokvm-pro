@@ -75,6 +75,57 @@ four pinned inputs or `pkgs/kvm-encoder/src/`.
 
 ---
 
+## The NixOS appliance image (`.#nixos-firmware-image`)
+
+The shipping 4.19 `.#firmware-image` is an **overlay**: it rewrites members
+inside Sipeed's release `.axp` and keeps five of them. The NixOS appliance image
+is packed **from scratch** (`nixos/lib/make-axp-image.nix`) and keeps none —
+there is no `base-axp` anywhere in its inputs, and the packer fails the build if
+a store path from it appears.
+
+**Stored on the eMMC** — one row per partition, in the order they are written:
+
+| p | Partition | Member | Source |
+|---|---|---|---|
+| 7 | `env` | `uboot_env.bin` | `pkgs/uboot-env.nix` — `mkenvimage` over `pkgs/uboot-env.txt`, with `bootargs` lifted out of our own `u-boot.bin` |
+| 2 | `ddrinit` | `ddrinit_…_signed.bin` | `pkgs/boot.nix` |
+| 3/4 | `atf` / `atf_b` | `atf_bl31_signed.bin`, `atf_b_bl31_signed.bin` | `pkgs/boot.nix` (TF-A 2.7) |
+| 5/6 | `uboot` / `uboot_b` | `u-boot_signed.bin`, `u-boot_b_signed.bin` | `pkgs/boot.nix` (U-Boot 2020.04) |
+| 8/9 | `logo` / `logo_b` | `logo.bmp`, `logo_b.bmp` | `pkgs/logo.nix` — generated 800×480 24-bpp BMP |
+| 10/11 | `optee` / `optee_b` | `optee_signed.bin`, `optee_b_signed.bin` | `pkgs/boot.nix` (OP-TEE 3.21) |
+| 12/13 | `dtb` / `dtb_b` | `…_signed.dtb`, `…_b_signed.dtb` | `dts/` → `pkgs/dtb-mainline.nix` → `pkgs/slot-image.nix` |
+| 14/15 | `kernel` / `kernel_b` | `kernel.bin`, `kernel_b.bin` | mainline Linux 7.1.3 + the NixOS stage-1 initrd (`pkgs/kernel-mainline.nix`) |
+| 16 | `boot` | `bootfs.fat32` | `pkgs/bootfs.nix` — FAT32 carrying `ver` |
+| 17 | `rootfs` | `nixos_rootfs_sparse.ext4` | `nixos/appliance.nix` → `nixos/lib/appliance-artifacts.nix` |
+| 1 | `spl` | `spl_…_signed.bin` | `pkgs/boot.nix` (written last, deliberately) |
+
+**Flash-time only, never stored on the eMMC:**
+
+| Member | Source | Role |
+|---|---|---|
+| `fdl_…_signed.bin` (FDL1) | `pkgs/boot.nix` | pushed into BootROM RAM at `0x3000000` |
+| `fdl2_signed.bin` (FDL2) | `pkgs/boot.nix` | the programmer, at `0x5C000000` |
+
+**`eip_ax620e.bin` is not in this image.** It is the one closed Axera member the
+vendor bundle carries (a download helper, flash-time only, never stored). The
+host flasher never reads it: `axdl-rs` writes only `Type=CODE` images and finds
+the FDLs by their `name` attribute, so an `EIP` entry is dead weight. Left out
+rather than shipped. `.#firmware-image` still passes the vendor's copy through,
+because that image is a rewrite of the vendor bundle.
+
+The rootfs closure is asserted blob-free at build time — any store path matching
+`axera-libs`, `ax-ko-blobs` or `libsns-dummy` fails the build
+([nixos-rootfs.md](nixos-rootfs.md#the-blob-policy-assertion)). The aic8800 WiFi
+firmware, the one closed thing the policy allows, is **not** on this image
+either: WiFi does not survive the mainline move yet (#85).
+
+Every partition image except the logo, the environment and `/boot` still carries
+the SDK's dev-key RSA signature (see
+[Provenance-relevant](#provenance-relevant-not-binaries)); those three are raw
+formats with no header.
+
+---
+
 ## Blobs pending a decision
 
 These are **not** in the approved-from-the-start set. They are either closed

@@ -349,6 +349,48 @@ your own test module, turn it off yourself.
 **Getting back.** `reboot` from the appliance lands on slot A because nothing
 re-armed. Then step 6 as usual, plus `rm /nixos-root.img` on the vendor rootfs.
 
+# Variant: from a flashed NixOS appliance (`.#nixos-firmware-image`)
+
+Once the board has been AXDL-flashed with the appliance image
+(`docs/flashing-and-recovery.md` → "Flashing the NixOS appliance image"), the
+whole loop still works — the vendor system is gone, so the *host* of the test
+is now the appliance itself. Everything it needs is already in its `PATH`:
+`devmem` (busybox), `dd` and `sha256sum` (coreutils), `fw_printenv` /
+`fw_setenv` (ubootTools), `e2fsprogs`, `util-linux`. Do not add packages for
+this.
+
+What changes, and it is the one thing that can bite:
+
+**Slot A is now the appliance, and slot B is free.** The flashed image writes
+the same appliance kernel to both slots, so `kernel_b`/`dtb_b` are a rescue copy
+at rest and a scratch pair for testing — exactly the role p14/p15 played on the
+vendor system. Back both up before the first test, as in step 2.
+
+**`nanokvm-checkboot.service` re-arms whichever slot booted.** That is the
+shipping behaviour and it is correct for a product, but it removes the "every
+exit path lands on slot A" property this loop rests on. Two ways to keep it:
+
+```
+# preferred -- the test kernel is on B, so stop the unit from re-arming it
+tools/kvmssh 'systemctl mask nanokvm-checkboot.service'   # before the reboot
+# ...or, after a slot-B boot that came up, disarm B by hand and reboot:
+tools/kvmssh 'devmem 0x2390028 32 0x10; reboot'           # 0x10 = arm slot A
+```
+
+A test kernel that never reaches userspace still falls back on its own: the SPL
+consumed `SLOTB_BOOTABLE` and nothing ran to re-arm it. The hazard is only the
+kernel that boots far enough for systemd to start `nanokvm-checkboot`.
+
+**Unmask it again when you are done** (`systemctl unmask
+nanokvm-checkboot.service`) — masked, the appliance stops confirming its own
+slot, and the boot after next falls back.
+
+**No deadman ships in the product image.** `nixos/loop-test.nix`'s 900 s
+keepalive is a test-variant module. On a flashed appliance, a slot-B kernel that
+comes up without networking cannot be reached and cannot be timed out; recovery
+is a power cycle (which lands on slot A, since the bit was consumed) or, if the
+appliance itself re-armed B, AXDL.
+
 # Adapting the initramfs for a new child issue
 
 `pkgs/kernel-mainline/initramfs/bringup-init.c` is one static musl binary with

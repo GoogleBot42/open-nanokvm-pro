@@ -42,6 +42,14 @@ nix run .#axdl -- --file result/*-selfbuilt.axp --wait-for-device
 #   https://<device-ip>/
 ```
 
+There is a second image: `nix build .#nixos-firmware-image` builds the **NixOS
+appliance** — mainline Linux plus a rootfs built entirely from nixpkgs, packed
+into an `.axp` from scratch with no vendor bundle behind it. It boots and serves
+the web UI, but the KVM hardware (video, USB HID, mini-display, WiFi) is not
+wired up on that kernel yet. [docs/nixos-rootfs.md](docs/nixos-rootfs.md), and
+[flashing-and-recovery.md](docs/flashing-and-recovery.md#flashing-the-nixos-appliance-image)
+before you flash it.
+
 Everything you need beyond this lives in [`docs/`](docs/):
 
 | Doc | What's in it |

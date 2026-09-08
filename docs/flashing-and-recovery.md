@@ -70,6 +70,126 @@ return to factory. Keep a stock `.axp` on hand as your ultimate fallback.
 
 ---
 
+## Flashing the NixOS appliance image
+
+```bash
+nix build .#nixos-firmware-image       # result/AX630C_…-nixos.axp, ~458 MiB
+nix run .#axdl -- --file result/*-nixos.axp --wait-for-device
+```
+
+Same tool, same download mode, same partition table as the vendor image. What
+differs is everything inside it.
+
+### What it contains
+
+**A different system, on a different kernel.** Mainline Linux 7.1.3 with the
+NixOS stage-1 initrd inside the Image, and a NixOS 26.11 rootfs in place of the
+vendor's Ubuntu 22.04 — [nixos-rootfs.md](nixos-rootfs.md). The `.axp` is built
+from scratch rather than overlaid on Sipeed's bundle, so **every partition it
+stores comes from this flake**: boot chain, environment, logo, `/boot`, dtb,
+kernel and rootfs. Only two members are not stored on the eMMC at all — FDL1 and
+FDL2, the download agents the flasher pushes into BootROM RAM, and those are
+ours as well. The per-member table is in
+[provenance.md](provenance.md#the-nixos-appliance-image-nixos-firmware-image).
+
+**Both kernel slots get the same appliance kernel.** There is no such thing as
+a slot-A image: every A/B pair in the vendor bundle is byte-identical, and the
+1 KB Axera signed header carries no slot field. A slot image is bound to its
+slot by the partition it lands in and by `bootsystem`, nothing else.
+
+### Three differences from flashing the vendor bundle
+
+**It writes the `env` partition; the vendor bundle does not.** Sipeed's `.axp`
+carries no environment image at all, so a stock flash leaves whatever the board
+had. This one overwrites p7 with a freshly generated environment
+([nixos-rootfs.md](nixos-rootfs.md#the-environment-the-logo-and-boot)). Any
+`fw_setenv` state on the device is gone after a flash. That is the intent — a
+known environment rather than an inherited one — but do not expect a variable
+you set by hand to survive.
+
+**The download agents are ours, and have never run.** FDL1 and FDL2 come from
+`pkgs/boot.nix` rather than from Sipeed's bundle, and `.#firmware-image` has
+always used the vendor's, so this is their first exercise. FDL2 is the on-device
+programmer: it consumes the partition table and expands the sparse ext4. If a
+flash fails in a way that looks like a manifest or protocol problem, **suspect
+FDL2 before the manifest.** The failure is benign — the agents run from RAM and
+nothing has been written yet — so the recovery is to re-run the flasher with a
+stock vendor `.axp`.
+
+**Do not use `--exclude-rootfs`.** On the vendor bundle it was a "keep my data"
+flag. Here it would install a mainline kernel, a mainline dtb and a NixOS
+`/boot` over whatever rootfs is already on the device, which boots nothing.
+
+### First boot
+
+Stage 1 fsck's `p17` and grows the filesystem to the partition — the packed
+image is ~1.3 GiB inside a ~29 GiB partition — then `switch_root`s to `/init`.
+Userspace derives the board's identity from the SoC UID exactly as the vendor
+`/init` did, so:
+
+- the MAC is the one this unit has always had (`48:da:35:…`),
+- `ClientIdentifier=mac` gets it **the same DHCP lease**, so
+  `tools/kvmssh` reaches it at the address it already knows,
+- the hostname is `kvm-XXXX`, the first four hex chars of `sha512sum
+  /device_key`,
+- sshd is a persistent daemon with root login and password auth, and root's
+  password is **`sipeed`** — the vendor image's documented default (#32).
+  Change it on first boot.
+- the web UI answers on `:80` and `:443` (self-signed cert, generated on first
+  boot).
+
+Boot takes about 26 s. All of the above was proven on this board in #78, from a
+loop-image root: `docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`.
+
+### What is NOT there yet
+
+**This is a booting appliance with a web UI, not a working KVM.**
+
+| Missing | Issue |
+|---|---|
+| Video — no `/dev/video0`; the UI loads and streams nothing | #83 |
+| USB HID — no keyboard, no mouse, no mass storage | #82 (the gadget policy half) |
+| Mini-display and audio | #84 |
+| WiFi | #85 |
+| OTA updates | #86 |
+
+ATX power/reset works in principle (`nanokvm-gpio`, #81) but has never been
+pulsed on hardware.
+
+### Rollback, and what it costs
+
+**Flashing this overwrites the vendor system.** Keep a stock `.axp` on hand;
+AXDL re-flashing it is the way back, and it needs hands on the board.
+
+NixOS generations are **userspace only** here. `/init` points at the system
+profile, so switching generations changes the whole userland with no bootloader
+involved — but the kernel lives in the A/B partitions and no generation switch
+touches it. A kernel that does not boot is not a rollback, it is an AXDL trip,
+until #79 puts a health gate in front of the slot flip.
+
+**There is no deadman in the product image.** The #78 hardware harness carried a
+900 s keepalive that returned the board to slot A on its own; that is a
+test-variant module (`nixos/loop-test.nix`), deliberately not shipped. On the
+flashed appliance a boot that comes up without reaching the network has no way
+out but AXDL. That is the accepted trade — an appliance is supposed to stay up.
+
+### Slot-B kernel testing still works, from the appliance
+
+The A/B harness below is unchanged by this image, and everything it needs is in
+the appliance's `PATH`: `devmem` (busybox), `dd` and `sha256sum` (coreutils),
+`fw_printenv`/`fw_setenv` (ubootTools), `e2fsprogs`, `util-linux`. Slot A
+carries the shipped appliance kernel and **slot B is free for test kernels**.
+
+One difference from testing on the vendor system, and it matters:
+`nanokvm-checkboot.service` re-arms **whichever slot actually booted**. A test
+kernel that never reaches userspace consumes its BOOTABLE bit and falls back to
+slot A by itself, as always — but one that *does* reach userspace re-arms slot
+B and stays there. Disarm it deliberately (`devmem 0x2390028 32 0x10`) or stop
+the unit before rebooting. The procedure is in the `mainline-boot-test` skill,
+"Variant: from a flashed NixOS appliance".
+
+---
+
 ## Backup and restore
 
 **Do this before flashing eMMC the first time.** With SSH access to a
