@@ -1,4 +1,9 @@
-{ pkgs, crossPkgs, maix_ax620e_sdk, boot-atf, ... }:
+{ pkgs, crossPkgs, maix_ax620e_sdk, boot-atf
+  # Build the milestone-instrumented variant (#89 rung 1). See "Milestone
+  # instrumentation" below: identical BL31 plus seven register writes, used
+  # only to find out how far a BL31 that never reaches BL33 actually got.
+, debugMilestones ? false
+, ... }:
 
 # ===========================================================================
 # Mainline Trusted Firmware-A BL31 for the AX630C (#89 rung 0).
@@ -51,8 +56,95 @@ let
   bl31Base = 1074003968; # 0x40040000
   atfPartitionSize = 262144; # 256 KiB
 
+  # -------------------------------------------------------------------------
+  # Milestone instrumentation (#89 rung 1, debugMilestones = true).
+  #
+  # BL31 owns no console this board can read, so a BL31 that never hands off
+  # to BL33 says nothing at all. These seven writes give it the same channel
+  # the mainline kernel bring-up uses: the spare high bits of the A/B slot
+  # register 0x02390024 (SET alias at +4), which survive a warm reboot, a
+  # watchdog reset and the SPL's own fallback to slot A -- so slot A can read
+  # afterwards how far slot B got.
+  #
+  # Bits, in execution order:
+  #   12  bl31_early_platform_setup2 entered (the SPL loaded and ran us)
+  #   13  bl_params chain walked, BL33 entry point captured
+  #   14  bl31_plat_arch_setup entered (about to build page tables)
+  #   15  enable_mmu_el3() returned -- BL31 is running with its MMU on
+  #   16  generic_delay_timer_init() done
+  #   17  GIC initialised (bl31_platform_setup complete)
+  #   18  bl31_plat_runtime_setup -- the last platform code before BL33
+  #
+  # The window holding the register is not in the production mmap, so the
+  # debug build maps it; everything else is byte-identical to the shipping
+  # platform.
+  # -------------------------------------------------------------------------
+  milestonePostPatch = ''
+    f=plat/axera/ax630c/ax630c_bl31_setup.c
+
+    substituteInPlace $f --replace-fail \
+      '#include <plat/common/platform.h>' \
+      '#include <lib/mmio.h>
+    #include <plat/common/platform.h>'
+
+    substituteInPlace $f --replace-fail \
+      'static console_t ax630c_console;' \
+      '/* #89 rung 1 boot-evidence channel -- see pkgs/atf-mainline.nix. */
+    #define AX630C_DBG_SLOT_SET	UL(0x02390028)
+
+    static void ax630c_milestone(unsigned int bit)
+    {
+    	mmio_write_32(AX630C_DBG_SLOT_SET, (uint32_t)1U << bit);
+    }
+
+    static console_t ax630c_console;'
+
+    substituteInPlace $f --replace-fail \
+      '	bl_params_node_t *node;' \
+      '	bl_params_node_t *node;
+
+    	ax630c_milestone(12U);'
+
+    substituteInPlace $f --replace-fail \
+      '	bl33_ep_info.args.arg3 = 0UL;' \
+      '	bl33_ep_info.args.arg3 = 0UL;
+
+    	ax630c_milestone(13U);'
+
+    substituteInPlace $f --replace-fail \
+      '	generic_delay_timer_init();' \
+      '	generic_delay_timer_init();
+    	ax630c_milestone(16U);'
+
+    substituteInPlace $f --replace-fail \
+      '	ax630c_gic_init();' \
+      '	ax630c_gic_init();
+    	ax630c_milestone(17U);'
+
+    substituteInPlace $f --replace-fail \
+      '	console_flush();' \
+      '	ax630c_milestone(18U);
+    	console_flush();'
+
+    substituteInPlace $f --replace-fail \
+      '	MAP_REGION_FLAT(AX630C_SYS_GLB_BASE, AX630C_SYS_GLB_SIZE,
+    			MT_DEVICE | MT_RW | MT_NS),' \
+      '	MAP_REGION_FLAT(AX630C_SYS_GLB_BASE, AX630C_SYS_GLB_SIZE,
+    			MT_DEVICE | MT_RW | MT_NS),
+    	MAP_REGION_FLAT(UL(0x02390000), AX630C_SIZE_K(64),
+    			MT_DEVICE | MT_RW | MT_NS),'
+
+    substituteInPlace $f --replace-fail \
+      '	setup_page_tables(bl_regions, ax630c_mmap);
+    	enable_mmu_el3(0);' \
+      '	ax630c_milestone(14U);
+    	setup_page_tables(bl_regions, ax630c_mmap);
+    	enable_mmu_el3(0);
+    	ax630c_milestone(15U);'
+  '';
+
   atf-mainline = pkgs.stdenv.mkDerivation {
-    pname = "atf-mainline";
+    pname = "atf-mainline" + pkgs.lib.optionalString debugMilestones "-debug";
     version = "tfa-${tfaVersion}-ax630c";
 
     src = tfaSrc;
@@ -61,6 +153,8 @@ let
       ./atf-mainline/patches/0001-plat-axera-add-a-BL31-only-AX630C-platform.patch
       ./atf-mainline/patches/0002-docs-plat-document-the-Axera-AX630C-platform.patch
     ];
+
+    postPatch = pkgs.lib.optionalString debugMilestones milestonePostPatch;
 
     # TF-A manages its own freestanding flags; the cc-wrapper must not inject
     # PIE / fortify / stack-protector into an EL3 image.

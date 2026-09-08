@@ -385,6 +385,20 @@ kernel that boots far enough for systemd to start `nanokvm-checkboot`.
 nanokvm-checkboot.service`) — masked, the appliance stops confirming its own
 slot, and the boot after next falls back.
 
+**The mask does not survive the reboot** (measured 2026-09-08, #89). NixOS
+regenerates `/etc/systemd/system` from the store during activation, which takes
+the `-> /dev/null` symlink with it; the unit reads `enabled` again on the next
+boot and re-arms whichever slot booted. So masking protects nothing across the
+very reboot you are protecting. It costs little — a slot-B boot that reaches
+userspace is reachable over SSH — but plan on disarming by hand afterwards:
+
+```
+tools/kvmssh 'devmem 0x0239002C 32 0x28; devmem 0x2390028 32 0x14'  # -> 0x14
+```
+
+A test image that never reaches userspace still falls back on its own, so this
+only matters for a slot-B boot that succeeds.
+
 **No deadman ships in the product image.** `nixos/loop-test.nix`'s 900 s
 keepalive is a test-variant module. On a flashed appliance, a slot-B kernel that
 comes up without networking cannot be reached and cannot be timed out; recovery

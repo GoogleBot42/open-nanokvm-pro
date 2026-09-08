@@ -2214,11 +2214,11 @@ the eMMC.
 
 | # | Rung | Proves | Serial-less evidence |
 |---|---|---|---|
-| 0 | `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only. **U-Boot half DONE — §11.10** |
-| 1 | **SD card**: vendor SD-SPL + **mainline BL31** + vendor U-Boot + vendor kernel | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff | the board reaches the vendor userspace → DHCP → SSH. Card removal reverts |
-| 2 | **SD card**: vendor SD-SPL + mainline BL31 + **mainline U-Boot** + extlinux → mainline kernel + NixOS | the whole new chain end to end, including the board port, `part_cmdline`, sdhci-cadence and the `rgmii-id` PHY question | SSH on the mainline appliance (#77/#78 already prove that path); card removal reverts |
-| 3 | **eMMC, existing 17-partition layout**: mainline BL31 → `atf`, mainline U-Boot → `uboot`, keeping the vendor kernel slots | the eMMC read path and the signed-header packaging, without touching the layout | as rung 1. Recovery: AXDL |
-| 4 | **eMMC, new layout**, full `.axp` over AXDL: rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`), mainline BL31, mainline U-Boot, ext4 `/boot`, extlinux | the layout, the regenerated SPL offsets, and NixOS generations | as above, plus `fw_printenv` and the milestone register |
+| 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
+| 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
+| 2 | eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | U-Boot milestone bits 28-31, then SSH on the appliance. A hang costs a power cycle (slot A), never AXDL |
+| 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
+| 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
 
 The SD rungs are load-bearing and **there is no SD card in the device** — the
@@ -2278,7 +2278,8 @@ since whether that pad is muxed to UART1 on this board is a device question.
 `plat/axera/ax630c`, and packages it byte-for-byte the way the vendor
 `atf_bl31_signed.bin` is packaged, so a later rung can `dd` it into `atf_b`.
 `nix build .#checks.x86_64-linux.atf-mainline` asserts the result.
-**Nothing here has run on hardware.**
+It has since run on hardware, and needed one fix to do it — see "What exists
+now (rung 1, 2026-09-08)" at the end of this section.
 
 The ladder was revised on 2026-09-08 (Jeremy): no SD rungs, and no AXDL where a
 `dd` will do — the boot source is a `chip_mode` strap, so an SD boot needs
@@ -2297,7 +2298,7 @@ docs index):
 
 | Patch | Files | LOC |
 |---|---|---:|
-| `0001-plat-axera-add-a-BL31-only-AX630C-platform` | `platform.mk` | 48 |
+| `0001-plat-axera-add-a-BL31-only-AX630C-platform` | `platform.mk` | 55 |
 | | `include/platform_def.h` | 78 |
 | | `include/ax630c_def.h` | 65 |
 | | `include/ax630c_private.h` | 26 |
@@ -2308,7 +2309,7 @@ docs index):
 | | `ax630c_topology.c` | 48 |
 | | `aarch64/ax630c_helpers.S` | 50 |
 | `0002-docs-plat-document-the-Axera-AX630C-platform` | `docs/plat/ax630c.rst` (new) + one line in `docs/plat/index.rst` | 52 |
-| **total** | | **767** |
+| **total** | | **774** |
 
 Upstreaming needs one thing this series does not carry: a
 `docs/about/maintainers.rst` entry, which needs a person's name.
@@ -2357,7 +2358,7 @@ read back out of the artefacts):
 
 - the ELF's entry point and its first LOAD segment are both `0x40040000`, and
   the whole image spans 57 344 B of the 256 KiB window;
-- the signed image is **14 456 B**, inside the 256 KiB `atf` partition;
+- the signed image is **14 592 B**, inside the 256 KiB `atf` partition;
 - the Axera header's magic, capability word and RSA-2048 key descriptor match
   the vendor `atf_bl31_signed.bin` this repo builds, field for field;
 - `img_size` equals the payload length, and both header checksums recompute
@@ -2392,9 +2393,11 @@ appliance"). The vendor system and its `/root/pre75` backups are gone.
    ```
    The two md5s must match. Take the byte count from `stat` every time — the
    image size changes between builds.
-3. Arm slot B exactly as the boot-test skill's flashed-appliance variant says:
-   mask `nanokvm-checkboot.service` first (it would re-arm whichever slot
-   booted and destroy the "every exit lands on slot A" property), then set
+3. Arm slot B exactly as the boot-test skill's flashed-appliance variant says.
+   Masking `nanokvm-checkboot.service` first is the documented step, but
+   **the mask does not survive the reboot** on a NixOS appliance (below), so
+   expect slot B to stay armed after a slot-B boot that reaches userspace and
+   disarm it by hand. Then set
    `SLOTB` **and** `SLOTB_BOOTABLE` through the register's SET/CLR pair — a
    raw `SLOTB` poke leaves `SLOTB_BOOTABLE` clear and silently falls back to A
    — and `reboot`.
@@ -2413,9 +2416,12 @@ appliance"). The vendor system and its `/root/pre75` backups are gone.
    Also expected, and not a fault: the `optee` driver no longer finds a TEE.
    The vendor SPL still loads OP-TEE to `0x44200000`, but a BL31 built with no
    SPD never enters it.
-5. Prove `SYSTEM_RESET`, which the vendor BL31 never implemented: from the
-   booted slot-B system, `reboot` should now go through PSCI rather than the
-   watchdog shim. The board coming back is the whole test.
+5. Prove `SYSTEM_RESET`, which the vendor BL31 never implemented. **A plain
+   `reboot` is not the test** — the device tree's `syscon-reboot` node outranks
+   PSCI, and BL31's `SYSTEM_RESET` drives the same WDT0 the kernel's own
+   fallback handler does, so the board coming back proves nothing. The probe
+   that works is five steps and is written out under "Testing `SYSTEM_RESET` at
+   all needs the DT out of the way" below.
 6. Return to slot A: arm slot A through the SET register (`devmem 0x2390028
    32 0x10`), `reboot`, unmask `nanokvm-checkboot.service`, then restore
    `atf_b` from `/root/atf_b.orig` if the run is finished with.
@@ -2614,3 +2620,150 @@ rung 2 exercises both at once.
    made — but only if `upgrade_available` was set, see above.
 
 ---
+
+### What exists now (rung 1, 2026-09-08) — MAINLINE BL31 BOOTS THE BOARD
+
+**A mainline TF-A BL31 has run this SoC.** `.#atf-mainline` in `atf_b`, slot B,
+vendor SPL below it and the vendor-derived U-Boot, the mainline kernel and the
+NixOS appliance above it: the board boots to SSH in 74 s, both cores up.
+Reversible throughout — slot A, `p3` and the rootfs were never written, and
+every exit path from a bad slot-B boot landed back on slot A on its own.
+
+**The three questions the rung existed to answer.**
+
+| Question | Answer | Evidence |
+|---|---|---|
+| Does the SPL's `bl_params` handoff work unmodified? | Yes | BL31 reaches `bl31_plat_runtime_setup`, then BL33 runs |
+| Does PSCI bring up the second core? | **Yes** | `CPU1: Booted secondary processor 0x0000000001 [0x410fd034]`, `nproc` = 2, `cpu1/online` = 1 |
+| Does `SYSTEM_RESET` work? | **Yes** | reboot round trip 65 s with PSCI as the *only* registered restart handler, and `boot_reason=0x04` (the WDT path BL31 drives) instead of `0x01` (the syscon path) |
+
+Mainline BL31 also identifies itself in `dmesg`, which is how a later run can
+tell which firmware it is on without reading the slot register:
+
+```
+psci: PSCIv1.1 detected in firmware.
+psci: MIGRATE_INFO_TYPE not supported.      # vendor BL31: "Trusted OS migration not required"
+psci: SMC Calling Convention v1.5           # vendor BL31: v1.2
+optee: api uid mismatch
+optee firmware:optee: probe with driver optee failed with error -22
+```
+
+The OP-TEE probe failure is correct and expected: the vendor SPL still loads
+OP-TEE to `0x44200000`, but a BL31 with no SPD never enters it, so the SMC that
+reads the TEE UID returns something else. Nothing on the appliance uses a TEE.
+
+Banked: `docs/reference/mainline/atf-mainline-20260908/`.
+
+#### The one bug, and why it was invisible from source
+
+The first three slot-B attempts all failed **identically**: BL31 ran to
+completion and the board came back on slot A about 133 s later, versus 68 s for
+a good boot. The extra ~65 s is one watchdog period; `boot_reason` was `0x05`
+rather than `0x01`.
+
+`INIT_UNUSED_NS_EL2` was not set. TF-A's own words
+(`docs/getting_started/build-options.rst`): *"This build flag guards code that
+disables EL2 safely in scenario where NS-EL2 is present but unused. This flag is
+set to 0 by default. Platforms without NS-EL2 in use must enable this flag."*
+The whole body of `init_nonsecure_el2_unused()` is inside `#if
+INIT_UNUSED_NS_EL2`. The SPL hands BL33 an entry point with `SPSR_64(MODE_EL1,
+…)` (§11.2), so `SCR_EL3.HCE` is clear, so `cm_prepare_el3_exit()` takes the
+"EL2 implemented but unused" branch — and with the flag at its default that
+branch does nothing at all. `HCR_EL2` keeps its reset value, **`HCR_EL2.RW` = 0**,
+and the ERET drops into U-Boot as **AArch32**. BL31 is blameless and complete;
+BL33 never executes one of its own instructions.
+
+One line in `platform.mk` fixes it, and the next boot came up on slot B.
+
+This is worth stating in the general form, because it will bite the same way in
+rung 2 and in any other AArch64 platform port: **on this board BL33 runs at EL1,
+so the platform is responsible for disabling EL2, and TF-A will not do it unless
+asked.** Entering BL33 at EL2 instead would sidestep the flag entirely — that is
+an option for mainline U-Boot in rung 2, and it is BL31's `spsr` to set, not the
+SPL's, contrary to what §11.2 says.
+
+#### How the failure was localised: milestone bits inside BL31
+
+`.#atf-mainline-debug` (`pkgs/atf-mainline.nix`, `debugMilestones = true`) is
+the shipping platform plus seven `mmio_write_32` calls to the SET alias of the
+A/B slot register `0x02390024`, one per BL31 stage — bit 12 on entry to
+`bl31_early_platform_setup2` through bit 18 in `bl31_plat_runtime_setup`, the
+last platform code before `el3_exit`. The register survives the watchdog reset
+and the SPL's fallback, so slot A reads the result afterwards. It also needs a
+mapping for `0x02390000`, which the production `mmap` deliberately lacks.
+
+The failing runs read `0x0007F014`: **every** milestone bit set, slot A
+re-armed. That single number moved the search from "the whole of BL31" to "the
+handoff", which is where the bug was. Keep the variant; rung 2's U-Boot bring-up
+wants exactly this channel (§11.7's observability list).
+
+The complementary probe, when you need to know whether *Linux* ran on the test
+slot: write a marker to `/dev/kmsg` before arming slot B, then read
+`/var/lib/systemd/pstore/console-ramoops-0` after the fallback boot. The
+appliance's ramoops console zone survives, and `systemd-pstore` archives the
+previous boot's copy on every boot. A file that still ends at your marker's own
+`reboot: Restarting system` means the test slot never got a kernel far enough to
+register the ramoops console (~0.26 s in).
+
+#### Two harness corrections, both proven the hard way
+
+- **`systemctl mask nanokvm-checkboot.service` does not survive a reboot on the
+  appliance.** NixOS regenerates `/etc/systemd/system` from the store during
+  activation and the mask symlink goes with it; the unit reads `enabled` again
+  on the next boot. The boot-test skill's "mask it before a slot-B test" step is
+  therefore inert. It costs nothing here — a slot-B boot that comes up is
+  reachable, and `devmem 0x0239002C 32 0x28; devmem 0x2390028 32 0x14` disarms
+  it by hand — but plan for slot B staying armed after a *successful* slot-B
+  boot, not for the mask holding.
+- **Unbinding `syscon-reboot` corrupts the restart-handler chain.** `echo reboot
+  > /sys/bus/platform/drivers/syscon-reboot/unbind` leaves a dangling entry:
+  the next `reboot` dies in `atomic_notifier_call_chain` with `pc : 0x0`, then
+  loops through `emergency_restart` oopsing again until something else resets
+  the board (`slotA-unbind-oops-console.txt`). Unbinding `ax630c-wdt` is clean
+  by comparison. Do not use the syscon unbind to steer the reboot path; build a
+  device tree without the node instead.
+
+#### Testing `SYSTEM_RESET` at all needs the DT out of the way
+
+The shipping device tree reboots through a `syscon-reboot` node at notifier
+priority 192, ahead of PSCI's 129 and the watchdog's 128, so an ordinary
+`reboot` never issues `SYSTEM_RESET` no matter which BL31 is installed. Worse,
+the two candidates are indistinguishable by outcome: **BL31's `SYSTEM_RESET`
+and the kernel's watchdog restart handler are the same hardware mechanism**
+(WDT0, reload zero), so "the board came back" proves nothing.
+
+The probe that does work, and that is safe to run unattended:
+
+1. Boot slot B with a dtb built with the `reboot` node's `compatible` changed to
+   something no driver claims (`dts/ax630c.dtsi:953`). Chain: PSCI, then the
+   watchdog.
+2. `echo 4840000.watchdog > /sys/bus/platform/drivers/ax630c-wdt/unbind` —
+   which removes the priority-128 handler and leaves PSCI alone at 129.
+3. That unbind also **gates WDT0's clocks**, so its registers read `0xDEADBEEF`
+   and BL31 could not reset the chip either. Put them back by hand through the
+   periph controller's SET aliases: `devmem 0x48700b0 32 0x4000` (EB0 bit 14,
+   `clk_wdt0_eb`), `devmem 0x48700c8 32 0x80000` (EB3 bit 19, `pclk_wdt0_eb`),
+   `devmem 0x48700f4 32 0x3` (SW_RST3 clear, both WDT0 resets deasserted).
+4. Arm WDT0 by hand as the safety net — `EN`=1, `TORR`=`0x55D4` (two 60 s
+   stages), strobe `TORR_LOAD`, kick `CRR` — so a normal-world that halts is
+   rescued in ~120 s instead of needing hands on the board.
+5. `reboot`, and time it. **Back in ~70 s means `SYSTEM_RESET` worked**; back in
+   ~190 s means the kernel printed `Reboot failed -- System halted` and the
+   hand-armed dog rescued it.
+
+Measured: 65 s, `boot_reason=0x04`, and a `console-ramoops` ending in a clean
+`reboot: Restarting system` with no oops. The slot-A control run of the same rig
+against the vendor BL31 took 189 s.
+
+`boot_reason` on the kernel command line is a free second opinion on which reset
+path ran: `0x01` = the syscon `CHIP_RST_SW` write, `0x04` = a WDT0 reset (so,
+BL31's `SYSTEM_RESET`), `0x05` = the abnormal reset the three failed runs took.
+
+#### Device end state
+
+Slot register `0x00000014`, `bootsystem=A`, running the vendor BL31 from `p3`
+with `nanokvm-checkboot` enabled and active, no failed units, web 200.
+**`atf_b` (p4) holds the production `.#atf-mainline`** — it booted clean twice,
+so slot B is now a working mainline-BL31 rescue slot rather than a vendor twin.
+`dtb_b` and `kernel_b` are restored to the flashed appliance images and hash
+verified. Backups and every image used are in `/root/rung1/` on the device.

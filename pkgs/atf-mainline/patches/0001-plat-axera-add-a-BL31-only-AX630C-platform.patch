@@ -728,7 +728,7 @@ diff -Naur tfa-orig/plat/axera/ax630c/include/platform_def.h tfa/plat/axera/ax63
 diff -Naur tfa-orig/plat/axera/ax630c/platform.mk tfa/plat/axera/ax630c/platform.mk
 --- a/plat/axera/ax630c/platform.mk	1969-12-31 17:00:00.000000000 -0700
 +++ b/plat/axera/ax630c/platform.mk	2026-09-07 22:14:07.379410689 -0600
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,55 @@
 +#
 +# Copyright (c) 2026, Axera AX630C platform contributors. All rights reserved.
 +#
@@ -771,6 +771,13 @@ diff -Naur tfa-orig/plat/axera/ax630c/platform.mk tfa/plat/axera/ax630c/platform
 +HW_ASSISTED_COHERENCY	:=	0
 +USE_COHERENT_MEM	:=	0
 +ENABLE_SVE_FOR_NS	:=	0
++
++# The loader enters BL33 at EL1h with EL2 implemented but never used, so BL31
++# has to disable EL2 safely on its way out. Without this, HCR_EL2 keeps its
++# reset value -- RW = 0 -- and the normal world is entered as AArch32: BL31
++# runs to completion and BL33 never executes an instruction. Proven on
++# hardware, 2026-09-08.
++INIT_UNUSED_NS_EL2	:=	1
 +
 +# BL33 is a Linux-style payload: x0 carries the device tree address (zero on
 +# this SoC, so BL33 must be self-contained) and x1-x3 are zero.

@@ -1,0 +1,244 @@
+[   15.949623] axera-dwmac 104c0000.ethernet end0: Register MEM_TYPE_PAGE_POOL RxQ-0
+[   15.996786] axera-dwmac 104c0000.ethernet end0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet] (irq=POLL)
+[   16.016811] axera-dwmac 104c0000.ethernet end0: No Safety Features support found
+[   16.033088] axera-dwmac 104c0000.ethernet end0: IEEE 1588-2008 Advanced Timestamp supported
+[   16.042109] axera-dwmac 104c0000.ethernet end0: registered PTP clock
+[   16.048886] axera-dwmac 104c0000.ethernet end0: configuring for phy/rgmii-id link mode
+[   20.174104] axera-dwmac 104c0000.ethernet: 1000 Mbit/s: RGMII tx clock 250000000 Hz (asked 250000000)
+[   20.183452] axera-dwmac 104c0000.ethernet end0: Link is Up - 1Gbps/Full - flow control off
+[ 5720.845865] bash (771): drop_caches: 3
+[ 5879.250159] ax630c-wdt 4840000.watchdog: counter at 24000000 Hz, timeout 60s, max 357s
+[ 6180.216846] systemd-shutdown[1]: Syncing filesystems and block devices.
+[ 6180.238636] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[ 6180.257029] systemd-journald[324]: Received SIGTERM from PID 1 (systemd-shutdow).
+[ 6180.301003] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[ 6180.316739] systemd-shutdown[1]: Unmounting file systems.
+[ 6180.326458] (sd-umount)[1170]: Unmounting '/run/credentials/systemd-journald.service'.
+[ 6180.336704] (sd-remount)[1171]: Remounting '/nix/store' read-only with options ''.
+[ 6180.360205] EXT4-fs (mmcblk0p17): re-mounted 44444444-4444-4444-8888-888888888888 ro.
+[ 6180.378001] (sd-remount)[1172]: Remounting '/' read-only with options ''.
+[ 6180.389828] EXT4-fs (mmcblk0p17): re-mounted 44444444-4444-4444-8888-888888888888.
+[ 6180.399094] systemd-shutdown[1]: All filesystems unmounted.
+[ 6180.404764] systemd-shutdown[1]: Deactivating swaps.
+[ 6180.409928] systemd-shutdown[1]: All swaps deactivated.
+[ 6180.415191] systemd-shutdown[1]: Detaching loop devices.
+[ 6180.429481] systemd-shutdown[1]: All loop devices detached.
+[ 6180.435174] systemd-shutdown[1]: Stopping MD devices.
+[ 6180.440724] systemd-shutdown[1]: All MD devices stopped.
+[ 6180.446090] systemd-shutdown[1]: Detaching DM devices.
+[ 6180.451592] systemd-shutdown[1]: All DM devices detached.
+[ 6180.457029] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[ 6181.149544] systemd-shutdown[1]: Successfully changed into root pivot.
+[ 6181.158471] systemd-shutdown[1]: Entering exitrd...
+[ 6181.185344] shutdown[1]: Syncing filesystems and block devices.
+[ 6181.191635] shutdown[1]: Sending SIGTERM to remaining processes...
+[ 6181.205225] shutdown[1]: Sending SIGKILL to remaining processes...
+[ 6181.218945] shutdown[1]: Unmounting file systems.
+[ 6181.228993] (sd-umoun[1174]: Unmounting '/run/credentials'.
+[ 6181.237363] (sd-umoun[1175]: Unmounting '/oldroot/sys/kernel/debug'.
+[ 6181.246479] (sd-umoun[1176]: Unmounting '/oldroot/dev/hugepages'.
+[ 6181.255246] (sd-umoun[1177]: Unmounting '/oldroot/dev/mqueue'.
+[ 6181.263973] (sd-umoun[1178]: Unmounting '/oldroot/sys/kernel/config'.
+[ 6181.273157] (sd-umoun[1179]: Unmounting '/oldroot/sys/fs/bpf'.
+[ 6181.281663] (sd-umoun[1180]: Unmounting '/oldroot/sys/fs/pstore'.
+[ 6181.290602] (sd-umoun[1181]: Unmounting '/oldroot/sys/fs/cgroup'.
+[ 6181.299418] (sd-umoun[1182]: Unmounting '/oldroot/sys/kernel/security'.
+[ 6181.308699] (sd-umoun[1183]: Unmounting '/oldroot/nix/store'.
+[ 6181.317193] (sd-umoun[1184]: Unmounting '/oldroot'.
+[ 6181.322379] (sd-umoun[1184]: Failed to unmount /oldroot: Device or resource busy
+[ 6181.332480] (sd-umoun[1185]: Unmounting '/oldroot/sys'.
+[ 6181.340445] (sd-umoun[1186]: Unmounting '/oldroot/run'.
+[ 6181.348450] (sd-umoun[1187]: Unmounting '/oldroot/proc'.
+[ 6181.356512] (sd-umoun[1188]: Unmounting '/oldroot/dev/shm'.
+[ 6181.364742] (sd-umoun[1189]: Unmounting '/oldroot/dev/pts'.
+[ 6181.373091] (sd-umoun[1190]: Unmounting '/oldroot/dev'.
+[ 6181.381985] (sd-umoun[1191]: Unmounting '/oldroot'.
+[ 6181.412736] EXT4-fs (mmcblk0p17): unmounting filesystem 44444444-4444-4444-8888-888888888888.
+[ 6181.424380] shutdown[1]: All filesystems unmounted.
+[ 6181.429345] shutdown[1]: Deactivating swaps.
+[ 6181.433793] shutdown[1]: All swaps deactivated.
+[ 6181.438368] shutdown[1]: Detaching loop devices.
+[ 6181.447760] shutdown[1]: All loop devices detached.
+[ 6181.452748] shutdown[1]: Stopping MD devices.
+[ 6181.457675] shutdown[1]: All MD devices stopped.
+[ 6181.462351] shutdown[1]: Detaching DM devices.
+[ 6181.467212] shutdown[1]: All DM devices detached.
+[ 6181.471960] shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[ 6181.481788] shutdown[1]: Syncing filesystems and block devices.
+[ 6181.488481] shutdown[1]: Rebooting.
+[ 6181.504275] reboot: Restarting system
+[ 6181.508013] Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
+[ 6181.516807] Mem abort info:
+[ 6181.519603]   ESR = 0x0000000086000004
+[ 6181.523356]   EC = 0x21: IABT (current EL), IL = 32 bits
+[ 6181.528674]   SET = 0, FnV = 0
+[ 6181.531732]   EA = 0, S1PTW = 0
+[ 6181.534876]   FSC = 0x04: level 0 translation fault
+[ 6181.539758] user pgtable: 4k pages, 48-bit VAs, pgdp=0000000047463000
+[ 6181.546204] [0000000000000000] pgd=0000000000000000, p4d=0000000000000000
+[ 6181.553007] Internal error: Oops: 0000000086000004 [#1]  SMP
+[ 6181.558672] Modules linked in:
+[ 6181.561737] CPU: 0 UID: 0 PID: 1 Comm: shutdown Not tainted 7.1.3-nanokvm #1 PREEMPT 
+[ 6181.569577] Hardware name: Sipeed NanoKVM-Pro (DT)
+[ 6181.574372] pstate: 600000c5 (nZCv daIF -PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+[ 6181.581341] pc : 0x0
+[ 6181.583537] lr : atomic_notifier_call_chain+0x5c/0x88
+[ 6181.588604] sp : ffff8000831abc30
+[ 6181.591922] x29: ffff8000831abc30 x28: ffff0000034d2f40 x27: 0000000000000000
+[ 6181.599071] x26: 0000000000000000 x25: 0000000000000000 x24: 0000000000000000
+[ 6181.606220] x23: 0000000000000000 x22: 0000000000000000 x21: 0000000000000000
+[ 6181.613369] x20: 00000000ffffffff x19: 0000000000000000 x18: 000000000000000a
+[ 6181.620519] x17: ffff000003410e00 x16: 0000000000000001 x15: 0000000000000000
+[ 6181.627669] x14: 0000000000000000 x13: ffff800082bc44a0 x12: 00000000000001b7
+[ 6181.634818] x11: ffff8000831ab89f x10: 000000000000005d x9 : ffff800082bc44a0
+[ 6181.641968] x8 : 3fffffffffffefff x7 : 0000000000000000 x6 : 0000000000000003
+[ 6181.649117] x5 : ffff8000830cc558 x4 : 0000000000000000 x3 : 0000000000000000
+[ 6181.656266] x2 : 0000000000000000 x1 : 0000000000000000 x0 : ffff000007e5e5e0
+[ 6181.663416] Call trace:
+[ 6181.665867]  0x0 (P)
+[ 6181.668061]  do_kernel_restart+0x24/0x38
+[ 6181.671997]  machine_restart+0x34/0x5c
+[ 6181.675759]  kernel_restart+0x80/0xa4
+[ 6181.679431]  __do_sys_reboot+0x180/0x25c
+[ 6181.683361]  __arm64_sys_reboot+0x20/0x30
+[ 6181.687379]  invoke_syscall.constprop.0+0x40/0x108
+[ 6181.692181]  el0_svc_common.constprop.0+0x38/0xd8
+[ 6181.696894]  do_el0_svc+0x1c/0x28
+[ 6181.700217]  el0_svc+0x38/0x120
+[ 6181.703370]  el0t_64_sync_handler+0xa0/0xe4
+[ 6181.707564]  el0t_64_sync+0x198/0x19c
+[ 6181.711239] ---[ end trace 0000000000000000 ]---
+[ 6181.722650] pstore: backend (ramoops) writing error (-28)
+[ 6181.728069] note: shutdown[1] exited with irqs disabled
+[ 6181.733406] Kernel panic - not syncing: Attempted to kill init! exitcode=0x0000000b
+[ 6181.741085] Kernel Offset: disabled
+[ 6181.744577] CPU features: 0x00000000,02000008,00040000,0400421b
+[ 6181.750504] Memory Limit: 512 MB
+[ 6181.760445] Rebooting in 5 seconds..
+[ 6186.764526] Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
+[ 6186.773317] Mem abort info:
+[ 6186.776114]   ESR = 0x0000000086000004
+[ 6186.779867]   EC = 0x21: IABT (current EL), IL = 32 bits
+[ 6186.785183]   SET = 0, FnV = 0
+[ 6186.788241]   EA = 0, S1PTW = 0
+[ 6186.791386]   FSC = 0x04: level 0 translation fault
+[ 6186.796268] user pgtable: 4k pages, 48-bit VAs, pgdp=0000000047463000
+[ 6186.802714] [0000000000000000] pgd=0000000000000000, p4d=0000000000000000
+[ 6186.809517] Internal error: Oops: 0000000086000004 [#2]  SMP
+[ 6186.815183] Modules linked in:
+[ 6186.818249] CPU: 0 UID: 0 PID: 1 Comm: shutdown Tainted: G      D             7.1.3-nanokvm #1 PREEMPT 
+[ 6186.827654] Tainted: [D]=DIE
+[ 6186.830538] Hardware name: Sipeed NanoKVM-Pro (DT)
+[ 6186.835334] pstate: 600000c5 (nZCv daIF -PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+[ 6186.842304] pc : 0x0
+[ 6186.844499] lr : atomic_notifier_call_chain+0x5c/0x88
+[ 6186.849568] sp : ffff8000831ab6a0
+[ 6186.852887] x29: ffff8000831ab6a0 x28: ffff0000034d2f40 x27: 0000000000000000
+[ 6186.860037] x26: ffff800081efbe60 x25: 00000000000003e8 x24: 0000000000000000
+[ 6186.867188] x23: 0000000000001388 x22: 0000000000000000 x21: 0000000000000000
+[ 6186.874338] x20: 00000000ffffffff x19: 0000000000000000 x18: ffffffffffffffff
+[ 6186.881488] x17: 0000000000000000 x16: 0000000000000007 x15: 00000000000001e7
+[ 6186.888639] x14: 00000000000001e6 x13: 3ffffffffffff1e6 x12: ffff800082bc4420
+[ 6186.895790] x11: fffffffffffe8298 x10: fffffffffffe8270 x9 : 3ffffffffffff1e6
+[ 6186.902940] x8 : 0000000000002d90 x7 : 0000000000000000 x6 : ffff800082c1c4a0
+[ 6186.910091] x5 : 3ffffffffffff1e6 x4 : 00000000000001e6 x3 : 0000000000000000
+[ 6186.917241] x2 : 0000000000000000 x1 : 0000000000000000 x0 : ffff000007e5e5e0
+[ 6186.924393] Call trace:
+[ 6186.926845]  0x0 (P)
+[ 6186.929039]  do_kernel_restart+0x24/0x38
+[ 6186.932974]  machine_restart+0x34/0x5c
+[ 6186.936737]  emergency_restart+0x2c/0x3c
+[ 6186.940670]  vpanic+0x404/0x474
+[ 6186.943820]  do_panic_on_target_cpu+0x0/0x1c
+[ 6186.948099]  make_task_dead+0x0/0x1b0
+[ 6186.951773]  make_task_dead+0x7c/0x1b0
+[ 6186.955532]  die+0x144/0x15c
+[ 6186.958420]  die_kernel_fault+0x4b8/0x4d4
+[ 6186.962437]  __do_kernel_fault+0x1d8/0x1dc
+[ 6186.966543]  do_page_fault+0x144/0x71c
+[ 6186.970300]  do_translation_fault+0x5c/0x6c
+[ 6186.974490]  do_mem_abort+0x40/0x90
+[ 6186.977987]  el1_abort+0x44/0x64
+[ 6186.981228]  el1h_64_sync_handler+0x50/0xac
+[ 6186.985421]  el1h_64_sync+0x6c/0x70
+[ 6186.988918]  0x0 (P)
+[ 6186.991110]  do_kernel_restart+0x24/0x38
+[ 6186.995044]  machine_restart+0x34/0x5c
+[ 6186.998803]  kernel_restart+0x80/0xa4
+[ 6187.002475]  __do_sys_reboot+0x180/0x25c
+[ 6187.006406]  __arm64_sys_reboot+0x20/0x30
+[ 6187.010423]  invoke_syscall.constprop.0+0x40/0x108
+[ 6187.015225]  el0_svc_common.constprop.0+0x38/0xd8
+[ 6187.019938]  do_el0_svc+0x1c/0x28
+[ 6187.023261]  el0_svc+0x38/0x120
+[ 6187.026411]  el0t_64_sync_handler+0xa0/0xe4
+[ 6187.030605]  el0t_64_sync+0x198/0x19c
+[ 6187.034278] ---[ end trace 0000000000000000 ]---
+[ 6187.046360] note: shutdown[1] exited with irqs disabled
+[ 6187.051866] note: shutdown[1] exited with preempt_count 1
+[ 6187.057324] Fixing recursive fault but reboot is needed!
+[ 6187.062651] ------------[ cut here ]------------
+[ 6187.067271] Voluntary context switch within RCU read-side critical section!
+[ 6187.067299] WARNING: kernel/rcu/tree_plugin.h:332 at rcu_note_context_switch+0x36c/0x3e0, CPU#0: shutdown/1
+[ 6187.084027] Modules linked in:
+[ 6187.087095] CPU: 0 UID: 0 PID: 1 Comm: shutdown Tainted: G      D             7.1.3-nanokvm #1 PREEMPT 
+[ 6187.096498] Tainted: [D]=DIE
+[ 6187.099382] Hardware name: Sipeed NanoKVM-Pro (DT)
+[ 6187.104177] pstate: 600000c5 (nZCv daIF -PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+[ 6187.111146] pc : rcu_note_context_switch+0x36c/0x3e0
+[ 6187.116120] lr : rcu_note_context_switch+0x36c/0x3e0
+[ 6187.121094] sp : ffff8000831ab260
+[ 6187.124412] x29: ffff8000831ab260 x28: ffff0000034d2f40 x27: 0000000000000000
+[ 6187.131563] x26: ffff7fff9d40c000 x25: 0000000000000000 x24: ffff800082ac3ac0
+[ 6187.138713] x23: 0000000000000000 x22: ffff0000034d2f40 x21: 0000000000000000
+[ 6187.145864] x20: ffff800082ac48c0 x19: ffff00001fed08c0 x18: ffffffffffffffff
+[ 6187.153015] x17: 00000000000015c3 x16: 0000000000001158 x15: 0000000000000227
+[ 6187.160166] x14: 0000000000000226 x13: 3ffffffffffff225 x12: ffff800082bc4420
+[ 6187.167316] x11: fffffffffffe8f18 x10: fffffffffffe8ee8 x9 : 3ffffffffffff225
+[ 6187.174467] x8 : 0000000000003378 x7 : 0000000000000ab9 x6 : ffff800082c1c4a0
+[ 6187.181617] x5 : 3ffffffffffff225 x4 : 0000000000000225 x3 : 0000000000000000
+[ 6187.188767] x2 : 0000000000000000 x1 : 0000000000000000 x0 : ffff0000034d2f40
+[ 6187.195918] Call trace:
+[ 6187.198369]  rcu_note_context_switch+0x36c/0x3e0 (P)
+[ 6187.203346]  __schedule+0x9c/0xdac
+[ 6187.206758]  do_task_dead+0x44/0x54
+[ 6187.210258]  make_task_dead+0x1a4/0x1b0
+[ 6187.214107]  die+0x144/0x15c
+[ 6187.216997]  die_kernel_fault+0x4b8/0x4d4
+[ 6187.221015]  __do_kernel_fault+0x1d8/0x1dc
+[ 6187.225121]  do_page_fault+0x144/0x71c
+[ 6187.228878]  do_translation_fault+0x5c/0x6c
+[ 6187.233068]  do_mem_abort+0x40/0x90
+[ 6187.236564]  el1_abort+0x44/0x64
+[ 6187.239803]  el1h_64_sync_handler+0x50/0xac
+[ 6187.243997]  el1h_64_sync+0x6c/0x70
+[ 6187.247494]  0x0 (P)
+[ 6187.249687]  do_kernel_restart+0x24/0x38
+[ 6187.253621]  machine_restart+0x34/0x5c
+[ 6187.257383]  emergency_restart+0x2c/0x3c
+[ 6187.261317]  vpanic+0x404/0x474
+[ 6187.264467]  do_panic_on_target_cpu+0x0/0x1c
+[ 6187.268745]  make_task_dead+0x0/0x1b0
+[ 6187.272417]  make_task_dead+0x7c/0x1b0
+[ 6187.276175]  die+0x144/0x15c
+[ 6187.279064]  die_kernel_fault+0x4b8/0x4d4
+[ 6187.283082]  __do_kernel_fault+0x1d8/0x1dc
+[ 6187.287186]  do_page_fault+0x144/0x71c
+[ 6187.290942]  do_translation_fault+0x5c/0x6c
+[ 6187.295133]  do_mem_abort+0x40/0x90
+[ 6187.298629]  el1_abort+0x44/0x64
+[ 6187.301866]  el1h_64_sync_handler+0x50/0xac
+[ 6187.306059]  el1h_64_sync+0x6c/0x70
+[ 6187.309555]  0x0 (P)
+[ 6187.311747]  do_kernel_restart+0x24/0x38
+[ 6187.315680]  machine_restart+0x34/0x5c
+[ 6187.319440]  kernel_restart+0x80/0xa4
+[ 6187.323112]  __do_sys_reboot+0x180/0x25c
+[ 6187.327042]  __arm64_sys_reboot+0x20/0x30
+[ 6187.331059]  invoke_syscall.constprop.0+0x40/0x108
+[ 6187.335860]  el0_svc_common.constprop.0+0x38/0xd8
+[ 6187.340573]  do_el0_svc+0x1c/0x28
+[ 6187.343896]  el0_svc+0x38/0x120
+[ 6187.347046]  el0t_64_sync_handler+0xa0/0xe4
+[ 6187.351239]  el0t_64_sync+0x198/0x19c
+[ 6187.354910] ---[ end trace 0000000000000000 ]---

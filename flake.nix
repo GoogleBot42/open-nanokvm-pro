@@ -126,6 +126,14 @@
         # Untested on hardware -- see docs/mainline-port.md 11.9.
         atf-mainline = callPkg ./pkgs/atf-mainline.nix { inherit boot-atf; };
 
+        # The same BL31 plus seven milestone-bit writes (#89 rung 1). A
+        # debugging tool, never a shipped image: it writes the A/B slot
+        # register. See pkgs/atf-mainline.nix.
+        atf-mainline-debug = callPkg ./pkgs/atf-mainline.nix {
+          inherit boot-atf;
+          debugMilestones = true;
+        };
+
         # Embedded kernel initramfs (static busybox + e2fsck from nixpkgs, the
         # vendor /init script kept verbatim). Baked into the kernel Image.
         initramfs = callPkg ./pkgs/initramfs.nix { };
@@ -582,6 +590,7 @@
             toolchain
             axera-libs ax-ko-blobs
             boot boot-fsbl boot-atf boot-optee boot-uboot atf-mainline
+            atf-mainline-debug
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
             initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-slot-image dtb-mainline-slot-image
