@@ -77,6 +77,7 @@ let
     ./uboot-mainline/patches/0014-mmc-sdhci-cadence-support-hs400-enhanced-strobe.patch
     ./uboot-mainline/patches/0015-mmc-sdhci-auto-cmd23-for-multi-block-in-v4-mode.patch
     ./uboot-mainline/patches/0016-arm-axera-arm-wdt0-from-save_boot_params.patch
+    ./uboot-mainline/patches/0017-mmc-sdhci-cadence-single-block-only-workaround.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -832,6 +833,11 @@ let
     	       mmc->bus_width, (int)mmc->selected_mode,
     	       (unsigned long)mmc->cfg->b_max);
 
+    	printf("pre-read hostctl %08x present %08x int %08x\n",
+    	       readl((void *)(AX630C_EMMC_SRS + 0x28)),
+    	       readl((void *)(AX630C_EMMC_SRS + 0x24)),
+    	       readl((void *)(AX630C_EMMC_SRS + 0x30)));
+
     	ax630c_try_read(desc, 0, 1, buf);
     	ax630c_try_read(desc, 0, 2, buf);
     	ax630c_try_read(desc, 0x2600, 1, buf);
@@ -859,6 +865,9 @@ let
     		       readl((void *)(AX630C_EMMC_SRS + 0x24)),
     		       readl((void *)(AX630C_EMMC_SRS + 0x30)));
 
+    	for (i = 0x24; i <= 0x3c; i += 4)
+    		printf("post cmd18 srs %02x=%08x\n", i,
+    		       readl((void *)(AX630C_EMMC_SRS + i)));
     	cmd.cmdidx = MMC_CMD_SEND_STATUS;
     	cmd.cmdarg = mmc->rca << 16;
     	cmd.resp_type = MMC_RSP_R1;

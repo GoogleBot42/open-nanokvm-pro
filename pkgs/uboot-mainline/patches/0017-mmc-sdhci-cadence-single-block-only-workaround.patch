@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 00:00:00 -0600
+Subject: [PATCH] mmc: sdhci-cadence: cdns,single-block-only workaround
+
+On the Axera AX630C the eMMC completes CMD17 and never starts the data
+phase of CMD18. The card answers R1 from TRAN, all eight DAT lines stay
+high, PRESENT_STATE never shows a transfer active, and a CMD13 after the
+failure puts the card back in TRAN -- it does not begin at all, so this
+is not a sampling problem. It reproduces on every data path the driver
+has (ADMA2 32-bit, ADMA2 96-bit, SDMA, PIO), in HS, HS200 and HS400ES,
+in Host Version 3 and 4 mode, open-ended and with Auto CMD12 and with
+Auto CMD23, at any address, and BLOCK_GAP_CONTROL is zero throughout.
+
+The cause is not yet known. This is the workaround that makes the board
+usable meanwhile: a device tree property that caps every transfer at one
+block, so the core splits reads and writes into CMD17/CMD24 loops. It is
+deliberately opt-in per board rather than a compatible-wide quirk, and
+deliberately ugly, so that it is easy to find and delete once the real
+bug is understood.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci-cadence.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -292,2 +292,10 @@
++	/*
++	 * Multi-block transfers do not start on this controller. Cap every
++	 * request at one block so the core issues CMD17/CMD24 loops instead.
++	 * See the commit message; delete this with the property.
++	 */
++	if (dev_read_bool(dev, "cdns,single-block-only"))
++		plat->cfg.b_max = 1;
++
+ 	upriv->mmc = &plat->mmc;
+ 	host->mmc->priv = host;

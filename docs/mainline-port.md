@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and eMMC **multi-block** transfers fail: **single-block reads pass at any address, two-block reads fail at any address**. **Ten** upstream U-Boot bugs/gaps found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus, no Host Version 4 mode at all, HS400ES defined-but-unreachable, and no Auto CMD23). Excluded by measurement: sampling phase (34-wide tuning window), base clock, PHY delays, bus width, signal voltage, addressing, transfer size, **every data path (ADMA2 32/96-bit, SDMA and PIO all fail identically)**, ADMA chunking, every stop convention (none/CMD12/CMD23), every bus mode (HS, HS200, HS400ES incl. the loader's own `HRS06 = 6`) and both host modes (v3, v4 -- controller is spec 4.00). Hangs are self-recovering since rung 2m: WDT0 arms from `save_boot_params`, the first instruction U-Boot runs, hardware-proven (deliberate hang at that instruction, back in 97 s unaided). Next measurement is `PRESENT_STATE` + CMD13 after the failed CMD18 -- does the card think it is in TRAN or DATA. Sixty-eight runs. See "What exists now (rung 2)" through "(rung 2m)" below |
+| 2 | **PARTIAL 2026-09-08, chain proven to `booti`.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot loads the environment, reads `extlinux.conf`, and loads the kernel and dtb** — 48.8 MiB in 105 s at 474 KiB/s, milestone bits 28+29+30 set, no failure bit — on the `cdns,single-block-only` stopgap (patch `0017`, `b_max = 1`), because **eMMC multi-block transfers never start on this controller: CMD17 passes at any address, CMD18 at the same address answers R1 from TRAN, leaves all eight DAT lines high with no transfer active, and CMD13 finds the card still in TRAN — it never begins.** Split out as **#91** with the full exclusion list: sampling phase, base clock, PHY delays, bus width, signal voltage, addressing, transfer size, every data path (ADMA2 32/96-bit, SDMA, PIO), ADMA chunking, every stop convention (none/CMD12/CMD23), every bus mode (HS, HS200, HS400ES) and both host modes (v3, v4). **Ten** upstream U-Boot bugs/gaps fixed on the way. Hangs self-recover since rung 2m (WDT0 armed from `save_boot_params`, U-Boot's first instruction). What is left for row 2: the hand-off past `booti` is unobservable because the kernel's own `ax630c_wdt` stops the dog at probe — boot it with that driver blacklisted — and the NixOS appliance rootfs, which is #78's harness. Seventy-three runs. See "What exists now (rung 2)" through "(rung 2n)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3946,6 +3946,63 @@ Nothing in the host's programming model now distinguishes the passing case from
 the failing one. The next measurement is the unfinished half: `PRESENT_STATE`
 after the failed CMD18, and CMD13 to the card — TRAN means it never began, DATA
 means it began and the host never sampled it.
+
+Device left on slot A, register `0x00000014`, `uboot_b` restored byte-for-byte
+(p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back
+to `ver` alone, `checkboot` `Result=success`, `nanokvm` active, web 200.
+
+### What exists now (rung 2n, 2026-09-08) — the card never begins, and the chain reaches `booti`
+
+Five rounds. Detail in
+[`RUNG2N.md`](reference/mainline/uboot-mainline-20260908/RUNG2N.md), traces in
+[`rung2n-blockgap-20260908.txt`](reference/mainline/uboot-mainline-20260908/rung2n-blockgap-20260908.txt).
+**The multi-block bug is now its own issue, #91**, with the full exclusion list.
+
+**Block gap is clean.** The full `SRS 0x28` word reads `0x00000f34` both before
+the first read and after the failed CMD18 — byte 2 `BLOCK_GAP_CONTROL` is zero,
+byte-identical to Linux. No stale stop-at-block-gap, continue request, read-wait
+or interrupt-at-block-gap.
+
+**The card never begins the transfer**, which closes the fork three rungs have
+been circling:
+
+```
+post cmd18 present 01ff00f0     (six samples, identical)
+post cmd18 cmd13 0 status 00000900 state 4
+```
+
+`PRESENT_STATE` shows all eight DAT lines high with `DAT_LINE_ACTIVE` and
+`READ_TRANSFER_ACTIVE` both clear, and **CMD13 puts the card in TRAN (state 4)**,
+not DATA. It is not the host missing data the card sent — the card accepts
+CMD18, and CMD23 when offered, and declines to enter the data phase.
+
+**The stopgap works and the chain reaches `booti`.** `cdns,single-block-only`
+(U-Boot patch `0017`) caps `b_max` at 1 so the core issues CMD17/CMD24 loops:
+
+```
+Loading Environment from MMC... Reading from MMC(0)... OK
+read probe: ... bmax 1
+read lba 00000000 cnt 2 -> 2 cmd 113a0013 arg 00000001 ... stat 00000000
+```
+
+**The environment loads for the first time in this epic**, `extlinux.conf` is
+read (slot register `0xB0000015` — bits 28 and 29 set), and a round that loaded
+the payload without booting it banked U-Boot's own timings: `extlinux.conf`
+680 B in 23 ms, **`Image` 51 132 928 B in 105 329 ms (473.6 KiB/s)**, dtb
+16 213 B in 47 ms, ending at slot register `0x70000015` — bits 28, 29 and 30
+with no failure bit. Environment, extlinux, kernel and device tree all read
+correctly over single-block transfers, in 105 seconds.
+
+**Where observability ends.** The two rounds that ran the full `sysboot` went
+dark for 16 and 10 minutes with *no watchdog reset* — and that is diagnostic:
+our own `ax630c_wdt` stops the dog at probe ("U-Boot left it armed and
+counting"). A kernel that gets that far and then fails has switched off the only
+channel that survives a hang. Consistent with the kernel booting; not proof, and
+not claimed here. The next attempt should keep the watchdog driver out of the
+boot (`initcall_blacklist`, or a cmdline that omits it) so a failed hand-off
+still resets and still banks its buffer. The NixOS appliance rootfs was never
+staged in this rung — that is #78's harness, and it is the other half of what
+"row 2 done" needs.
 
 Device left on slot A, register `0x00000014`, `uboot_b` restored byte-for-byte
 (p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back

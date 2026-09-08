@@ -174,7 +174,7 @@ new file mode 100644
 index 00000000..d6980dc6
 --- /dev/null
 +++ b/arch/arm/dts/ax630c.dtsi
-@@ -0,0 +1,202 @@
+@@ -0,0 +1,204 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Axera AX630C (AX620E family).
@@ -308,6 +308,8 @@ index 00000000..d6980dc6
 +			cdns,phy-input-delay-mmc-ddr = <2>;
 +			cdns,phy-dll-delay-sdclk = <45>;
 +			cdns,phy-dll-delay-sdclk-hsmmc = <31>;
++			/* Multi-block transfers do not start; see U-Boot patch 0017. */
++			cdns,single-block-only;
 +			cdns,phy-dll-delay-strobe = <18>;
 +			status = "disabled";
 +		};

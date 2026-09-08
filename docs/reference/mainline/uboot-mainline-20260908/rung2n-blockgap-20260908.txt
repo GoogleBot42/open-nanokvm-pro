@@ -1,0 +1,89 @@
+Rung 2n (#89), 2026-09-08. Read from the CONFIG_PRE_CONSOLE_BUFFER at
+0x480e8000 after the board returned to slot A.
+
+===========================================================================
+ROUND 1 -- block gap, DAT lines, and the card's own state.
+Image 37dd42e4c1d1d79a4fd3b1063d1bf3de. Slot register on return 0x90000015.
+===========================================================================
+read probe: re-init 0
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 12 bmax 65535
+pre-read hostctl 00000f34 present 01ff00f0 int 00000000
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+read lba 00000000 cnt 2 -> 0 cmd 123a003b arg 00000000 resp 00000900 stat 00108000
+read lba 00002600 cnt 1 -> 1 cmd 113a0013 arg 00002600 resp 00000900 stat 00000000
+read lba 00002600 cnt 2 -> 0 cmd 123a003b arg 00002600 resp 00000900 stat 00108000
+post cmd18 present 01ff00f0 int 00108000
+post cmd18 present 01ff00f0 int 00108000
+post cmd18 present 01ff00f0 int 00108000
+post cmd18 present 01ff00f0 int 00108000
+post cmd18 present 01ff00f0 int 00108000
+post cmd18 present 01ff00f0 int 00108000
+post cmd18 srs 24=01ff00f0
+post cmd18 srs 28=00000f34
+post cmd18 srs 2c=000e0207
+post cmd18 srs 30=00108000
+post cmd18 srs 34=027f003b
+post cmd18 srs 38=00000000
+post cmd18 srs 3c=10080000
+post cmd18 cmd13 0 status 00000900 state 4
+
+  28 = 0x00000f34   byte 0 HOST_CONTROL   0x34  8-bit, HISPD, ADMA2
+                    byte 1 POWER_CONTROL  0x0f
+                    byte 2 BLOCK_GAP_CTRL 0x00  <- zero, same as Linux
+                    byte 3 WAKEUP_CONTROL 0x00
+       ... and identical before the first read (pre-read hostctl 00000f34).
+
+  24 = 0x01ff00f0   bit 24 CMD_LINE_LEVEL      1
+                    bits [23:16] DAT[7:0] level 0xff -- all eight lines high
+                    bit 9  READ_TRANSFER_ACTIVE 0
+                    bit 2  DAT_LINE_ACTIVE      0
+       Stable across six samples: no transfer is or was active.
+
+  cmd13 status 0x00000900 -> CURRENT_STATE 4 = TRAN, READY_FOR_DATA.
+       The card is not in DATA. It never began.
+
+  3c = 0x10080000 -> HOST_CONTROL2 0x1008 (VDD_180 | V4_MODE)
+  2c = 0x000e0207 -> divider 2 (50 MHz), timeout 0x0e
+  30 = 0x00108000 -> ERROR_INTERRUPT + DATA_TIMEOUT_ERR, no ADMA error
+
+===========================================================================
+ROUND 3 -- the cdns,single-block-only stopgap. Image
+d9ea2231e41ba9b85e3fe700087305b8. Slot register on return 0xB0000015.
+===========================================================================
+Loading Environment from MMC... Reading from MMC(0)... OK
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 12 bmax 1
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+read lba 00000000 cnt 2 -> 2 cmd 113a0013 arg 00000001 resp 00000900 stat 00000000
+read lba 00002600 cnt 1 -> 1 cmd 113a0013 arg 00002600 resp 00000900 stat 00000000
+read lba 00002600 cnt 2 -> 2 cmd 113a0013 arg 00002601 resp 00000900 stat 00000000
+Hit any key to stop autoboot: 0
+
+  bmax 1                 the property took effect
+  "Reading from MMC(0)... OK"   the environment loads -- a first
+  cnt 2 -> 2, cmd index 0x11    two CMD17s, argument stepping 0 -> 1
+  slot 0xB0000015        bit 28 ms_uboot + bit 29 ms_extlinux + bit 31
+                         ms_failed (this round's bootcmd ends in it on purpose)
+
+===========================================================================
+ROUND 4 -- load the payload, do not boot it, so U-Boot's own timings land in
+the buffer. Slot register on return 0x70000015 (bits 28, 29, 30; no failure).
+===========================================================================
+Loading Environment from MMC... Reading from MMC(0)... OK
+680 bytes read in 23 ms (28.3 KiB/s)
+51132928 bytes read in 105329 ms (473.6 KiB/s)
+16213 bytes read in 47 ms (335.9 KiB/s)
+
+  extlinux.conf, Image and the dtb all read correctly over single-block
+  transfers. The 48.8 MiB kernel takes 105 s at 474 KiB/s.
+
+===========================================================================
+ROUNDS 2 and 5 -- the full sysboot. Dark for 16 and 10 minutes with NO
+watchdog reset.
+===========================================================================
+Our own drivers/watchdog/ax630c_wdt.c stops the dog at probe. A kernel that
+gets that far and then fails has disabled the only channel that survives a
+hang, and the power cycle that recovers the board destroys the console.
+
+Consistent with the kernel booting; not proof, and not claimed. The next
+attempt should keep the watchdog driver out of the boot (initcall_blacklist or
+a cmdline that omits it) so a failed hand-off still resets and still banks.
