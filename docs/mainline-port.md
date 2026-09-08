@@ -21,6 +21,7 @@ inferences.
 - [8. Child issues](#8-child-issues)
 - [9. Device reads wanted](#9-device-reads-wanted)
 - [10. Verified vs inferred; corrections to other docs](#10-verified-vs-inferred-corrections-to-other-docs)
+- [11. #89: mainline U-Boot and the minimal layout — investigation, 2026-09-07](#11-89-mainline-u-boot-and-the-minimal-layout--investigation-2026-09-07)
 
 Source trees referenced below: `[K]` = the Sipeed 4.19.125 kernel (flake input
 `maix_ax620e_sdk_kernel`, `linux/linux-4.19.125/`), `[SDK]` = `maix_ax620e_sdk`
@@ -519,7 +520,8 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 
 ## 8. Child issues
 
-Filed 2026-09-06 as #74–#87, in the dependency order below; the index map also
+Filed 2026-09-06 as #74–#87, plus **#89** (2026-09-07), in the dependency order
+below; the index map also
 lives as a comment on #26. **#74, #75, #76, #77, #80, #81 and #82 are done**
 (see "What exists now" at the end of this section), and **#78 builds and boots
 in QEMU** with its hardware half outstanding; everything else is open. What #80
@@ -565,11 +567,16 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
    bootloader's IRAM `misc_info` UID (nvmem node, or a U-Boot `ethaddr` fixup); ship `/etc/fw_env.config = /dev/mmcblk0 0x4C0000 0x100000`
    after a hexdump check. Depends on: #77.
 6. **#79 Health-gated A/B re-arm + systemd watchdog (NixOS-native rollback)** —
-   `nanokvm-checkboot` after `nanokvm-healthy.target`; `RuntimeWatchdogSec` on
-   `/dev/watchdog0`; kernel/dtb updates write the other slot and flip
-   `bootsystem`; document the cold-power-cycle caveat. Hardware-test the
-   ATF/U-Boot slot failover that updates.md still lists as unexercised.
-   Depends on: #78.
+   **SUPERSEDED by #89, 2026-09-07.** The filed plan was to re-arm the vendor
+   slot register after a health check. #89 replaces the whole mechanism with
+   mainline U-Boot's `bootcount`/`bootlimit`/`altbootcmd` over extlinux
+   generations, which is strictly better on the three axes #79 cared about: it
+   survives a cold power cycle, it is per-generation rather than per-slot, and
+   it needs no A/B twins on the eMMC. What survives from #79 into #89 is the
+   *policy* — `nanokvm-checkboot` (now `nanokvm-mark-good`) after
+   `nanokvm-healthy.target`, and `RuntimeWatchdogSec` on `/dev/watchdog0`.
+   The ATF/U-Boot slot failover it wanted hardware-tested turns out not to
+   exist in this SPL build at all (§11.2). Depends on: #78.
 7. **#80 Full clock driver + pinctrl (data model + driver)** — Extend the
    gate-only CCF driver to the 246 registered clocks incl. the fractional-N
    CPUPLL (`cpufreq-dt` follows); pinctrl driver + a regenerated dtsi (~30
@@ -620,6 +627,13 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
     `nixosModules.nanokvm-pro-{kernel,video,display,atx,updates}`; submit
     bindings/drivers once the Axera prefix question resolves on LKML.
     Depends on: #83.
+15. **#89 Mainline U-Boot + minimal partition layout; extlinux generations
+    replace the vendor A/B scheme** — filed 2026-09-07, **supersedes #79**.
+    Mainline U-Boot with an `axera/ax630c` board port as BL33, mainline TF-A
+    with an AX630C platform as BL31, OP-TEE dropped, the vendor bl1 kept until a
+    mainline SPL with the DDR init exists, and a seven-partition layout whose
+    single definition feeds the `.axp` manifest, `blkdevparts=`, the SPL build's
+    offsets and `fw_env.config`. Investigation done — **§11**. Depends on: #78.
 
 Recommended: #74 → #75 immediately (#75 needs the device for one slot-B
 boot); #80 and #85 can start from source in parallel.
@@ -1607,3 +1621,641 @@ explanation (unclocked MM domain) stands.
   transcribed; the hexdump check is still owed. `/proc/ax_proc/uid` is named in
   the boot contract, along with the `/dev/mem` path that replaces it.
 - CLAUDE.md docs index: add this file (coordinator's job per the task brief).
+
+---
+
+## 11. #89: mainline U-Boot and the minimal layout — investigation, 2026-09-07
+
+Source-only, no device (the board was being flashed). Three trees were diffed:
+`[SDK]/boot/{uboot,atf,bl1}`, upstream U-Boot **2020.04** and **2026.07**, and
+upstream TF-A **2.7.0** — all Nix-fetched and pinned
+(`u-boot-2020.04.tar.bz2` sha `0jp4slxm…`, `u-boot-2026.07.tar.bz2` sha
+`012vf57d…`, TF-A `v2.7.0.tar.gz` sha `02r5w91s…`). Two describing subagents
+did the bulk reading; every load-bearing claim below was re-read at the cited
+file and line before it was written down, and two of their conclusions were
+narrowed as a result (the DDR-retrain hazard, §11.6; FDL2's relation to the
+`uboot` partition, §11.2).
+
+### 11.0 Verdict
+
+**Both mainline stages are tractable, and the vendor SPL is a better host than
+expected.** The SPL hands BL31 a *stock TF-A `bl_params_t` v2 chain* in `x0`
+with the standard `ARM_BL31_PLAT_PARAM_VAL` cookie in `x3`
+(`[SDK]/boot/bl1/driver/atf/atf.c:11-40`, `spl/spl_main.c:351`) — so a mainline
+TF-A with a new `plat/axera/ax630c` consumes it verbatim, and a mainline U-Boot
+is entered exactly as any TF-A BL33. The vendor TF-A fork is upstream 2.7 plus
+**one platform directory and nothing else** (68 files, +4264/−8; the eight core
+lines are a log level and a commented-out banner). The vendor U-Boot fork is
+huge — 325 files, **+157 811/−1954**, 216 new files — but almost none of it is
+load-bearing: two of its biggest "drivers" are verbatim forks of code mainline
+already ships (`sdhci_ax620e.c` is `sdhci-cadence.c`; `axera_emac.c` is
+`dwc_eth_qos.c`), ~6 000 lines are a display stack we do not need, ~10 000 are
+flashing/OTA commands upstream already covers, and ~2 500 are dead code that is
+in no Makefile. **The port is on the order of 600–800 LOC of glue plus device
+tree.**
+
+**OP-TEE can be dropped**, and doing so is a build flag, not surgery: nothing in
+our stack calls it (`dts/ax630c-nanokvm-pro.dts:96`), the ATF firewall's *only*
+region is the OP-TEE region and without it `firewall_config()` simply disables
+all eight regions
+(`plat/axera/ax620e/drivers/firewall/firewall.c:119-124, 186-213`), and the SPL
+builds its BL32 `bl_params` node only `#ifdef OPTEE_BOOT`. It frees 32 MiB of
+DRAM and two eMMC partitions.
+
+**The layout cannot carry a GPT.** The BootROM's boot source is a `chip_mode`
+strap (`[SDK]/boot/bl1/board/board.c:27-31`) and this board is strapped to
+`FLASH_EMMC` = 0 = the eMMC *user area*, where the signed SPL sits at byte
+offset 0. A GPT's primary header and entry array occupy LBA 1–33, i.e. bytes
+512–17 408, which is inside the SPL image. A DOS/MBR table has the same problem
+at LBA 0. So the eMMC stays table-less; the `blkdevparts=` string keeps being
+the table, which on the Linux side is *upstream* (`block/partitions/cmdline.c`,
+`CONFIG_BLK_CMDLINE_PARSER`) and on the U-Boot side is the one genuinely new
+piece of code the layout needs (§11.6).
+
+**Biggest risk:** the SPL locates every later stage by **compile-time byte
+offsets** baked into its own binary, so *any* layout change forces an SPL
+rebuild and a full AXDL reflash — and with A/B enabled a header or checksum
+failure is an immediate `while(1)`, not a slot flip (`boot.c:649-652`,
+`:806-808`; the watchdog-arming fallback at `boot.c:1018-1027` is compiled out
+because `AX_BOOT_OPTIMIZATION_SUPPORT` is FALSE). Recovery is AXDL, which is
+host-supplied end to end and cannot be bricked — but it needs Jeremy's hands.
+
+---
+
+### 11.1 The vendor U-Boot fork, measured
+
+`diff -rN` of upstream 2020.04 against `[UB]`:
+
+| | files | lines |
+|---|---|---|
+| new files | 216 | +155 598 |
+| modified upstream files | 95 | +2 213 / −739 |
+| deleted (CI/lint config only: `.travis.yml`, `.gitlab-ci.yml`, `.azure-pipelines.yml`, patman test fixtures) | 14 | −1 215 |
+| **total** | **325** | **+157 811 / −1 954** |
+
+Two thirds of the new lines are data, not logic: 62 defconfigs for boards we do
+not build (many of them 1 300-line full `.config` dumps), `stb_image.h` +
+`stb_image_resize.h` (10 662 lines), six compiled-in boot-logo pixel arrays
+(44 580 lines), and `cmd/axera/riscv/rtthread.h` (24 393 lines, not linked).
+
+**A trap that governs every "is it compiled?" answer:** the checked-in defconfig
+is not what gets built. `[SDK]/boot/uboot/Makefile.uboot:55` runs
+`build/tools/config2defconfig.py`, which harvests variables out of `project.mak`
+via `make -p`, maps them through `configs/axera_config_maps.txt`, **rewrites the
+defconfig in place**, configures, then restores the backup — so the effective
+config never appears on disk. It injects `CONFIG_SUPPORT_AB=y`,
+`CONFIG_AXERA_AX630C_DDR4_RETRAIN=y`, `CONFIG_ENV_SIZE=0x100000`,
+`CONFIG_ENV_OFFSET=0x4c0000`, `CONFIG_AXERA_DTB_IMG_ADDR=0x40001000`,
+`CONFIG_AXERA_KERNEL_IMG_ADDR=0x40200000` and
+`CONFIG_AXERA_MEMORY_DUMP_EMMC=y`. Separately, Kconfig `default y` beats
+defconfig silence: `CMD_AXERA_MEMTEST` and `CMD_AXERA_UPDATE` are on although
+absent from the file.
+
+#### Inventory, with a verdict per item
+
+| Vendor piece | LOC | What it is | Mainline answer |
+|---|---:|---|---|
+| `arch/arm/mach-axera/ax620e/ax620e.c` | 765 | `mem_map`, `wdt0_enable`, `chip_rst_sw`, boot-reason latch, `board_late_init`; ~520 LOC is Sipeed `mem=`/CMM/autoboot policy | **board patch ~90 LOC** |
+| `…/board.c`, `chip_config.c`, `timer.c` | 346 | board-name tables, ADC calibrate, EPHY LED polarity; `board_early_init_f` (system counter `0x01B30000` → 24 MHz, WDT off, pinmux, thermal-abort) | **board patch ~50 LOC** |
+| `…/pll_config.c` | 106 | `pll_set()` has zero callers; the PLLs arrive locked from bl1 (`bl1/board/board.c:222-249`) | **drop** |
+| `…/emmc_sd_phy.c`, `dphyrx.c` | 448 | in **no Makefile**; `dphyrx`'s only call site is `#ifdef`'d on an undefined macro *and* commented out | **drop (dead)** |
+| `…/common/pwm_common.c` | 204 | compiled, zero callers, coefficients copied from an AX650 EVB | **drop** |
+| `board/axera/ax620e_emmc/ax620e_emmc.c` | 377 | 155 LOC `#if 0` SPI-LCD experiment, 31 LOC HAPS; live part is two DM probes | **board patch ~45 LOC** |
+| `board/axera/ax620e_emmc/pinmux.c` + `build/projects/…/pinmux/AX630C_DEMO_pinmux.h` | 116 + table | **133 `{addr,value}` pairs**, one word per pad at `group_base + 0x0C + n*0x0C`, bits [18:16] function / [7:0] pad config. The NanoKVM table differs from the generic vendor one in 40+ entries: the whole eMMC group (`0x02309000`, native eMMC vs SFC/SPI-NOR), the SDIO group (`0x104F2000`), every RGMII pad at pad-config `0x0F`, and `0x02300060 = 0x00060003` — the source-side confirmation of the SW_PWR/VI_D7 trap in CLAUDE.md. Vendor U-Boot has **no** pinctrl driver | **new, 150–250 LOC** (or reuse #80's `pinctrl-axera`) |
+| `drivers/mmc/sdhci_ax620e.c` | 1 512 | a verbatim fork of `sdhci-cadence.c` with `sdhci.c` inlined — same `SDHCI_CDNS_HRS04/06` bits, same PHY delay indices, `SDHCI_CDNS_MAX_TUNING_LOOP 40`, even `U_BOOT_DRIVER(sdhci_cdns)`. ~110 LOC is genuinely vendor (200 MHz clock mux, SD 1.8 V switch, DLL reset pulse, 4-bit-from-ROM cap mask) | **mainline has it** — `sdhci-cadence.c` matches `cdns,sd4hc` (2026.07 `drivers/mmc/sdhci-cadence.c:300`) and reads 11 of the 12 `cdns,phy-*` properties; **board patch ~120 LOC** for clocks/reset |
+| `drivers/net/axera_emac.{c,h}` | 1 937 | a fork of `dwc_eth_qos.c`; its own banner says "Synopsys Designware Ethernet QOS", `EQOS_MAC/MTL/DMA_REGS_BASE` are byte-identical to mainline's, and the DT compatible is literally `axera,ax620e-eqos` | **board patch ~190 LOC** — a `dwc_eth_qos_axera.c` shaped like `dwc_eth_qos_starfive.c` |
+| `drivers/net/phy/realtek.c` +115 | 115 | makes plain `rgmii` *also* set TX delay (page `0xd08` reg `0x11` bit 8) and **never touches RX delay** (reg `0x15`), so the strapped RX delay survives; plus a "JL2101" entry whose ops are the RTL8211F ops | **mainline has it, and differs**: 2026.07 `realtek.c:236-254` writes **both** `0x11` and `0x15` and *clears* either when `phy-mode` says so. See risk 1 |
+| `drivers/serial/ns16550.c` +16 | 16 | DesignWare DLF fractional divisor for the 208 MHz UART clock, plus an FDL2 baud bail-out | **drop** — integer divisor 113 is 0.14 % off at 115200 |
+| `env/mmc.c` +29 | 29 | derives the env offset from the `blkdevparts=` string in `bootargs`, overriding `CONFIG_ENV_OFFSET` | **mainline has it** — fixed offset, or `u-boot,mmc-env-partition`; two defconfig lines |
+| `common/board_f.c` +30/−28 | — | 26 of 30 lines are `debug()` → `ax_debug()`; no `init_sequence_f` change | **drop** |
+| `common/board_r.c` +53 | 53 | moves `initr_mmc` ahead of NAND/OneNAND, adds `initr_display` and an I2C brute-probe of buses 0–14 | **drop** |
+| `arch/arm/lib/crt0_64.S`, `cpu/armv8/start.S`, `armv8/Kconfig`, `interrupts_64.c` | 68 | fixed load at `0x5C000400`, skip relocation, `adr`→`adrp` reach, EL1 handoff, a debug backtrace | **mainline has it, 0 LOC** — `SKIP_RELOCATE`, `POSITION_INDEPENDENT`, `ARMV8_SWITCH_TO_EL1` |
+| `drivers/usb/host/xhci-dwc3.c` +55, `drivers/usb/dwc3/dwc3-axera.c` | 179 | GFLADJ/GUCTL magic for a 24 MHz reference | mainline computes the same values from a 24 MHz `ref` clock in DT; **board patch ~170 LOC**, or drop if U-Boot needs no USB |
+| `drivers/i2c/designware_i2c.c` +137/−103 | — | ~85 % whitespace; the real change reads `clk`/`reset` u32 arrays from DT by hand | **board patch, DT only** |
+| `drivers/gpio/axera_gpio.c` | 211 | it *is* DesignWare APB GPIO, and `CONFIG_DWAPB_GPIO=y` is already set | **board patch ~20 LOC** (compatible) |
+| `drivers/sysreset/sysreset_axera.c` | 35 | must preserve `0x02390024` bits 12-15 | **board patch ~35 LOC** |
+| `drivers/video/axera/**` (12 `.c`, ~7 300 LOC) + `bootlogo/*.c` (44 580) | ~52 000 | two unrelated displays — see below | **drop** |
+| `cmd/axera/{download,update,sd_update,sd_boot,tftp_update,usb_stor_update,ax_ext4_tools,memtest,memory_dump,cipher,gzipd,emmc_scan,riscv}` | ~40 000 | FDL2 + flashing/OTA/diagnostics | **drop** — `mmc`/`ext4load`/`tftpboot`/`usb`/`mtest`/ramoops cover it |
+| `drivers/spi/axera_spi.c`, `drivers/ata/dwc_ahsata_axera.c`, `drivers/dma/**`, `pwm`, `adc` | ~2 900 | not built, or built with no callers, or unnecessary for a fixed-SKU appliance | **drop** (keep `axi_dma_hw_init()`, ~20 LOC, called unconditionally from `arch_cpu_init()` — verify on hardware whether it is needed) |
+| `net/{net,tftp,bootp,eth-uclass}.c`, `common/fdt_support.c`, `image-fdt.c`, `stdio.c`, `autoboot.c` | ~110 | OTA > 2 GiB widening, TFTP retries, an **arm32-only** FDT-grow (`CONFIG_CPU_V7A` — dead here), `fdt_high`, the logo hook | **drop** |
+
+**Boot policy.** `bootcmd` is not compiled in; `board_late_init()`
+(`ax620e.c:638`) → `setup_boot_mode()` (`cmd/axera/setup_boot/setup_boot.c:227`)
+sets `bootcmd=axera_boot` on every boot. `do_axera_boot()`
+(`cmd/axera/boot/axera_boot.c:695-871`) then: reads `configs` off the FAT `boot`
+partition to honour `maix_system_console`/`maix_kernel_loglevel`; shuts down the
+EPHY; picks the slot from `bootsystem`; **arms the 30 s hardware watchdog
+(`axera_boot.c:749`, `wdt0_enable(1)`, WDT0 `0x04840000`, TORR = 30 × 24 MHz)**;
+raw-reads `kernel` → `0x5C500000` and `dtb` → `0x5C400000`, each behind a 1 KiB
+`img_header`; runs the (efuse-gated, therefore no-op) signature check; gzipd-HW
+decompresses to `0x40200000`/`0x40001000`; and `booti`s. The whole command is
+**drop** — mainline `booti` with a DT cmdline replaces it — but three parts of
+its *contract* must be reproduced: the watchdog, the load addresses, and the
+partition table.
+
+**Bootargs** are baked in at build time (`Makefile:1801-1819` →
+`include/generated/ax_common_autogenerated.h`, from `partition_ab.mak:96-97`)
+and then mutated at runtime in three places, each of which `env_save()`s — so
+**the vendor U-Boot writes the eMMC environment on every boot**:
+`update_cmdline()` patches the `boot_reason`/`board_id` digits in place by byte
+index, `board_late_init` rewrites `mem=` from the board ID, and
+`set_logo_mode()` appends ` logomode=vo0@dsi_dpi_video` (which is why that
+sticky token shows up as an unknown parameter in mainline boot logs).
+
+**`misc_info`, UID and MAC.** `misc_info` is not a partition: it is a fixed
+struct at IRAM `0x740` written by bl1 from efuse
+(`{pub_key_hash[8], aes_key[8], board_id, chip_type, uid_l, uid_h, thm_vref,
+thm_temp, bgs, trim, phy_board_id}`). U-Boot reads it for thermal calibration,
+the board name, EPHY LED polarity and the `board_id=` token — and **reads then
+discards the chip UID**. There is no `mac-address` in the U-Boot DT, no
+`.read_rom_hwaddr` in `eqos_ops`, and no `ethaddr` default, so
+`net/eth-uclass.c:555` assigns a **random MAC on every boot** and does not save
+it. Nothing about identity reaches Linux from U-Boot; #78's `/dev/mem` read of
+the same efuse words is the whole story. A stable U-Boot MAC, if ever wanted, is
+a ~30 LOC hash of `uid_l`/`uid_h` into a locally-administered address.
+
+**Video and the boot logo — two different displays, and neither is needed.**
+`drivers/video/axera/Makefile` is a bare `obj-y` under `ifdef CONFIG_VIDEO_AXERA`
+with no per-file Kconfig, so all twelve `.c` files compile.
+(a) `panel_spi.c` binds `compatible = "sipeed,for_jd9853"` on `spi2` and paints
+the **172×320 front panel** from a compiled-in raw RGB565 C array — the six
+`bootlogo/*.c` files are `#include`d, `sipeed_logo_len = 110080 = 172 × 320 × 2`
+(`bootlogo/sipeed_logo.c:6883`), and they cost ~696 KiB of the 1536 KiB `uboot`
+partition for six images of which one is ever shown.
+(b) A **MIPI DSI VO path at 480×640** reads `logo.bmp` from the FAT `boot`
+partition, falling back to a raw read of the 6 MiB `logo` partition, and drives
+an ST7701-family panel inherited from MaixCAM2 — bare register programming over
+`0x4407000`/`0x4620000`, with no DSI/VO/DRM node in the U-Boot device tree at
+all. `common/axera_splash_source.c` and the `cmd/bmp.c` hunk are **not**
+compiled (`CONFIG_AXERA_SPLASH_SOURCE` and `CMD_BMP` unset), and the
+`video-uclass.c` hunks are gated on `AXERA_LOGO_BMP2YUV`, which is never
+defined. `ax_jdec_hw.c` (693 LOC of hardware JPEG) compiles but never runs —
+`logo_type` is pinned to BMP by a Sipeed edit. Mainline U-Boot has no Cadence
+DSI driver; writing one would be 3 000+ LOC. **Drop the lot.** A pre-Linux
+splash on the SPI panel, if ever wanted, is a ~300 LOC `panel-mipi-dbi`-shaped
+driver, and the Linux-side `fb_jd9853` (#84) is the real display path anyway.
+
+**axgzip.** The block lives at `0x10410000`, is clocked from NPLL_533M through
+`0x10030000`, and is polled. The container is Axera's "axgzip"/z20e format: a
+16-byte header `{magic "20", blk_num, osize, isize, icrc32}`, CRC-32/MPEG-2,
+8 KiB tiles. Both the kernel and the dtb are stored compressed and decompressed
+by this block; so are ATF, OP-TEE and U-Boot, decompressed by the **SPL**. With
+a mainline U-Boot the kernel/dtb side simply goes away (the uncompressed `Image`
+fits the 64 MiB slot with room to spare, and extlinux replaces the raw read
+entirely) — but the **U-Boot binary itself must still be axgzip-compressed**,
+because the SPL demands it (§11.2). `tools/ax_gzip_tool/ax_gzip` is a prebuilt
+x86-64 host binary; that is why `pkgs/boot.nix` declares
+`meta.platforms = ["x86_64-linux"]`. Rebuilding the SPL with
+`SUPPPORT_GZIPD=FALSE` would remove the last prebuilt binary from the boot-chain
+build and make it buildable on aarch64 — a real blob-policy win, and the same
+SPL rebuild the new layout forces anyway.
+
+**FDL2.** Not a separate defconfig for this board: with `SUPPPORT_GZIPD=TRUE`,
+`Makefile.fdl2:120-133` signs the **raw** `u-boot.bin` as `fdl2_signed.bin` and
+signs the axgzip'd copy as `u-boot_signed.bin` — one binary, two packagings. The
+protocol is Spreadtrum-derived (frame `magic 0x5C6D8E9F | u16 len | u16 cmd |
+data | u16 checksum`; the same constant appears as `PAC_MAGIC` in the SDK's own
+`tools/mkaxp/make_pac.py`), and its USB transport is a raw DWC3 poke at
+`0x8000000` on hard-coded endpoints 0x2/0x3 with no EP0 handling — it inherits a
+pipe the mask ROM already enumerated. **Drop it.** AXDL recovery does not depend
+on anything on the device: the `.axp` manifest supplies `INIT`, `EIP`
+(`0x3000000`), `FDL1` (`0x3000000`) and `FDL2` (`0x5C000000`) from the host, so
+even a destroyed SPL is recoverable. If a device-resident flasher is ever wanted,
+mainline `ums`/`fastboot`/`dfu` is the answer.
+
+**Blob-policy finding for `docs/provenance.md`:**
+`cmd/axera/cipher/eip130_fw.h` is a **78 KB closed binary blob compiled into the
+shipping U-Boot and FDL2** — `int const eip130_firmware[]`, 2 456 lines,
+`#include`d by `eip130_drv.c` and DMA'd into the EIP-130 (Rambus SafeXcel)
+crypto module at `eip130_drv.c:347`. `docs/provenance.md` already lists
+`eip_ax620e.bin` as a *flash-time* artifact; the new fact is that the same
+firmware also rides inside `u-boot.bin`. A mainline port must not carry it and
+need not: secure boot is efuse-gated off, so every RSA path short-circuits and
+only the header magic + checksums are ever checked. (A second blob,
+`cmd/axera/riscv/rtthread.h`, 24 393 lines, is not linked.)
+
+**Two gaps nobody asked about.** (1) There is **no clock, reset or pinctrl
+provider in U-Boot at all** — `CONFIG_CLK=y`, `CONFIG_PINCTRL=y` and
+`CONFIG_DM_THERMAL=y` enable uclasses with no providers, every `clocks =` in the
+U-Boot dtsi is a `fixed-clock`, and every gate/mux/reset is a raw `writel()`
+scattered through `mach-axera`. A mainline port inherits that problem; #80's
+Linux CCF/reset/pinctrl drivers are the reuse candidate, and this is the largest
+un-scoped item in the port. (2) An **undocumented IRAM struct ABI** at physical
+`0x700` (`boot_mode_info`, magic `0x12345678`), `0x740` (`misc_info`) and
+`0x800` (`ddr_info`), read by mach code, `setup_boot.c`, `sdhci_ax620e.c:972`
+and `axera_emac.h:278` — no DT node, no binding, and the region must not be
+clobbered early. A bootinfo shim is ~80 LOC.
+
+---
+
+### 11.2 What the SPL requires of BL31 and BL33
+
+**Stage loading is by compile-time byte offset. Nothing is read from flash to
+find anything.** `main()` (`[SDK]/boot/bl1/spl/spl_main.c:416`) loads, in this
+order: DDRINIT, then **BL33 (U-Boot)**, then BL32 (OP-TEE), then BL31 (ATF) —
+and jumps to BL31 immediately.
+
+| Stage | Flash offset macro | Header staged at | **Load + entry** |
+|---|---|---|---|
+| ddrinit | `DDRINIT_HEADER_FLASH_BASE` | `0x03200000` (OCM) | `0x03200400` |
+| BL33 U-Boot | `UBOOT_HEADER_FLASH_BASE` / `…_BAK_…` | `0x5C000000` | **`0x5C000400`** |
+| BL32 OP-TEE | `OPTEE_HEADER_FLASH_BASE` / `…_BAK_…` | `0x441FFC00` | **`0x44200000`** |
+| BL31 ATF | `ATF_HEADER_FLASH_BASE` / `…_BAK_…` | `0x4003FC00` | **`0x40040000`** (limit `+0x40000`) |
+
+The `*_FLASH_BASE` macros come from `[SDK]/boot/bl1/spl/Makefile:102-129`, whose
+values are `$(call calculate_flash_base,…)` over `FLASH_PARTITIONS` in
+`build/projects/AX630C_emmc_arm64_k419_sipeed_nanokvm/partition_ab.mak:80-113`
+— i.e. a running sum of the partition sizes. **Change the layout and the SPL
+must be rebuilt.** Reads go to the eMMC *user area* by byte offset
+(`emmc_part_boot = 0`, `boot/bl1/core/boot/boot.c:32`).
+
+**The 1 KiB header does not carry a load address.** `entry = ram_ops +
+sizeof(struct img_header)` (`boot.c:734`), where `ram_ops` is the compile-time
+macro above; the only address in the header is `ocm_start_addr`, which the
+*BootROM* uses for the SPL itself. At runtime the SPL always checks
+`magic_data = 0x55543322`, the header checksum, `capability` and `img_size`;
+`img_check_sum` when `IMG_CHECK_ENABLE` is set (it is); and the RSA modulus and
+signature **only** when the `SECURE_BOOT_EN` efuse is burned (it is not).
+One gotcha for our tooling: the SPL sums header words 2..255 (`boot.c:545`) while
+`sec_boot_AX620E_sign.py:224` sums words 2..253 — the two agree **only because
+the last eight bytes are zero**, so the trailing reserved words must stay zeroed.
+
+**BL31 handoff is stock TF-A.** `boot/bl1/driver/atf/atf.c:11-40` builds
+
+```
+atf_bl_params { h.type = PARAM_BL_PARAMS(5), h.version = VERSION_2, head = &bl33 }
+  bl33 { image_id = BL33_IMAGE_ID, ep_info = { pc = 0x5C000400,
+                                               spsr = SPSR_64(MODE_EL1, MODE_SP_ELX, …) },
+         next = &bl32 (only #ifdef OPTEE_BOOT) }
+  bl32 { image_id = BL32_IMAGE_ID, ep_info = { pc = 0x44200000, … }, next = NULL }
+```
+
+and `spl_main.c:351` calls `atf_boot(&atf_bl_params, 0, dtb_addr,
+ARM_BL31_PLAT_PARAM_VAL)` at EL3 with the MMU off — x0 = params, x1 = 0
+(`soc_fw_config`), x2 = `dtb_addr` (**0** in this build; the fast-boot path that
+would set it is compiled out), x3 = `0x0f1e2d3c4b5a6978`. The vendor
+`ax620e_bl31_setup.c:155-201` is the ordinary non-`RESET_TO_BL31` arm-common
+flow that walks that list; there is no `BL32_BASE` define anywhere in
+`platform_def.h`. **So a mainline TF-A BL31 needs no SPL change at all.**
+
+**BL33 can be a mainline U-Boot, wrapped in the same header**, subject to four
+constraints: link at `0x5C000400`; fit 1536 KiB *after* axgzip; be axgzip'd and
+signed (`pkgs/boot.nix` already does exactly this and asserts the magic); and
+cope with being entered **at EL1h with `x0 = 0`** — no FDT pointer. `x0` is
+zeroed twice over: the SPL leaves `ep_info.args` zero, and
+`platform.mk:75`'s `ARM_LINUX_KERNEL_AS_BL33 := 1` makes BL31 overwrite `arg0`
+with `hw_config` = x2 = 0. So mainline U-Boot needs `OF_SEPARATE`/`OF_EMBED`
+(its default anyway), and Linux ends up booted from EL1 with no EL2 — as today.
+Entering U-Boot at EL2 would mean patching `atf.c:26` and rebuilding the SPL;
+not worth it for an appliance.
+
+**OP-TEE is optional at build time and mandatory at runtime once built in.**
+`SUPPORT_OPTEE` → `-DOPTEE_BOOT` (`spl/Makefile:124-129`). With it compiled in,
+`spl_main.c:322-327` does `goto failed` → `while(1)` if the OP-TEE image does
+not verify — an absent BL32 hangs the SPL, even though BL31 itself tolerates one
+(`bl31_plat_get_next_image_ep_info` returns NULL for a zero `pc`). Turning
+`SUPPORT_OPTEE=FALSE` removes the BL32 node entirely. Since the SPL must be
+rebuilt for the new layout regardless, dropping OP-TEE costs nothing extra.
+
+**ddrinit is read, but its absence is harmless.** `spl_main.c:450-456` calls
+`flash_boot(…, DDRINIT, DDRINIT_HEADER_FLASH_BASE, …)` under
+`#ifdef SUPPORT_DDRINIT_PART` and, on failure, prints
+`"get ddrinit param in rom fail"` **and continues**. The payload is a cached DDR
+vref table consumed by `mc20e_ddr_init` behind a frequency match *and* a vref
+sanity check (`ddrmc_train_flow_lp4.c:1074-1076`), so garbage just means full
+training runs. The shipped image is a signed header with an **empty** payload
+(`spl/Makefile:321` `touch`es it). `SUPPORT_DDRINIT_PART` is already a build
+flag in `project.mak:50`. **The partition can be dropped**, provided the SPL is
+rebuilt with it dropped from `FLASH_PARTITIONS` — otherwise every downstream
+`*_HEADER_FLASH_BASE` shifts by 0x80000 and nothing loads.
+
+**axgzip is mandatory on this build.** `read_image_data` sends every image
+except DDRINIT through `gzip_pipeline_flash_read` (`boot.c:768-789`), staging the
+raw bytes at `0x58000000` and DMA-ing the decompressed output to
+`ram_ops + 1024`. A raw payload fails the `"20"` magic check
+(`driver/gzipd/ax_gzipd_drv.c:132-155`) and returns `BOOT_FLASH_READ_FAIL`. The
+output address must be 8-byte aligned. Rebuilding with `SUPPPORT_GZIPD=FALSE`
+switches to the plain `flash_read` at `boot.c:783`.
+
+**A/B, and what happens on a bad image.** `select_slot_ab()`
+(`boot.c:934-995`) reads `TOP_CHIPMODE_GLB_BACKUP0 = 0x02390024` and consumes
+the current slot's BOOTABLE bit as a one-shot ticket; U-Boot only *reads* the
+register. But with `support_ab` set, a bad header **returns immediately**
+(`boot.c:649-652`) and a bad payload checksum likewise (`boot.c:806-808`) — the
+`flash_addr_bk` retry loop only runs when A/B is off. The caller then does
+`while(1)`, because the watchdog-arming fallback at `boot.c:1018-1027` is inside
+`#ifdef AX_BOOT_OPTIMIZATION_SUPPORT`, which is FALSE here. **So the twins are
+not a failover mechanism in this build; they are a mechanism the *register*
+selects between.** A layout with no `_b` twins is fine only if the SPL is
+rebuilt with the `_BAK` bases pointed at the A copies (or `AX_SUPPORT_AB_PART`
+off) — keep the vendor SPL and drop the twins and the first boot that lands on
+slot B reads whatever the new layout put at the old `_b` offsets, and hangs.
+
+**What the SPL leaves configured for later stages:** DDR trained and running;
+PLLs and clock muxes set (CPU on cpupll_1200m, bus/flash cpll_312m, NPU
+npll_800m, `pclk_top` cpll_208m — `bl1/board/board.c:222-249`); VDDCORE set via
+PWM11; the generic timer enabled at 24 MHz with `CNTFRQ_EL0` written; **UART0 at
+`0x04880000`, 115200 8N1, pads muxed**; abort routing armed so WDT0/WDT2/thermal
+cause a chip reset; the WDT *clock gate* on (but **no timeout ever programmed or
+kicked**); the eMMC controller up at 8-bit HS 50 MHz; the gzipd block reset and
+clocked; and the IRAM structs at `0x700`/`0x740`/`0x800` populated. **Not** done:
+general pinmux (only the UART0 and SD/eMMC pads), GIC init, and anything at EL2.
+
+---
+
+### 11.3 TF-A: the fork is upstream 2.7 plus one platform
+
+The vendor tree contains a **nested pristine copy** of upstream at
+`boot/atf/arm-trusted-firmware-2.7/arm-trusted-firmware-2.7.0/`, which inflates
+a naive diff to 667 k lines. Excluding it, `diff -rN` against upstream v2.7.0 is
+**68 files, +4264/−8**:
+
+- `plat/axera/ax620e/**` — 54 files, **4 156 lines**, entirely new.
+- Seven upstream files touched, for **+8/−8 lines of nothing**: `LOG_LEVEL` 20 → 10
+  in `Makefile`, two `NOTICE()` banners commented out in `bl31/bl31_main.c`, two
+  stray `#include`s in `lib/psci/`, one comment, three deleted blank lines.
+- Six `.rej` files — a debug-instrumentation patch that failed to apply and was
+  left behind. Dead.
+
+**Most of the platform is suspend/resume we do not need.**
+`aarch64/ax620e_on_ram_func.S` (321), `drivers/{ddr_sys,cpu_sys,isp_sys,npu_sys,
+vpu_sys,mm_sys,periph_sys,flash_sys,wakeup,timestamp,chip_top,pmu,soc}` (1 231)
+and most of `ax620e_pm.c`'s 498 lines exist to sleep and wake the SoC. A BL31
+that only boots and does PSCI CPU_ON/CPU_OFF is:
+
+| Piece | ~LOC |
+|---|---:|
+| `platform_def.h` + `ax630c_def.h` + `platform.mk` | 140 |
+| `bl31_setup.c` (console, GIC, mmap, `secure_config`) | 180 |
+| `pm.c` (CPU on/off, PSCI ops) | 120 |
+| `pwrc.c` (the PMU CPU power controller) | 118 |
+| `topology.c`, `gicv2.c`, `helpers.S`, `sema.c` | 200 |
+| **plus, new:** `.system_reset` via WDT0 | 20 |
+| **total** | **~780** |
+
+What it must know: **GIC-400** at `0x01850000` (GICD `+0x1000`, GICC `+0x2000`);
+UART0 `0x04880000` at 208 MHz / 115200; 1 cluster × 2 × Cortex-A53
+(`PLATFORM_CORE_COUNT 2`, `PLAT_MAX_PWR_LVL = AFFLVL2`); `SYS_COUNTER_FREQ`
+24 MHz; BL31 at `0x40040000` in a 256 KiB window;
+`COLD_BOOT_SINGLE_CPU := 1`, `ERRATA_A53_1530924 := 1`, no SVE,
+`USE_COHERENT_MEM := 0`, `ARM_LINUX_KERNEL_AS_BL33 := 1`; a flat mmap of the
+peripheral windows; and the second-core bring-up path in `ax620e_pwrc.c`
+(`ax620e_pwrc_read_psysr` / `write_pponr` against the PMU at `0x02100000`).
+
+**Secure init reduces to three things** (`plat_ax620e_secure_config()`,
+`ax620e_bl31_setup.c:56-62`): the firewall, a semaphore block (31 LOC), and
+`mmio_write_32(EFUSE_CTRL, 0)`. And the firewall's **only** region is the OP-TEE
+one — `fw_region[]` is empty without `#ifdef OPTEE_BOOT`, and the `#else` branch
+of `firewall_config()` simply disables all eight regions. So dropping OP-TEE
+drops the firewall too, cleanly.
+
+**Nothing we run uses OP-TEE.** The vendor 4.19 defconfig sets `CONFIG_TEE=y` /
+`CONFIG_OPTEE=y` and both DTs carry a `firmware { optee { compatible =
+"linaro,optee-tz"; } }` node, but no component in this repo references a `tee_`
+or `TEEC_` symbol (`dts/ax630c-nanokvm-pro.dts:96`), and no mainline driver we
+build would. **Confirmed droppable**, freeing the 32 MiB `0x44200000`
+reserved-memory node and the two 1 MiB partitions.
+
+**Missing from the vendor plat, and worth adding:** `plat_psci_ops` has no
+`.system_reset` and no `.system_off` (`ax620e_pm.c:465-476`, verified). That is
+the root of §5 trap 4 — mainline's `psci_sys_reset` returns `NOT_SUPPORTED` and
+we needed a `syscon-reboot`/watchdog restart handler in Linux. A ~20 LOC
+`.system_reset` that programs WDT0 with a zero timeout gives Linux `reboot` over
+plain PSCI and retires that shim.
+
+---
+
+### 11.4 BootROM
+
+- **Boot source is a strap, not a probe.** `get_boot_mode()`
+  (`[SDK]/boot/bl1/board/board.c:27-31`) is `(chip_mode & FLASH_BOOT_MASK) >> 1`,
+  selecting eMMC-UDA (0), three eMMC **boot-partition** modes (1/4/6), NAND
+  (3/5), NOR (7), SPI-slave (2), or SD/USB-download (8/9)
+  (`bl1/core/include/boot.h:17-26`). This board is on **mode 0, the user area**,
+  and the mode is not software-selectable. On the NanoKVM-Pro the strap is the
+  `User` button: normal power-on → eMMC, hold at power-on → SD, hold ~10 s →
+  AXDL ([flashing-and-recovery.md](flashing-and-recovery.md#the-user-button)).
+- **SPL location:** the `spl` partition is first in `FLASH_PARTITIONS` with
+  `gap="0"`, i.e. **byte offset 0 of the eMMC user area**.
+- **Container** (`build/tools/imgsign/spl_AX620E_sign.py:251-253, 341-357`),
+  `PKG_SIZE = 0x20000`: header A at `0x00000`, SPL A at `0x00400` (loaded to
+  `ocm_start_addr = 0x03000400`, entered at **EL3, MMU off**), EIP firmware A at
+  `0x0CC00`; the same three again at `0x20000`/`0x20400`/`0x2CC00` as the ROM's
+  own backup copy — total `0x40000`, inside the 768 KiB partition.
+- **Max SPL size 51 200 B (50 KiB)**, hard-enforced at
+  `spl_AX620E_sign.py:183, 221-223`; the linker window is `0x03000400` + 1 MiB
+  (`board/arch/arm64/bl1.lds:16`). `pkgs/boot.nix` already guards this for the
+  SD variant.
+- **Behaviour on a missing or invalid SPL: unknown.** Nothing in `bl1/`, the
+  linker scripts, the build system or the manifest states it, and the SDK's
+  `docs/` are Chinese PDFs with no extractable text in this environment. The
+  circumstantial evidence points at *strap-selected, not automatic*: the SDK
+  README describes SD boot as "insert the SD card, hold down boot, then press
+  rst", and `board.c:22` defines `USB_DL_SD_BOOT_MASK` on `chip_mode`. A ROM USB
+  download protocol certainly exists (the manifest's first entry is
+  `<Img name="INIT">…<Description>Handshake with romcode</Description>`), but
+  whether a bad SPL falls into it on its own is **not determinable from source**.
+  Treat "hold `User` ~10 s" as the only guaranteed way in.
+
+---
+
+### 11.5 The minimal layout
+
+**No on-disk partition table is possible.** The SPL sits at byte 0 of the user
+area; a GPT needs LBA 1–33 and an MBR needs LBA 0. Both are inside the SPL
+image. (Moving the boot chain into the eMMC *boot* partitions would free the
+user area for a GPT, and the ROM has modes for it — but selecting one is a
+hardware strap, so it is not ours to change.) The eMMC therefore stays
+table-less and `blkdevparts=` stays the table. On the Linux side that is
+**upstream, not a vendor patch** (`block/partitions/cmdline.c`,
+`CONFIG_BLK_CMDLINE_PARSER`). On the U-Boot side mainline has nothing: its only
+partition drivers are amiga/dos/efi/iso/mac, and `blkdevparts` appears nowhere
+in the 2026.07 tree.
+
+**Proposal: seven partitions, from 17.**
+
+| # | Name | Size | Why it exists | Change |
+|---|---|---|---|---|
+| 1 | `spl` | 768 K | BootROM reads it at offset 0; the signed container is 256 K | keep |
+| 2 | `atf` | 256 K | BL31 window is `ATF_IMG_PKG_SIZE = 0x40000` and `BL31_LIMIT` is derived from it | keep, **no `_b`** |
+| 3 | `uboot` | 1536 K | mainline U-Boot with ext4 + bootstd is well under this even before axgzip | keep, **no `_b`** |
+| 4 | `env` | 256 K | `bootcount`, `bootsystem`-successor, `fw_setenv` from userspace; redundant pair of 64 K copies inside | shrink from 1 M |
+| 5 | `boot` | 512 M | ext4; `extlinux/extlinux.conf`, `nixos/<gen>` kernels + initrds + dtbs, `logo.bmp`, and the server's `usb.*` flag files | grow from 128 M, **vfat → ext4** |
+| 6 | `rootfs` | rest | `-(rootfs)` | keep |
+
+Dropped: `ddrinit` (empty; `SUPPORT_DDRINIT_PART=FALSE`), `optee`/`optee_b`
+(§11.3), `logo`/`logo_b` (the logo moves into `/boot`, where
+`ax_bootlogo_show()` already looks first — and no mainline U-Boot reads it
+anyway until someone writes a display driver), `dtb`/`dtb_b` and
+`kernel`/`kernel_b` (extlinux carries them per generation), and every `_b` twin.
+Boot chain shrinks from 20.5 MiB across 15 partitions to 2.75 MiB across four.
+
+Whether to keep `atf_b` + `uboot_b` (1.75 MiB) as insurance is a judgement call:
+in *this* SPL build they are not an automatic failover (§11.2), only a slot the
+register can select, so they buy a manual recovery path that a rebuilt SPL and
+an AXDL cable already provide. Recommendation: **drop them**, and set the SPL's
+`*_BAK_FLASH_BASE` equal to the A bases, matching what `partition.mak` already
+does for the non-A/B variant.
+
+**One definition, five consumers.** Today `nixos/emmc-partitions.nix` *parses*
+the `blkdevparts=` clause out of `dts/ax630c-nanokvm-pro.dts` and asserts what it
+finds; five files consume it (`nixos/{axp-image,appliance,image-axp}.nix`,
+`nixos/lib/make-axp-image.nix`, `flake.nix:613`). Under #89 it should be
+inverted: a `nixos/layout.nix` holding the list, which **generates**
+
+1. the `.axp` `<Partitions>` manifest and `<Block>` ids (already derived),
+2. the `blkdevparts=mmcblk0:…` string injected into the kernel cmdline,
+3. the same string as U-Boot's `CONFIG_BOOTARGS`, consumed by a new
+   `disk/part_cmdline.c`,
+4. a generated `partition.mak` fragment for the SPL build, so the SPL's
+   `*_HEADER_FLASH_BASE` constants can never disagree with the manifest,
+5. `/etc/fw_env.config` and the NixOS `fileSystems` entries.
+
+Item 4 is the new one and it is the important one: today those constants come
+from a hand-written vendor makefile inside the SDK snapshot, which is exactly
+where a layout change silently goes wrong.
+
+**`part_cmdline.c` — the one genuinely new U-Boot file.** ~150–200 LOC, modelled
+on Linux's `block/partitions/cmdline.c`, registered through U-Boot's existing
+`U_BOOT_PART_TYPE` mechanism so `ext4load mmc 0:5 …`, `bootstd` and
+`bootmeth_extlinux` all just work. It reads the string from `CONFIG_BOOTARGS`
+(or a DT property), which keeps U-Boot and Linux reading the *same* string, as
+today. It is plausibly upstreamable — several SoC vendors carry the same Linux
+convention — but if upstream declines it, it stays a carried patch, which the
+issue explicitly allows.
+
+**Distro boot gives #79 what it wanted, natively.** Mainline 2026.07 has
+`bootmeth_extlinux`, `BOOTCOUNT_BOOTLIMIT` and `BOOTCOUNT_ALTBOOTCMD`
+(`common/autoboot.c:482` runs `altbootcmd` when the limit is hit), with backends
+including `BOOTCOUNT_ENV` and `DM_BOOTCOUNT_SYSCON`
+(`u-boot,bootcount-syscon`). NixOS's `boot.loader.generic-extlinux-compatible`
+writes `/boot/extlinux/extlinux.conf` with `DEFAULT nixos-default`, one `LABEL
+nixos-<n>` per generation, and `LINUX ../nixos/<hash>-Image` / `INITRD` /
+`APPEND init=/nix/store/<gen>/init …` / `FDTDIR` (kernels copied to
+`/boot/nixos/`). Wiring:
+
+- `bootcount` in the **env** (`BOOTCOUNT_ENV`), so userspace can clear it with
+  `fw_setenv bootcount 0` — the standard RAUC/swupdate lever, and the reason to
+  keep the `env` partition.
+- `bootlimit=3`, `altbootcmd` = boot `/extlinux/extlinux-fallback.conf`.
+- A `nanokvm-mark-good.service`, `After=nanokvm-healthy.target`, that clears
+  `bootcount` **and** copies `extlinux.conf` → `extlinux-fallback.conf`. The
+  fallback config is then by construction "the last generation that passed the
+  health check", which is exactly #79's contract and strictly better than the
+  slot register: it survives a cold power cycle, it is per-generation rather than
+  per-slot, and it needs no eMMC A/B twins.
+- `boot.loader.generic-extlinux-compatible.configurationLimit` caps `/boot`.
+- Keep arming WDT0 in U-Boot before `booti` (a ~120 LOC U-Boot watchdog driver,
+  mirroring #75's Linux one) so a kernel that never reaches userspace also
+  increments `bootcount` instead of hanging silently. `RuntimeWatchdogSec` on
+  `/dev/watchdog0` covers a hung userspace, as #79 already planned.
+
+`/boot` moves from vfat to **ext4**: the kernel needs ext4 anyway, so this
+retires the `CONFIG_VFAT_FS` + NLS-codepage trap documented in
+[nixos-rootfs.md](nixos-rootfs.md#4-boot--p16-vfat-and-it-must-stay-writable)
+(without those tables the mount fails `-EINVAL` and every USB-gadget flag
+silently reads as absent). The flag-file contract is unchanged.
+
+---
+
+### 11.6 Two hazards this investigation surfaced
+
+**1. `phy-mode` must be `rgmii-id` in U-Boot too, and the failure is worse
+there.** The vendor `realtek.c` patch makes plain `"rgmii"` set the TX delay and
+**never touches the RX delay register**, so the board's strapped-on RX delay
+survives whatever the DT says. Mainline's driver writes **both** registers and
+*clears* either one when `phy-mode` says so (2026.07
+`drivers/net/phy/realtek.c:236-254`). So the #77 signature — link trains,
+reports 1000/Full, passes not one packet — is reachable from U-Boot as well, and
+the write there is unconditional. `rgmii-id` in both trees.
+
+**2. A DDR retrain engine may be rewriting physical `0x40000000`, and nothing
+reserves it.** bl1's `retrain_general_config()`
+(`boot/bl1/driver/ddr/ddr_init.c:824-839`) writes
+`D_DDRMC_RETRAIN_CFG0 = 0x116E3600` — whose low 24 bits are 24 000 000, a
+one-second interval at 24 MHz — with `TRAIN_CTRL2 = 0`, commented in the vendor
+source as *"start at the lowest address"*, then sets `rf_retrain_enable`. The
+U-Boot side treats that as real: under `CONFIG_AXERA_AX630C_DDR4_RETRAIN` it
+reports `ram_size = 0x7FFFF000` with bank 0 starting at **`0x40001000`**
+(`board/axera/ax620e_emmc/ax620e_emmc.c:329-341`) and maps normal memory from
+`0x40001000` (`arch/arm/mach-axera/ax620e/ax620e.c:22-33`).
+
+Two things narrow this from the alarming version. `retrain_general_config()` is
+called **only** from `ddrmc_train_flow_no_lp.c:285` — the DDR4/DDR3 path, not
+the LPDDR4 one — so whether the engine is armed on *this* unit depends on the
+DRAM part, which source does not settle. And `DDR_RETRAIN_START`/`SIZE` in
+`partition_ab.mak:116-117` are declarations with no consumer anywhere in the
+SDK: the reservation is convention, enforced in three separate headers. Both the
+vendor 4.19 DT and ours declare `memory@40000000` with no carve-out, so if the
+engine *is* armed the vendor kernel has been living with a once-per-second
+single-page corruption too.
+
+Cheap insurance, and the recommendation: mirror U-Boot — either
+`memory@40001000` or a `no-map` `reserved-memory` node covering
+`0x40000000 + 0x1000`. It costs one page. A device read (dump the DDRMC
+`TMG16_F0` bit 30, or watch a poisoned page at `0x40000000`) would settle
+whether it is needed; add it to §9.
+
+---
+
+### 11.7 The ladder
+
+Every rung below the last is reversible, and the first three write nothing to
+the eMMC.
+
+| # | Rung | Proves | Serial-less evidence |
+|---|---|---|---|
+| 0 | `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
+| 1 | **SD card**: vendor SD-SPL + **mainline BL31** + vendor U-Boot + vendor kernel | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff | the board reaches the vendor userspace → DHCP → SSH. Card removal reverts |
+| 2 | **SD card**: vendor SD-SPL + mainline BL31 + **mainline U-Boot** + extlinux → mainline kernel + NixOS | the whole new chain end to end, including the board port, `part_cmdline`, sdhci-cadence and the `rgmii-id` PHY question | SSH on the mainline appliance (#77/#78 already prove that path); card removal reverts |
+| 3 | **eMMC, existing 17-partition layout**: mainline BL31 → `atf`, mainline U-Boot → `uboot`, keeping the vendor kernel slots | the eMMC read path and the signed-header packaging, without touching the layout | as rung 1. Recovery: AXDL |
+| 4 | **eMMC, new layout**, full `.axp` over AXDL: rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`), mainline BL31, mainline U-Boot, ext4 `/boot`, extlinux | the layout, the regenerated SPL offsets, and NixOS generations | as above, plus `fw_printenv` and the milestone register |
+| 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
+
+The SD rungs are load-bearing and **there is no SD card in the device** — the
+same blocker that still holds #76's root-on-SD half open (§8). Inserting one is
+the human action this work needs first. Rung 3 can be reached without a card, at
+the cost of skipping straight to an eMMC write.
+
+**Observability, replacing the slot register.** #89 retires the SLOT/BOOTABLE
+semantics of `0x02390024`, not the register. Three channels, in order of
+cheapness:
+
+1. **Milestone bits 12-15** stay exactly as #75 uses them. Vendor U-Boot never
+   writes them and `chip_rst_sw()` clears only bits 7 and 8, so they survive a
+   warm reboot; mainline U-Boot can write them from `preboot`/`bootcmd` with
+   `mw` — zero new code — and Linux reads them back.
+2. **`bootcount`** in the env is itself evidence: `fw_printenv bootcount` after
+   a boot says how many attempts the bootloader made.
+3. **`CONFIG_PRE_CONSOLE_BUFFER` + `PRE_CON_BUF_ADDR`** pointed into the spare
+   tail of the vendor pstore window (the same place #75 banks a verbatim kernel
+   log — and note the trap recorded there: the vendor kernel zaps every pstore
+   zone it owns ~1.5 s into a boot, so never use `0x48000000`). That captures
+   the earliest U-Boot output at a fixed address Linux can dump. Capturing the
+   *whole* U-Boot log needs a ~40 LOC memory-backed stdio device;
+   `CONFIG_CONSOLE_RECORD` will not do, because its buffers are malloc'd.
+
+And one possibility worth testing rather than assuming: **UART1
+(`0x04881000`) is on an exposed header pin** while UART0 is on hidden pads
+([architecture.md](architecture.md#boot-chain)). The earlier UART1 experiment
+failed *in the SPL*, because touching UART1 MMIO while its clock was still gated
+hung it (`86b8c58`). Mainline U-Boot runs after bl1 has the clock tree up and
+can ungate UART1 itself — so a real serial console from BL33 onward may be
+available for the first time. Worth one rung-2 experiment; not worth assuming,
+since whether that pad is muxed to UART1 on this board is a device question.
+
+---
+
+### 11.8 Open questions
+
+- Does the BootROM enter USB download mode on its own when the SPL is invalid,
+  or only on the `User`-button strap? Not determinable from source (§11.4).
+- Is the DDR retrain engine armed on this unit — i.e. is the part DDR4 or
+  LPDDR4? (§11.6)
+- Is UART1 muxed out to the exposed header on this board, and does anything else
+  claim those pads? (§11.7)
+- `axi_dma_hw_init()` is called unconditionally from vendor `arch_cpu_init()`;
+  is it needed before eMMC access, or vestigial?
+- Whether `part_cmdline.c` is acceptable upstream, or stays a carried patch.
+
+---
