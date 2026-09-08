@@ -1,4 +1,6 @@
-{ pkgs, crossPkgs, axSign, ... }:
+{ pkgs, crossPkgs, axSign
+, debugMilestones ? false
+, ... }:
 
 # ===========================================================================
 # Mainline U-Boot for the AX630C / NanoKVM-Pro (#89, epic #26).
@@ -71,8 +73,266 @@ let
 
   ubootPart = layout.byName.uboot;
 
+  # -------------------------------------------------------------------------
+  # Milestone instrumentation (#89 rung 2, debugMilestones = true).
+  #
+  # This board's console UART is on hidden pads, so a U-Boot that dies before
+  # `preboot` says nothing the shipping image can read except whatever landed
+  # in CONFIG_PRE_CONSOLE_BUFFER -- and that channel goes quiet the moment
+  # `serial_initialize()` sets GD_FLG_SERIAL_READY, which is a third of the way
+  # into board_init_r. These writes give the whole of board_init_r the same
+  # channel #75 gave the kernel and rung 1 gave BL31: the spare high bits of
+  # the A/B slot register 0x02390024, through its write-1-to-set alias at
+  # +4, which survive a warm reboot, a watchdog reset and the SPL's fallback
+  # to slot A.
+  #
+  # Bits, in execution order -- every one of them a hook U-Boot already calls,
+  # so the instrumentation adds no new call site to upstream code:
+  #
+  #   12  dram_init            entered (pre-relocation, MMU off)
+  #   13  dram_init_banksize   returned
+  #   14  enable_caches        entered -- relocate_code() returned, so U-Boot
+  #                            is running from the top of DRAM
+  #   15  icache_enable        returned
+  #   21  dcache_enable        returned -- the MMU is on with our mem_map
+  #   16  board_init           driver model bound as well
+  #   17  board_early_init_r   serial_initialize() and dm_announce() done, and
+  #                            the last hook before initr_mmc (ARCH_EARLY_INIT_R
+  #                            has no prompt on arm, so there is no hook between
+  #                            this one and the eMMC)
+  #   19  misc_init_r          eMMC, environment AND console_init_r all done
+  #   20  board_late_init      interrupts up, one hook short of main_loop
+  #   28  preboot              (the shipping milestone -- defconfig, not here)
+  #
+  # 12..20 are Linux's bits in the shipping assignment (docs/mainline-port.md
+  # 11.10). That is fine and deliberate: a run that needs this build is a run
+  # that never reaches Linux, and the register is cleared before each one.
+  # -------------------------------------------------------------------------
+  milestonePostPatch = ''
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      '#include <asm/armv8/mmu.h>' \
+      '#include <asm/armv8/mmu.h>
+    #include <asm/io.h>
+
+    /* #89 rung 2 boot-evidence channel -- see pkgs/uboot-mainline.nix. */
+    #define AX630C_DBG_SLOT_SET	0x02390028UL
+
+    void ax630c_milestone(unsigned int bit)
+    {
+    	writel(1U << bit, (void *)AX630C_DBG_SLOT_SET);
+    }'
+
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      'int dram_init(void)
+    {
+    	int ret = fdtdec_setup_mem_size_base();' \
+      'int dram_init(void)
+    {
+    	int ret;
+
+    	ax630c_milestone(12);
+    	ret = fdtdec_setup_mem_size_base();'
+
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      'int dram_init_banksize(void)
+    {
+    	return fdtdec_setup_memory_banksize();
+    }' \
+      'int dram_init_banksize(void)
+    {
+    	int ret = fdtdec_setup_memory_banksize();
+
+    	ax630c_milestone(13);
+    	return ret;
+    }'
+
+    substituteInPlace board/axera/ax630c/ax630c.c --replace-fail \
+      '#include <init.h>
+    #include <stdio.h>' \
+      '#include <init.h>
+    #include <stdio.h>
+    #include <cpu_func.h>
+    #include <asm/io.h>
+    #include <asm/cache.h>
+    #include <asm/global_data.h>
+    #include <asm/system.h>
+    #include <asm/armv8/mmu.h>
+
+    DECLARE_GLOBAL_DATA_PTR;'
+
+    substituteInPlace board/axera/ax630c/ax630c.c --replace-fail \
+      'int board_init(void)
+    {
+    	return 0;
+    }' \
+      'void ax630c_milestone(unsigned int bit);
+
+    /*
+     * Pre-relocation, and therefore printable: everything printf()s before
+     * console_init_r() also lands in the pre-console buffer, which is the only
+     * console this board has. This is where the relocation target comes from.
+     */
+    phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
+    {
+    	volatile u64 *lo = (volatile u64 *)0x5ff00000UL;
+    	volatile u64 *hi = (volatile u64 *)0x7ff00000UL;
+
+    	printf("ram_base %llx size %llx top %llx mon_len %lx\n",
+    	       (unsigned long long)gd->ram_base,
+    	       (unsigned long long)gd->ram_size,
+    	       (unsigned long long)gd->ram_top,
+    	       (unsigned long)gd->mon_len);
+
+    	/*
+    	 * Is the top half of the declared gigabyte real? These two addresses
+    	 * alias each other on a 512 MiB part and are independent on a 1 GiB
+    	 * one. MMU off here, so both accesses are Device-nGnRnE and aligned.
+    	 */
+    	*lo = 0x1111111111111111ULL;
+    	*hi = 0x2222222222222222ULL;
+    	printf("probe 5ff00000=%llx 7ff00000=%llx\n",
+    	       (unsigned long long)*lo, (unsigned long long)*hi);
+
+    	/*
+    	 * arm_reserve_mmu() puts the page tables in the last 64 KiB-aligned
+    	 * PGTABLE_SIZE of DRAM, so probe exactly there -- and print the size,
+    	 * which is what fixes the address.
+    	 */
+    	{
+    		volatile u64 *pt = (volatile u64 *)0x7fff0000UL;
+    		volatile u64 *end = (volatile u64 *)0x7ffff000UL;
+
+    		*pt = 0x3333333333333333ULL;
+    		*end = 0x4444444444444444ULL;
+    		printf("probe 7fff0000=%llx 7ffff000=%llx pgtsize %llx\n",
+    		       (unsigned long long)*pt, (unsigned long long)*end,
+    		       (unsigned long long)get_page_table_size());
+    	}
+
+    	return gd->ram_top;
+    }
+
+    /*
+     * Post-relocation, and deliberately silent: gd->flags loses
+     * GD_FLG_SERIAL_READY at the top of board_init_r, so a printf() here would
+     * reach serial_putc() with a stale device pointer. Bits only.
+     */
+    void mmu_enable(void);
+    void setup_pgtables(void);
+    u64 get_tcr(u64 *pips, u64 *pva_bits);
+    u64 get_page_table_size(void);
+
+    /*
+     * mmu_setup() is __weak upstream, so the debug build replaces it with a
+     * printf-instrumented copy. printf() works here only because
+     * GD_FLG_HAVE_CONSOLE is cleared first: with the flag set, putc() calls
+     * serial_putc() as well, and board_init_r() has already dropped
+     * GD_FLG_SERIAL_READY, so gd->cur_serial_dev points at a pre-relocation
+     * device. Cleared, every character goes to the pre-console buffer and
+     * nowhere else -- which is a full printf channel on a board with no
+     * console, for as long as the dcache is still off.
+     */
+    void mmu_setup(void)
+    {
+    	unsigned long flags = gd->flags;
+    	u64 va_bits = 0;
+    	u64 tcr;
+
+    	ax630c_milestone(26);
+    	gd->flags &= ~GD_FLG_HAVE_CONSOLE;
+
+    	tcr = get_tcr(NULL, &va_bits);
+    	ax630c_milestone(27);
+    	printf("mmu: tlb %llx size %llx fill %llx el %d\n",
+    	       (unsigned long long)gd->arch.tlb_addr,
+    	       (unsigned long long)gd->arch.tlb_size,
+    	       (unsigned long long)gd->arch.tlb_fillptr,
+    	       current_el());
+    	printf("mmu: tcr %llx va_bits %llu\n",
+    	       (unsigned long long)tcr, (unsigned long long)va_bits);
+
+    	if (!gd->arch.tlb_fillptr) {
+    		gd->arch.tlb_fillptr = gd->arch.tlb_addr;
+    		printf("mmu: setup_pgtables\n");
+    		/*
+    		 * printf() is dead post-relocation on this board (measured),
+    		 * so publish the page-table address through the register
+    		 * instead: clear bits 12..31, then set the bits of the address
+    		 * itself. If
+    		 * setup_pgtables() never returns, the slot register reads back
+    		 * as the exact address it was writing to.
+    		 */
+    		writel(0xFFFFF000U, (void *)0x0239002CUL);
+    		writel((u32)gd->arch.tlb_addr & 0xFFFFF000U,
+    		       (void *)0x02390028UL);
+    		setup_pgtables();
+    		writel(0xFFFFF000U, (void *)0x0239002CUL);
+    		ax630c_milestone(29);
+    		printf("mmu: pgtables done, fill %llx\n",
+    		       (unsigned long long)gd->arch.tlb_fillptr);
+    	}
+
+    	printf("mmu: set_ttbr_tcr_mair\n");
+    	set_ttbr_tcr_mair(current_el(), gd->arch.tlb_addr, tcr,
+    			  MEMORY_ATTRIBUTES);
+    	ax630c_milestone(30);
+    	printf("mmu: done\n");
+
+    	gd->flags = flags;
+    }
+
+    void enable_caches(void)
+    {
+    	ax630c_milestone(14);
+    	icache_enable();
+    	ax630c_milestone(15);
+
+    	/* dcache_enable(), unrolled, so each step of it is observable. */
+    	__asm_invalidate_tlb_all();
+    	ax630c_milestone(21);
+    	mmu_setup();			/* page tables, TTBR0/TCR/MAIR */
+    	ax630c_milestone(22);
+    	mmu_enable();			/* SCTLR.M = 1 */
+    	ax630c_milestone(23);
+    	invalidate_dcache_all();
+    	ax630c_milestone(24);
+    	set_sctlr(get_sctlr() | CR_C);	/* SCTLR.C = 1 */
+    	ax630c_milestone(25);
+    }
+
+    int board_init(void)
+    {
+    	ax630c_milestone(16);
+    	return 0;
+    }
+
+    int board_early_init_r(void)
+    {
+    	ax630c_milestone(17);
+    	return 0;
+    }
+
+    int misc_init_r(void)
+    {
+    	ax630c_milestone(19);
+    	return 0;
+    }
+
+    int board_late_init(void)
+    {
+    	ax630c_milestone(20);
+    	return 0;
+    }'
+
+    cat >> configs/${defconfig} <<'EOF'
+    CONFIG_BOARD_EARLY_INIT_R=y
+    CONFIG_MISC_INIT_R=y
+    CONFIG_BOARD_LATE_INIT=y
+    EOF
+  '';
+
   raw = pkgs.stdenv.mkDerivation {
-    pname = "nanokvm-pro-uboot-mainline";
+    pname = "nanokvm-pro-uboot-mainline" + lib.optionalString debugMilestones "-debug";
     inherit version src patches;
 
     # U-Boot manages its own flags; the cc-wrapper must not inject PIE,
@@ -121,7 +381,7 @@ let
 
       echo "layout: $blkdevparts"
       echo "layout: env at $envOffset size $envSize, /boot is p$bootPart"
-    '';
+    '' + lib.optionalString debugMilestones milestonePostPatch;
 
     makeFlags = [
       "ARCH=arm"
@@ -178,14 +438,14 @@ let
   };
 
   signed = axSign.signImage {
-    pname = "nanokvm-pro-uboot-mainline-signed";
+    pname = "nanokvm-pro-uboot-mainline-signed" + lib.optionalString debugMilestones "-debug";
     name = "u-boot_mainline_signed.bin";
     payload = "${raw}/images/u-boot.bin";
     maxSize = ubootPart.size;
   };
 in
 
-pkgs.runCommand "nanokvm-pro-uboot-mainline-${version}"
+pkgs.runCommand "nanokvm-pro-uboot-mainline${lib.optionalString debugMilestones "-debug"}-${version}"
   {
     inherit version;
     passthru = {

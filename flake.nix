@@ -576,6 +576,16 @@
         axSign = callPkg ./pkgs/ax-sign.nix { };
         uboot-mainline = callPkg ./pkgs/uboot-mainline.nix { inherit axSign; };
 
+        # The same image plus milestone writes through every board_init_r hook
+        # U-Boot already calls, so a BL33 that dies before `preboot` still says
+        # where. The sibling of `.#atf-mainline-debug`, and the build that
+        # localised rung 2's first failure. Never ship it: it writes bits 12-20,
+        # which are Linux's in the shipping assignment.
+        uboot-mainline-debug = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          debugMilestones = true;
+        };
+
         # Non-destructive microSD boot image (dd-able .img): boots the whole
         # from-source stack from a card, eMMC untouched. Byte-matched to the
         # official v1.0.15 SD image; builds its own UART0 boot chain + SD-root
@@ -609,7 +619,7 @@
             update-package
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
-            uboot-mainline
+            uboot-mainline uboot-mainline-debug
             firmware-image nixos-firmware-image sd-image
             edid axdl;
 

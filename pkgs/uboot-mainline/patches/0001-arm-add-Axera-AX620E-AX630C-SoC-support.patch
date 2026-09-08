@@ -16,9 +16,9 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
  arch/arm/Makefile            |  1 +
  arch/arm/mach-axera/Kconfig  | 27 ++++++++++++++
  arch/arm/mach-axera/Makefile |  5 +++
- arch/arm/mach-axera/soc.c    | 49 ++++++++++++++++++++++++
+ arch/arm/mach-axera/soc.c    | 63 ++++++++++++++++++++++++++++++++
  include/configs/ax630c.h     | 72 ++++++++++++++++++++++++++++++++++++
- 6 files changed, 170 insertions(+)
+ 6 files changed, 184 insertions(+)
  create mode 100644 arch/arm/mach-axera/Kconfig
  create mode 100644 arch/arm/mach-axera/Makefile
  create mode 100644 arch/arm/mach-axera/soc.c
@@ -119,7 +119,7 @@ new file mode 100644
 index 00000000..01a401cf
 --- /dev/null
 +++ b/arch/arm/mach-axera/soc.c
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,63 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Axera AX620E family (AX630C) SoC support.
@@ -130,13 +130,19 @@ index 00000000..01a401cf
 +#include <fdtdec.h>
 +#include <init.h>
 +#include <asm/armv8/mmu.h>
++#include <asm/global_data.h>
++
++DECLARE_GLOBAL_DATA_PTR;
 +
 +/*
 + * Everything below 1 GiB is MMIO on this SoC: the on-chip RAM the boot ROM
 + * runs from, the GIC at 0x01851000, three Cadence SD4HC instances, the syscon
 + * blocks that hold the clock gates and reset bits, and the UARTs at
 + * 0x04880000. DRAM starts at 0x40000000; the widest part in the family is
-+ * 4 GiB and it is always one bank.
++ * 4 GiB and it is always one bank -- but dram_init() below shrinks the entry
++ * to the size the device tree declares, because a cacheable normal-memory
++ * mapping over addresses that no slave answers is an invitation to a
++ * speculative access that never completes.
 + */
 +static struct mm_region ax620e_mem_map[] = {
 +	{
@@ -162,7 +168,15 @@ index 00000000..01a401cf
 +
 +int dram_init(void)
 +{
-+	return fdtdec_setup_mem_size_base();
++	int ret = fdtdec_setup_mem_size_base();
++
++	if (ret)
++		return ret;
++
++	/* Map only the DRAM that is really there. */
++	ax620e_mem_map[1].size = gd->ram_size;
++
++	return 0;
 +}
 +
 +int dram_init_banksize(void)
