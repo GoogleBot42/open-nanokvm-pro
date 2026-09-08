@@ -174,7 +174,7 @@ new file mode 100644
 index 00000000..d6980dc6
 --- /dev/null
 +++ b/arch/arm/dts/ax630c.dtsi
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,202 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Axera AX630C (AX620E family).
@@ -295,6 +295,8 @@ index 00000000..d6980dc6
 +			 * "this eMMC is 1.8 V" independently of speed mode.
 +			 * mmc-hs200-1_8v;
 +			 */
++			mmc-hs400-1_8v;
++			mmc-hs400-enhanced-strobe;
 +			max-frequency = <50000000>;
 +			cdns,phy-input-delay-sd-highspeed = <2>;
 +			cdns,phy-input-delay-legacy = <4>;

@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 00:00:00 -0600
+Subject: [PATCH] mmc: sdhci-cadence: support HS400 Enhanced Strobe
+
+sdhci-cadence.h defines SDHCI_CDNS_HRS06_MODE_MMC_HS400ES and the driver
+never uses it: MMC_HS_400_ES shares the plain HS400 arm of the mode
+switch, so a card selected for enhanced strobe is run with the strobe
+off. And with no .set_enhanced_strobe op, mmc_select_hs400es() fails at
+its last step with -ENOTSUPP, so the mode is unreachable anyway.
+
+Both halves are visible on an Axera AX630C. Its first-stage loader hands
+over with HRS06 mode 6 -- HS400ES -- which is the one mode in which
+anything on this board has been observed to do a multi-block read.
+
+The strobe needs no register work of its own here: the mode field is
+what selects it, and set_ios_post() has already written HRS06 by the
+time the core asks. So the op only has to exist and succeed.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci-cadence.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -113,5 +113,8 @@
+ 		case MMC_HS_400:
+-		case MMC_HS_400_ES:
+ 			mode = SDHCI_CDNS_HRS06_MODE_MMC_HS400;
+ 			break;
+ 
++		case MMC_HS_400_ES:
++			mode = SDHCI_CDNS_HRS06_MODE_MMC_HS400ES;
++			break;
++
+ 		default:
+diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -235,3 +238,13 @@
++/*
++ * The enhanced strobe is selected by the HRS06 mode field, which
++ * set_ios_post() has already written by the time the core gets here. The op
++ * still has to exist: without it mmc_select_hs400es() returns -ENOTSUPP.
++ */
++static int sdhci_cdns_set_enhanced_strobe(struct udevice *dev)
++{
++	return 0;
++}
++
+ static struct dm_mmc_ops sdhci_cdns_mmc_ops;
+ 
+ static int sdhci_cdns_bind(struct udevice *dev)
+diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -270,2 +283,3 @@
+ 	sdhci_cdns_mmc_ops = sdhci_ops;
++	sdhci_cdns_mmc_ops.set_enhanced_strobe = sdhci_cdns_set_enhanced_strobe;
+ #if CONFIG_IS_ENABLED(MMC_SUPPORTS_TUNING)

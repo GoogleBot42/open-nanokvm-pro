@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and eMMC **multi-block** transfers fail. **Seven** upstream U-Boot bugs found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, and `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus). Rung 2i matched the whole SD4HC register table to the working Linux; rung 2j measured a 34-wide tuning window and retired the phase; **rung 2k isolated the axis: CMD17 at LBA 0 returns its block with a clean R1, CMD18 at the SAME address never drives data** -- addressing is fine, and ADMA2-32, ADMA2-96, PIO, SDMA and Auto-CMD12 all fail identically, so it is not the DMA engine either. Rung 2k also made hangs self-recovering: WDT0 arms from `arch_cpu_init()` and is hardware-proven (deliberate hang, no `resetting ...`, board back in 96 s). What is left is V4 mode, which moves the block count to `SRS 0x00` and which mainline U-Boot does not implement at all. Fifty-five runs. See "What exists now (rung 2)" through "(rung 2k)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and eMMC **multi-block** transfers fail: **single-block reads pass at any address, two-block reads fail at any address**. **Ten** upstream U-Boot bugs/gaps found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus, no Host Version 4 mode at all, HS400ES defined-but-unreachable, and no Auto CMD23). Excluded by measurement: sampling phase (34-wide tuning window), base clock, PHY delays, bus width, signal voltage, addressing, transfer size, every DMA engine (ADMA2 32/96-bit, SDMA, PIO), ADMA chunking, every stop convention (none/CMD12/CMD23), every bus mode (HS, HS200, HS400ES incl. the loader's own `HRS06 = 6`) and both host modes (v3, v4 -- controller is spec 4.00). Hangs are self-recovering since rung 2k: WDT0 arms from `arch_cpu_init()`, hardware-proven. What is left is HC2 bit 13 with the 128-bit v4 ADMA2 descriptor, which U-Boot does not implement. Sixty-one runs. See "What exists now (rung 2)" through "(rung 2l)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3842,3 +3842,61 @@ support whatsoever. That is rung 2l.
 Device left on slot A, register `0x00000015`, `uboot_b` restored byte-for-byte
 (p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back
 to `ver` alone.
+
+### What exists now (rung 2l, 2026-09-08) — v4 mode, HS400ES and CMD23 all land, and none of them is it
+
+Six hardware rounds, three dark (the intermittent pre-`arch_cpu_init` hang).
+Detail in [`RUNG2L.md`](reference/mainline/uboot-mainline-20260908/RUNG2L.md),
+traces in [`rung2l-reads-20260908.txt`](reference/mainline/uboot-mainline-20260908/rung2l-reads-20260908.txt).
+
+The bug now states itself in four lines — freshly identified card, HS400ES,
+v4 mode, Auto CMD23 accepted:
+
+| read | result | command | status |
+|---|---|---|---|
+| LBA 0, 1 block | **pass** | `113a0013` CMD17 | `00000000` |
+| LBA 0, 2 blocks | fail | `123a003b` CMD18 | `00108000` |
+| LBA 0x2600, 1 block | **pass** | `113a0013` CMD17 | `00000000` |
+| LBA 0x2600, 2 blocks | fail | `123a003b` CMD18 | `00108000` |
+
+**Single-block reads work at any address; two-block reads fail at any address.**
+
+Three real driver gaps closed on the way, all hardware-verified, none of them
+the fix:
+
+- **Host Version 4 mode** (`0013`). U-Boot had no notion of it — `SDHCI_CTRL_V4_MODE`
+  did not exist. The controller reports `SDHCI_HOST_VERSION = 0x0003` (spec 4.00,
+  read from Linux and confirmed in-band as `SRS fc = 0x00030000`) and Linux runs
+  it at `HOST_CONTROL2 = 0x3008`; U-Boot now runs `0x1008`. A first version also
+  moved the count to `SDHCI_32BIT_BLK_CNT` and zeroed the 16-bit register — that
+  is a **4.10** feature Linux uses only behind `SDHCI_QUIRK2_USE_32BIT_BLK_CNT`,
+  and on this 4.00 part it broke identification outright (`re-init -70`, dying at
+  the first EXT_CSD read, every transfer now carrying a block count of zero).
+- **HS400 Enhanced Strobe** (`0014`). `SDHCI_CDNS_HRS06_MODE_MMC_HS400ES` was
+  defined and unused — `MMC_HS_400_ES` shared the plain HS400 arm — and with no
+  `.set_enhanced_strobe` op `mmc_select_hs400es()` failed at its last step with
+  `-ENOTSUPP`, so the mode was unreachable. U-Boot now reports `mode 12` and
+  writes `HRS06 = 0x06`, byte for byte the state the first-stage loader hands
+  over in, and the one mode in which anything on this board has been seen to do
+  a multi-block read.
+- **Auto CMD23** (`0015`). U-Boot issued every multi-block transfer open-ended.
+  Now `TRANSFER_MODE = 0x003b`, `SRS 00 = 2` is the CMD23 argument and
+  `SRS 1c = 0x900` is the auto-command response — **the card received CMD23 and
+  answered R1 from TRAN** — and the data phase still never starts.
+
+The exclusion list after four rungs: sampling phase, base clock, PHY delays, bus
+width, signal voltage, addressing, transfer size, DMA engine (ADMA2 32-bit,
+ADMA2 96-bit, SDMA, PIO), ADMA chunking, stop convention (none / CMD12 / CMD23),
+bus mode (HS, HS200, HS400ES) and host mode (v3, v4). All excluded by
+measurement.
+
+What remains is the last piece of Linux's configuration U-Boot still does not
+reproduce: `HOST_CONTROL2` bit 13, 64-bit addressing, with the **128-bit v4
+ADMA2 descriptor** it implies. U-Boot's `USE_ADMA64` is not that — its
+descriptor is 12 bytes, the 96-bit v3 format — which is why `0013` deliberately
+sets only bit 12. That is rung 2m, and it is the last item on the match-Linux
+list.
+
+Device left on slot A, register `0x00000015`, `uboot_b` restored byte-for-byte
+(p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back
+to `ver` alone, `checkboot` `Result=success`, `nanokvm` active, web 200.

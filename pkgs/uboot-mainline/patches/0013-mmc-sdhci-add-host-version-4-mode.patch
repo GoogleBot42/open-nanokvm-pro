@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 00:00:00 -0600
+Subject: [PATCH] mmc: sdhci: add Host Version 4 mode
+
+U-Boot's SDHCI driver has no notion of Host Version 4 mode at all:
+SDHCI_CTRL_V4_MODE does not exist, and SDHCI_SPEC_400 appears only as a
+version constant. Linux has had it since 4.20 (sdhci_enable_v4_mode()),
+and a controller that is driven in v4 mode by one driver and v3 mode by
+another does not necessarily behave the same in both.
+
+Cadence SD4HC on the Axera AX630C reports SDHCI_HOST_VERSION 0x0003,
+which is spec 4.00, and Linux runs it with HOST_CONTROL2 = 0x3008 --
+v4 mode and 64-bit addressing both on. U-Boot ran it in v3 mode.
+
+Add the flag, let a host driver opt in before sdhci_probe(), and
+re-apply the mode after the RESET_ALL in sdhci_init(), which clears
+HOST_CONTROL2. Only the v4-mode bit is set: 64-bit addressing is a
+separate bit that changes the descriptor width to the 128-bit v4 format,
+which U-Boot's USE_ADMA64 path does not implement -- its descriptor is
+the 96-bit v3 one.
+
+The block count deliberately stays in the 16-bit register. The 32-bit
+block count at SDHCI_32BIT_BLK_CNT is a 4.10 feature that Linux uses
+only behind SDHCI_QUIRK2_USE_32BIT_BLK_CNT; on a 4.00 controller,
+zeroing the 16-bit register gives every transfer a block count of zero
+and identification fails at the first EXT_CSD read. Measured.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci-cadence.c |  1 +
+ drivers/mmc/sdhci.c         | 17 +++++++++++++++++
+ include/sdhci.h             |  6 ++++++
+ 3 files changed, 24 insertions(+)
+
+diff --git a/include/sdhci.h b/include/sdhci.h
+--- a/include/sdhci.h
++++ b/include/sdhci.h
+@@ -23,3 +23,5 @@
+ #define SDHCI_DMA_ADDRESS	0x00
++/* Host Version 4 only: the 32-bit block count shares this address. */
++#define SDHCI_32BIT_BLK_CNT	0x00
+ 
+ #define SDHCI_BLOCK_SIZE	0x04
+diff --git a/include/sdhci.h b/include/sdhci.h
+--- a/include/sdhci.h
++++ b/include/sdhci.h
+@@ -168,2 +170,4 @@
+ #define  SDHCI_CTRL_TUNED_CLK		0x0080
++#define  SDHCI_CTRL_V4_MODE		0x1000
++#define  SDHCI_CTRL_64BIT_ADDR		0x2000
+ #define  SDHCI_CTRL_PRESET_VAL_ENABLE	0x8000
+diff --git a/include/sdhci.h b/include/sdhci.h
+--- a/include/sdhci.h
++++ b/include/sdhci.h
+@@ -356,3 +360,5 @@
+ 	void *align_buffer;
+ 	bool force_align_buffer;
++	/* Host Version 4 mode: 32-bit block count. Set before sdhci_probe(). */
++	bool v4_mode;
+ 	dma_addr_t start_addr;
+diff --git a/drivers/mmc/sdhci.c b/drivers/mmc/sdhci.c
+--- a/drivers/mmc/sdhci.c
++++ b/drivers/mmc/sdhci.c
+@@ -716,2 +721,19 @@
+ 
++/*
++ * Host Version 4 Enable. A RESET_ALL clears HOST_CONTROL2, so every caller
++ * that issues one has to put the mode back; the read-modify-write keeps the
++ * signal voltage and the UHS field the rest of the driver owns.
++ */
++static void sdhci_enable_v4_mode(struct sdhci_host *host)
++{
++	u16 ctrl2;
++
++	if (!host->v4_mode)
++		return;
++
++	ctrl2 = sdhci_readw(host, SDHCI_HOST_CONTROL2);
++	ctrl2 |= SDHCI_CTRL_V4_MODE;
++	sdhci_writew(host, ctrl2, SDHCI_HOST_CONTROL2);
++}
++
+ static int sdhci_init(struct mmc *mmc)
+diff --git a/drivers/mmc/sdhci.c b/drivers/mmc/sdhci.c
+--- a/drivers/mmc/sdhci.c
++++ b/drivers/mmc/sdhci.c
+@@ -726,2 +748,3 @@
+ 	sdhci_reset(host, SDHCI_RESET_ALL);
++	sdhci_enable_v4_mode(host);
+ 
+diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -269,2 +269,3 @@
+ 	host->quirks |= SDHCI_QUIRK_WAIT_SEND_CMD;
++	host->v4_mode = true;
+ 	sdhci_cdns_mmc_ops = sdhci_ops;

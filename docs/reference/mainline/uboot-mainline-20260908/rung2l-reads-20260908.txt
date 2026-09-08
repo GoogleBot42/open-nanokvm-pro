@@ -1,0 +1,92 @@
+Rung 2l (#89), 2026-09-08. All read from the CONFIG_PRE_CONSOLE_BUFFER at
+0x480e8000 after the board returned to slot A.
+
+===========================================================================
+ROUND 1 -- v4 mode WITH the 32-bit block count (wrong; a 4.10 feature).
+Image 694f237164b0a82b6ee6d738fb781a7f.
+===========================================================================
+Loading Environment from MMC... *** Warning - No block device, using default environment
+...
+SRS 00=00000001 04=00007200 08=00000000 0c=083a0013
+SRS 10=00000700 24=01ff00f0 28=00000f10 2c=000effc7 3c=10080000
+read probe: re-init -70
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 0 bw 1 mode 0 bmax 65535
+MMC: block number 0x1 exceeds max(0x0)
+read lba 00000000 cnt 1 -> 0 cmd 083a0013 arg 00000000 resp 00000700 stat 00000000
+
+  3c = 0x1008    HOST_CONTROL2: VDD_180 | V4_MODE -- the patch is live
+  00 = 1         the 32-bit block count, written
+  04 = 0x7200    the 16-bit block count, zeroed
+  0c index 0x08  CMD8 SEND_EXT_CSD -- identification never got past it
+  2c = 0xffc7    still at the identification clock divider
+
+Zeroing the 16-bit count gives every transfer a block count of zero on a 4.00
+controller. Linux only uses the 32-bit count at spec 4.10 and behind
+SDHCI_QUIRK2_USE_32BIT_BLK_CNT. Reverted.
+
+===========================================================================
+ROUND 3 -- v4 mode, 16-bit block count kept. Image
+5dfa9d6294b4beafce0ee211d5b55b3c.
+===========================================================================
+read probe: re-init 0
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 10 bmax 65535
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00000000 cnt 2 -> 0 cmd 123a0033 arg 00000000 resp 00000900 stat 00108000
+read lba 00002600 cnt 1 -> 0 cmd 101a0033 arg 00000200 resp 00000000 stat 00000000
+read lba 00002600 cnt 2 -> 0 cmd 101a0033 arg 00000200 resp 00000000 stat 00000000
+SRS 3c=10080000   HOST_CONTROL2 0x1008, v4 on
+HRS 18=00000f04   HS200, tune 15
+
+Identification healthy again, multi-block unchanged.
+
+===========================================================================
+ROUND 4 -- HS400 Enhanced Strobe. Image 535f89cbbdf07b66f05064ea0ba8596e.
+===========================================================================
+read probe: re-init 0
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 12 bmax 65535
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00000000 cnt 2 -> 0 cmd 123a0033 arg 00000000 resp 00000900 stat 00108000
+read lba 00002600 cnt 1 -> 0 cmd 113a0013 arg 00002600 resp 00000000 stat 00000000
+read lba 00002600 cnt 2 -> 0 cmd 123a0033 arg 00002600 resp 00000000 stat 00000000
+SRS 3c=10080000   v4 on
+SRS fc=00030000   HOST VERSION -- spec 4.00, confirming the Linux-side read
+HRS 18=00000006   HRS06 mode 6 = HS400ES, tune 0 -- the loader's own state
+PHY 0d=18         strobe delay, as the DT sets it
+
+  mode 12 = MMC_HS_400_ES. Same mode the first-stage loader reads multi-block
+  in. Multi-block unchanged.
+
+===========================================================================
+ROUND 6 -- Auto CMD23, on top of v4 + HS400ES. Image
+412854b48de72b77979e239ab3fa2061.
+===========================================================================
+read probe: re-init 0
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 12 bmax 65535
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00000000 cnt 2 -> 0 cmd 123a003b arg 00000000 resp 00000900 stat 00108000
+read lba 00002600 cnt 1 -> 1 cmd 113a0013 arg 00002600 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00002600 cnt 2 -> 0 cmd 123a003b arg 00002600 resp 00000900 stat 00108000
+
+SRS 00=00000002 04=00027200 08=00002600 0c=123a003b
+SRS 10=00000900 1c=00000900 24=01ff00f0 28=00000f34 2c=000e0207
+SRS 30=00108000 3c=10080000 40=176ac8b2 44=10000077
+SRS fc=00030000
+HRS 18=00000006
+
+  0c mode 0x003b   DMA | BLK_CNT_EN | AUTO_CMD23 | READ | MULTI
+  00 = 2           the Auto CMD23 argument, i.e. the block count
+  1c = 0x00000900  RESPONSE3: the auto-command response -- R1 from TRAN.
+                   The card RECEIVED CMD23 and accepted it.
+  30 = 0x00108000  and the data phase still never started.
+
+  Both single-block reads pass, at both addresses. Both two-block reads fail,
+  at both addresses. That is the whole bug in four lines.
+
+===========================================================================
+Rounds 2 and 5 were dark past the 300 s watchdog, i.e. the intermittent hang
+that lives before arch_cpu_init() (rung 2k). Round 3 is round 2 repeated and
+round 6 is round 5 repeated.

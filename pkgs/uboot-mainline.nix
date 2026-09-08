@@ -73,6 +73,9 @@ let
     ./uboot-mainline/patches/0010-mmc-start-at-the-vqmmc-signal-voltage.patch
     ./uboot-mainline/patches/0011-mmc-sdhci-vqmmc-already-at-target-is-not-a-failure.patch
     ./uboot-mainline/patches/0012-mmc-sdhci-do-not-clear-a-dt-declared-8-bit-bus.patch
+    ./uboot-mainline/patches/0013-mmc-sdhci-add-host-version-4-mode.patch
+    ./uboot-mainline/patches/0014-mmc-sdhci-cadence-support-hs400-enhanced-strobe.patch
+    ./uboot-mainline/patches/0015-mmc-sdhci-auto-cmd23-for-multi-block-in-v4-mode.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -753,6 +756,8 @@ let
     	       readl((void *)(AX630C_CPU_SYS_GLB + 0x00)),
     	       readl((void *)(AX630C_CPU_SYS_GLB + 0x04)),
     	       readl((void *)(AX630C_CPU_SYS_GLB + 0x0c)));
+    	printf("SRS fc=%08x (host version)\n",
+    	       readl((void *)(AX630C_EMMC_SRS + 0xfc)));
     	printf("WDT en=%08x torr=%08x ccvr=%08x abort=%08x\n",
     	       readl((void *)0x04840000UL), readl((void *)0x0484000cUL),
     	       readl((void *)0x04840024UL), readl((void *)0x023400a8UL));
