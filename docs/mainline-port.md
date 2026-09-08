@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot now runs end to end** -- MMU, driver model, both SD4HC controllers with the eMMC as `mmc 0`, console, `main_loop`, `preboot`, `bootcmd` -- after patch 0006 fixed a relocation offset that was not a page multiple. Still not booting Linux: `dev:part` is parsed in base 16 (p16 is `mmc 0:10`, fixed) and the env read times out (open). Twenty-three runs; the last one hung and needs a power cycle, which lands on slot A. See "What exists now (rung 2)" through "(rung 2d)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and stops at **one** remaining bug: every eMMC DATA transfer fails while the command path works, so it can read neither the environment nor `/boot`. Not DMA, not transfer length, not clock speed; the PHY settings need the vendor `sdhci_ax620e.c` characterised. Twenty-eight runs. See "What exists now (rung 2)" through "(rung 2e)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3155,3 +3155,102 @@ A power cycle lands on slot A: the SPL consumed `SLOTB_BOOTABLE` and the slot
 register clears on power loss. Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs
 were never written. `uboot_b`, p7 and `/boot` still hold the test payload, and
 `/root/rung2/restore.sh` undoes all three.
+
+### What exists now (rung 2e, 2026-09-08) — THE BLOCKER IS eMMC DATA TRANSFERS
+
+Rung 2d's `bootpart` fix landed and `** Invalid partition 22 **` is gone.
+Mainline U-Boot now probes both Cadence SD4HC controllers, identifies the card,
+reaches `main_loop`, runs `preboot` and runs `bootcmd`. **Every eMMC data
+transfer then fails, while the command path works** — and that single bug is
+the whole remaining gap. Logs:
+[`uboot-console-emmc-20260908.txt`](reference/mainline/uboot-mainline-20260908/uboot-console-emmc-20260908.txt).
+
+```
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC... Transfer data timeout
+*** Warning - !read failed, using default environment
+...
+ ** fs_devread read error - block
+Can't set block device
+resetting ...
+```
+
+Slot register `0x90000015`: bit 28 (`preboot`) and bit 31 (`ms_failed`), a
+clean `reset`. Exactly what the boot flow should do when it cannot read
+`/boot`.
+
+#### What the bug is not
+
+Four runs, each changing one thing:
+
+| Run | Change | Result |
+|---|---|---|
+| 2 | 8-bit, `cap-mmc-highspeed`, 50 MHz, ADMA | env read times out, FAT read errors, clean reset |
+| 3 | the same with **PIO** (`# CONFIG_MMC_SDHCI_ADMA is not set`) | byte-identical log — **not a DMA problem** |
+| 4 | 1-bit, legacy timing, 25 MHz, PIO | **worse**: hangs inside the env read with no timeout, no bit 28, SoC resets itself ~60 s later |
+
+So: not transfer length (a 1 MiB env read and a 650-byte FAT read fail alike),
+not ADMA, and not "too fast" — the conservative setting is the one that stops
+responding rather than reporting a timeout. That asymmetry points at the PHY.
+The `cdns,phy-input-delay-*` and `cdns,phy-dll-delay-*` values in our DT came
+from the vendor DT, where they sit alongside `sdhci_ax620e.c`, a 1512-line fork
+of sdhci-cadence. §11.10 predicted that fork was redundant because mainline
+binds `cdns,sd4hc` unmodified. It does bind, probe and identify the card — and
+then cannot move data. **Some of those 1512 lines are load-bearing**, and
+characterising which is the next piece of work.
+
+Both experiments are reverted; the tree carries the proven-neutral 8-bit / HS /
+50 MHz / ADMA configuration.
+
+#### `boot.panic_on_fail`, and the token that is not `panicOnFail`
+
+Rung 2d guessed that its dark board was a NixOS stage-1 `fail()` blocking
+interactively. The cmdline token for that is **`boot.panic_on_fail`** (or
+`stage1panic=1`) — `panicOnFail` is the *shell variable* the token sets, not
+something the kernel command line understands
+(`nixos/modules/system/boot/stage-1-init.sh`). It is in the banked
+`harness/extlinux.conf` along with `panic=10`, and it costs nothing to carry;
+this rung never got far enough to exercise it, because U-Boot cannot read
+`/boot`.
+
+#### A watchdog in `preboot` fires in one second — do not ship it yet
+
+`AX630C_WDT_ENV` defines a `wdt_arm` command that reproduces the vendor
+bootloader's WDT0 sequence (program TORR, strobe TORR_LOAD, select 24 MHz,
+enable). Running it from `preboot` with `TORR = 0x80be` **reset the board about
+one second later**, during the autoboot countdown — bit 28 set, nothing else.
+The vendor's own 0x2AEA yields 60 s, and 0x80be assumed a raw `freq >> 16`
+down-count, so it should have been *longer*. It is not: TORR is not that
+register. The helper stays defined and documented but is **not** wired into
+`preboot`; arming this watchdog needs the register characterised first.
+
+That leaves a slot-B boot with no net, which is what cost a power cycle in
+rung 2d. Until either the watchdog or the env read works, a slot-B U-Boot test
+is only as safe as its ability to reach `reset` on its own — which, for a
+failure U-Boot can diagnose, it does.
+
+#### The environment fallback is doing useful work
+
+`Loading Environment from MMC... Transfer data timeout` means U-Boot falls back
+to the built-in default environment on every boot. That is why these runs get
+anywhere at all — and it retires rung 2's shared-p7 worry completely: the
+stored environment is never successfully read, so the vendor's six variables
+cannot shadow `CFG_EXTRA_ENV_SETTINGS`. `bootcount` and `saveenv` stay blocked
+behind the same eMMC bug.
+
+#### A power cycle destroys every evidence channel this board has
+
+Worth stating once, because it shaped this rung: the slot register clears on
+power loss and DRAM clears with it, so the pre-console buffer, the scratchpad
+and the milestone bits all go. Nothing from rung 2d's dark run survived to be
+read — `/var/lib/systemd/pstore/` held nothing newer than the boot before it.
+**Read the register and the buffer before power-cycling**, or the run is lost.
+
+#### Device end state
+
+Slot register `0x00000014`, `bootsystem=A`, `atf_b` still the rung-1
+`.#atf-mainline`, `uboot_b` restored to the vendor image and verified from the
+medium (`1521dc39f8a50e726c708fde2c8edce2` over 1 536 KiB), `/boot` back to its
+single `ver` file, the environment back to the vendor's own six variables with
+no `preboot` or `bootcmd` of ours, `nanokvm-checkboot` enabled and active, no
+failed units, web 200.

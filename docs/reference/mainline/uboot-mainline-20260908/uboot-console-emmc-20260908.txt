@@ -1,0 +1,76 @@
+Rung 2e: mainline U-Boot on the AX630C, four runs, read out of the pre-console
+buffer at 0x480E8000 (see uboot-console-20260908.txt for how the channel works).
+
+The partition-number fix landed: `** Invalid partition 22 **` is gone. What is
+left is one bug wearing two hats -- every eMMC DATA transfer fails, while the
+command path works.
+
+======================================================================
+Run 2: 8-bit, cap-mmc-highspeed, 50 MHz, ADMA.  Slot register 0x90000015
+       (bit 28 preboot, bit 31 nothing-booted) -> clean `reset`.
+======================================================================
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  16 devices, 11 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC... Transfer data timeout
+*** Warning - !read failed, using default environment
+
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+Hit any key to stop autoboot: 1
+Hit any key to stop autoboot: 0
+ ** fs_devread read error - block
+Can't set block device
+resetting ...
+
+======================================================================
+Run 3: identical but PIO (# CONFIG_MMC_SDHCI_ADMA is not set).
+       Byte-for-byte the same log, same register 0x90000014.
+       => the data path is not a DMA problem.
+======================================================================
+
+======================================================================
+Run 4: 1-bit, no cap-mmc-highspeed, 25 MHz, PIO.  WORSE.
+       Slot register 0x00000014 -- not even bit 28, so `preboot` never ran.
+======================================================================
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  16 devices, 11 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC...
+
+  ^ and nothing more. No "Transfer data timeout": the read did not time out,
+    it hung, and ~60 s later the SoC reset on its own.
+
+======================================================================
+Reading
+======================================================================
+
+* The COMMAND path works. The controller probes, both instances are listed,
+  and the card is identified -- `mmc_init()` has to succeed before U-Boot
+  tries to read the environment at all.
+* The DATA path never completes. A 1 MiB env read and a ~650-byte FAT read
+  fail the same way, so it is not transfer length.
+* It is not ADMA: PIO reproduces it exactly.
+* It is not "too fast": the conservative setting is the one that hangs rather
+  than reporting a timeout. At 8-bit/HS/50 MHz the controller at least raises
+  a clean data timeout; at 1-bit/legacy/25 MHz it stops responding.
+
+That last asymmetry is the useful one. The `cdns,phy-input-delay-*` and
+`cdns,phy-dll-delay-*` values in the device tree were taken from the vendor DT,
+where they sit alongside a 1512-line fork of sdhci-cadence
+(`sdhci_ax620e.c`). Section 11.10 predicted that fork was redundant because
+mainline binds `cdns,sd4hc` unmodified -- it binds, it probes, it identifies
+the card, and then it cannot move data. Whatever those 1512 lines do to the
+PHY, some of it is load-bearing.
