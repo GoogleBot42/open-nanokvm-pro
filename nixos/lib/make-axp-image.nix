@@ -205,8 +205,12 @@ let
         print(f"[fit ] {name}: {size} B <= {c['cap'] or 'rest of device'}")
 
     # The 1 KB Axera signed header, on every member that must carry one:
-    # magic 0x55543322 at offset 4, and img_size at offset 12 == the compressed
-    # payload that follows it. A member that lost its header boots nothing.
+    # magic 0x55543322 at offset 4, and img_size at offset 12 = the length of
+    # the payload behind it. A member that lost its header boots nothing.
+    #
+    # img_size is <= file size - 1024, not ==: the SPL is padded out to its
+    # 256 KiB flash slot by the vendor sign step, and the DDR-init "image" is
+    # a header and nothing else (its parameters live in the header fields).
     for name in spec["signed"]:
         with open(files[name], "rb") as f:
             head = f.read(1024)
@@ -214,9 +218,10 @@ let
         magic, _cap_, img = struct.unpack_from("<III", head, 4)
         if magic != 0x55543322:
             sys.exit(f"ERROR: {name}: bad AX header magic {magic:#x}")
-        if img != total - 1024:
-            sys.exit(f"ERROR: {name}: header img_size {img} != payload {total - 1024}")
-        print(f"[sign] {name}: AX header ok, {img} B payload")
+        if img > total - 1024:
+            sys.exit(f"ERROR: {name}: header img_size {img} > payload {total - 1024}")
+        pad = total - 1024 - img
+        print(f"[sign] {name}: AX header ok, {img} B payload" + (f" + {pad} B pad" if pad else ""))
 
     # A/B SLOTS. There is no slot field anywhere in that header: which slot an
     # image belongs to is decided by the partition it is written to. The vendor
@@ -254,8 +259,19 @@ let
             print(f"[pack] {name}  ({os.path.getsize(files[name])} B)")
     print(f"[ok] {len(order)} members")
   '';
-in
-pkgs.stdenvNoCC.mkDerivation {
+  # What the finished bundle is checked AGAINST, generated from the partition
+  # map rather than from the packer's own inputs -- see nixos/lib/verify-axp.py.
+  expected = pkgs.writeText "axp-expected.json" (builtins.toJSON {
+    parts = map (p: { inherit (p) name size; }) parts.parts;
+    stored = imgOrder;
+    slotPairs = map (p: [ p.a p.b ]) slotPairs;
+    signed = signedMembers;
+    rawSizes = lib.listToAttrs
+      (map (n: lib.nameValuePair partitionImages.${n}.member partitionImages.${n}.rawSize)
+        (lib.filter (n: (partitionImages.${n}.rawSize or null) != null) imgOrder));
+  });
+
+  self = pkgs.stdenvNoCC.mkDerivation {
   inherit pname version;
 
   dontUnpack = true;
@@ -295,10 +311,23 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
-  passthru = { inherit manifestFile members; manifest = manifest; };
-
   meta = {
     description = "AXDL .axp firmware bundle, packed from scratch (manifest + every stored partition from source)";
     platforms = [ "x86_64-linux" ];
   };
-}
+  };
+in
+self.overrideAttrs (_: {
+  passthru = {
+    inherit manifestFile members expected;
+    manifest = manifest;
+
+    # `nix flake check` gate: open the finished bundle and check it against the
+    # partition map and the flasher's parsing rules, independently of the code
+    # that wrote it.
+    verify = pkgs.runCommand "nanokvm-axp-verify"
+      { nativeBuildInputs = [ pkgs.python3 ]; } ''
+      python3 ${./verify-axp.py} ${self}/${artifact} ${expected} | tee "$out"
+    '';
+  };
+})

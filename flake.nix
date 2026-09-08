@@ -604,6 +604,11 @@
           # defines it, with the root/boot partition numbers and the U-Boot
           # environment offset asserted against the values docs record (#78).
           # Pure evaluation -- it builds a text file.
+          # The from-scratch .axp, read back: one manifest, the partition table
+          # against the blkdevparts= clause, every <Img> against what the host
+          # flasher's parser requires, every member inside its partition, the
+          # A/B pairs identical and the Axera signed headers intact (#78).
+          nixos-axp-manifest = nixos-firmware-image.verify;
           emmc-partition-map =
             let p = import ./nixos/emmc-partitions.nix { inherit (pkgs) lib; };
             in pkgs.writeText "emmc-partition-map" (
