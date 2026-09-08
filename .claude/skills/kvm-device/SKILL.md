@@ -206,3 +206,11 @@ the U-Boot pre-console buffer, ramoops/pstore) — a cold cycle clears DRAM and 
 register. Confirm with `state`, not with the publish. Do not cycle during a
 block write (`dd` to an eMMC partition) — wait for the hash-verify. One cycle per
 failed boot; give the boot ~90 s before deciding it is dark.
+
+**Pre-probe caveat (2026-09-09):** `tools/kvmssh` skips an address whose
+`bash -c 'echo > /dev/tcp/$ip/22'` probe fails. In a subagent sandbox that
+redirection can be blocked outright, so a healthy board reads as
+"tcp/22 unreachable" — one agent power-cycled a live board on that false
+negative and lost a finished run's console buffer. When a probe says
+unreachable and the board *should* be up, confirm with
+`socat - TCP:$ip:22 </dev/null` (prints the SSH banner) before acting.
