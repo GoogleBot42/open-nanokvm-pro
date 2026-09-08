@@ -1,0 +1,86 @@
+The Cadence SD4HC register file at 0x1B40000, read from the WORKING controller:
+mainline Linux 7.1.3 on the NanoKVM-Pro, driving this eMMC as its rootfs at the
+moment of the read. Harness: harness/sd4hc-dump.sh (word loops on /dev/mem --
+glibc memcpy on a /dev/mem mapping SIGBUSes, CLAUDE.md).
+
+This is the reference U-Boot has to be diffed against. Rung 2f measured it;
+the matching U-Boot-side dump is still owed (see RUNG2F.md).
+
+=== HRS block (Cadence-specific) ===================================
+
+HRS00 (+0x00) 0x00010000
+HRS01 (+0x04) 0x00000032
+HRS02 (+0x08) 0x00030000
+HRS03 (+0x0c) 0x00000000
+HRS04 (+0x10) 0x00000000        PHY access port, idle
+HRS05 (+0x14) 0x00000000
+HRS06 (+0x18) 0x00001004        MODE[2:0] = 4, TUNE[13:8] = 0x10, TUNE_UP = 0
+HRS07..HRS15  0x00000000
+
+  Upstream sdhci-cadence defines and touches HRS04, HRS05 and HRS06 only. It
+  never writes HRS00, HRS01 or HRS02 -- and two of those are non-zero here, so
+  they are the first-stage loader's, not the driver's.
+
+  HRS06 is the interesting one. Upstream's sdhci_cdns_get_hrs06_mode() maps
+  MMC_HS -> SDHCI_CDNS_HRS06_MODE_MMC_SDR = 2. This controller is at MODE = 4
+  (MMC_HS200) with a non-zero TUNE of 16, which is a *tuned* configuration --
+  and our device tree declares no HS200 (cap-mmc-highspeed, max-frequency
+  50 MHz), so nothing in the mode mapping produces 4 from this DT. The value is
+  the boot firmware's, and Linux is running on top of it.
+
+  That matches what pkgs/kernel-mainline/patches/0001 already says about the
+  Linux side: "No init hook. The DLL reset pulse the vendor driver issues
+  before writing PHY parameters is already performed by the boot firmware,
+  which reads the kernel off this controller before Linux starts."
+
+=== SRS block (standard SDHCI, at +0x200) ==========================
+
+sdhci 0x28  0x00000F34   HOST_CONTROL   = 0x34: HISPD | ADMA2 (DMA_SEL=0b10)
+                                                 | 8BITBUS
+                         POWER_CONTROL  = 0x0F: bus power on, 3.3 V
+sdhci 0x2c  0x000E0207   CLOCK_CONTROL  = 0x0207: divider 2, int clk enabled
+                                                   and stable, SD clock on
+                         TIMEOUT_CONTROL= 0x0E (maximum)
+sdhci 0x3c  0x30080000   HOST_CONTROL2  = 0x3008: UHS mode 0,
+                                                   PRESET_VAL_ENABLE (bit 15)
+                                                   CLEAR
+sdhci 0x40  0x176AC8B2   CAPS0: base clock field [15:8] = 0xC8 = 200 MHz
+sdhci 0x44  0x10000077   CAPS1
+sdhci 0xfc  0x00030000   host controller version
+
+=== card clock, from the CCF ========================================
+
+  clk_emmc_card_sel   400000000
+   clk_emmc_card_divn 200000000
+    clk_emmc_card_eb  200000000   1b40000.mmc
+  clk_sd_card_divn    200000000
+    clk_sd_card_eb    200000000   104e0000.mmc
+
+=== what this excludes ==============================================
+
+* THE BASE CLOCK IS RIGHT. CAPS0 says 200 MHz and the CCF says the card clock
+  really is 200 MHz, so sdhci_setup_cfg() taking the base from CAPS0 -- which
+  is how U-Boot gets it, having no clock provider -- gets the correct number.
+  Divider 2 then gives the 50 MHz the DT asks for. A wrong base clock, and so a
+  wrong divider, is not the bug.
+
+* PRESET VALUES ARE NOT ENABLED. HOST_CONTROL2 bit 15 is clear here, which is
+  what SDHCI_QUIRK2_PRESET_VALUE_BROKEN achieves on the Linux side. On the
+  U-Boot side the constant SDHCI_CTRL_PRESET_VAL_ENABLE appears only in
+  include/sdhci.h and is never written by drivers/mmc/sdhci.c, and sdhci_init()
+  issues SDHCI_RESET_ALL, which clears HOST_CONTROL2. So U-Boot cannot be
+  running on stale presets either.
+
+* BUS WIDTH AND HIGH-SPEED ARE SET GENERICALLY. sdhci_cdns_set_control_reg()
+  calls the generic sdhci_set_control_reg() only `if (IS_SD(mmc))`, which looks
+  alarming for eMMC -- but that generic function only does voltage and UHS
+  timing. sdhci_set_ios() writes SDHCI_CTRL_8BITBUS and SDHCI_CTRL_HISPD itself,
+  for eMMC as much as SD. Not the bug either.
+
+=== what it leaves =================================================
+
+HRS06, and HRS00/01/02 which upstream never writes. U-Boot's Cadence driver
+recomputes the HRS06 mode from mmc->selected_mode on every set_ios and writes
+it, discarding whatever the firmware tuned -- and it does no tuning of its own
+for MMC_HS. HRS06 selects the PHY data sampling path, which is exactly the
+shape of the failure: the command line works, every data transfer does not.

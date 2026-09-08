@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and stops at **one** remaining bug: every eMMC DATA transfer fails while the command path works, so it can read neither the environment nor `/boot`. Not DMA, not transfer length, not clock speed; the PHY settings need the vendor `sdhci_ax620e.c` characterised. Twenty-eight runs. See "What exists now (rung 2)" through "(rung 2e)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and stops at **one** bug: every eMMC DATA transfer fails while the command path works. Base clock, preset registers and bus width/high-speed are all excluded by a register dump off the working Linux controller; what is left is HRS06, which the boot firmware leaves tuned (`MODE=4, TUNE=16`) and U-Boot overwrites from `selected_mode`. Thirty runs. See "What exists now (rung 2)" through "(rung 2f)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3254,3 +3254,73 @@ medium (`1521dc39f8a50e726c708fde2c8edce2` over 1 536 KiB), `/boot` back to its
 single `ver` file, the environment back to the vendor's own six variables with
 no `preboot` or `bootcmd` of ours, `nanokvm-checkboot` enabled and active, no
 failed units, web 200.
+
+### What exists now (rung 2f, 2026-09-08) — THE SD4HC REFERENCE DUMP
+
+The Cadence SD4HC register file, read off the **working** controller — mainline
+Linux driving this eMMC as its rootfs at the moment of the read — excludes three
+of the four candidates for rung 2e's data-transfer failure and leaves one.
+Banked:
+[`sd4hc-registers-20260908.txt`](reference/mainline/uboot-mainline-20260908/sd4hc-registers-20260908.txt),
+write-up [`RUNG2F.md`](reference/mainline/uboot-mainline-20260908/RUNG2F.md).
+
+The U-Boot-side dump that was to be diffed against it never came back: the board
+went dark and did not self-recover in nineteen minutes. It needs a power cycle,
+and that destroys the register and DRAM, so this run's on-board evidence is gone.
+
+#### Excluded, by measurement
+
+| Candidate | Verdict |
+|---|---|
+| Wrong base clock → wrong divider | **no.** CAPS0's base-clock field is `0xC8` = 200 MHz and the CCF says `clk_emmc_card_eb` really is 200 MHz. U-Boot takes the base from CAPS0, having no clock provider, and gets the right number; divider 2 gives the DT's 50 MHz |
+| Preset registers in use | **no.** `HOST_CONTROL2 = 0x3008`, bit 15 clear. U-Boot never writes `SDHCI_CTRL_PRESET_VAL_ENABLE` — the constant exists only in `include/sdhci.h` — and `sdhci_init()` issues `SDHCI_RESET_ALL`, which clears the register |
+| Bus width / high-speed unset for eMMC | **no.** `sdhci_cdns_set_control_reg()` calls the generic hook only `if (IS_SD(mmc))`, which looks wrong, but that hook only does voltage and UHS timing; `sdhci_set_ios()` writes `SDHCI_CTRL_8BITBUS` and `SDHCI_CTRL_HISPD` itself for eMMC too |
+
+#### What is left: HRS06, and the firmware's PHY state
+
+```
+HRS00 0x00010000   HRS01 0x00000032   HRS02 0x00030000
+HRS06 0x00001004   -> MODE[2:0] = 4, TUNE[13:8] = 0x10, TUNE_UP = 0
+```
+
+Upstream `sdhci-cadence` touches **HRS04, HRS05 and HRS06 only** — HRS00/01/02
+are non-zero here and are the first-stage loader's. And upstream's
+`sdhci_cdns_get_hrs06_mode()` maps `MMC_HS` to `MODE = 2`
+(`MMC_SDR`), while the working controller sits at **`MODE = 4`
+(`MMC_HS200`) with `TUNE = 16`** — a *tuned* value that this device tree, which
+declares no HS200 at all, cannot produce from that mapping. **It is the boot
+firmware's configuration, and Linux is running on top of it**, exactly as
+`pkgs/kernel-mainline/patches/0001` already says ("the DLL reset pulse … is
+already performed by the boot firmware, which reads the kernel off this
+controller before Linux starts").
+
+U-Boot's Cadence driver instead **recomputes the HRS06 mode from
+`mmc->selected_mode` and writes it on every `set_ios`**, discarding the tuned
+value, and does no tuning of its own for `MMC_HS`. HRS06 selects the PHY data
+sampling path — commands work, data does not. The shapes match.
+
+**The experiment is one round: leave HRS06 alone on this SoC** — an
+`axera,ax630c-sd4hc` compatible in U-Boot's `sdhci-cadence.c` whose
+`set_control_reg` skips the HRS06 write, or a DT property declaring the
+firmware's PHY configuration authoritative.
+
+#### The instrumentation, not the port, is what hung
+
+Every slot-B failure in rungs 2 through 2e reached `reset` or was reset by the
+SoC within ~65 s. This one did not, and the only new code was three register
+dumps. The pointer arithmetic checks out (`SDHCI_CDNS_SRS_BASE` is `0x200`), but
+two of the three were unsafe and are removed: the dump in `sdhci.c`'s
+data-timeout path fires once per failed transfer and there are many, and the
+dump **after** `sdhci_probe()` reads a controller whose probe may have failed —
+including the cardless SD slot at `0x104E0000`, whose clock state under U-Boot
+is unverified, and reading an unclocked block on this SoC hangs the AXI bus.
+What remains dumps only before `sdhci_probe()`, from the window
+`devm_ioremap()` has just returned.
+
+#### Device state — needs a power cycle
+
+A power cycle lands on slot A; the SPL consumed `SLOTB_BOOTABLE` and the
+register clears on power loss. Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs
+have never been written in any rung. `uboot_b` holds the rung-2f build, `/boot`
+holds the test payload with `boot.panic_on_fail panic=10`, p7 is already back to
+the vendor's own variables, and `/root/rung2/restore.sh` undoes the rest.
