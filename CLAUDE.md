@@ -96,7 +96,7 @@ that is arbitration, not a bug.
   register file against the vendor's — `docs/reference/deblob-scope/regdumps/geom/`.
 - On an open (base-only) boot the MM/VPP domain is unclocked: **reading `0x04403000`
   (the vendor's rst1 "hold" register block) hangs the AXI bus → watchdog reboot** —
-  proven 2026-09-01. Only ax_vpp/production clocks it. And glibc `memset`/`memcpy` on a
+  proven 2026-09-01. Only ax_vpp/production clocks it. The same rule holds for ANY block whose clock is off: a U-Boot register dump of the cardless SD slot at `0x104E0000` hung the bus and cost a power cycle (#89 rung 2f, 2026-09-08) — dump only what you have proven clocked. And glibc `memset`/`memcpy` on a
   `/dev/mem` mapping SIGBUSes (DC ZVA on Device memory): use word loops. Details:
   `docs/reference/deblob-scope/regdumps/README.md`.
 - A bare `platform_device_register_simple()` device on arm64 4.19 gets `dummy_dma_ops`
