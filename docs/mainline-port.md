@@ -2359,9 +2359,13 @@ proves the GIC, the PSCI mailbox, the second-core bring-up and the BL33
 handoff, with the vendor U-Boot and the vendor kernel unchanged above it.
 
 Slot B selects the `_b` copy of *every* A/B stage, so `uboot_b` (p6),
-`kernel_b` (p15) and `dtb_b` (p13) must hold **working vendor images** before
-the run. A previous mainline-kernel test may have left them otherwise; restore
-them first (`/root/pre75` on the device holds the backups from #75/#76).
+`kernel_b` (p15) and `dtb_b` (p13) must hold **working images** before the
+run. The board runs the flashed NixOS appliance (2026-09-07), whose `.axp`
+wrote the same appliance kernel, dtb and vendor-derived U-Boot to both slots,
+so they are correct as flashed; a previous slot-B kernel test may have left
+them otherwise — restore from the backups the boot-test skill has you take
+(`.claude/skills/mainline-boot-test/SKILL.md`, "from a flashed NixOS
+appliance"). The vendor system and its `/root/pre75` backups are gone.
 
 1. Build and copy: `nix build .#atf-mainline`, then
    `tools/kvmscp result/images/atf_bl31_mainline_signed.bin :/root/`.
@@ -2376,14 +2380,14 @@ them first (`/root/pre75` on the device holds the backups from #75/#76).
    ```
    The two md5s must match. Take the byte count from `stat` every time — the
    image size changes between builds.
-3. Arm slot B with the vendor script, never a raw `SLOTB` poke (a raw poke
-   leaves `SLOTB_BOOTABLE` clear and silently falls back to A):
-   ```
-   /etc/init.d/S99checkboot systemB
-   reboot
-   ```
-4. **The oracle** is the vendor system coming back on Ethernet with both CPUs
-   up through PSCI:
+3. Arm slot B exactly as the boot-test skill's flashed-appliance variant says:
+   mask `nanokvm-checkboot.service` first (it would re-arm whichever slot
+   booted and destroy the "every exit lands on slot A" property), then set
+   `SLOTB` **and** `SLOTB_BOOTABLE` through the register's SET/CLR pair — a
+   raw `SLOTB` poke leaves `SLOTB_BOOTABLE` clear and silently falls back to A
+   — and `reboot`.
+4. **The oracle** is the appliance coming back on Ethernet with both CPUs up
+   through PSCI:
    ```
    fw_printenv bootsystem          # B
    nproc                           # 2
@@ -2400,7 +2404,8 @@ them first (`/root/pre75` on the device holds the backups from #75/#76).
 5. Prove `SYSTEM_RESET`, which the vendor BL31 never implemented: from the
    booted slot-B system, `reboot` should now go through PSCI rather than the
    watchdog shim. The board coming back is the whole test.
-6. Return to slot A: `/etc/init.d/S99checkboot systemA; reboot`, then restore
+6. Return to slot A: arm slot A through the SET register (`devmem 0x2390028
+   32 0x10`), `reboot`, unmask `nanokvm-checkboot.service`, then restore
    `atf_b` from `/root/atf_b.orig` if the run is finished with.
 
 **Failure is cheap.** A BL31 that hangs never reaches U-Boot, so nothing
