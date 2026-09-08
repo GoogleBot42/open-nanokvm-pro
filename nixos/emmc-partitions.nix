@@ -92,6 +92,13 @@ assert lib.assertMsg ((need "env").offset == 4980736 && (need "env").size == 104
 {
   inherit parts byName hex;
 
+  # The raw clause, verbatim, without the `blkdevparts=mmcblk0:` marker. #89's
+  # mainline U-Boot reads the same string through its own `part_cmdline`
+  # driver, so the bootloader's table and the kernel's come from one source
+  # rather than two hand-copied ones (pkgs/uboot-mainline.nix).
+  inherit clause;
+  blkdevparts = "${marker}${clause}";
+
   root = need "rootfs";
   bootfs = need "boot";
   env = need "env";
