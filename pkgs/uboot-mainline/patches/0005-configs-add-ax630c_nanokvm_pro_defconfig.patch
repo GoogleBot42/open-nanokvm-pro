@@ -1,6 +1,6 @@
-From 4d43175b7d5df7c49d594d253a568a276bfe500a Mon Sep 17 00:00:00 2001
+From 8c5b763e2d04a8a8bc908ac20f9070c0902dd03c Mon Sep 17 00:00:00 2001
 From: "Claude Fable 5.1" <noreply@anthropic.com>
-Date: Mon, 7 Sep 2026 22:29:40 -0600
+Date: Mon, 7 Sep 2026 22:36:43 -0600
 Subject: [PATCH 5/5] configs: add ax630c_nanokvm_pro_defconfig
 
 Standard boot from an extlinux.conf on the eMMC, with the layout coming from
@@ -24,7 +24,7 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 
 diff --git a/configs/ax630c_nanokvm_pro_defconfig b/configs/ax630c_nanokvm_pro_defconfig
 new file mode 100644
-index 00000000..48ce7484
+index 00000000..888311d9
 --- /dev/null
 +++ b/configs/ax630c_nanokvm_pro_defconfig
 @@ -0,0 +1,44 @@
@@ -46,7 +46,7 @@ index 00000000..48ce7484
 +# CONFIG_EFI_LOADER is not set
 +CONFIG_BOOTSTD_DEFAULTS=y
 +CONFIG_BOOTDELAY=1
-+CONFIG_BOOTCOMMAND="mw.l ${msreg_set} ${ms_bootcmd}; if load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg}; then mw.l ${msreg_set} ${ms_extlinux}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg}; fi; mw.l ${msreg_set} ${ms_failed}; reset"
++CONFIG_BOOTCOMMAND="if load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg}; then mw.l ${msreg_set} ${ms_extlinux}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg}; fi; mw.l ${msreg_set} ${ms_failed}; reset"
 +CONFIG_USE_PREBOOT=y
 +CONFIG_PREBOOT="mw.l ${msreg_set} ${ms_uboot}"
 +CONFIG_SYS_PBSIZE=1074

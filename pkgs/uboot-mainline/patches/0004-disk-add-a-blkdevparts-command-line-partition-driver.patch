@@ -1,6 +1,6 @@
-From 43314b9639cb25036323cf556584c7d992a1107b Mon Sep 17 00:00:00 2001
+From 3f73225308d526fb67451384608ab38c7cf5cb97 Mon Sep 17 00:00:00 2001
 From: "Claude Fable 5.1" <noreply@anthropic.com>
-Date: Mon, 7 Sep 2026 22:29:40 -0600
+Date: Mon, 7 Sep 2026 22:36:43 -0600
 Subject: [PATCH 4/5] disk: add a blkdevparts= command-line partition driver
 
 Some SoCs place the boot ROM's first-stage loader at byte 0 of the boot

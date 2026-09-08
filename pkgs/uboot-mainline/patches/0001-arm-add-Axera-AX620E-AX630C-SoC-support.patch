@@ -1,6 +1,6 @@
-From 4cdd4f72eaa65e4a2e947fbf7e4c35d41489c4b5 Mon Sep 17 00:00:00 2001
+From 141b97e99a63ecd888cf5d6cea2d96153e50f68b Mon Sep 17 00:00:00 2001
 From: "Claude Fable 5.1" <noreply@anthropic.com>
-Date: Mon, 7 Sep 2026 22:29:39 -0600
+Date: Mon, 7 Sep 2026 22:36:42 -0600
 Subject: [PATCH 1/5] arm: add Axera AX620E (AX630C) SoC support
 
 The AX620E family (AX630C) is a dual Cortex-A53 SoC used in the Sipeed
@@ -12,13 +12,13 @@ the two DRAM hooks that read the device tree.
 
 Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 ---
- arch/arm/Kconfig             | 16 +++++++++
+ arch/arm/Kconfig             | 16 ++++++++
  arch/arm/Makefile            |  1 +
  arch/arm/mach-axera/Kconfig  | 27 ++++++++++++++
  arch/arm/mach-axera/Makefile |  5 +++
- arch/arm/mach-axera/soc.c    | 49 +++++++++++++++++++++++++
- include/configs/ax630c.h     | 70 ++++++++++++++++++++++++++++++++++++
- 6 files changed, 168 insertions(+)
+ arch/arm/mach-axera/soc.c    | 49 ++++++++++++++++++++++++
+ include/configs/ax630c.h     | 72 ++++++++++++++++++++++++++++++++++++
+ 6 files changed, 170 insertions(+)
  create mode 100644 arch/arm/mach-axera/Kconfig
  create mode 100644 arch/arm/mach-axera/Makefile
  create mode 100644 arch/arm/mach-axera/soc.c
@@ -171,10 +171,10 @@ index 00000000..01a401cf
 +}
 diff --git a/include/configs/ax630c.h b/include/configs/ax630c.h
 new file mode 100644
-index 00000000..bac2dd7d
+index 00000000..957d58c6
 --- /dev/null
 +++ b/include/configs/ax630c.h
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,72 @@
 +/* SPDX-License-Identifier: GPL-2.0+ */
 +/*
 + * Axera AX630C boards.
@@ -233,16 +233,18 @@ index 00000000..bac2dd7d
 + * one `mw.l` and can never disturb the boot-slot bits below it. The register
 + * survives a warm reboot and a chip reset, and clears on power loss.
 + *
-+ * Bits 12..24 belong to Linux (see the mainline bring-up initramfs) and bits
-+ * 30..31 to the vendor OTA flags, which leaves 25..29 for the bootloader.
++ * Bits 12..27 belong to Linux -- the mainline bring-up initramfs and the
++ * appliance's own self-test between them own every one of those -- so the
++ * bootloader gets 28..31. The top two are named OTA_STATUS and OTA_SUPPORT in
++ * a single first-stage-loader header and read by nothing anywhere in the
++ * vendor tree: reserved names, not live flags.
 + */
 +#define AX630C_MILESTONE_ENV						\
 +	"msreg_set=0x02390028\0"					\
-+	"ms_uboot=0x02000000\0"		/* 25: preboot reached */	\
-+	"ms_bootcmd=0x04000000\0"	/* 26: bootcmd started */	\
-+	"ms_extlinux=0x08000000\0"	/* 27: extlinux.conf read */	\
-+	"ms_failed=0x10000000\0"	/* 28: nothing booted */	\
-+	"ms_altboot=0x20000000\0"	/* 29: bootlimit hit */
++	"ms_uboot=0x10000000\0"		/* 28: preboot reached */	\
++	"ms_extlinux=0x20000000\0"	/* 29: extlinux.conf read */	\
++	"ms_altboot=0x40000000\0"	/* 30: bootlimit hit */		\
++	"ms_failed=0x80000000\0"	/* 31: nothing booted */
 +
 +#endif /* __AX630C_H */
 -- 

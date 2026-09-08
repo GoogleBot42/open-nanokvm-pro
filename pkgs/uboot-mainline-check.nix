@@ -109,12 +109,22 @@ pkgs.runCommand "uboot-mainline-check"
     # The layout injection has to reach the linked image, not just the
     # defconfig: bootpart is what `sysboot` addresses, and the milestone
     # register is the board's only pre-Linux evidence channel.
+    #
+    # The four milestone values are asserted literally because they are a
+    # PARTITIONING of a register Linux also writes: bits 12..27 belong to the
+    # bring-up initramfs (#75-#82) and the appliance self-test (#78), and a
+    # bootloader bit that drifted down into that range would silently forge
+    # somebody else's evidence rather than fail.
     for want in 'bootpart=${toString layout.bootfs.number}' 'bootlimit=3' \
-                'msreg_set=0x02390028' 'preboot=mw.l' 'altbootcmd=mw.l'; do
+                'msreg_set=0x02390028' 'preboot=mw.l' 'altbootcmd=mw.l' \
+                'ms_uboot=0x10000000' 'ms_extlinux=0x20000000' \
+                'ms_altboot=0x40000000' 'ms_failed=0x80000000'; do
       grep -qa "$want" "$ub/images/u-boot.bin" \
         || { echo "ERROR: \"$want\" missing from the built-in environment" >&2; exit 1; }
     done
-    echo "bootpart, bootlimit, altbootcmd and the milestone variables are all built in"
+    ! grep -qa 'ms_[a-z]*=0x0[0-9a-f]' "$ub/images/u-boot.bin" \
+      || { echo "ERROR: a milestone bit below 28 is set; 12..27 belong to Linux" >&2; exit 1; }
+    echo "bootpart, bootlimit, altbootcmd and the four milestone bits (28..31) are all built in"
 
     mkdir -p "$out"
     { echo "u-boot: ${uboot-mainline.version}, entry $entry"

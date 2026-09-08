@@ -1,6 +1,6 @@
-From 8e2336ef8557bf124dfe18a82cda656c49dfff71 Mon Sep 17 00:00:00 2001
+From b3fb5e2d2c731b97c040416ce51ea025b5526e45 Mon Sep 17 00:00:00 2001
 From: "Claude Fable 5.1" <noreply@anthropic.com>
-Date: Mon, 7 Sep 2026 22:29:39 -0600
+Date: Mon, 7 Sep 2026 22:36:43 -0600
 Subject: [PATCH 2/5] board: axera: add the Sipeed NanoKVM-Pro
 
 An AX630C IP-KVM: 1 GiB DRAM, an 8-bit eMMC on a Cadence SD4HC, a Realtek

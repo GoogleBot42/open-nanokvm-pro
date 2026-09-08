@@ -2230,10 +2230,13 @@ the cost of skipping straight to an eMMC write.
 semantics of `0x02390024`, not the register. Three channels, in order of
 cheapness:
 
-1. **Milestone bits 12-15** stay exactly as #75 uses them. Vendor U-Boot never
+1. **Milestone bits** stay exactly as #75 established them. Vendor U-Boot never
    writes them and `chip_rst_sw()` clears only bits 7 and 8, so they survive a
    warm reboot; mainline U-Boot can write them from `preboot`/`bootcmd` with
-   `mw` — zero new code — and Linux reads them back.
+   `mw` — zero new code — and Linux reads them back. **Which bits: 28–31, not
+   the 12–15 an earlier draft of this section said.** Linux has since taken
+   12–27 in full (#75 12–15, #76 16–17, #77 18–21, #82 22–24, #78 25–27), so
+   the bootloader gets the top four. §11.10 has the assignment.
 2. **`bootcount`** in the env is itself evidence: `fw_printenv bootcount` after
    a boot says how many attempts the bootloader made.
 3. **`CONFIG_PRE_CONSOLE_BUFFER` + `PRE_CON_BUF_ADDR`** pointed into the spare
@@ -2278,7 +2281,7 @@ rung 0 is "it compiles, it links where the SPL jumps, and it fits".
 | | |
 |---|---|
 | Upstream | U-Boot **2026.07** (`ftp.denx.de`, sha256 `0gi4y60y…`) — the current release, the tree §11.1 diffed the vendor fork against, and the one our nixpkgs pin builds `ubootTools` from |
-| Port | **881 lines** across 5 patches, `pkgs/uboot-mainline/patches/` |
+| Port | **883 lines** across 5 patches, `pkgs/uboot-mainline/patches/` |
 | Raw `u-boot.bin` | 372 KB (device tree appended) |
 | `u-boot_mainline_signed.bin` | **182 536 bytes** of the 1536 KiB `uboot` partition — 12 % |
 | Entry point | `0x5C000400`, read back out of the ELF by the build and again by the check |
@@ -2288,7 +2291,7 @@ rung 0 is "it compiles, it links where the SPL jumps, and it fits".
 
 | Patch | LOC | Replaces, from §11.1 |
 |---|---:|---|
-| `0001-arm-add-Axera-AX620E-AX630C-SoC-support` | 168 | `mach-axera/ax620e/{ax620e,board,chip_config,timer,pll_config}.c` (1 217 LOC) and `emmc_sd_phy.c`/`dphyrx.c`/`pwm_common.c` (652 LOC, dead or callerless). What survives is a memory map, two `fdtdec` DRAM hooks, a Kconfig and `include/configs/ax630c.h` |
+| `0001-arm-add-Axera-AX620E-AX630C-SoC-support` | 170 | `mach-axera/ax620e/{ax620e,board,chip_config,timer,pll_config}.c` (1 217 LOC) and `emmc_sd_phy.c`/`dphyrx.c`/`pwm_common.c` (652 LOC, dead or callerless). What survives is a memory map, two `fdtdec` DRAM hooks, a Kconfig and `include/configs/ax630c.h` |
 | `0002-board-axera-add-the-Sipeed-NanoKVM-Pro` | 51 | `board/axera/ax620e_emmc/{ax620e_emmc.c,pinmux.c}` (493 LOC + a 133-entry pad table). The board file is now `board_init` returning 0 and a `checkboard` that prints a name — everything else was already programmed by bl1 |
 | `0003-arm-dts-add-the-AX630C-and-the-Sipeed-NanoKVM-Pro` | 275 | the vendor's U-Boot dtsi, and with it the raw `writel()` clock/reset/pinctrl gating scattered through `mach-axera` |
 | `0004-disk-add-a-blkdevparts-command-line-partition-driver` | 343 | genuinely new — §11.5's `part_cmdline.c`. Mainline has amiga/dos/efi/iso/mac and nothing that reads `blkdevparts=` |
@@ -2328,17 +2331,38 @@ fractional-divisor patch is not needed either.
   be destroyed by the very system you power-cycle into to read it. If the
   overlap ever becomes unacceptable, shrink `LOG_STASH_SIZE` to `0x6000` and
   move the buffer to `0x480EE000`.
-- `preboot` and `bootcmd` write **bits 25–29** of `0x02390024` through its
+- `preboot` and `bootcmd` write **bits 28–31** of `0x02390024` through its
   write-1-to-set alias at `0x02390028`, with `mw.l` — zero new code, exactly as
-  §11.7 proposed. **Not bits 12–15**, which the ladder's own wording suggested:
-  §8 assigns 12–24 to Linux (`MS_USERSPACE` … `MS_USB_ATTACHED`) and 30–31 to
-  the vendor OTA flags, so writing 12–15 from U-Boot would make "the bootloader
-  ran" and "userspace ran" indistinguishable. The five bits are
-  `ms_uboot` 25 (preboot reached — console, environment and relocation all
-  worked), `ms_bootcmd` 26 (bootcmd started), `ms_extlinux` 27 (extlinux.conf
-  read, about to boot), `ms_failed` 28 (nothing booted, resetting),
-  `ms_altboot` 29 (bootlimit hit, the fallback config is running). Each is an
-  environment variable, so the assignment is changeable with `fw_setenv`.
+  §11.7 proposed. **The register is fully allocated now**, and the bootloader
+  gets what is left at the top:
+
+  | Bits | Owner |
+  |---|---|
+  | 0–11 | the boot chain (`BOOT_INDEX`, `SLOT*`, `BOOT_SD`, `BOOT_PANIC`, …) |
+  | 12–15 | #75 — userspace reached, log stashed, LED loop, rebooting |
+  | 16–17 | #76 — block device, rootfs mounted |
+  | 18–21 | #77 — link, address, ping, sshd |
+  | 22–24 | #82 — UDC, gadget, host enumerated |
+  | 25–27 | #78 — the appliance self-test (`nixos/loop-test.nix`) |
+  | **28–31** | **U-Boot** |
+
+  `ms_uboot` 28 (`0x10000000`, preboot reached — console, environment and
+  relocation all worked), `ms_extlinux` 29 (`0x20000000`, extlinux.conf read,
+  `sysboot` about to run), `ms_altboot` 30 (`0x40000000`, bootlimit hit, the
+  fallback config is running), `ms_failed` 31 (`0x80000000`, nothing booted,
+  resetting). There is no separate "bootcmd started" bit: `preboot` already
+  proves U-Boot ran, and the register had no room to spare. Each is an
+  environment variable, so the assignment is changeable with `fw_setenv`, and
+  `checks.uboot-mainline` asserts all four values in the linked binary *and*
+  that no milestone value falls below bit 28 — a bit that drifted down into
+  Linux's range would forge somebody else's evidence rather than fail.
+
+  **Bits 30 and 31 are safe despite their names.** `boot/bl1/core/include/boot.h`
+  calls them `OTA_STATUS` and `OTA_SUPPORT`, and that header is the only file in
+  the entire vendor SDK that mentions either symbol — nothing in the SPL, the
+  vendor U-Boot or the vendor userspace reads or writes them. Reserved names,
+  not live flags, which is what makes them available. (§8 and §11.1 describe
+  them as "the vendor OTA flags"; that is their name, not their use.)
 - `CONFIG_BOOTCOUNT_LIMIT` + `CONFIG_BOOTCOUNT_ENV`, `BOOTLIMIT=3`, and an
   `altbootcmd` that boots `/extlinux/extlinux-fallback.conf`. One trap:
   `bootcount_env` only counts **while `upgrade_available` is non-zero** — the
@@ -2414,16 +2438,21 @@ rung 2 exercises both at once.
    as a copy of it. `/boot` moves to ext4 only with the new layout (§11.5);
    until then U-Boot reads it with `CONFIG_FS_FAT`, which the defconfig has via
    `BOOT_DEFAULTS`.
-4. Set the slot: `devmem 0x02390028 32 0x28` (SLOTB | SLOTB_BOOTABLE), then
-   reboot. The BOOTABLE bit is consume-once and the register clears on power
-   loss, so **every failure path lands the next boot on slot A** — a hang costs
-   a power cycle, never AXDL.
+4. Clear the milestone bits, then set the slot:
+   `devmem 0x0239002C 32 0xFFFFF000` (the write-1-to-clear alias; the mask is
+   bits 12–31 — **all** of them now that U-Boot writes 28–31, where a
+   Linux-only run used `0xFFFF000`), then
+   `devmem 0x02390028 32 0x28` (SLOTB | SLOTB_BOOTABLE), then reboot. The
+   BOOTABLE bit is consume-once and the register clears on power loss, so
+   **every failure path lands the next boot on slot A** — a hang costs a power
+   cycle, never AXDL.
 5. Read the result back from slot A:
-   - `devmem 0x02390024` — bits 25–29 say how far U-Boot got, bits 12+ how far
-     Linux did. `0x16000000` (25, 26, 28) is "U-Boot ran, `bootcmd` ran,
-     nothing booted" — no `extlinux.conf` on p16. `0x0E000000` (25, 26, 27)
-     plus Linux bits above it is the good path. Nothing set at all means BL31
-     never reached BL33, which is rung 1's problem, not this one's.
+   - `devmem 0x02390024` — bits 28–31 say how far U-Boot got, bits 12–27 how
+     far Linux did. `0x90000000` (28, 31) is "U-Boot ran, nothing booted" — no
+     `extlinux.conf` on p16. `0x50000000` (28, 30) is "U-Boot ran and took the
+     fallback config". `0x30000000` (28, 29) plus Linux bits below it is the
+     good path. Nothing set at all means BL31 never reached BL33, which is
+     rung 1's problem, not this one's.
    - `dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=2` — the
      pre-console buffer, which is the only channel if U-Boot died before its
      console came up.
