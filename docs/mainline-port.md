@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs — banner, board, DRAM sizing, relocation — and hangs in `mmu_setup()` before the MMU comes on.** Nothing past that: no eMMC, no env, no extlinux. Eight runs, every one self-recovered to slot A. See "What exists now (rung 2)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs — banner, board, DRAM sizing — and then `relocate_code()` never delivers control to `board_init_r()`.** `board_init_f` finishes in 0.12 s; nothing past it: no eMMC, no env, no extlinux. Fourteen runs, every one self-recovered to slot A with no hands. See "What exists now (rung 2)" and "(rung 2b)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -2915,3 +2915,92 @@ restored byte-for-byte (`6a579b4ea52ced8ea7ab8cafe2b5102a` over 1 MiB), `/boot`
 back to its single `ver` file, `nanokvm-checkboot` enabled and active, no failed
 units, web 200. Every image, backup and script used is in `/root/rung2/` on the
 device.
+
+### What exists now (rung 2b, 2026-09-08) — THE HANG IS `relocate_code()`
+
+Six more slot-B boots narrowed rung 2's failure from "somewhere after
+relocation" to relocation itself, and settled two facts about this board along
+the way. Full log and harness:
+[`docs/reference/mainline/uboot-mainline-20260908/RUNG2B.md`](reference/mainline/uboot-mainline-20260908/RUNG2B.md).
+
+**`board_init_f()` completes in 0.12 s and `board_init_r()` is never entered.**
+A marker written at the top of `board_init_r()` never appears; the last
+initcall recorded is `cyclic_unregister_all`, the last one in
+`init_sequence_f`. Everything between them is `relocate_code()`, the BSS clear
+and `c_runtime_cpu_setup()` in `arch/arm/lib/crt0_64.S`.
+
+**It is layout-sensitive**, which is the strongest single clue: two builds
+relocated fine and ran hundreds of driver-model binds before stopping in
+`initr_dm`; adding one static and about thirty instructions moved the failure
+back into `relocate_code()`. That also re-reads the original diagnosis —
+`mmu_setup()` was never the subject, only the first substantial post-relocation
+work in a build whose relocation had already gone wrong.
+
+**The ~65 s every failed slot-B boot takes is the recovery, not the cause.**
+It looked like one watchdog period, and WDT0 really is running on slot A
+(`EN=1`, `TORR=0x2AEA`, armed by the vendor U-Boot and petted by Linux), so a
+copy surviving the chip reset would cut every attempt at 60 s. Stretching it to
+150 s per stage before the reboot changed nothing, and the 0.12 s timestamp
+settles it independently. Whatever resets the board is a recovery path, and a
+welcome one: fourteen failed slot-B boots, no hands.
+
+#### The DDR window aliases with a 1 GiB period
+
+Measured through `/dev/mem` from the appliance, above the kernel's `mem=512M`
+window so the mapping is uncached: `0x880ee000` and `0xc80ee000` are both the
+same DRAM as `0x480ee000`. The part is 1 GiB and its image repeats to at least
+3 GiB.
+
+That answers section 11.6's open question about DRAM size for this unit,
+confirms `dts/ax630c-nanokvm-pro.dts`'s `memory@40000000`, and explains the
+vendor U-Boot: our board's defconfig does **not** set
+`CONFIG_AXERA_AX630C_DDR4_RETRAIN` (only the maixcam2 one does, and the Kconfig
+has no `default y`), so its `dram_init()` takes the final `#else` and reports
+`gd->ram_size = 0x80000000`. Its `ram_top` is `0xC0000000` and
+`arm_reserve_mmu()` puts its page tables at `0xBFFF0000` — **physically the
+same page as ours, `0x7FFF0000`**, through the alias. So the vendor writes the
+top of DRAM exactly where we do, the top page is writable (probe-written and
+read back at `0x7fff0000`, `0x7ffff000` and `0x7ffffff0`), and the retrain
+branch's `-0x1000` belongs to a different board configuration, not to a rule
+this one has to follow.
+
+#### Three instrumentation channels, in increasing order of cheapness
+
+**A sixteen-word scratchpad at `0x480EC000`**, in the spare tail of the pstore
+window, written with `writel()` — Device stores that reach DRAM with no cache
+flush while the MMU is off. It proved itself first: word 0 read back the magic
+written from *relocated* code, so a plain DRAM store post-relocation works even
+though `printf()` does not. It then carried what a register bit cannot —
+`tlb_addr 0x7FFF0000`, `tlb_size 0x4000`, `relocaddr 0x7FF97000`,
+`ram_top 0x80000000`, `reloc_off 0x23F96C00`, `gd 0x7F696E30` — every one sane.
+
+**A number on every initcall.** `board_init_f()` and `board_init_r()` are each
+an ordered list of `INITCALL(x)` and the macro is one place, so recording
+`__LINE__` inside it numbers every stage of both for one store apiece, with no
+new call site anywhere. The two files' line ranges do not overlap, so the
+number says which phase as well as which call. This is the single
+highest-value line of instrumentation in the whole rung.
+
+**A `CNTPCT_EL0` timestamp beside it.** The generic timer is already running at
+24 MHz when BL33 is entered, so it is free, and it is what distinguishes a hang
+from a timeout.
+
+Add `.#uboot-mainline-nommu` to the kit: the same image with our
+`enable_caches()` skipping `dcache_enable()`, so the MMU never comes on and the
+boot walks past the page-table code entirely. **Not `CONFIG_SYS_DCACHE_OFF`** —
+that looks like the right switch and does not link on arm64 in 2026.07, because
+`boot/bootm_os.c` and `cmd/elf.c` call `dcache_enable()`/`dcache_disable()`
+unconditionally while the stubs that would satisfy them sit inside the same
+`#if` the config turns off.
+
+#### Next
+
+1. Diff `.rela.dyn` between a build that relocates and one that does not —
+   relocation *types* present, not just counts.
+2. Put the scratchpad inside `crt0_64.S`: one word before the copy, one after,
+   one after the `.rela` loop, one at the branch to `board_init_r`.
+3. Check `__image_copy_end` against the appended device tree. `mon_len`
+   (0x59100) is smaller than the image on flash (0x5AF50) and the DTB lives in
+   that gap; if the copy length and the relocation bounds disagree about it,
+   the relocated image is short by an amount that varies with build content —
+   which is exactly the observed layout sensitivity.
