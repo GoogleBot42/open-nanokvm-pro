@@ -27,7 +27,7 @@ new file mode 100644
 index 00000000..888311d9
 --- /dev/null
 +++ b/configs/ax630c_nanokvm_pro_defconfig
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,47 @@
 +CONFIG_ARM=y
 +CONFIG_COUNTER_FREQUENCY=24000000
 +CONFIG_ARCH_AXERA=y
@@ -65,6 +65,8 @@ index 00000000..888311d9
 +CONFIG_BOOTCOUNT_ENV=y
 +CONFIG_BOOTCOUNT_BOOTLIMIT=3
 +CONFIG_BOOTCOUNT_ALTBOOTCMD="mw.l ${msreg_set} ${ms_altboot}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_fallback}; reset"
++CONFIG_DM_REGULATOR=y
++CONFIG_DM_REGULATOR_FIXED=y
 +CONFIG_MMC_IO_VOLTAGE=y
 +CONFIG_MMC_HS200_SUPPORT=y
 +CONFIG_MMC_SDHCI=y

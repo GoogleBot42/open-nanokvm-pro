@@ -1,0 +1,85 @@
+From 6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 06:20:00 -0600
+Subject: [PATCH 10/10] mmc: start at the signal voltage the vqmmc supply can
+ deliver
+
+mmc_set_initial_state() asks for 3.3 V and falls back to 1.8 V if that
+"fails". The fallback never fires, because the host-side switch runs through
+->set_control_reg(), which returns void: mmc_set_signal_voltage() reports
+success whether or not the controller could do anything.
+
+That is harmless on a board whose I/O rail really is 3.3 V, and wrong on one
+whose rail is a fixed 1.8 V regulator. Such a board must be driven at 1.8 V
+from the first command -- there is nothing to negotiate, and no speed mode is
+involved. Today the only way U-Boot reaches 1.8 V on an eMMC is by selecting
+HS200, which drags in a tuning procedure the board may not need and, on
+controllers whose tuning registers are unimplemented, may not survive.
+
+Ask the regulator instead. If vqmmc cannot produce something at least close to
+3.3 V, select 1.8 V directly. Boards without a vqmmc-supply, and boards whose
+supply can do 3.3 V, are unaffected.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/mmc.c | 36 +++++++++++++++++++++++++++++-------
+ 1 file changed, 29 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 3333333..4444444 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -2851,6 +2851,29 @@
+ }
+ 
+ /*
++ * Can the I/O supply actually produce 3.3 V? A board whose vqmmc rail is a
++ * fixed 1.8 V regulator cannot, and must be driven at 1.8 V from the very
++ * first command. Asking for 3.3 V and waiting for an error does not discover
++ * that: the host-side switch goes through ->set_control_reg(), which returns
++ * void, so mmc_set_signal_voltage() reports success either way.
++ */
++static bool mmc_vqmmc_below_330(struct mmc *mmc)
++{
++#if CONFIG_IS_ENABLED(DM_REGULATOR)
++	int uV;
++
++	if (!mmc->vqmmc_supply)
++		return false;
++
++	uV = regulator_get_value(mmc->vqmmc_supply);
++
++	return uV > 0 && uV < 2700000;
++#else
++	return false;
++#endif
++}
++
++/*
+  * put the host in the initial state:
+  * - turn on Vdd (card power supply)
+  * - configure the bus width and clock to minimal values
+@@ -2859,10 +2882,18 @@
+ {
+ 	int err;
+ 
+-	/* First try to set 3.3V. If it fails set to 1.8V */
+-	err = mmc_set_signal_voltage(mmc, MMC_SIGNAL_VOLTAGE_330);
+-	if (err != 0)
++	/*
++	 * Prefer 3.3 V, but only where the supply can deliver it. See
++	 * mmc_vqmmc_below_330(): a fixed 1.8 V I/O rail has to be selected up
++	 * front, because the 3.3 V attempt cannot report that it failed.
++	 */
++	if (mmc_vqmmc_below_330(mmc)) {
+ 		err = mmc_set_signal_voltage(mmc, MMC_SIGNAL_VOLTAGE_180);
++	} else {
++		err = mmc_set_signal_voltage(mmc, MMC_SIGNAL_VOLTAGE_330);
++		if (err != 0)
++			err = mmc_set_signal_voltage(mmc, MMC_SIGNAL_VOLTAGE_180);
++	}
+ 	if (err != 0)
+ 		pr_warn("mmc: failed to set signal voltage\n");
+ 
+-- 
+2.55.0

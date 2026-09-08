@@ -69,6 +69,8 @@ let
     ./uboot-mainline/patches/0006-board_f-keep-TEXT_BASE-page-offset-on-arm64.patch
     ./uboot-mainline/patches/0007-mmc-support-fixed-emmc-driver-type.patch
     ./uboot-mainline/patches/0008-mmc-sdhci-cadence-program-host-control2-for-emmc.patch
+    ./uboot-mainline/patches/0009-mmc-sdhci-vdd180-is-not-sd-only.patch
+    ./uboot-mainline/patches/0010-mmc-start-at-the-vqmmc-signal-voltage.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -685,15 +687,22 @@ let
 
     echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
 
-    # One line at eMMC probe: the three HRS words the boot firmware left. Not
-    # in the shipping series -- it is a diagnostic, and this board's only
-    # console is the pre-console buffer. Reads only the window devm_ioremap()
+    # One line at probe: the three HRS words the boot firmware left, plus
+    # SRS15. The SRS15 half answers a question rung 3 needs -- whether the
+    # first-stage loader sets SDHCI_CTRL_VDD_180 for us, or whether the 1.8 V
+    # seen under Linux is Linux switching it itself. Read before U-Boot has
+    # touched the controller, so it is the firmware state, not ours.
+    #
+    # Not in the shipping series: it is a diagnostic, and this board has no
+    # console but the pre-console buffer. Reads only the window devm_ioremap()
     # has just returned, and only for the controller being probed.
     substituteInPlace drivers/mmc/sdhci-cadence.c --replace-fail \
       '	host->name = dev->name;' \
-      '	printf("%s: firmware HRS00 %08x HRS02 %08x HRS06 %08x\n", dev->name,
+      '	printf("%s: firmware HRS00 %08x HRS02 %08x HRS06 %08x SRS15 %08x\n",
+    	       dev->name,
     	       readl(plat->hrs_addr + 0x00), readl(plat->hrs_addr + 0x08),
-    	       readl(plat->hrs_addr + SDHCI_CDNS_HRS06));
+    	       readl(plat->hrs_addr + SDHCI_CDNS_HRS06),
+    	       readl(plat->hrs_addr + SDHCI_CDNS_SRS_BASE + 0x3c));
 
     	host->name = dev->name;'
 

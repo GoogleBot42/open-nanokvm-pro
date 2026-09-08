@@ -174,7 +174,7 @@ new file mode 100644
 index 00000000..d6980dc6
 --- /dev/null
 +++ b/arch/arm/dts/ax630c.dtsi
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,200 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Axera AX630C (AX620E family).
@@ -201,6 +201,21 @@ index 00000000..d6980dc6
 +		serial0 = &uart0;
 +		mmc0 = &emmc;
 +		mmc1 = &sd;
++	};
++
++	/*
++	 * The eMMC I/O rail. It is a fixed 1.8 V supply on this SoC -- the
++	 * part is wired for 1.8 V VCCQ and there is nothing to switch -- and
++	 * saying so is what makes the MMC core select 1.8 V signalling from
++	 * the first command, without dragging in an HS200 speed change to get
++	 * there. Linux runs the same bus at "signal voltage: 1 (1.80 V)".
++	 */
++	vqmmc_emmc: regulator-vqmmc-emmc {
++		compatible = "regulator-fixed";
++		regulator-name = "vqmmc-emmc";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-always-on;
 +	};
 +
 +	psci {
@@ -257,6 +272,7 @@ index 00000000..d6980dc6
 +			 * while the command line still works.
 +			 */
 +			fixed-emmc-driver-type = <4>;
++			vqmmc-supply = <&vqmmc_emmc>;
 +			/*
 +			 * NOT enabled, and the omission is the open question.
 +			 * Linux runs this part at "timing spec: 9 (mmc HS200)"

@@ -1,0 +1,90 @@
+From 5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 06:10:00 -0600
+Subject: [PATCH 9/10] mmc: sdhci: the 1.8 V signalling bit is not SD-only
+
+SDHCI_CTRL_VDD_180 in Host Control2 describes the level the host drives the
+bus at. It is a property of the wiring, not of the card type: an eMMC whose
+VCCQ rail is 1.8 V needs it set exactly as an SD card in UHS-I does, and eMMC
+HS200 and HS400 are defined only at 1.8 V.
+
+sdhci_set_voltage() nevertheless writes the bit only for SD, in both the 3.3 V
+and the 1.8 V arm, so an eMMC is always driven at 3.3 V no matter what
+mmc->signal_voltage says. The regulator handling right above is already
+card-type agnostic, which is the giveaway: the supply gets switched and the
+controller does not follow it.
+
+On hardware the result is a bus that enumerates and then cannot move data --
+CMD is one line and tolerant enough to survive the wrong level, the eight data
+lines are not.
+
+Drop the two IS_SD() conditionals so the bit follows mmc->signal_voltage. For
+SD nothing changes; for eMMC the host now matches the supply.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci.c | 24 ++++++++++--------------
+ 1 file changed, 10 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/mmc/sdhci.c b/drivers/mmc/sdhci.c
+index 1111111..2222222 100644
+--- a/drivers/mmc/sdhci.c
++++ b/drivers/mmc/sdhci.c
+@@ -577,22 +577,17 @@
+ 				}
+ 			}
+ #endif
+-			if (IS_SD(mmc)) {
+-				ctrl &= ~SDHCI_CTRL_VDD_180;
+-				sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+-			}
++			ctrl &= ~SDHCI_CTRL_VDD_180;
++			sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+ 
+ 			/* Wait for 5ms */
+ 			mdelay(5);
+ 
+ 			/* 3.3V regulator output should be stable within 5 ms */
+-			if (IS_SD(mmc)) {
+-				if (ctrl & SDHCI_CTRL_VDD_180) {
+-					pr_err("3.3V regulator output did not become stable\n");
+-					return;
+-				}
++			if (ctrl & SDHCI_CTRL_VDD_180) {
++				pr_err("3.3V regulator output did not become stable\n");
++				return;
+ 			}
+-
+ 			break;
+ 		case MMC_SIGNAL_VOLTAGE_180:
+ #if CONFIG_IS_ENABLED(DM_REGULATOR)
+@@ -613,22 +608,17 @@
+ 				}
+ 			}
+ #endif
+-			if (IS_SD(mmc)) {
+-				ctrl |= SDHCI_CTRL_VDD_180;
+-				sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+-			}
++			ctrl |= SDHCI_CTRL_VDD_180;
++			sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+ 
+ 			/* Wait for 5 ms */
+ 			mdelay(5);
+ 
+ 			/* 1.8V regulator output has to be stable within 5 ms */
+-			if (IS_SD(mmc)) {
+-				if (!(ctrl & SDHCI_CTRL_VDD_180)) {
+-					pr_err("1.8V regulator output did not become stable\n");
+-					return;
+-				}
++			if (!(ctrl & SDHCI_CTRL_VDD_180)) {
++				pr_err("1.8V regulator output did not become stable\n");
++				return;
+ 			}
+-
+ 			break;
+ 		default:
+ 			/* No signal voltage switch required */
+-- 
+2.55.0
