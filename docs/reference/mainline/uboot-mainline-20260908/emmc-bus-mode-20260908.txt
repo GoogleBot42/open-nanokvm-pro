@@ -1,0 +1,43 @@
+What mode the WORKING controller actually runs in: mainline Linux 7.1.3 on the
+NanoKVM-Pro, driving this eMMC as its rootfs. Read live, no reboot:
+
+  mount -t debugfs none /sys/kernel/debug
+  cat /sys/kernel/debug/mmc0/ios
+
+  clock:          50000000 Hz
+  actual clock:   50000000 Hz
+  vdd:            21 (3.3 ~ 3.4 V)
+  bus mode:       2 (push-pull)
+  chip select:    0 (don't care)
+  power mode:     2 (on)
+  bus width:      3 (8 bits)
+  timing spec:    9 (mmc HS200)          <-- HS200, not plain HS
+  signal voltage: 1 (1.80 V)             <-- 1.8 V I/O, not 3.3 V
+  driver type:    4 (invalid)            <-- eMMC table-206 type 4 = 40 ohm
+  caps:           0x439f014f
+
+This is the line that matters: SIGNAL VOLTAGE IS 1.8 V.
+
+It agrees with the register dump banked in sd4hc-registers-20260908.txt, where
+the working controller has HOST_CONTROL2 = 0x3008 -- bit 3 is
+SDHCI_CTRL_VDD_180, and it is set.
+
+U-Boot never sets it. sdhci_cdns_set_control_reg() calls the generic
+sdhci_set_control_reg() only `if (IS_SD(mmc))`, and that generic function --
+sdhci_set_voltage() plus sdhci_set_uhs_timing() -- is the only place
+SDHCI_CTRL_VDD_180 is written in the whole driver. On top of that
+CONFIG_MMC_IO_VOLTAGE was not even enabled in the defconfig, so
+sdhci_set_voltage() was compiled out entirely.
+
+So U-Boot drives an eMMC whose I/O rail is 1.8 V at 3.3 V signalling. CMD is
+one line and tolerant enough to survive it -- the card identifies, its CSD
+reads, speed switches succeed. The eight data lines are not, and every data
+transfer fails. That is the failure this campaign has been chasing since rung
+2e, and it explains why it survived changes to DMA, transfer length, bus width,
+clock and PHY delays alike: none of those are the level the bus is driven at.
+
+RUNG2F.md listed the IS_SD gate as "excluded". That was wrong, and the reason
+is worth recording: the check there was that sdhci_set_ios() writes
+SDHCI_CTRL_8BITBUS and SDHCI_CTRL_HISPD generically, which it does -- so the
+gate looked harmless. It is not, because the same skipped call also sets the
+signal voltage, and nothing else does.

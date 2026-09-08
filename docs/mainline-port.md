@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and stops at **one** bug: every eMMC DATA transfer fails while the command path works. Base clock, preset registers and bus width/high-speed are all excluded by a register dump off the working Linux controller; what is left is HRS06, which the boot firmware leaves tuned (`MODE=4, TUNE=16`) and U-Boot overwrites from `selected_mode`. Thirty runs. See "What exists now (rung 2)" through "(rung 2f)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer fails because **U-Boot drives a 1.8 V eMMC at 3.3 V**: `sdhci_cdns_set_control_reg()` gates the only writer of `SDHCI_CTRL_VDD_180` behind `IS_SD()`. Fix in the tree (patches 0007, 0008); the last step, reaching 1.8 V without HS200 tuning, is open. Thirty-four runs. See "What exists now (rung 2)" through "(rung 2g)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3324,3 +3324,87 @@ register clears on power loss. Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs
 have never been written in any rung. `uboot_b` holds the rung-2f build, `/boot`
 holds the test payload with `boot.panic_on_fail panic=10`, p7 is already back to
 the vendor's own variables, and `/root/rung2/restore.sh` undoes the rest.
+
+### What exists now (rung 2g, 2026-09-08) — THE BUS IS DRIVEN AT THE WRONG VOLTAGE
+
+**Cause found, and it is one line of upstream U-Boot.** This board's eMMC runs
+its I/O at 1.8 V; U-Boot drives it at 3.3 V, because
+`sdhci_cdns_set_control_reg()` gates the only call that sets
+`SDHCI_CTRL_VDD_180` behind `if (IS_SD(mmc))`. Not fixed yet: the route U-Boot
+offers to 1.8 V runs through HS200, and declaring HS200 hung the board. Full
+write-up [`RUNG2G.md`](reference/mainline/uboot-mainline-20260908/RUNG2G.md),
+measurement [`emmc-bus-mode-20260908.txt`](reference/mainline/uboot-mainline-20260908/emmc-bus-mode-20260908.txt).
+
+`/sys/kernel/debug/mmc0/ios` on the running Linux that drives this eMMC fine:
+
+```
+timing spec:    9 (mmc HS200)
+signal voltage: 1 (1.80 V)      <-- this one
+bus width:      3 (8 bits)      driver type: 4      clock: 50000000 Hz
+```
+
+which agrees with rung 2f's register dump: the working controller has
+`HOST_CONTROL2 = 0x3008`, bit 3 being `SDHCI_CTRL_VDD_180`, set. U-Boot never
+sets it — `sdhci_set_voltage()` is its only writer, it is reached only through
+the `IS_SD` gate, and `CONFIG_MMC_IO_VOLTAGE` was not even enabled, so it was
+compiled out. CMD is one line and tolerant enough to survive the wrong level;
+eight data lines are not. **That is why the failure survived every change to
+DMA, transfer length, bus width, clock and PHY delays — none of them is the
+level the bus is driven at.**
+
+Rung 2f called this gate "excluded". The check made there was that
+`sdhci_set_ios()` writes `SDHCI_CTRL_8BITBUS` and `SDHCI_CTRL_HISPD`
+generically, which is true and made the gate look harmless. It is not: the same
+skipped call sets the signal voltage, and nothing else does.
+
+#### Two corrections to rung 2f
+
+**The firmware does not leave a tuned PHY.** U-Boot's own probe reports
+`HRS06 = 0x00000006`, TUNE zero — the `0x1004` measured under Linux is
+**Linux's own** value, written after it selected HS200 and tuned. Freezing
+HRS06 at the firmware value stopped the card identifying at all
+(`Card did not respond to voltage select! : -110`); reverted.
+
+**The cardless SD slot at `0x104E0000` is clocked** and reports its HRS words
+from U-Boot without hanging. What hung rung 2f was the dump in `sdhci.c`'s
+data-timeout path, not the second controller.
+
+#### In the tree
+
+- **0007, `mmc: support the fixed-emmc-driver-type device tree property`** —
+  U-Boot has never read it, Linux has since 4.10, and this board's Linux DT sets
+  type 4 (40 ohm). Parsed in `mmc_of_parse()`, OR'd into `EXT_CSD_HS_TIMING`.
+  Measured: no change by itself.
+- **0008, `mmc: sdhci-cadence: program Host Control2 for eMMC too`** — removes
+  the `IS_SD` gate, plus `CONFIG_MMC_IO_VOLTAGE=y`.
+
+Deliberately **not** in the tree: `mmc-hs200-1_8v` on the eMMC node. It is what
+would actually switch U-Boot to 1.8 V, and it hung the board. The node carries
+the property commented out with the reason.
+
+#### The HS200 warning in our own DT was right
+
+U-Boot switches signalling to 1.8 V only via `mmc_select_hs200()`, and there is
+no DT knob for "this eMMC is 1.8 V" independent of speed mode — so declaring
+HS200 was the only lever available, and HS200 requires tuning. `dts/ax630c.dtsi`
+warns in this very node that the HS200 tuning step reads HRS37/HRS38, registers
+that "appear in NO AX630C source", and that "a 16-iteration retry storm could
+outlast U-Boot's 30 s watchdog and look exactly like a crash on a board with no
+console". It did. **Weight that comment properly next time.**
+
+#### Next
+
+Get 1.8 V without HS200 tuning, in order: a `vqmmc-supply` fixed regulator on
+the eMMC node (`sdhci_set_voltage()` already drives `mmc->vqmmc_supply` under
+`DM_REGULATOR`), or a DT property meaning "this eMMC is fixed 1.8 V" that sets
+`mmc->signal_voltage` at probe — the honest description of the hardware, since
+the rail is 1.8 V regardless of speed. Either lands on top of patch 0008.
+
+#### Device state — needs a power cycle
+
+Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs have never been written in any
+rung; a power cycle lands on slot A. Nothing from this run can be read
+afterwards — register and DRAM both go with the power, the rule rung 2e
+recorded. `uboot_b` holds the rung-2g build, `/boot` the payload with
+`boot.panic_on_fail panic=10`, p7 the two variables `arm-slotb.sh` sets, and
+`/root/rung2/restore.sh` undoes all three.
