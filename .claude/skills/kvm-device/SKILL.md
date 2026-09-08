@@ -187,3 +187,22 @@ those:
   hardware; only one is ever meant to be active. Full comparison table and
   why the vendor default is wrong for us: `docs/architecture.md`,
   section "The two app stacks: nanokvm vs kvmcomm".
+
+## Power-cycling the board yourself (2026-09-09)
+
+The board is on the zigbee plug **`nanokvm switch`** (user-level `power-switch`
+skill). A stranded slot-B boot, a hung AXI bus, or a NixOS stage 1 stuck on its
+interactive prompt no longer needs Jeremy:
+
+```sh
+SW=~/.claude/skills/power-switch/switch.sh
+$SW "nanokvm switch" state          # {"state":"ON","power":3.4,...}  idle appliance ≈ 3.5 W
+$SW "nanokvm switch" off; sleep 5; $SW "nanokvm switch" state   # power 0, state OFF
+$SW "nanokvm switch" on             # SSH answers ~30 s later; slot register back to 0x14
+```
+
+Rules: read every volatile channel first (slot register `devmem 0x02390024`,
+the U-Boot pre-console buffer, ramoops/pstore) — a cold cycle clears DRAM and the
+register. Confirm with `state`, not with the publish. Do not cycle during a
+block write (`dd` to an eMMC partition) — wait for the hash-verify. One cycle per
+failed boot; give the boot ~90 s before deciding it is dark.

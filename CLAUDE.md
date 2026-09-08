@@ -180,6 +180,15 @@ that is arbitration, not a bug.
 Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/device.env`
 (untracked). See the kvm-device skill.
 
+**The board's power is agent-controllable (since 2026-09-09):** it hangs off the
+zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
+`~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
+cycle clears the slot register and lands on slot A; SSH is back ~30 s after
+`on` (tested 2026-09-09: off → 0 W, on → 2 W, booted, slot `0x14`). Read the
+slot register / pstore / console buffer BEFORE cycling — the cycle destroys
+them. Jeremy's standing word: with self-recovery available, take more risk on
+slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
+
 ## Docs index — read before working on X
 
 | Task | Read first |
