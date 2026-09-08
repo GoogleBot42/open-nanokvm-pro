@@ -1,0 +1,76 @@
+The complete mainline U-Boot console log from the AX630C, read out of DRAM
+after the fact. This board's UART is on hidden pads; there is no serial.
+
+How it was captured (pkgs/uboot-mainline.nix, debugMilestones = true):
+
+  * CONFIG_PRE_CONSOLE_BUFFER at 0x480E8000, 8 KiB, inside the spare tail of
+    the vendor pstore window.
+  * A third mm_region mapping 0x48000000+1 MiB as MT_DEVICE_NGNRNE, so the
+    buffer keeps reaching DRAM after dcache_enable() -- without it every
+    character written past initr_caches sits in a cache that a chip reset
+    discards.
+  * board_late_init() clears GD_FLG_HAVE_CONSOLE, which makes puts() take the
+    pre_console_putc() path for the whole rest of the boot. print_pre_console_
+    buffer() restores precon_buf_idx after its flush, so the buffer stays live.
+
+Read back from slot A with:
+  dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=2 | tr -d '\000'
+
+The `mmu:` and `ram_base`/`probe` lines are this build's instrumentation;
+everything else is stock U-Boot.
+
+----------------------------------------------------------------------
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  ram_base 40000000 size 40000000 top 80000000 mon_len 59c18
+1 GiB
+mmu: tlb 7fff0000 size 8000 fill 0 el 1
+mmu: tcr 80803520 va_bits 32
+mmu: setup_pgtables
+mmu: pgtables done, fill 7fff3000
+mmu: set_ttbr_tcr_mair
+mmu: done
+Core:  16 devices, 11 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC... Transfer data timeout
+*** Warning - !read failed, using default environment
+
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+Hit any key to stop autoboot: 1
+Hit any key to stop autoboot: 0
+** Invalid partition 22 **
+Couldn't find partition mmc 0:16
+Can't set block device
+resetting ...
+
+----------------------------------------------------------------------
+
+What every line is worth:
+
+  U-Boot 2026.07 ... nanokvm-pro   the port boots and relocates correctly --
+                                   this is the first log that exists at all
+  mmu: ... done                    the MMU comes up. Rungs 2/2b/2c all died
+                                   before this line
+  Core: 16 devices, 11 uclasses    driver model bound the whole tree
+  MMC: mmc@1b40000: 0,             BOTH Cadence SD4HC controllers probed, and
+       mmc@104e0000: 1             the eMMC is mmc 0 -- sdhci-cadence needed no
+                                   patch, exactly as section 11.10 predicted
+  Loading Environment from MMC...  BUG 1. The env read times out. U-Boot falls
+  Transfer data timeout            back to the built-in default environment,
+                                   which is why the boot continues at all --
+                                   and why the shared-p7 trap of rung 2 never
+                                   fired: the stored env is never read
+  Net: No ethernet found.          expected; the port has no ethernet glue
+  Hit any key to stop autoboot     main_loop reached, bootdelay counting
+  ** Invalid partition 22 **       BUG 2. `mmc 0:16` addresses partition 0x16.
+  Couldn't find partition mmc 0:16 blk_get_device_part_str() parses dev:part in
+                                   BASE 16, so p16 is `mmc 0:10`
+  resetting ...                    bootcmd's failure path: mw.l ms_failed,
+                                   then a clean `reset` -- boot_reason 0x01,
+                                   not the 0x05 of every earlier rung

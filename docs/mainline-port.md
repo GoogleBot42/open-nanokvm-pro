@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs — banner, board, DRAM sizing, relocation — and then relocates to `0x7FF96400` while `gd->relocaddr` says `0x7FF96000`.** Every relocated `.data` pointer is 0x400 out, `mem_map` reads as code, and the first thing to dereference one (`mmu_setup`) hangs. `board_init_f` finishes in 0.135 s; nothing past it. Twenty runs, every one self-recovered to slot A with no hands. See "What exists now (rung 2)", "(rung 2b)" and "(rung 2c)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot now runs end to end** -- MMU, driver model, both SD4HC controllers with the eMMC as `mmc 0`, console, `main_loop`, `preboot`, `bootcmd` -- after patch 0006 fixed a relocation offset that was not a page multiple. Still not booting Linux: `dev:part` is parsed in base 16 (p16 is `mmc 0:10`, fixed) and the env read times out (open). Twenty-three runs; the last one hung and needs a power cycle, which lands on slot A. See "What exists now (rung 2)" through "(rung 2d)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3079,3 +3079,79 @@ candidates, one round apart:
 Four scratchpad words from `crt0_64.S` immediately before `b relocate_code`
 (x0 and x9 as loaded) and two from the top of `relocate_code` (x0, and x9 after
 `subs`) separate them.
+
+### What exists now (rung 2d, 2026-09-08) — RELOCATION FIXED, U-BOOT RUNS END TO END
+
+**The 0x400 is fixed, and mainline U-Boot now runs the whole of
+`board_init_r`.** MMU, driver model, both Cadence SD4HC controllers, the
+environment, the console, `main_loop`, `preboot`, `bootcmd`. It does not boot
+Linux yet — two further bugs, both named by the board's own console log, which
+this rung also made readable for the first time. Full numbers:
+[`RUNG2D.md`](reference/mainline/uboot-mainline-20260908/RUNG2D.md); the log
+itself is
+[`uboot-console-20260908.txt`](reference/mainline/uboot-mainline-20260908/uboot-console-20260908.txt).
+
+#### The fix
+
+Patch 0006, upstream-shaped, against `common/board_f.c`. `reserve_uboot()`
+rounds `gd->relocaddr` down to a page; on arm64 every symbol reference is an
+`adrp`/`:lo12:` pair, and that pair is only correct when the image moved by a
+whole number of pages. `CONFIG_TEXT_BASE` here is `0x5C000400`, because the
+first-stage loader enters BL33 past a 1 KiB signed header, so page-aligning
+`relocaddr` made the offset `0x23F95C00` — not a page multiple. The `.rela.dyn`
+fixups used it exactly; every `adrp`/`:lo12:` pair landed a page off in one
+direction or the other, which is also why the symptom moved with build layout.
+Keep TEXT_BASE's page offset instead.
+
+| | before | after |
+|---|---|---|
+| `gd->reloc_off` | `0x23F95C00` | `0x23F95000` (page multiple) |
+| `__image_copy_start`, post-reloc | `0x7FF96400` — 0x400 out | `0x7FF95400` — agrees with `relocaddr` |
+| `mem_map` | `0x7FFAFB98`, into `.text` | `0x7FFE4090` = link + `0x23F95000` |
+
+#### A real console on a board that has none
+
+Two changes turn `CONFIG_PRE_CONSOLE_BUFFER` into a full boot log, and this is
+the instrument to reach for next time. A third `mm_region` maps the pstore
+window `0x48000000 + 1 MiB` as `MT_DEVICE_NGNRNE` — the moment
+`dcache_enable()` started working, both evidence channels went dark, because
+`writel()` to the scratchpad and `pre_console_putc()` alike land in a cache a
+chip reset discards. And `board_late_init()` clears `GD_FLG_HAVE_CONSOLE`, so
+`puts()` takes the `pre_console_putc()` path for the rest of the boot
+(`print_pre_console_buffer()` restores `precon_buf_idx` after its flush, so the
+buffer stays live past `console_init_r`).
+
+#### Two bugs the log named
+
+**`** Invalid partition 22 **`.** `blk_get_device_part_str()` parses the
+partition in a `dev:part` string with **base 16**, so `mmc 0:16` addresses
+partition 0x16 = 22 and **p16 is `mmc 0:10`**. `bootpart` is now injected and
+asserted in hex. No build can catch this; only the board says it.
+
+**`Loading Environment from MMC... Transfer data timeout`.** The env read fails
+and U-Boot falls back to the built-in default — which is why the boot got as far
+as it did, and which also means rung 2's shared-p7 trap never fired: the stored
+environment is never successfully read, so the vendor's six variables cannot
+shadow `CFG_EXTRA_ENV_SETTINGS`. Undiagnosed; `CONFIG_ENV_SIZE` is 1 MiB, a
+2048-block single read and unusually large for an env.
+
+Everything else in the log passes, including **both** Cadence SD4HC controllers
+probing with the eMMC as `mmc 0` — sdhci-cadence needed no patch, exactly as
+§11.10 predicted — and `bootcmd` reaching its failure path and issuing a clean
+`reset` (`boot_reason=0x01`, not the `0x05` of every earlier rung).
+
+#### The board is hung and needs a power cycle
+
+The run after the `bootpart` fix did not come back; both routes fast-fail, so it
+is off the network, not slow. Likely — and this is a hypothesis, not a
+measurement — U-Boot loaded and booted the kernel and the appliance's stage 1
+hit the trap this file's sibling entry and CLAUDE.md already record: a NixOS
+stage-1 `fail()` is interactive, blocking on a console nobody can reach, while
+the kernel pets U-Boot's watchdog forever. `panicOnFail=1` is in
+`nixos/loop-test.nix`, not in the flashed product image. **Any future slot-B
+appliance test must carry it.**
+
+A power cycle lands on slot A: the SPL consumed `SLOTB_BOOTABLE` and the slot
+register clears on power loss. Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs
+were never written. `uboot_b`, p7 and `/boot` still hold the test payload, and
+`/root/rung2/restore.sh` undoes all three.
