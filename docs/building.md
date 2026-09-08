@@ -52,15 +52,17 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `dtb` / `dtb-sd` | patched board DTB (eMMC / SD-root) | reserved-mem + bootargs patch |
 | `dtb-slot-image` / `-sd` | signed `dtb.img` partition | `ax_gzip -9` + 1 KB header |
 | `kernel-slot-image` | signed kernel partition | `ax_gzip -9` + 1 KB header |
-| `kernel-mainline` | `Image` + `dt-bindings` headers | **scaffold, never booted** — mainline Linux 7.1.3 from the nixpkgs pin, `arm64 defconfig` + `pkgs/kernel-mainline/ax630c.config`. Epic #26, issue #74 |
+| `kernel-mainline` | `Image` + `dt-bindings` headers | mainline Linux 7.1.3 from the nixpkgs pin, `arm64 defconfig` + `pkgs/kernel-mainline/ax630c.config`. **Boots this board since #75.** Variants: `-appliance` (NixOS stage 1 embedded), `-appliance-loop`, `-appliance-qemu`. Epic #26 |
 | `dtb-mainline` | our own board DTB | compiled from `dts/` **in this repo** with `cpp` + `dtc -p 4096`; nothing vendor about it |
 | `kernel-mainline-slot-image` / `dtb-mainline-slot-image` | signed slot-B partitions | same header format as above, so #75's first boot is a reversible slot-B flash |
 | `boot` / `boot-sd` | full boot chain (UART0 / UART1 console) | SPL+ATF+OP-TEE+U-Boot |
 | `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
 | `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |
 | `rootfs` | overlaid `ubuntu_rootfs_sparse.ext4` | vendor base + our libkvm + modules + service selection |
-| `nixos-rootfs` | NixOS `ext4` (+ sparse) | **scaffold, never booted** — pure-Nix rootfs, issue #26; built from the separate `nixpkgs-rootfs` pin. See [nixos-rootfs.md](nixos-rootfs.md) |
+| `nixos-appliance` | NixOS `ext4` (+ sparse, + initrd) | the pure-Nix rootfs, #78. One nixpkgs pin, mainline kernel, **boot-proven on hardware from slot B**. See [nixos-rootfs.md](nixos-rootfs.md) |
 | **`firmware-image`** | **`…-selfbuilt.axp`** | **the flashable eMMC image (default output)** |
+| **`nixos-firmware-image`** | **`…-nixos.axp`** | **the NixOS appliance's flashable eMMC image** — packed from scratch, no vendor bundle; `system.build.axpImage` on `nixosConfigurations.nanokvm-pro` |
+| `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed |
 | `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
 | `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
 | `toolchain` | cross-gcc bundle | convenience `buildEnv` |

@@ -92,20 +92,23 @@ let
       + "\" />\n")
     parts.parts;
 
+  # One <Img>. Every element and attribute below is REQUIRED: the flasher's
+  # deserializer declares no defaults, so an omission is a parse error rather
+  # than a default -- including `<Auth algo=>`, which nothing ever reads.
   imgXml = { id, type, flag, base ? "0x0", block ? null, file ? null, description }:
-    ''
-          <Img flag="${toString flag}" name="${id}" select="1">
-            <ID>${id}</ID>
-            <Type>${type}</Type>
-            <Block${lib.optionalString (block != null) " id=\"${block}\""}>
-              <Base>${base}</Base>
-              <Size>0x0</Size>
-            </Block>
-            ${if file == null then "<File />" else "<File>${file}</File>"}
-            <Auth algo="0" />
-            <Description>${description}</Description>
-          </Img>
-    '';
+    lib.concatMapStrings (l: "      " + l + "\n") [
+      "<Img flag=\"${toString flag}\" name=\"${id}\" select=\"1\">"
+      "  <ID>${id}</ID>"
+      "  <Type>${type}</Type>"
+      "  <Block${lib.optionalString (block != null) " id=\"${block}\""}>"
+      "    <Base>${base}</Base>"
+      "    <Size>0x0</Size>"
+      "  </Block>"
+      ("  " + (if file == null then "<File />" else "<File>${file}</File>"))
+      "  <Auth algo=\"0\" />"
+      "  <Description>${description}</Description>"
+      "</Img>"
+    ];
 
   agentXml = concatMapStrings
     (a: imgXml {
