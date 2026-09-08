@@ -1,0 +1,52 @@
+From 4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 8 Sep 2026 05:20:00 -0600
+Subject: [PATCH 8/8] mmc: sdhci-cadence: program Host Control2 for eMMC too
+
+sdhci_cdns_set_control_reg() calls sdhci_set_control_reg() only for SD cards.
+That function sets the signal voltage and the UHS timing bits in Host
+Control2, and eMMC needs the first of the two: a card in HS200 or HS400 runs
+its I/O at 1.8 V, and SDHCI_CTRL_VDD_180 is written nowhere else in the
+driver.
+
+The result on hardware is a bus that enumerates and then cannot move data. CMD
+is a single line and tolerant enough to survive being driven at the wrong
+level; the eight data lines are not. The AX630C shows it as an environment
+read that reports "Transfer data timeout" and a filesystem read that reports
+"fs_devread read error", with the card otherwise identified and its CSD read
+correctly.
+
+Call it unconditionally. For an eMMC still at 3.3 V nothing changes, because
+the MMC_SIGNAL_VOLTAGE_330 arm of sdhci_set_voltage() is itself guarded by
+IS_SD() and the UHS field is written from the selected mode either way.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/sdhci-cadence.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mmc/sdhci-cadence.c b/drivers/mmc/sdhci-cadence.c
+index 1111111..2222222 100644
+--- a/drivers/mmc/sdhci-cadence.c
++++ b/drivers/mmc/sdhci-cadence.c
+@@ -145,11 +145,14 @@
+ 	writel(tmp, plat->hrs_addr + SDHCI_CDNS_HRS06);
+ 
+ 	/*
+-	 * For SD cards, program standard SDHCI Host Control2 UHS/voltage
+-	 * registers for UHS-I support.
++	 * Program the standard SDHCI Host Control2 signal-voltage and UHS
++	 * timing bits. This is not SD-only: an eMMC in HS200 or HS400 runs its
++	 * I/O at 1.8 V, and SDHCI_CTRL_VDD_180 is set nowhere else, so gating
++	 * this on IS_SD() leaves such a card being driven at 3.3 V. The bus
++	 * still enumerates -- CMD is one line and tolerant -- and then every
++	 * data transfer fails.
+ 	 */
+-	if (IS_SD(mmc))
+-		sdhci_set_control_reg(host);
++	sdhci_set_control_reg(host);
+ 
+ 	if (SDHCI_GET_VERSION(host) >= SDHCI_SPEC_420)
+ 		sdhci_cdns6_phy_adj(mmc->dev, plat, mmc->selected_mode);
+-- 
+2.55.0

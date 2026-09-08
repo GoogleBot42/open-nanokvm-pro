@@ -1,0 +1,85 @@
+From 3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 8 Sep 2026 05:10:00 -0600
+Subject: [PATCH 7/7] mmc: support the fixed-emmc-driver-type device tree
+ property
+
+The eMMC card output drive strength is programmed through the high nibble of
+EXT_CSD_HS_TIMING, and boards whose trace impedance needs something other than
+the card default say so with the fixed-emmc-driver-type property. Linux has
+honoured it since 4.10; U-Boot has never read it, so a board that needs a
+non-default drive strength gets one bus in the bootloader and a different one
+in Linux.
+
+It matters more than it looks. Drive strength is an analogue property of the
+bus, and the data lines are where it shows: eight of them switch together
+while CMD is one line at a quarter of the aggregate edge rate. A board
+programmed with the wrong strength can identify the card, read its CSD and
+switch speeds -- and then fail every data transfer.
+
+Parse the property in mmc_of_parse() and OR it into speed_bits alongside the
+timing value, matching what Linux does in mmc_select_hs() and friends. 0xff
+records "absent", so a board that does not set it keeps the card default and
+existing behaviour is unchanged.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/mmc-uclass.c | 10 ++++++++++
+ drivers/mmc/mmc.c        |  3 +++
+ include/mmc.h            |  6 ++++++
+ 3 files changed, 19 insertions(+)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 1111111..2222222 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -997,6 +997,9 @@
+ 		return -EINVAL;
+ 	}
+ 
++	if (mmc->cfg->fixed_drv_type != 0xff)
++		speed_bits |= mmc->cfg->fixed_drv_type << 4;
++
+ 	err = __mmc_switch(mmc, EXT_CSD_CMD_SET_NORMAL, EXT_CSD_HS_TIMING,
+ 			   speed_bits, !hsdowngrade);
+ 	if (err)
+diff --git a/drivers/mmc/mmc-uclass.c b/drivers/mmc/mmc-uclass.c
+index 3333333..4444444 100644
+--- a/drivers/mmc/mmc-uclass.c
++++ b/drivers/mmc/mmc-uclass.c
+@@ -250,6 +250,16 @@
+ 	 */
+ 	cfg->f_max = dev_read_u32_default(dev, "max-frequency", cfg->f_max);
+ 
++	/*
++	 * "fixed-emmc-driver-type" programs the card output drive strength
++	 * through the high nibble of EXT_CSD_HS_TIMING. Boards specify it when
++	 * the trace impedance needs something other than the card default, and
++	 * getting it wrong shows up on the data lines long before the command
++	 * line, because they switch more and in parallel.
++	 */
++	cfg->fixed_drv_type = dev_read_u32_default(dev, "fixed-emmc-driver-type",
++						   0xff);
++
+ 	if (dev_read_bool(dev, "cap-sd-highspeed"))
+ 		cfg->host_caps |= MMC_CAP(SD_HS);
+ 	if (dev_read_bool(dev, "cap-mmc-highspeed"))
+diff --git a/include/mmc.h b/include/mmc.h
+index 5555555..6666666 100644
+--- a/include/mmc.h
++++ b/include/mmc.h
+@@ -622,6 +622,12 @@
+ 	uint f_max;
+ 	uint b_max;
+ 	unsigned char part_type;
++	/*
++	 * eMMC driver strength from "fixed-emmc-driver-type", as an eMMC
++	 * spec table-206 value shifted into place for EXT_CSD_HS_TIMING.
++	 * 0xff means the property was absent and the card default stands.
++	 */
++	unsigned char fixed_drv_type;
+ #if CONFIG_IS_ENABLED(MMC_PWRSEQ)
+ 	struct udevice *pwr_dev;
+ #endif
+-- 
+2.55.0

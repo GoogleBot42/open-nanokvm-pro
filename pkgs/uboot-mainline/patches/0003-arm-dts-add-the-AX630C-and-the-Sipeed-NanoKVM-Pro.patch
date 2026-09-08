@@ -174,7 +174,7 @@ new file mode 100644
 index 00000000..d6980dc6
 --- /dev/null
 +++ b/arch/arm/dts/ax630c.dtsi
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,184 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Axera AX630C (AX620E family).
@@ -249,6 +249,36 @@ index 00000000..d6980dc6
 +			no-sdio;
 +			disable-wp;
 +			cap-mmc-highspeed;
++			/*
++			 * eMMC spec table 206 driver type 4 = 40 ohm. The board
++			 * is built around it and the Linux device tree carries
++			 * the same value; without it the bootloader drives the
++			 * bus at the card default and every data transfer fails
++			 * while the command line still works.
++			 */
++			fixed-emmc-driver-type = <4>;
++			/*
++			 * NOT enabled, and the omission is the open question.
++			 * Linux runs this part at "timing spec: 9 (mmc HS200)"
++			 * with "signal voltage: 1 (1.80 V)", and 1.8 V is the
++			 * only thing that makes the data lines work -- the
++			 * command line survives being driven at 3.3 V, the
++			 * eight data lines do not. U-Boot switches signalling
++			 * to 1.8 V only along its HS200 path.
++			 *
++			 * But declaring mmc-hs200-1_8v here hung the board on
++			 * hardware (2026-09-08), which is exactly what the
++			 * Linux device tree warns about in the same node: the
++			 * HS200 tuning loop reads HRS37/HRS38, registers that
++			 * appear in no AX630C source, and a 16-iteration retry
++			 * storm on a board with no console is indistinguishable
++			 * from a crash.
++			 *
++			 * So the bus needs 1.8 V without HS200 tuning: either a
++			 * vqmmc regulator the core can switch, or a way to say
++			 * "this eMMC is 1.8 V" independently of speed mode.
++			 * mmc-hs200-1_8v;
++			 */
 +			max-frequency = <50000000>;
 +			cdns,phy-input-delay-sd-highspeed = <2>;
 +			cdns,phy-input-delay-legacy = <4>;

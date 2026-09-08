@@ -67,6 +67,8 @@ let
     ./uboot-mainline/patches/0004-disk-add-a-blkdevparts-command-line-partition-driver.patch
     ./uboot-mainline/patches/0005-configs-add-ax630c_nanokvm_pro_defconfig.patch
     ./uboot-mainline/patches/0006-board_f-keep-TEXT_BASE-page-offset-on-arm64.patch
+    ./uboot-mainline/patches/0007-mmc-support-fixed-emmc-driver-type.patch
+    ./uboot-mainline/patches/0008-mmc-sdhci-cadence-program-host-control2-for-emmc.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -683,43 +685,18 @@ let
 
     echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
 
-    # Rung 2f: dump the SD4HC register file from U-Boot, to diff against the
-    # same registers read from the running Linux that drives this eMMC fine.
-    # Upstream sdhci-cadence touches only HRS04/05/06; the working controller
-    # has HRS00/01/02 non-zero, so what the first-stage loader left there and
-    # what U-Boot leaves there is the question.
+    # One line at eMMC probe: the three HRS words the boot firmware left. Not
+    # in the shipping series -- it is a diagnostic, and this board's only
+    # console is the pre-console buffer. Reads only the window devm_ioremap()
+    # has just returned, and only for the controller being probed.
     substituteInPlace drivers/mmc/sdhci-cadence.c --replace-fail \
-      '#include <reset.h>' \
-      '#include <reset.h>
+      '	host->name = dev->name;' \
+      '	printf("%s: firmware HRS00 %08x HRS02 %08x HRS06 %08x\n", dev->name,
+    	       readl(plat->hrs_addr + 0x00), readl(plat->hrs_addr + 0x08),
+    	       readl(plat->hrs_addr + SDHCI_CDNS_HRS06));
 
-    void ax630c_sd4hc_dump(void *hrs, const char *when)
-    {
-    	int i;
+    	host->name = dev->name;'
 
-    	printf("sd4hc %s:", when);
-    	for (i = 0; i <= 0x18; i += 4)
-    		printf(" H%02x=%08x", i, readl((char *)hrs + i));
-    	printf("\n  srs:");
-    	printf(" 28=%08x", readl((char *)hrs + 0x200 + 0x28));
-    	printf(" 2c=%08x", readl((char *)hrs + 0x200 + 0x2c));
-    	printf(" 3c=%08x", readl((char *)hrs + 0x200 + 0x3c));
-    	printf(" 40=%08x", readl((char *)hrs + 0x200 + 0x40));
-    	printf(" 44=%08x\n", readl((char *)hrs + 0x200 + 0x44));
-    }'
-
-    substituteInPlace drivers/mmc/sdhci-cadence.c --replace-fail \
-      '	upriv->mmc = &plat->mmc;
-    	host->mmc->priv = host;
-
-    	return sdhci_probe(dev);' \
-      '	upriv->mmc = &plat->mmc;
-    	host->mmc->priv = host;
-
-    	ax630c_sd4hc_dump(plat->hrs_addr, "after phy_init");
-    	ret = sdhci_probe(dev);
-    	ax630c_sd4hc_dump(plat->hrs_addr, "after sdhci_probe");
-
-    	return ret;'
   '';
   # -------------------------------------------------------------------------
   # dcacheOff = true: never switch the MMU on.
