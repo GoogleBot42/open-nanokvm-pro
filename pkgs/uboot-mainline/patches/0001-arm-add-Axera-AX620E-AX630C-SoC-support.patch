@@ -1,0 +1,250 @@
+From 4cdd4f72eaa65e4a2e947fbf7e4c35d41489c4b5 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 7 Sep 2026 22:29:39 -0600
+Subject: [PATCH 1/5] arm: add Axera AX620E (AX630C) SoC support
+
+The AX620E family (AX630C) is a dual Cortex-A53 SoC used in the Sipeed
+NanoKVM-Pro. U-Boot runs as BL33: the boot ROM loads a signed first-stage
+loader which trains DRAM, locks the PLLs, sets every clock mux and muxes the
+console and eMMC pads, then TF-A's BL31 enters U-Boot at EL1h. There is no
+SPL and no low-level init here, so the whole SoC layer is a memory map and
+the two DRAM hooks that read the device tree.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ arch/arm/Kconfig             | 16 +++++++++
+ arch/arm/Makefile            |  1 +
+ arch/arm/mach-axera/Kconfig  | 27 ++++++++++++++
+ arch/arm/mach-axera/Makefile |  5 +++
+ arch/arm/mach-axera/soc.c    | 49 +++++++++++++++++++++++++
+ include/configs/ax630c.h     | 70 ++++++++++++++++++++++++++++++++++++
+ 6 files changed, 168 insertions(+)
+ create mode 100644 arch/arm/mach-axera/Kconfig
+ create mode 100644 arch/arm/mach-axera/Makefile
+ create mode 100644 arch/arm/mach-axera/soc.c
+ create mode 100644 include/configs/ax630c.h
+
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 514bf200..0a1b064f 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -637,6 +637,20 @@ config ARCH_AT91
+ 	select SPL_SEPARATE_BSS if SPL
+ 	imply SYS_THUMB_BUILD
+ 
++config ARCH_AXERA
++	bool "Axera AX620E SoCs"
++	select ARM64
++	select DM
++	select DM_SERIAL
++	select OF_CONTROL
++	select REGMAP
++	select SYSCON
++	imply CMD_DM
++	help
++	  Support for the Axera AX620E family (AX630C). U-Boot runs as the
++	  BL33 of a boot chain whose earlier stages train DRAM and set the
++	  clock tree, so there is no SPL and no low-level init here.
++
+ config ARCH_DAVINCI
+ 	bool "TI DaVinci"
+ 	select CPU_ARM926EJS
+@@ -2294,6 +2308,8 @@ source "arch/arm/mach-aspeed/Kconfig"
+ 
+ source "arch/arm/mach-at91/Kconfig"
+ 
++source "arch/arm/mach-axera/Kconfig"
++
+ source "arch/arm/mach-bcm283x/Kconfig"
+ 
+ source "arch/arm/mach-bcmbca/Kconfig"
+diff --git a/arch/arm/Makefile b/arch/arm/Makefile
+index de975fc9..3a195a2d 100644
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -57,6 +57,7 @@ machine-$(CONFIG_ARCH_AIROHA)		+= airoha
+ machine-$(CONFIG_ARCH_APPLE)		+= apple
+ machine-$(CONFIG_ARCH_ASPEED)		+= aspeed
+ machine-$(CONFIG_ARCH_AT91)		+= at91
++machine-$(CONFIG_ARCH_AXERA)		+= axera
+ machine-$(CONFIG_ARCH_BCM283X)		+= bcm283x
+ machine-$(CONFIG_ARCH_BCMBCA)		+= bcmbca
+ machine-$(CONFIG_ARCH_BCMSTB)		+= bcmstb
+diff --git a/arch/arm/mach-axera/Kconfig b/arch/arm/mach-axera/Kconfig
+new file mode 100644
+index 00000000..227e51df
+--- /dev/null
++++ b/arch/arm/mach-axera/Kconfig
+@@ -0,0 +1,27 @@
++if ARCH_AXERA
++
++config SYS_SOC
++	default "ax630c"
++
++config SYS_VENDOR
++	default "axera"
++
++choice
++	prompt "Axera AX630C board"
++
++config TARGET_AX630C_NANOKVM_PRO
++	bool "Sipeed NanoKVM-Pro"
++	help
++	  Sipeed NanoKVM-Pro: an AX630C (2x Cortex-A53) IP-KVM with 1 GiB
++	  DRAM, an 8-bit eMMC, a Realtek RTL8211F gigabit PHY on RGMII and an
++	  LT6911UXC HDMI receiver.
++
++	  U-Boot runs as BL33. The boot ROM loads a signed first-stage loader
++	  which trains DRAM, locks the PLLs, sets every clock mux and hands
++	  control to TF-A, so this port programs no clocks of its own.
++
++endchoice
++
++source "board/axera/ax630c/Kconfig"
++
++endif
+diff --git a/arch/arm/mach-axera/Makefile b/arch/arm/mach-axera/Makefile
+new file mode 100644
+index 00000000..beb76feb
+--- /dev/null
++++ b/arch/arm/mach-axera/Makefile
+@@ -0,0 +1,5 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# Copyright (C) 2026 open-nanokvm-pro contributors
++
++obj-y += soc.o
+diff --git a/arch/arm/mach-axera/soc.c b/arch/arm/mach-axera/soc.c
+new file mode 100644
+index 00000000..01a401cf
+--- /dev/null
++++ b/arch/arm/mach-axera/soc.c
+@@ -0,0 +1,49 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Axera AX620E family (AX630C) SoC support.
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ */
++
++#include <fdtdec.h>
++#include <init.h>
++#include <asm/armv8/mmu.h>
++
++/*
++ * Everything below 1 GiB is MMIO on this SoC: the on-chip RAM the boot ROM
++ * runs from, the GIC at 0x01851000, three Cadence SD4HC instances, the syscon
++ * blocks that hold the clock gates and reset bits, and the UARTs at
++ * 0x04880000. DRAM starts at 0x40000000; the widest part in the family is
++ * 4 GiB and it is always one bank.
++ */
++static struct mm_region ax620e_mem_map[] = {
++	{
++		.virt = 0x0UL,
++		.phys = 0x0UL,
++		.size = 0x40000000UL,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++			 PTE_BLOCK_NON_SHARE |
++			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++	}, {
++		.virt = 0x40000000UL,
++		.phys = 0x40000000UL,
++		.size = 0x100000000UL,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
++			 PTE_BLOCK_INNER_SHARE
++	}, {
++		/* Terminator */
++		0,
++	}
++};
++
++struct mm_region *mem_map = ax620e_mem_map;
++
++int dram_init(void)
++{
++	return fdtdec_setup_mem_size_base();
++}
++
++int dram_init_banksize(void)
++{
++	return fdtdec_setup_memory_banksize();
++}
+diff --git a/include/configs/ax630c.h b/include/configs/ax630c.h
+new file mode 100644
+index 00000000..bac2dd7d
+--- /dev/null
++++ b/include/configs/ax630c.h
+@@ -0,0 +1,70 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Axera AX630C boards.
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ */
++
++#ifndef __AX630C_H
++#define __AX630C_H
++
++#define CFG_SYS_SDRAM_BASE		0x40000000
++
++/*
++ * Load addresses. DRAM is 0x40000000..0x80000000 on this board and four
++ * regions inside it belong to somebody else, so the four load addresses below
++ * are chosen to miss all of them:
++ *
++ *   0x40000000 + 4 KiB   a DDR retrain engine the first-stage loader may arm
++ *   0x40040000 + 256 KiB TF-A BL31, resident
++ *   0x44200000 + 32 MiB  OP-TEE BL32, resident and firewalled
++ *   0x48000000 + 960 KiB the pstore/ramoops window Linux reads across a reset
++ *
++ * U-Boot itself is entered at 0x5C000400 and relocates to the top of DRAM, so
++ * everything below stays under 0x5C000000.
++ */
++#define CFG_EXTRA_ENV_SETTINGS						\
++	"fdtfile=" CONFIG_DEFAULT_DEVICE_TREE ".dtb\0"			\
++	"scriptaddr=0x49000000\0"					\
++	"pxefile_addr_r=0x49100000\0"					\
++	"fdt_addr_r=0x49200000\0"					\
++	"kernel_addr_r=0x4a000000\0"					\
++	"ramdisk_addr_r=0x4e000000\0"					\
++	"initrd_high=0xffffffffffffffff\0"				\
++	"fdt_high=0xffffffffffffffff\0"					\
++	"bootdev=0\0"							\
++	"bootpart=16\0"							\
++	"extlinux_cfg=/extlinux/extlinux.conf\0"			\
++	"extlinux_fallback=/extlinux/extlinux-fallback.conf\0"		\
++	AX630C_MILESTONE_ENV
++
++/*
++ * `bootlimit` and `altbootcmd` are deliberately NOT here: env_default.h emits
++ * CONFIG_BOOTCOUNT_BOOTLIMIT and CONFIG_BOOTCOUNT_ALTBOOTCMD ahead of
++ * CFG_EXTRA_ENV_SETTINGS, and the first definition of a name wins, so a copy
++ * in this file would be dead text. They are set in the defconfig.
++ */
++
++/*
++ * Boot milestones, and the only observability this board has before Linux is
++ * up: the console UART is on hidden pads, so a bit in a register that survives
++ * a reset is what says how far the boot got.
++ *
++ * TOP_CHIPMODE_GLB_BACKUP0 (0x02390024) is a scratch register the boot ROM,
++ * the first-stage loader and TF-A all leave alone above bit 11. +0x4 is a
++ * write-1-to-set alias and +0x8 a write-1-to-clear alias, so a milestone is
++ * one `mw.l` and can never disturb the boot-slot bits below it. The register
++ * survives a warm reboot and a chip reset, and clears on power loss.
++ *
++ * Bits 12..24 belong to Linux (see the mainline bring-up initramfs) and bits
++ * 30..31 to the vendor OTA flags, which leaves 25..29 for the bootloader.
++ */
++#define AX630C_MILESTONE_ENV						\
++	"msreg_set=0x02390028\0"					\
++	"ms_uboot=0x02000000\0"		/* 25: preboot reached */	\
++	"ms_bootcmd=0x04000000\0"	/* 26: bootcmd started */	\
++	"ms_extlinux=0x08000000\0"	/* 27: extlinux.conf read */	\
++	"ms_failed=0x10000000\0"	/* 28: nothing booted */	\
++	"ms_altboot=0x20000000\0"	/* 29: bootlimit hit */
++
++#endif /* __AX630C_H */
+-- 
+2.55.0
+

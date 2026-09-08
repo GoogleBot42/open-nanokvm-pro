@@ -1,0 +1,414 @@
+From 43314b9639cb25036323cf556584c7d992a1107b Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 7 Sep 2026 22:29:40 -0600
+Subject: [PATCH 4/5] disk: add a blkdevparts= command-line partition driver
+
+Some SoCs place the boot ROM's first-stage loader at byte 0 of the boot
+medium, which leaves nowhere for an MBR or a GPT: LBA 0 and LBA 1..33 are
+both inside the loader image. Linux has described such devices since 3.17
+with a blkdevparts= clause on its command line (CONFIG_CMDLINE_PARTITION,
+Documentation/block/cmdline-partition.rst).
+
+Read the same clause in U-Boot, so that the bootloader and the kernel take
+one layout from one string instead of two hand-copied ones. The clause comes
+from the `blkdevparts` environment variable, from a blkdevparts= token in
+`bootargs`, or from CONFIG_CMDLINE_PARTITION_DEFAULT, in that order -- the
+environment first, so a running system can change the layout with fw_setenv
+and have both halves of the next boot agree about it.
+
+Registering through U_BOOT_PART_TYPE means ext4load, `part`, bootstd and
+bootmeth_extlinux all work against such a device unchanged.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ disk/Kconfig        |  33 +++++
+ disk/Makefile       |   1 +
+ disk/part_cmdline.c | 308 ++++++++++++++++++++++++++++++++++++++++++++
+ include/part.h      |   1 +
+ 4 files changed, 343 insertions(+)
+ create mode 100644 disk/part_cmdline.c
+
+diff --git a/disk/Kconfig b/disk/Kconfig
+index 937ae1da..77f895e3 100644
+--- a/disk/Kconfig
++++ b/disk/Kconfig
+@@ -99,6 +99,39 @@ config SPL_AMIGA_PARTITION
+ 	default y if AMIGA_PARTITION
+ 	select SPL_PARTITIONS
+ 
++config CMDLINE_PARTITION
++	bool "Enable partitions described by a blkdevparts= command line"
++	select PARTITIONS
++	help
++	  Some SoCs place a boot ROM's first-stage loader at byte 0 of the
++	  boot medium, which leaves no room for an MBR or a GPT. Linux
++	  describes such devices with a `blkdevparts=` clause on its command
++	  line (CONFIG_CMDLINE_PARTITION, see
++	  Documentation/block/cmdline-partition.rst). Say Y here to read the
++	  same clause in U-Boot, so that both halves of the boot get their
++	  layout from one string.
++
++	  The clause is taken from the `blkdevparts` environment variable, or
++	  from a `blkdevparts=` token in `bootargs`, or from
++	  CMDLINE_PARTITION_DEFAULT, in that order.
++
++config CMDLINE_PARTITION_DEFAULT
++	string "Built-in blkdevparts= clause"
++	depends on CMDLINE_PARTITION
++	default ""
++	help
++	  Layout to fall back on when neither the environment nor `bootargs`
++	  carries one, in the format described by
++	  Documentation/block/cmdline-partition.rst. A leading "blkdevparts="
++	  is optional. Leave empty to require the environment to supply it.
++
++config CMDLINE_PARTITION_MAX
++	int "Maximum number of blkdevparts= partitions"
++	depends on CMDLINE_PARTITION
++	default 32
++	help
++	  Upper bound on the partitions read out of one blkdevparts= clause.
++
+ config EFI_PARTITION
+ 	bool "Enable EFI GPT partition table"
+ 	default y if BOOT_DEFAULTS
+diff --git a/disk/Makefile b/disk/Makefile
+index 2248a659..ad3f9fcc 100644
+--- a/disk/Makefile
++++ b/disk/Makefile
+@@ -16,5 +16,6 @@ obj-$(CONFIG_$(PHASE_)MAC_PARTITION)   += part_mac.o
+ obj-$(CONFIG_$(PHASE_)DOS_PARTITION)   += part_dos.o
+ obj-$(CONFIG_$(PHASE_)ISO_PARTITION)   += part_iso.o
+ obj-$(CONFIG_$(PHASE_)AMIGA_PARTITION) += part_amiga.o
++obj-$(CONFIG_$(PHASE_)CMDLINE_PARTITION) += part_cmdline.o
+ obj-$(CONFIG_$(PHASE_)EFI_PARTITION)   += part_efi.o
+ endif
+diff --git a/disk/part_cmdline.c b/disk/part_cmdline.c
+new file mode 100644
+index 00000000..a06c7571
+--- /dev/null
++++ b/disk/part_cmdline.c
+@@ -0,0 +1,308 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Partitions described by a kernel command line, not by an on-disk table.
++ *
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * Some SoCs put a boot ROM's first-stage loader at byte 0 of the boot medium,
++ * which leaves nowhere for an MBR or a GPT to live: LBA 0 and LBA 1..33 are
++ * both inside the loader image. Linux has carried a convention for that case
++ * since 3.17 -- CONFIG_CMDLINE_PARTITION, Documentation/block/cmdline-
++ * partition.rst -- where the layout is a `blkdevparts=` clause on the kernel
++ * command line. This driver reads the same clause, so U-Boot and Linux see one
++ * table from one string instead of two hand-copied ones.
++ *
++ *   blkdevparts=<blkdev-def>[;<blkdev-def>]
++ *   <blkdev-def> := <blkdev-id>:<partdef>[,<partdef>]
++ *   <partdef>    := <size>[@<offset>](<name>)[ro]
++ *
++ * <size> and <offset> are byte counts with an optional K/M/G suffix; <size>
++ * may be `-`, meaning the rest of the device, which is only legal in the last
++ * <partdef>. An omitted <offset> continues from the end of the previous
++ * partition. Partition numbering is 1-based and matches Linux's.
++ *
++ * The clause is taken from, in order: the `blkdevparts` environment variable,
++ * a `blkdevparts=` token inside `bootargs`, and CONFIG_CMDLINE_PARTITION_
++ * DEFAULT. The environment first is what lets a running system change the
++ * layout with fw_setenv and have both halves of the boot agree on the change.
++ */
++
++#include <blk.h>
++#include <env.h>
++#include <log.h>
++#include <part.h>
++#include <vsprintf.h>
++#include <linux/ctype.h>
++#include <linux/string.h>
++
++#define BLKDEVPARTS_TOKEN	"blkdevparts="
++
++/**
++ * cmdline_parse_size() - read a byte count with an optional K/M/G suffix
++ *
++ * @str:	string to parse
++ * @endp:	updated to the first character not consumed
++ * Return: the value, or 0 with @endp unmoved if @str does not start a number
++ */
++static u64 cmdline_parse_size(const char *str, char **endp)
++{
++	u64 val;
++
++	val = simple_strtoull(str, endp, 0);
++	if (*endp == str)
++		return 0;
++
++	switch (**endp) {
++	case 'G':
++	case 'g':
++		val <<= 30;
++		(*endp)++;
++		break;
++	case 'M':
++	case 'm':
++		val <<= 20;
++		(*endp)++;
++		break;
++	case 'K':
++	case 'k':
++		val <<= 10;
++		(*endp)++;
++		break;
++	default:
++		break;
++	}
++
++	/* Linux accepts, and this ignores, an "iB" after the suffix. */
++	if ((*endp)[0] == 'i' && (*endp)[1] == 'B')
++		*endp += 2;
++
++	return val;
++}
++
++/**
++ * cmdline_get_string() - find the blkdevparts clause to use
++ *
++ * Return: a pointer just past "blkdevparts=", or NULL if there is no clause
++ */
++static const char *cmdline_get_string(void)
++{
++	const char *s;
++
++	s = env_get("blkdevparts");
++	if (s) {
++		if (!strncmp(s, BLKDEVPARTS_TOKEN, strlen(BLKDEVPARTS_TOKEN)))
++			s += strlen(BLKDEVPARTS_TOKEN);
++		return s;
++	}
++
++	s = env_get("bootargs");
++	if (s) {
++		const char *hit = strstr(s, BLKDEVPARTS_TOKEN);
++
++		/* Only at the start of a word, so "foo_blkdevparts=" misses. */
++		if (hit && (hit == s || isspace(hit[-1])))
++			return hit + strlen(BLKDEVPARTS_TOKEN);
++	}
++
++	s = CONFIG_CMDLINE_PARTITION_DEFAULT;
++	if (*s) {
++		if (!strncmp(s, BLKDEVPARTS_TOKEN, strlen(BLKDEVPARTS_TOKEN)))
++			s += strlen(BLKDEVPARTS_TOKEN);
++		return s;
++	}
++
++	return NULL;
++}
++
++/**
++ * cmdline_dev_matches() - does this blkdev-id name @desc?
++ *
++ * @desc:	block device to test
++ * @id:		blkdev-id from the clause
++ * @len:	length of @id
++ *
++ * The clause is written for Linux, so the ids in it are Linux device names.
++ * Only the ones this driver can map unambiguously to a U-Boot block device are
++ * accepted; anything else is left to another partition driver.
++ *
++ * Return: true if @id names @desc
++ */
++static bool cmdline_dev_matches(struct blk_desc *desc, const char *id, int len)
++{
++	char name[32];
++	int n;
++
++	switch (desc->uclass_id) {
++	case UCLASS_MMC:
++		n = snprintf(name, sizeof(name), "mmcblk%d", desc->devnum);
++		break;
++	default:
++		return false;
++	}
++
++	return n > 0 && n == len && !strncmp(name, id, len);
++}
++
++/**
++ * cmdline_find_dev() - find this device's partition list in the clause
++ *
++ * @desc:	block device to look for
++ * Return: a pointer to the first <partdef>, or NULL
++ */
++static const char *cmdline_find_dev(struct blk_desc *desc)
++{
++	const char *s = cmdline_get_string();
++
++	while (s && *s) {
++		const char *colon = strchr(s, ':');
++		const char *semi;
++
++		if (!colon)
++			return NULL;
++
++		if (cmdline_dev_matches(desc, s, colon - s))
++			return colon + 1;
++
++		semi = strchr(colon, ';');
++		if (!semi)
++			return NULL;
++		s = semi + 1;
++	}
++
++	return NULL;
++}
++
++/**
++ * cmdline_walk() - walk the partition list, stopping at partition @want
++ *
++ * @desc:	block device
++ * @want:	1-based partition to return, or 0 to just count them
++ * @info:	filled in when @want is found; may be NULL
++ * Return: the number of partitions walked, or -1 on a malformed clause
++ */
++static int cmdline_walk(struct blk_desc *desc, int want,
++			struct disk_partition *info)
++{
++	const char *s = cmdline_find_dev(desc);
++	u64 offset = 0;
++	int part = 0;
++
++	if (!s)
++		return -1;
++
++	while (*s) {
++		u64 size;
++		char *end;
++		const char *name;
++		int name_len;
++
++		if (*s == '-') {
++			size = 0;	/* rest of the device */
++			end = (char *)s + 1;
++		} else {
++			size = cmdline_parse_size(s, &end);
++			if (end == s || !size)
++				return -1;
++		}
++
++		if (*end == '@') {
++			offset = cmdline_parse_size(end + 1, &end);
++			if (*end != '(')
++				return -1;
++		}
++
++		if (*end != '(')
++			return -1;
++
++		name = end + 1;
++		end = strchr(name, ')');
++		if (!end)
++			return -1;
++		name_len = end - name;
++		end++;
++
++		if (!strncmp(end, "ro", 2))
++			end += 2;
++
++		part++;
++
++		if (want == part && info) {
++			lbaint_t blksz = desc->blksz ? desc->blksz : 512;
++
++			memset(info, 0, sizeof(*info));
++			info->blksz = blksz;
++			info->start = offset / blksz;
++			info->size = size ? size / blksz :
++				     (desc->lba > info->start ?
++				      desc->lba - info->start : 0);
++			strlcpy((char *)info->name, name,
++				min_t(size_t, sizeof(info->name),
++				      (size_t)name_len + 1));
++			strcpy((char *)info->type, "U-Boot");
++		}
++
++		offset += size;
++
++		if (*end == ',') {
++			s = end + 1;
++			continue;
++		}
++		if (!*end || *end == ';' || isspace(*end))
++			break;
++
++		return -1;
++	}
++
++	return part;
++}
++
++static int part_test_cmdline(struct blk_desc *desc)
++{
++	int n = cmdline_walk(desc, 0, NULL);
++
++	if (n <= 0) {
++		log_debug("no blkdevparts entry for this device\n");
++		return -1;
++	}
++
++	return 0;
++}
++
++static int part_get_info_cmdline(struct blk_desc *desc, int part,
++				 struct disk_partition *info)
++{
++	int n;
++
++	if (part < 1)
++		return -1;
++
++	n = cmdline_walk(desc, part, info);
++	if (n < part)
++		return -1;
++
++	return 0;
++}
++
++static void part_print_cmdline(struct blk_desc *desc)
++{
++	struct disk_partition info;
++	int part;
++
++	printf("Part\tStart LBA\tSectors\t\tName\n");
++
++	for (part = 1; part <= CONFIG_CMDLINE_PARTITION_MAX; part++) {
++		if (part_get_info_cmdline(desc, part, &info))
++			break;
++		printf("%4d\t" LBAF "\t" LBAF "\t%s\n",
++		       part, info.start, info.size, info.name);
++	}
++}
++
++U_BOOT_PART_TYPE(cmdline) = {
++	.name		= "CMDLINE",
++	.part_type	= PART_TYPE_CMDLINE,
++	.max_entries	= CONFIG_CMDLINE_PARTITION_MAX,
++	.get_info	= part_get_info_cmdline,
++	.print		= part_print_cmdline,
++	.test		= part_test_cmdline,
++};
+diff --git a/include/part.h b/include/part.h
+index 15daacd7..caafbbd8 100644
+--- a/include/part.h
++++ b/include/part.h
+@@ -30,6 +30,7 @@ struct block_drvr {
+ #define PART_TYPE_EFI		0x05
+ #define PART_TYPE_MTD		0x06
+ #define PART_TYPE_UBI		0x07
++#define PART_TYPE_CMDLINE	0x08
+ 
+ /* maximum number of partition entries supported by search */
+ #define DOS_ENTRY_NUMBERS	8
+-- 
+2.55.0
+
