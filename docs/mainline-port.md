@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer fails because **U-Boot drives a 1.8 V eMMC at 3.3 V**: `sdhci_cdns_set_control_reg()` gates the only writer of `SDHCI_CTRL_VDD_180` behind `IS_SD()`. Fix in the tree (patches 0007, 0008); the last step, reaching 1.8 V without HS200 tuning, is open. Thirty-four runs. See "What exists now (rung 2)" through "(rung 2g)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer still fails. Five upstream U-Boot bugs found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure); the signal voltage was necessary but not sufficient. Measured: the SPL leaves `SRS15 = 0`, so 1.8 V is Linux's own switch and rung 3 cannot inherit it. Thirty-seven runs. See "What exists now (rung 2)" through "(rung 2h)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3409,7 +3409,7 @@ recorded. `uboot_b` holds the rung-2g build, `/boot` the payload with
 `boot.panic_on_fail panic=10`, p7 the two variables `arm-slotb.sh` sets, and
 `/root/rung2/restore.sh` undoes all three.
 
-### What exists now (rung 2h, 2026-09-08) — 1.8 V WITHOUT HS200, READY FOR HARDWARE
+### Rung 2h, built (2026-09-08) — 1.8 V without HS200, the patches
 
 Built and checked, **not yet run** — the board was dark when this was written.
 Rung 2g found the cause (U-Boot drives a 1.8 V eMMC at 3.3 V); this is the fix
@@ -3489,3 +3489,75 @@ Oracle, in order: no `Transfer data timeout` in the console buffer; `SRS15`
 in the probe line showing whether the firmware had `VDD_180`; `extlinux.conf`
 read; the appliance on Ethernet with `SMC Calling Convention v1.5`;
 `/proc/cmdline` equal to the `APPEND`; register bits 28+29 plus Linux's.
+
+### What exists now (rung 2h, 2026-09-08) — THE SPL DOES NOT SET VDD_180
+
+Three slot-B runs. The headline is a fact rung 3 needs, and it is now measured
+rather than inferred. The eMMC data path is still not fixed. Console excerpts:
+[`uboot-console-vqmmc-20260908.txt`](reference/mainline/uboot-mainline-20260908/uboot-console-vqmmc-20260908.txt).
+
+#### `SRS15 = 0x00000000` — the first-stage loader leaves 3.3 V
+
+Read at probe, before U-Boot touches either controller:
+
+```
+mmc@1b40000:  firmware HRS00 00010000 HRS02 00030000 HRS06 00000006 SRS15 00000000
+mmc@104e0000: firmware HRS00 00010000 HRS02 00030000 HRS06 00000000 SRS15 00000000
+```
+
+`HOST_CONTROL2` is zero on both, so `SDHCI_CTRL_VDD_180` is clear. **The 1.8 V
+seen on the running Linux is Linux's own switch, not something inherited from
+the boot firmware** — which settles the question rung 2h opened and corrects
+the last of rung 2f's inferences. Consequence for **rung 3**: promoting mainline
+U-Boot to slot A means the 1.8 V switch has to happen *in U-Boot*, on the very
+boot that reads the kernel. There is no firmware state to lean on.
+
+#### Patch 0010 fires, and patch 0011 is why it needed to
+
+Run 1 printed six `failed to set vqmmc-voltage to 1.8V`. That is the fix
+working as far as it goes: the core *did* ask for 1.8 V (so `mmc_set_initial_state()`
+took the new branch) and `sdhci_set_voltage()`'s 1.8 V arm *did* run. It then
+failed inside `regulator_set_value()` and returned before writing the bit,
+because `fixed_regulator_ops` provides `get_value`, `get_current`, `get_enable`
+and `set_enable` — and **no `set_value` at all**. Asking a fixed rail for the
+level it is permanently sitting at is an error.
+
+**Patch 0011** checks the current value first and treats "already there" as
+success, the way Linux's `mmc_regulator_set_vqmmc()` does. Run 2: the errors
+are gone, the voltage path completes.
+
+`Core: 17 devices, 12 uclasses` (was 16/11) confirms the regulator bound.
+
+#### And the data path still fails
+
+Run 2 still ends in `Transfer data timeout` and `fs_devread read error`, slot
+register `0x90000014`. **So the signal voltage was a real defect on the way —
+three genuine upstream bugs, all now fixed — and it is not sufficient on its
+own.** State that plainly: rung 2g's diagnosis identified a necessary
+condition, not the whole cause.
+
+What is still owed is the measurement run 3 was meant to take: what
+`HOST_CONTROL`, `CLOCK_CONTROL` and `HOST_CONTROL2` actually hold once U-Boot
+has configured the bus, diffed against the working Linux values `0x34` /
+`0x0207` / `0x3008`. In particular it is still unconfirmed that
+`SDHCI_CTRL_VDD_180` ends up set.
+
+#### Run 3 went dark, and the logging is the suspect
+
+Run 3 added a register log inside `sdhci_cdns_set_control_reg()`, called on
+every `set_ios`. It never came back — no self-recovery in thirteen minutes.
+Runs 2 and 3 differ only by that `printf`, and run 2 returned in 76 s.
+
+**Take that measurement somewhere colder**: once, from `misc_init_r` or
+`board_late_init`, after the environment read has already failed — not from a
+hot path the MMC core calls repeatedly. The logging is removed; the tree
+carries run 2's image, md5 `1cf4d8bbc4d9febdeca8f47b9ba27f30`, 184 536 bytes,
+which is byte-identical to the one that ran clean.
+
+#### Device state — needs a power cycle
+
+A power cycle lands on slot A; the SPL consumed `SLOTB_BOOTABLE` and the slot
+register clears on power loss. Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs
+have never been written in any rung. `uboot_b` holds run 3's image, `/boot` the
+payload with `boot.panic_on_fail panic=10`, p7 the two variables
+`arm-slotb.sh` sets, and `/root/rung2/restore.sh` undoes all three.

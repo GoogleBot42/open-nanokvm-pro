@@ -1,0 +1,79 @@
+Rung 2h. Three slot-B runs, read out of the pre-console buffer at 0x480E8000.
+
+======================================================================
+Run 1: patches 0009 + 0010 + the fixed 1.8 V vqmmc regulator.
+       Slot register 0x90000015 (bit 28 preboot, bit 31 nothing-booted).
+======================================================================
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  17 devices, 12 uclasses, devicetree: separate
+MMC:   mmc@1b40000: firmware HRS00 00010000 HRS02 00030000 HRS06 00000006 SRS15 00000000
+mmc@104e0000: firmware HRS00 00010000 HRS02 00030000 HRS06 00000000 SRS15 00000000
+mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC... failed to set vqmmc-voltage to 1.8V
+failed to set vqmmc-voltage to 1.8V
+failed to set vqmmc-voltage to 1.8V
+failed to set vqmmc-voltage to 1.8V
+failed to set vqmmc-voltage to 1.8V
+failed to set vqmmc-voltage to 1.8V
+Transfer data timeout
+*** Warning - !read failed, using default environment
+...
+ ** fs_devread read error - block
+Can't set block device
+resetting ...
+
+Three things in that:
+
+* SRS15 = 0x00000000 ON BOTH CONTROLLERS, read before U-Boot touches them.
+  THE FIRST-STAGE LOADER DOES NOT SET SDHCI_CTRL_VDD_180. The 1.8 V seen on
+  the running Linux is Linux's own switch, not something inherited. This is
+  the answer rung 3 needs: promoting mainline U-Boot to slot A means the
+  1.8 V switch has to happen in U-Boot, on the boot that reads the kernel.
+
+* "Core: 17 devices, 12 uclasses" -- was 16/11 before. The fixed regulator
+  bound.
+
+* Six "failed to set vqmmc-voltage to 1.8V". Patch 0010 worked: the core did
+  ask for 1.8 V, and sdhci_set_voltage()'s MMC_SIGNAL_VOLTAGE_180 arm did run.
+  It then failed inside regulator_set_value() and returned before writing the
+  bit -- because fixed_regulator_ops provides get_value, get_current,
+  get_enable and set_enable, and no set_value at all. Asking a fixed rail for
+  the level it is permanently sitting at is an error.
+
+======================================================================
+Run 2: + patch 0011 (a supply already at the target is not a failure).
+       Slot register 0x90000014.  Round trip 76 s.
+======================================================================
+
+Core:  17 devices, 12 uclasses, devicetree: separate
+MMC:   mmc@1b40000: firmware HRS00 00010000 HRS02 00030000 HRS06 00000006 SRS15 00000000
+mmc@104e0000: firmware HRS00 00010000 HRS02 00030000 HRS06 00000000 SRS15 00000000
+mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC... Transfer data timeout
+*** Warning - !read failed, using default environment
+...
+ ** fs_devread read error - block
+Can't set block device
+resetting ...
+
+The regulator errors are gone -- 0011 does what it says, and the voltage path
+now runs to completion. THE DATA TRANSFER STILL FAILS. So the signal voltage
+was a real defect on the way, and it is not sufficient on its own.
+
+======================================================================
+Run 3: + a per-set_ios register log, to see the resulting bus state.
+       WENT DARK. No self-recovery in 13 minutes of bounded polling.
+======================================================================
+
+Run 2 and run 3 differ only by that printf, and run 2 came back in 76 s, so
+the logging is the suspect. It is removed; the tree carries run 2's image,
+md5 1cf4d8bbc4d9febdeca8f47b9ba27f30, 184536 bytes.
+
+The measurement it was meant to take is still owed: what HOST_CONTROL,
+CLOCK_CONTROL and HOST_CONTROL2 actually hold once U-Boot has configured the
+bus, to diff against the working Linux values 0x34 / 0x0207 / 0x3008. Take it
+somewhere safer than a hot path called on every set_ios -- once, from
+misc_init_r or board_late_init, after the environment read has already failed.
