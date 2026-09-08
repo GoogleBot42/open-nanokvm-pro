@@ -1,0 +1,131 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 00:00:00 -0600
+Subject: [PATCH] arm: axera: arm WDT0 from save_boot_params
+
+The NanoKVM-Pro has no reachable console: its UART is on hidden pads, so
+the only channels a failed boot leaves behind are a pre-console buffer in
+DRAM and a few spare bits in an SoC register, and both die with the power
+cycle that is the only way to recover a hung board. A hang therefore
+banks nothing at all.
+
+A running watchdog turns a hang into a chip reset, which both channels
+survive. Doing it from C is not early enough: an arm in arch_cpu_init(),
+the first initcall a board may own, still leaves setup_mon_len(),
+fdtdec_setup() and initf_malloc() ahead of it, and hangs were observed
+outliving a 300 s reload from there. save_boot_params is the first thing
+U-Boot runs.
+
+Everything the block needs from outside is already in place when the
+first-stage loader hands over -- the counter gate is set before every
+stage jump, the APB gate and both resets come out of chip reset released,
+and COMM_ABORT_CFG carries the WDT0 enable -- so this is a handful of
+MMIO writes with no clock framework and no C runtime behind it. It writes
+the periph controller set/clear aliases anyway, because they are
+idempotent and it removes the dependency on which loader ran.
+
+TORR counts 64Ki ticks of the 24 MHz source per stage and the block
+resets on the second expiry, so 0xD693 is 300 s -- long enough for a
+working boot to reach userspace and for the kernel ax630c-wdt to adopt
+the running dog.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ arch/arm/mach-axera/Makefile   |  1 +
+ arch/arm/mach-axera/lowlevel.S | 78 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 79 insertions(+)
+
+diff --git a/arch/arm/mach-axera/Makefile b/arch/arm/mach-axera/Makefile
+--- a/arch/arm/mach-axera/Makefile
++++ b/arch/arm/mach-axera/Makefile
+@@ -4,2 +4,3 @@
+
+ obj-y += soc.o
++obj-y += lowlevel.o
+diff --git a/arch/arm/mach-axera/lowlevel.S b/arch/arm/mach-axera/lowlevel.S
+new file mode 100644
+index 00000000..11223344
+--- /dev/null
++++ b/arch/arm/mach-axera/lowlevel.S
+@@ -0,0 +1,81 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * Arm WDT0 at the first instruction U-Boot runs, so a hang anywhere after
++ * this point becomes a chip reset rather than a board somebody has to
++ * walk to. See the commit message for why it is this early.
++ *
++ * periph_clk 0x0487_0000, one set/clear alias pair per value word:
++ *   SW_RST3  clear 0xF4  bits 1,0  release arst then prst (1 = held)
++ *   CLK_EB0  set   0xB0  bit 14    the counter gate
++ *   CLK_EB3  set   0xC8  bit 19    the APB gate
++ *   CLK_MUX0 set   0xA8  bit 19    counter source = 24 MHz
++ *
++ * WDT0 0x0484_0000: EN +0x00, TORR +0x0C, TORR_LOAD +0x18, CRR +0x30.
++ * The TORR_LOAD and CRR strobes are level-sensitive across a clock-domain
++ * crossing, hence the counted spins; there is no timer here to delay on.
++ */
++
++#include <linux/linkage.h>
++
++#define AX630C_PERIPH		0x04870000
++#define AX630C_WDT0		0x04840000
++#define AX630C_WDT_TORR		0xd693
++#define AX630C_WDT_KICK		0x61696370
++
++ENTRY(save_boot_params)
++	/* Release the two resets, arst before prst. */
++	ldr	x9, =(AX630C_PERIPH + 0xf4)
++	mov	w10, #2
++	str	w10, [x9]
++	mov	w10, #1
++	str	w10, [x9]
++
++	/* Counter gate, then APB gate. */
++	ldr	x9, =(AX630C_PERIPH + 0xb0)
++	mov	w10, #0x4000
++	str	w10, [x9]
++	ldr	x9, =(AX630C_PERIPH + 0xc8)
++	mov	w10, #0x80000
++	str	w10, [x9]
++
++	/* Counter source: 24 MHz. */
++	ldr	x9, =(AX630C_PERIPH + 0xa8)
++	str	w10, [x9]
++
++	/* Stop the dog before reprogramming it. */
++	ldr	x9, =(AX630C_WDT0 + 0x00)
++	str	wzr, [x9]
++
++	/* Program the per-stage reload. */
++	ldr	x9, =(AX630C_WDT0 + 0x0c)
++	mov	w10, #AX630C_WDT_TORR
++	str	w10, [x9]
++
++	/* Strobe TORR_LOAD. */
++	ldr	x9, =(AX630C_WDT0 + 0x18)
++	mov	w10, #1
++	str	w10, [x9]
++	mov	w11, #2000
++1:	subs	w11, w11, #1
++	b.ne	1b
++	str	wzr, [x9]
++
++	/* Kick, so the reload takes effect. */
++	ldr	x9, =(AX630C_WDT0 + 0x30)
++	ldr	w10, =AX630C_WDT_KICK
++	str	w10, [x9]
++	mov	w11, #2000
++2:	subs	w11, w11, #1
++	b.ne	2b
++	str	wzr, [x9]
++	str	wzr, [x9]
++
++	/* Run. */
++	ldr	x9, =(AX630C_WDT0 + 0x00)
++	mov	w10, #1
++	str	w10, [x9]
++
++	b	save_boot_params_ret
++ENDPROC(save_boot_params)

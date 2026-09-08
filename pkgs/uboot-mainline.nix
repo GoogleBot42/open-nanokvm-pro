@@ -76,6 +76,7 @@ let
     ./uboot-mainline/patches/0013-mmc-sdhci-add-host-version-4-mode.patch
     ./uboot-mainline/patches/0014-mmc-sdhci-cadence-support-hs400-enhanced-strobe.patch
     ./uboot-mainline/patches/0015-mmc-sdhci-auto-cmd23-for-multi-block-in-v4-mode.patch
+    ./uboot-mainline/patches/0016-arm-axera-arm-wdt0-from-save_boot_params.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -804,7 +805,9 @@ let
     {
     	ALLOC_CACHE_ALIGN_BUFFER(u8, buf, 1024);
     	struct blk_desc *desc;
+    	struct mmc_cmd cmd;
     	struct mmc *mmc;
+    	int i, ret;
 
     	mmc = find_mmc_device(0);
     	if (!mmc) {
@@ -833,108 +836,36 @@ let
     	ax630c_try_read(desc, 0, 2, buf);
     	ax630c_try_read(desc, 0x2600, 1, buf);
     	ax630c_try_read(desc, 0x2600, 2, buf);
-    }
 
-    /*
-     * WDT0, armed from board_early_init_f() -- BEFORE relocation, and that
-     * placement is the whole point. A hang banks nothing on this board: the
-     * pre-console buffer and the slot register both die with the power cycle
-     * that is the only way to recover, so a dark round teaches nothing. A
-     * running watchdog turns a hang into a chip reset instead; slot B has
-     * already consumed its bootable bit, so the reset lands on slot A and
-     * Linux reads the buffer back. Rung 2j armed this from
-     * board_early_init_r() and a hung round still sat dark for ten minutes,
-     * which says the hangs happen earlier than that -- so it moves as early as
-     * C runs at all.
-     *
-     * Pre-relocation means NO STATICS (BSS overlays .rela.dyn on arm64) and no
-     * udelay() (the timer is not necessarily up yet); the TORR_LOAD and CRR
-     * strobes are level-sensitive across a clock-domain crossing, so they get
-     * a counted spin instead.
-     *
-     * The block needs four things outside itself, all of which the vendor SPL
-     * or chip reset already leave in place (docs/reference/mainline/
-     * wdt-model-20260906.md 7.1) -- written anyway, because they are idempotent
-     * alias writes and they remove the dependency on what ran before us:
-     *
-     *   periph_clk 0x0487_0000, one set/clear pair per value word
-     *     SW_RST3 clear 0xF4  bits 1,0  release arst then prst (1 = held)
-     *     CLK_EB0 set   0xB0  bit 14    AX630C_CLK_WDT0_EB, the counter gate
-     *     CLK_EB3 set   0xC8  bit 19    AX630C_PCLK_WDT0_EB, the APB gate
-     *     CLK_MUX0 set  0xA8  bit 19    AX630C_CLK_WDT0_SEL = 24 MHz source
-     *
-     * The fifth is COMM_ABORT_CFG bit 7 at 0x0234_00A8, which gates whether the
-     * expiry reaches the SoC at all. The SPL sets it (0x2C0) and bit 0 of that
-     * same word is a software chip reset, so it is read and printed, never
-     * written.
-     *
-     * TORR counts 64Ki counter ticks per stage and the block resets on the
-     * SECOND expiry, so the reload is half the timeout: 0xD693 at 24 MHz is
-     * 150 s a stage, 300 s to reset -- long enough for a working boot to reach
-     * userspace and for the kernel ax630c-wdt to adopt the running dog.
-     */
-    #define AX630C_PERIPH_CLK	0x04870000UL
-    #define AX630C_PERIPH_MUX0_SET	(AX630C_PERIPH_CLK + 0xa8)
-    #define AX630C_PERIPH_EB0_SET	(AX630C_PERIPH_CLK + 0xb0)
-    #define AX630C_PERIPH_EB3_SET	(AX630C_PERIPH_CLK + 0xc8)
-    #define AX630C_PERIPH_RST3_CLR	(AX630C_PERIPH_CLK + 0xf4)
+    	/*
+    	 * Rung 2m step 3. Every register either driver writes now matches, so
+    	 * measure the bus instead. Three questions, in rising order of risk:
+    	 *
+    	 *  - what are the DAT lines doing after the failed CMD18? PRESENT_STATE
+    	 *    bit 2 DAT_LINE_ACTIVE, bit 9 READ_TRANSFER_ACTIVE, bit 11
+    	 *    BUFFER_READ_ENABLE, and the level bits in [23:20] / [7:4].
+    	 *  - what does the CARD think? CMD13 SEND_STATUS: CURRENT_STATE 4 is
+    	 *    TRAN, meaning it never began; 5 is DATA, meaning it did and the
+    	 *    host never sampled it. That is the whole remaining fork.
+    	 * A third question -- did any word land in the buffer -- is NOT asked
+    	 * here. Reading BUFFER_DATA_PORT with nothing buffered wedges the AXI
+    	 * bus so hard that even a WDT0 chip reset does not land: measured
+    	 * 2026-09-08, seventeen minutes dark against a 300 s reload, and the
+    	 * console printed before it was lost to the power cycle that followed.
+    	 * If it is ever worth knowing, it belongs in a round of its own.
+    	 */
+    	for (i = 0; i < 6; i++)
+    		printf("post cmd18 present %08x int %08x\n",
+    		       readl((void *)(AX630C_EMMC_SRS + 0x24)),
+    		       readl((void *)(AX630C_EMMC_SRS + 0x30)));
 
-    #define AX630C_WDT0		0x04840000UL
-    #define AX630C_WDT_EN		(AX630C_WDT0 + 0x00)
-    #define AX630C_WDT_TORR		(AX630C_WDT0 + 0x0c)
-    #define AX630C_WDT_TORR_LOAD	(AX630C_WDT0 + 0x18)
-    #define AX630C_WDT_CRR		(AX630C_WDT0 + 0x30)
-    #define AX630C_WDT_CRR_KICK	0x61696370U
-    #define AX630C_WDT_TORR_300S	0xD693U
-
-    int board_early_init_f(void);
-
-    static void ax630c_wdt_pause(void)
-    {
-    	volatile unsigned int n;
-
-    	for (n = 0; n < 2000; n++)
-    		;
-    }
-
-    /*
-     * arch_cpu_init() is the earliest initcall in board_init_f that a board
-     * may own -- ahead of initf_dm() and board_early_init_f(), with only
-     * setup_mon_len(), fdtdec_setup() and initf_malloc() before it. Rung 2k
-     * armed the dog from board_early_init_f() and a hung round still outlived
-     * the 300 s reload, which places the hang earlier than that, so the arm
-     * moves as far forward as an initcall goes.
-     */
-    int arch_cpu_init(void)
-    {
-    	return board_early_init_f();
-    }
-
-    int board_early_init_f(void)
-    {
-    	/* Release the two resets, arst before prst, then the two gates. */
-    	writel(2, (void *)AX630C_PERIPH_RST3_CLR);
-    	writel(1, (void *)AX630C_PERIPH_RST3_CLR);
-    	writel(1 << 14, (void *)AX630C_PERIPH_EB0_SET);
-    	writel(1 << 19, (void *)AX630C_PERIPH_EB3_SET);
-    	writel(1 << 19, (void *)AX630C_PERIPH_MUX0_SET);
-
-    	/* Stop the dog before reprogramming it, as the kernel driver does. */
-    	writel(0, (void *)AX630C_WDT_EN);
-
-    	writel(AX630C_WDT_TORR_300S, (void *)AX630C_WDT_TORR);
-    	writel(1, (void *)AX630C_WDT_TORR_LOAD);
-    	ax630c_wdt_pause();
-    	writel(0, (void *)AX630C_WDT_TORR_LOAD);
-
-    	writel(AX630C_WDT_CRR_KICK, (void *)AX630C_WDT_CRR);
-    	ax630c_wdt_pause();
-    	writel(0, (void *)AX630C_WDT_CRR);
-    	writel(0, (void *)AX630C_WDT_CRR);
-
-    	writel(1, (void *)AX630C_WDT_EN);
-
-    	return 0;
+    	cmd.cmdidx = MMC_CMD_SEND_STATUS;
+    	cmd.cmdarg = mmc->rca << 16;
+    	cmd.resp_type = MMC_RSP_R1;
+    	ret = mmc_send_cmd(mmc, &cmd, NULL);
+    	printf("post cmd18 cmd13 %d status %08x state %lu\n",
+    	       ret, cmd.response[0],
+    	       (unsigned long)((cmd.response[0] >> 9) & 0xf));
     }
 
 
@@ -954,7 +885,6 @@ let
     }'
 
     echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
-    echo 'CONFIG_BOARD_EARLY_INIT_F=y' >> configs/${defconfig}
 
     # Rung 2j: the tuning sweep, printed -- the measurement that excluded the
     # sampling phase as a cause of the eMMC data failure. The sweep already

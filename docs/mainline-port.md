@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and eMMC **multi-block** transfers fail: **single-block reads pass at any address, two-block reads fail at any address**. **Ten** upstream U-Boot bugs/gaps found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus, no Host Version 4 mode at all, HS400ES defined-but-unreachable, and no Auto CMD23). Excluded by measurement: sampling phase (34-wide tuning window), base clock, PHY delays, bus width, signal voltage, addressing, transfer size, every DMA engine (ADMA2 32/96-bit, SDMA, PIO), ADMA chunking, every stop convention (none/CMD12/CMD23), every bus mode (HS, HS200, HS400ES incl. the loader's own `HRS06 = 6`) and both host modes (v3, v4 -- controller is spec 4.00). Hangs are self-recovering since rung 2k: WDT0 arms from `arch_cpu_init()`, hardware-proven. What is left is HC2 bit 13 with the 128-bit v4 ADMA2 descriptor, which U-Boot does not implement. Sixty-one runs. See "What exists now (rung 2)" through "(rung 2l)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and eMMC **multi-block** transfers fail: **single-block reads pass at any address, two-block reads fail at any address**. **Ten** upstream U-Boot bugs/gaps found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus, no Host Version 4 mode at all, HS400ES defined-but-unreachable, and no Auto CMD23). Excluded by measurement: sampling phase (34-wide tuning window), base clock, PHY delays, bus width, signal voltage, addressing, transfer size, **every data path (ADMA2 32/96-bit, SDMA and PIO all fail identically)**, ADMA chunking, every stop convention (none/CMD12/CMD23), every bus mode (HS, HS200, HS400ES incl. the loader's own `HRS06 = 6`) and both host modes (v3, v4 -- controller is spec 4.00). Hangs are self-recovering since rung 2m: WDT0 arms from `save_boot_params`, the first instruction U-Boot runs, hardware-proven (deliberate hang at that instruction, back in 97 s unaided). Next measurement is `PRESENT_STATE` + CMD13 after the failed CMD18 -- does the card think it is in TRAN or DATA. Sixty-eight runs. See "What exists now (rung 2)" through "(rung 2m)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3898,5 +3898,55 @@ sets only bit 12. That is rung 2m, and it is the last item on the match-Linux
 list.
 
 Device left on slot A, register `0x00000015`, `uboot_b` restored byte-for-byte
+(p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back
+to `ver` alone, `checkboot` `Result=success`, `nanokvm` active, web 200.
+
+### What exists now (rung 2m, 2026-09-08) — the watchdog reaches the first instruction, and PIO retires the data path
+
+Seven rounds, four of them wasted by a self-inflicted bug. Detail in
+[`RUNG2M.md`](reference/mainline/uboot-mainline-20260908/RUNG2M.md), traces in
+[`rung2m-pio-20260908.txt`](reference/mainline/uboot-mainline-20260908/rung2m-pio-20260908.txt).
+
+**WDT0 now arms from `save_boot_params`** (`0016`, `arch/arm/mach-axera/lowlevel.S`)
+— the weak symbol `reset:` branches to as the very first instruction U-Boot
+runs. Nine MMIO writes, no C runtime, no stack, no timer; the two
+level-sensitive strobes get counted spins. Proven with a deliberate `b .`
+immediately after the arm: **the board recovered itself 97 s after the reboot,
+no power cycle**, pre-console buffer correctly empty. It has since rescued three
+real hangs, one timed at 335 s against the 300 s reload. A dark round now costs
+two minutes instead of a human.
+
+**`patch` silently truncates a hunk to its declared line count.** The
+`lowlevel.S` hunk said 78 lines for an 81-line body, so `b save_boot_params_ret`
+and `ENDPROC` were never applied and U-Boot ran off the end of the routine into
+its own literal pool. It armed the watchdog perfectly on the way past, so every
+round looked like the familiar intermittent hang — empty buffer, no milestone
+bits, recovery at exactly the reload. Four rounds went to PIO and to bad luck
+before a disassembly of the built image showed 36 instructions and then
+`61696370` where the branch belonged. **A wrong hunk count is not a build error;
+verify the built artefact whenever a patch's tail is load-bearing.**
+
+**PIO fails multi-block, so the data path is excluded.** With both
+`MMC_SDHCI_ADMA` and `MMC_SDHCI_SDMA` off (verified absent from the generated
+config) and transfer-mode words `0x0012` / `0x003a` carrying no `SDHCI_TRNS_DMA`
+bit, single-block reads pass at LBA 0 and 0x2600 and two-block reads fail at
+both with `DATA_TIMEOUT` — identical to ADMA2 32-bit, ADMA2 96-bit and SDMA.
+Every data path the driver has now behaves the same, which also retires the v4
+64-bit-descriptor work before it was written.
+
+**A new hard trap: reading `SDHCI_BUFFER_DATA_PORT` with nothing buffered wedges
+the AXI bus past a watchdog reset.** Seventeen minutes dark against a 300 s
+reload, recovered only by cutting power — which took the console, and with it
+the `PRESENT_STATE` and CMD13 measurements that had already printed in the same
+round. A speculative poke belongs in a round of its own, after the safe
+measurements are banked; putting it last in the same round looks careful and is
+not, because everything upstream of it shares its fate.
+
+Nothing in the host's programming model now distinguishes the passing case from
+the failing one. The next measurement is the unfinished half: `PRESENT_STATE`
+after the failed CMD18, and CMD13 to the card — TRAN means it never began, DATA
+means it began and the host never sampled it.
+
+Device left on slot A, register `0x00000014`, `uboot_b` restored byte-for-byte
 (p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back
 to `ver` alone, `checkboot` `Result=success`, `nanokvm` active, web 200.

@@ -1,0 +1,87 @@
+Rung 2m (#89), 2026-09-08. Read from the CONFIG_PRE_CONSOLE_BUFFER at
+0x480e8000 after the board returned to slot A.
+
+===========================================================================
+ROUND 1 -- watchdog proof, from save_boot_params. TORR 0x2AEA (60 s), with a
+deliberate "b ." immediately after the arm: a hang at U-Boot's FIRST
+instruction. Image b50eb38b7f7200b283e4a2965e3074ea.
+===========================================================================
+reboot command issued   t = 1788899805
+SSH answered            t = 1788899902     (97 s)
+slot register           0x00000015
+pre-console buffer      EMPTY (0 lines) -- correct, nothing had printed yet
+
+No power cycle. The board recovered itself from a hang at the first
+instruction of U-Boot.
+
+===========================================================================
+ROUNDS 2-5 -- INVALID. A truncated patch hunk, not the changes under test.
+===========================================================================
+The lowlevel.S hunk declared "@@ -0,0 +1,78 @@" for an 81-line body, so patch
+dropped the last three lines -- including "b save_boot_params_ret". U-Boot fell
+off the end of the arm routine into its own literal pool.
+
+Disassembly of the built image, function at 0x5c0024f0 (file offset 0x20f0):
+
+  002160 5280fa0b 7100056b 54ffffe1 b900013f
+  002170 b900013f 580001a9 5280002a b900012a
+  002180 61696370 00000000 048700f4 00000000
+                  ^ literal pool where the branch should be
+
+After correcting the count to 81:
+
+  002170 b900013f 580001a9 5280002a b900012a
+  002180 17fff7ab 61696370
+         ^ B #-0x2154 -> 0x5c00042c
+
+  nm: 000000005c0024f0 T save_boot_params
+      000000005c00042c T save_boot_params_ret
+
+Symptom in all four rounds: slot register 0x00000015 with no milestone bits,
+pre-console buffer empty, recovery at 335 s and 337 s -- i.e. the 300 s reload
+plus boot. The watchdog worked perfectly; it was rescuing a board broken by the
+same patch that armed it. Two of these rounds were PIO and two were controls;
+none of them measured what it was meant to.
+
+===========================================================================
+ROUND 6 -- PIO, with the hunk fixed. Image 1961b64d25bdec4fe04e36a2823a2935,
+CONFIG_MMC_SDHCI_ADMA and CONFIG_MMC_SDHCI_SDMA both absent from the
+generated config.
+===========================================================================
+slot register 0x90000014, 65 lines of console.
+
+Loading Environment from MMC... Transfer data timeout
+*** Warning - !read failed, using default environment
+HRS 10=00000000 14=00000000 18=00000006 1c=00000000      HRS06 mode 6 = HS400ES
+WDT en=00000001 torr=0000d693 ccvr=c7933dca abort=000002c0
+read probe: re-init 0
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 12 bmax 65535
+read lba 00000000 cnt 1 -> 1 cmd 113a0012 arg 00000000 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00000000 cnt 2 -> 0 cmd 123a003a arg 00000000 resp 00000900 stat 00108000
+read lba 00002600 cnt 1 -> 1 cmd 113a0012 arg 00002600 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00002600 cnt 2 -> 0 cmd 123a003a arg 00002600 resp 00000900 stat 00108000
+
+  cmd 113a0012  CMD17, mode 0x0012 = BLK_CNT_EN | READ
+  cmd 123a003a  CMD18, mode 0x003a = BLK_CNT_EN | AUTO_CMD23 | READ | MULTI
+
+  Neither word has bit 0 SDHCI_TRNS_DMA: this is the PIO path.
+
+  Single block passes at both addresses. Two blocks fails at both, with
+  ERROR_INTERRUPT + DATA_TIMEOUT_ERR. Identical to ADMA2 32-bit, ADMA2 96-bit
+  and SDMA. The data path is excluded.
+
+===========================================================================
+ROUND 7 -- step 3, lost. Image 1500e31c0ea061bdbf8826a88df46a42.
+===========================================================================
+Added after the failed CMD18: six PRESENT_STATE samples, CMD13 SEND_STATUS,
+then a read of SDHCI_BUFFER_DATA_PORT (SRS 0x20).
+
+The board went dark and STAYED dark for seventeen minutes against a 300 s
+reload -- the buffer-port read wedges the AXI bus past the point where a WDT0
+chip reset lands. Recovered by cutting power, which destroyed the console and
+with it the two measurements that had already printed.
+
+The buffer-port read has been removed. The PRESENT_STATE and CMD13 half is
+kept and is the next round.
