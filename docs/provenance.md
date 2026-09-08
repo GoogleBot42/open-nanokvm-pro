@@ -90,28 +90,30 @@ a store path from it appears.
 | 7 | `env` | `uboot_env.bin` | `pkgs/uboot-env.nix` — `mkenvimage` over `pkgs/uboot-env.txt`, with `bootargs` lifted out of our own `u-boot.bin` |
 | 2 | `ddrinit` | `ddrinit_…_signed.bin` | `pkgs/boot.nix` |
 | 3/4 | `atf` / `atf_b` | `atf_bl31_signed.bin`, `atf_b_bl31_signed.bin` | `pkgs/boot.nix` (TF-A 2.7) |
-| 5/6 | `uboot` / `uboot_b` | `u-boot_signed.bin`, `u-boot_b_signed.bin` | `pkgs/boot.nix` (U-Boot 2020.04). **Carries one closed payload: the EIP-130 crypto-engine firmware (`cmd/axera/cipher/eip130_fw.h`, ~78 KB), linked in by `CONFIG_CMD_AXERA_CIPHER=y`; byte-verified present in `u-boot.bin` and `fdl2.bin` 2026-09-07, absent from SPL and OP-TEE. Nothing on the boot path calls it. Policy violation, removal tracked in #90.** |
+| 5/6 | `uboot` / `uboot_b` | `u-boot_signed.bin`, `u-boot_b_signed.bin` | `pkgs/boot.nix` (U-Boot 2020.04). **Blob-free since #90 (2026-09-08).** It used to carry the closed EIP-130 crypto-engine firmware (`cmd/axera/cipher/eip130_fw.h`, 19632 words = 78528 B), pulled in by `CONFIG_CMD_AXERA_CIPHER=y` + `CONFIG_AXERA_SECURE_BOOT=y`; both are now `is not set` in the defconfig patch. Nothing on any path we use called it — every call site is `#if defined(CONFIG_AXERA_SECURE_BOOT) && defined(CONFIG_CMD_AXERA_CIPHER)`, `update_verify_image()` has a `return 0` stub, and `axera_secboot_image_check()` returns 0 unless the `SECURE_BOOT_EN` efuse is burned (it is not on this board). `u-boot.bin` 1774909 → 1650957 B; the signed (ax_gzip'd) partition 649688 → 542728 B. Asserted at build. |
 | 8/9 | `logo` / `logo_b` | `logo.bmp`, `logo_b.bmp` | `pkgs/logo.nix` — generated 800×480 24-bpp BMP |
 | 10/11 | `optee` / `optee_b` | `optee_signed.bin`, `optee_b_signed.bin` | `pkgs/boot.nix` (OP-TEE 3.21) |
 | 12/13 | `dtb` / `dtb_b` | `…_signed.dtb`, `…_b_signed.dtb` | `dts/` → `pkgs/dtb-mainline.nix` → `pkgs/slot-image.nix` |
 | 14/15 | `kernel` / `kernel_b` | `kernel.bin`, `kernel_b.bin` | mainline Linux 7.1.3 + the NixOS stage-1 initrd (`pkgs/kernel-mainline.nix`) |
 | 16 | `boot` | `bootfs.fat32` | `pkgs/bootfs.nix` — FAT32 carrying `ver` |
 | 17 | `rootfs` | `nixos_rootfs_sparse.ext4` | `nixos/appliance.nix` → `nixos/lib/appliance-artifacts.nix` |
-| 1 | `spl` | `spl_…_signed.bin` | `pkgs/boot.nix` (written last, deliberately) |
+| 1 | `spl` | `spl_…_signed.bin` | `pkgs/boot.nix` (written last, deliberately). **The one closed payload still on the eMMC: the vendor sign tool splices `build/tools/imgsign/eip_ax620e.bin` — byte-identical to the U-Boot `eip130_firmware[]` array, 78528 B — into the SPL *package* at `fw_flash_addr` 0xCC00 and `fw_bak_flash_addr` 0x2CC00, and the signed `spl_header` declares its `fw_size`/`fw_check_sum`.** That is a BootROM contract (`spl_AX620E_sign.py`, `-fw` in `boot/bl1/{spl,sd}/Makefile`), not a build option: the SPL code itself is clean (`spl_…nanokvm.bin` scans blob-free). Pinned by the #90 assertion at exactly those two offsets so it cannot grow silently; dropping it needs a BootROM experiment, and mainline U-Boot (#89) is the real exit. |
 
 **Flash-time only, never stored on the eMMC:**
 
 | Member | Source | Role |
 |---|---|---|
 | `fdl_…_signed.bin` (FDL1) | `pkgs/boot.nix` | pushed into BootROM RAM at `0x3000000` |
-| `fdl2_signed.bin` (FDL2) | `pkgs/boot.nix` | the programmer, at `0x5C000000` |
+| `fdl2_signed.bin` (FDL2) | `pkgs/boot.nix` | the programmer, at `0x5C000000`. FDL2 **is** our U-Boot build, so it inherited the EIP-130 blob and lost it in the same change (#90): 1775933 → 1651981 B. It never needed it — the download path integrity-checks with plain 32-bit sums (`fdl_engine.c` `fdl_checksum32`/`calc_image_checkSum`, `fdl_frame.c` `frame_checksum`), never with the crypto engine. |
 
-**`eip_ax620e.bin` is not in this image.** It is the one closed Axera member the
-vendor bundle carries (a download helper, flash-time only, never stored). The
-host flasher never reads it: `axdl-rs` writes only `Type=CODE` images and finds
-the FDLs by their `name` attribute, so an `EIP` entry is dead weight. Left out
-rather than shipped. `.#firmware-image` still passes the vendor's copy through,
-because that image is a rewrite of the vendor bundle.
+**`eip_ax620e.bin` is not in this image.** It is the standalone copy of the
+closed EIP-130 crypto-engine firmware the vendor bundle carries as its own
+member. The host flasher never reads it: `axdl-rs` writes only `Type=CODE`
+images and finds the FDLs by their `name` attribute, so an `EIP` entry is dead
+weight. Left out rather than shipped. `.#firmware-image` still passes the
+vendor's copy through, because that image is a rewrite of the vendor bundle.
+The same firmware still reaches the chip from inside the signed SPL package on
+both images (p1 above) — that one is the BootROM's, not ours.
 
 The rootfs closure is asserted blob-free at build time — any store path matching
 `axera-libs`, `ax-ko-blobs` or `libsns-dummy` fails the build
@@ -134,12 +136,13 @@ retained base rootfs. Listed here until explicitly approved or removed.
 
 ### Closed vendor code that executes today (beyond the approved ax libs/modules)
 
-None on the device. The aic8800 firmware moved to the approved table on
-2026-09-04; only the flash-time helper below is still undecided.
+No closed code executes on the A53s. The aic8800 firmware moved to the approved
+table on 2026-09-04; what is left below runs on a coprocessor or at flash time.
 
 | Component | Path | Runs when | Note |
 |---|---|---|---|
-| `eip_ax620e.bin` | kept vendor member of the `.axp` | flash-time (AXDL agent) | Proprietary Axera download/eFuse-init helper for the USB flasher; not a stored eMMC partition. |
+| **EIP-130 crypto-engine firmware** | spliced into `spl_…_signed.bin` (p1) by the vendor sign tool at `0xCC00` + `0x2CC00`; source `build/tools/imgsign/eip_ax620e.bin`, 78528 B | boot, on the EIP-130 core (loaded by the BootROM per the signed `spl_header`'s `fw_size`/`fw_check_sum`) | **The only closed payload left on either eMMC image.** #90 removed it from U-Boot/FDL2 (defconfig) and from `pkgs/boot.nix`'s exports; the SPL slot is a BootROM contract, not a build option, so it needs a hardware experiment (does the ROM tolerate `fw_size = 0`?) or mainline U-Boot's own boot flow (#89). Build-asserted to stay exactly two copies at exactly those offsets. |
+| `eip_ax620e.bin` | kept vendor member of the **4.19 overlay** `.axp` only | never — dead weight | The same firmware as a standalone member. Not a download helper, as this row used to say. `pkgs/boot.nix` stopped exporting its own copy in #90 and the NixOS `.axp` never had it; the overlay image passes the vendor bundle's member through because that image is a rewrite of the bundle. |
 
 ### `/opt/lib` dead weight — cleared
 

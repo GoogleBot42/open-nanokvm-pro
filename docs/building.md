@@ -55,7 +55,7 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `kernel-mainline` | `Image` + `dt-bindings` headers | mainline Linux 7.1.3 from the nixpkgs pin, `arm64 defconfig` + `pkgs/kernel-mainline/ax630c.config`. **Boots this board since #75.** Variants: `-appliance` (NixOS stage 1 embedded), `-appliance-loop`, `-appliance-qemu`. Epic #26 |
 | `dtb-mainline` | our own board DTB | compiled from `dts/` **in this repo** with `cpp` + `dtc -p 4096`; nothing vendor about it |
 | `kernel-mainline-slot-image` / `dtb-mainline-slot-image` | signed slot-B partitions | same header format as above, so #75's first boot is a reversible slot-B flash |
-| `boot` / `boot-sd` | full boot chain (UART0 / UART1 console) | SPL+ATF+OP-TEE+U-Boot |
+| `boot` / `boot-sd` | full boot chain (UART0 / UART1 console) | SPL+ATF+OP-TEE+U-Boot. Three deltas to the vendor U-Boot defconfig, all applied in `pkgs/boot.nix`'s `configurePhase`: `CONFIG_SUPPORT_AB=y` (A/B slot), `CONFIG_CMD_AXERA_CIPHER` + `CONFIG_AXERA_SECURE_BOOT` **off** (they linked in 78 KB of closed EIP-130 crypto-engine firmware; #90), and `CONFIG_CONS_INDEX=2` under `sdConsoleUart1` only. The install phase build-asserts the EIP-130 firmware is absent from every output |
 | `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
 | `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |
 | `rootfs` | overlaid `ubuntu_rootfs_sparse.ext4` | vendor base + our libkvm + modules + service selection |

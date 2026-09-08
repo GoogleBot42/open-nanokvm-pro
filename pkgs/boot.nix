@@ -198,6 +198,46 @@ pkgs.stdenv.mkDerivation {
     grep -q '^CONFIG_SUPPORT_AB=y' "$ubDefconfig" || \
       { echo "ERROR: failed to append CONFIG_SUPPORT_AB=y to $ubDefconfig" >&2; exit 1; }
     echo "A/B slot support: CONFIG_SUPPORT_AB=y appended to $ubDefconfig"
+
+    # --- #90: strip the closed EIP-130 crypto-engine firmware from U-Boot ----
+    # cmd/axera/cipher/eip130_fw.h is `int const eip130_firmware[]`, 19632 words
+    # (78528 B) of closed firmware for the Inside Secure/Rambus EIP-130 hardware
+    # crypto module. cmd/axera/Makefile links cipher/{eip130_drv,ax_cipher_api,
+    # sample_*}.o under CONFIG_CMD_AXERA_CIPHER and secureboot/secureboot.o under
+    # CONFIG_AXERA_SECURE_BOOT; eip130_drv.c is the only file that includes the
+    # array. The vendor defconfig sets both =y, so ~78 KB of closed blob shipped
+    # in u-boot.bin / fdl2.bin. That violates the blob policy (only the aic8800
+    # WiFi firmware is allowed), so both are turned off here.
+    #
+    # Nothing on any path we use calls into them:
+    #   * every call site is bracketed by
+    #     `#if defined(CONFIG_AXERA_SECURE_BOOT) && defined(CONFIG_CMD_AXERA_CIPHER)`
+    #     -- cmd/axera/boot/axera_boot.c:420,448,750 (axera_secboot_image_check,
+    #     AX_CIPHER_Init), cmd/axera/update/update_verify.c:9 (which ships a
+    #     `return 0` stub in its #else branch), download/fdl_engine.c:1866,
+    #     sd_update/sd_update.c:938, tftp_update/axera_ota.c:288,
+    #     usb_stor_update/usb_storage_update.c:933.
+    #   * with both off, axera_secboot_image_check() falls into the #else at
+    #     axera_boot.c:492: it returns 0 unless `secboot_verify` is set, and that
+    #     is `env_get_ulong("secureboot_test", 10, 0)` (never set in our env; the
+    #     name appears nowhere else in the tree) OR is_secure_enable() -- the
+    #     efuse SECURE_BOOT_EN bit, unburned on this board (see the header above).
+    #     So the kernel/dtb boot path is unchanged.
+    #   * the FDL2 download path integrity-checks with plain 32-bit sums
+    #     (fdl_engine.c fdl_checksum32 / calc_image_checkSum, fdl_frame.c
+    #     frame_checksum), never with the EIP-130.
+    # The SPL's own signature check is independent of these U-Boot symbols
+    # (boot/bl1 has its own tree), so slot failover and secure boot enforcement
+    # are untouched. build/tools/config2defconfig.py cannot resurrect them:
+    # configs/axera_config_maps.txt maps neither symbol.
+    for sym in CONFIG_CMD_AXERA_CIPHER CONFIG_AXERA_SECURE_BOOT; do
+      grep -q "^$sym=y" "$ubDefconfig" || \
+        { echo "ERROR: $ubDefconfig lacks $sym=y (defconfig moved? #90)" >&2; exit 1; }
+      sed -i "s/^$sym=y\$/# $sym is not set/" "$ubDefconfig"
+      grep -q "^# $sym is not set\$" "$ubDefconfig" || \
+        { echo "ERROR: failed to disable $sym in $ubDefconfig" >&2; exit 1; }
+    done
+    echo "EIP-130 blob (#90): CONFIG_CMD_AXERA_CIPHER + CONFIG_AXERA_SECURE_BOOT disabled"
 ${pkgs.lib.optionalString sdConsoleUart1 ''
     # =======================================================================
     # CONSOLE UART REDIRECT: UART0 (0x4880000 / ttyS0) -> UART1 (0x4881000 /
@@ -337,8 +377,12 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
     done
 
     # Raw (unsigned) binaries + logo, for debugging / alternate packaging.
+    # eip_ax620e.bin -- the standalone copy of the closed EIP-130 firmware that
+    # build/tools/imgsign ships -- used to be copied here too. Nothing consumed
+    # it (pkgs/image.nix passes the VENDOR bundle's member through, not ours), so
+    # it is no longer exported (#90).
     for f in atf_bl31.bin u-boot.bin spl_${project}.bin fdl2.bin \
-             axera_logo.bmp eip_ax620e.bin; do
+             axera_logo.bmp; do
       [ -f "$imgs/$f" ] && cp "$imgs/$f" "$out/images/$f" || true
     done
 
@@ -352,6 +396,70 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
         exit 1
       fi
     done
+
+    # ---- #90: EIP-130 closed-firmware assertion ---------------------------
+    # The first 8 bytes of `int const eip130_firmware[]` (cmd/axera/cipher/
+    # eip130_fw.h: 0xcf000000, 0x02775746 little-endian) are a unique fingerprint
+    # for that 78528-byte closed blob. Assert it is absent from every output we
+    # produce, and from the U-Boot ELF's symbol table.
+    #
+    # ONE documented exception: the vendor sign tool (build/tools/imgsign/
+    # spl_AX620E_sign.py, `-fw .../eip_ax620e.bin` in boot/bl1/{spl,sd}/Makefile)
+    # splices the same firmware into the SPL package at fw_flash_addr 0xCC00 and
+    # fw_bak_flash_addr 0x2CC00, and the spl_header it signs carries fw_size /
+    # fw_check_sum for it. That is a BootROM contract, not a U-Boot build option,
+    # so it cannot be dropped from the defconfig; it is pinned here (exactly two
+    # copies, at exactly those offsets) so it stays visible and cannot grow.
+    # Tracked in #90.
+    python3 - "$out/images" "$imgs/debug/u-boot" <<'PYEOF'
+import os, sys, glob
+
+SIG = bytes([0x00, 0x00, 0x00, 0xcf, 0x46, 0x57, 0x77, 0x02])
+SPL_FW_OFFSETS = [0xCC00, 0x2CC00]
+
+def hits(path):
+    data = open(path, "rb").read()
+    out, i = [], data.find(SIG)
+    while i >= 0:
+        out.append(i)
+        i = data.find(SIG, i + 1)
+    return out, data
+
+fail = []
+imgdir = sys.argv[1]
+for path in sorted(glob.glob(os.path.join(imgdir, "*"))):
+    if not os.path.isfile(path):
+        continue
+    name = os.path.basename(path)
+    found, _ = hits(path)
+    if name.startswith("spl_") and name.endswith("_signed.bin"):
+        if found != SPL_FW_OFFSETS:
+            fail.append(name + ": SPL crypto-engine FW at " + repr(found)
+                        + ", expected " + repr(SPL_FW_OFFSETS))
+        else:
+            print("  ok (known BootROM exception, 2 copies): " + name)
+        continue
+    if found:
+        fail.append(name + ": EIP-130 firmware present at " + repr(found))
+    else:
+        print("  ok (blob-free): " + name)
+
+elf = sys.argv[2]
+if os.path.isfile(elf):
+    found, data = hits(elf)
+    if found:
+        fail.append("u-boot ELF: EIP-130 firmware present at " + repr(found))
+    if data.find(b"eip130_firmware") >= 0:
+        fail.append("u-boot ELF: symbol eip130_firmware still linked in")
+    if not found and data.find(b"eip130_firmware") < 0:
+        print("  ok (blob-free, no eip130_firmware symbol): u-boot (ELF)")
+else:
+    sys.exit("ERROR: u-boot ELF not found at " + elf + " (#90 assertion cannot run)")
+
+if fail:
+    sys.exit("ERROR (#90): " + "; ".join(fail))
+print("EIP-130 assertion (#90): PASS")
+PYEOF
 
     echo "Boot chain images:"
     ls -l "$out/images"
