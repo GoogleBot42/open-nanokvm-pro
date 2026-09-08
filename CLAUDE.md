@@ -125,6 +125,13 @@ that is arbitration, not a bug.
   unless `printk_devkmsg` is `on` (systemd sets it, an initramfs does not) --
   which silently eats everything past the tenth line.
   `docs/mainline-port.md` section 8; `pkgs/kernel-mainline/initramfs/`.
+- **`patch` silently truncates a hunk to its declared line count.** A hunk
+  header saying `+1,78` over an 81-line body drops the last three lines with
+  no error, and `nix build` reports success; on #89 that ate the `b` back
+  from an assembly routine, so U-Boot ran into its own literal pool and looked
+  exactly like an intermittent hang for four hardware rounds. Any patch whose
+  tail is load-bearing gets verified in the built artefact (disassemble the
+  function, grep the ELF), never by "the patch applied".
 - **A stale fixed-output hash is invisible on any host that already holds the
   output** (the store path comes from the hash alone, so the fetch never
   re-runs): `.#update-package` built green here for two days while the release
