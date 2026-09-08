@@ -122,8 +122,9 @@ flag. Here it would install a mainline kernel, a mainline dtb and a NixOS
 
 ### First boot
 
-Stage 1 fsck's `p17` and grows the filesystem to the partition — the packed
-image is ~1.3 GiB inside a ~29 GiB partition — then `switch_root`s to `/init`.
+Stage 1 fsck's `p17` and `switch_root`s to `/init`; systemd then grows the
+filesystem to the partition (the packed image is ~1.3 GiB inside a ~29 GiB
+partition — there is no partition table to resize, only the filesystem).
 Userspace derives the board's identity from the SoC UID exactly as the vendor
 `/init` did, so:
 

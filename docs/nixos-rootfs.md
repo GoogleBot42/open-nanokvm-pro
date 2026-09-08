@@ -3,24 +3,32 @@
 The vendor Ubuntu 22.04 arm64 rootfs (`pkgs/base-axp.nix` → `pkgs/rootfs.nix`)
 replaced by a system built entirely from nixpkgs, on the mainline kernel.
 
-**Status (2026-09-07, #78): implemented, and it boots — under QEMU.**
-`nixos/appliance.nix` evaluates against the flake's one `nixos-unstable` pin and
-runs on `pkgs/kernel-mainline` (Linux 7.1.3), with the NixOS stage-1 initrd
-embedded in the kernel Image. Two `qemu-system-aarch64 -M virt` boots are banked
-in [`docs/reference/mainline/nixos-appliance-20260907/`](reference/mainline/nixos-appliance-20260907/README.md):
-the second reaches `multi-user.target` with **zero failed units** and
-`NanoKVM-Server` listening on `:80` and `:443`.
+**Status (2026-09-07, #78): it boots this board.** `nixos/appliance.nix`
+evaluates against the flake's one `nixos-unstable` pin and runs on
+`pkgs/kernel-mainline` (Linux 7.1.3), with the NixOS stage-1 initrd embedded in
+the kernel Image. Six slot-B hardware runs are banked in
+[`docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`](reference/mainline/nixos-appliance-20260907/HARDWARE.md);
+the last is a NixOS 26.11 system on the AX630C with **the board's own MAC, its
+own DHCP lease and its derived hostname**, zero failed units, `NanoKVM-Server`
+serving HTTPS, 26.3 s to multi-user. Two `qemu-system-aarch64 -M virt` boots are
+banked alongside them.
 
-**It has not been booted on the device.** Nothing in #78 has touched hardware.
-Everything below that concerns the AX630C itself — the identity derivation, the
-loop-image root, `/etc/fw_env.config` against the real U-Boot environment, the
-A/B slot re-arm — is derived from source and unproven on silicon.
+**Two things are still unproven.** Every hardware run used the **loop-image**
+root — a file on the vendor rootfs — which is what kept them reversible; root on
+`p17` itself has not been booted. And no KVM hardware works on this kernel yet:
+video (#83), USB HID policy (#82), the mini-display (#84) and WiFi (#85).
+
+`.#nixos-firmware-image` packs all of it into a flashable `.axp`
+([below](#the-image-builder--nixos-firmware-image)); flashing it is
+[flashing-and-recovery.md](flashing-and-recovery.md#flashing-the-nixos-appliance-image),
+and it overwrites the vendor system.
 
 - [Verdict](#verdict)
 - [The boot contract](#the-boot-contract)
 - [The blob-policy assertion](#the-blob-policy-assertion)
-- [Approaches weighed](#approaches-weighed)
 - [What is built](#what-is-built)
+- [The image builder](#the-image-builder--nixos-firmware-image)
+- [Approaches weighed](#approaches-weighed)
 - [Known gaps](#known-gaps)
 - [Validation ladder](#validation-ladder)
 - [History: the systemd ceiling](#history-the-systemd-ceiling)
@@ -156,14 +164,31 @@ closure, and `<toplevel>/init` starts with `#!`.
 
 ### 3. fsck and grow
 
-Stage 1 does both, so the vendor `/init`'s static-e2fsprogs dance is gone.
-`fileSystems."/"` sets `autoResize` (partition root only), which pulls
-`resize2fs` into the initrd and grows the filesystem to the partition — the
-image is packed by `make-ext4-fs`, which shrinks it to its contents, so an
-unresized partition root sits at ~1 GB inside a ~29 GB `p17`. The fsck is stage
-1's ordinary `fsck.ext4 -a`; the QEMU log shows both
-(`NANOKVM: clean, 47190/151088 files, 333469/601663 blocks`, then
-`EXT4-fs (vda): resizing filesystem`).
+Both happen, and the vendor `/init`'s static-e2fsprogs dance is gone — but they
+happen in **different stages**, which is worth knowing before reading a boot log.
+
+The fsck is stage 1's ordinary `fsck.ext4 -a`, before the root is mounted. The
+**grow is stage 2's**: on this nixpkgs `fileSystems."/".autoResize` no longer
+puts `resize2fs` in the initrd — it adds the `x-systemd.growfs` mount option,
+and `systemd-growfs@-.service` does the work after systemd is up. The QEMU log
+shows the two seconds apart:
+
+```
+[  3.155] stage-1-init: [fsck.ext4 (1) -- /mnt-root/] fsck.ext4 -a /dev/vda
+[ 12.176] EXT4-fs (vda): resizing filesystem from 605322 to 605322 blocks
+          Finished Grow Root File System.
+```
+
+That also settles the question this eMMC raises: **there is no partition table
+to grow.** `systemd-growfs` only ever grows the *filesystem* to the size of the
+block device it is on — partition geometry is `systemd-repart`'s business, and
+nothing here runs it. `/dev/mmcblk0p17` exists because the kernel's
+`blkdevparts=` parser made it, and to `systemd-growfs` it is an ordinary block
+device of a known size. The QEMU run makes the same point from the other end: it
+grows a root on `/dev/vda`, a whole disk with no partition table at all.
+
+The image is packed by `make-ext4-fs`, which shrinks it to its contents, so an
+unresized root sits at ~1.3 GiB inside a ~29 GiB `p17`.
 
 ### What the vendor `/init` did, for reference
 
@@ -974,8 +999,13 @@ passed.
    runs the loop ("Variant: booting the NixOS appliance from slot B").
 5. **SD-card boot — blocked.** There is **no SD card in the device**, which also
    blocks root-on-SD in #76. Needs Jeremy.
-6. **eMMC `p17`.** Last, and only after 4, and only with a stock vendor `.axp`
-   on hand. This is the step that overwrites the vendor system.
+6. **eMMC `p17`, by flashing `.#nixos-firmware-image`.** Last, and only after 4,
+   and only with a stock vendor `.axp` on hand. This is the step that overwrites
+   the vendor system, and from here the way back is AXDL with hands on the
+   board. The image and its first-boot expectations are in
+   [flashing-and-recovery.md](flashing-and-recovery.md#flashing-the-nixos-appliance-image);
+   `nix flake check`'s `nixos-axp-manifest` is what stands between a build and
+   that flash.
 
 ### Human-only actions
 
