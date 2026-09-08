@@ -1,0 +1,94 @@
+Rung 2k (#89), 2026-09-08 -- the four-read diagnostic and the watchdog proof.
+All read from the CONFIG_PRE_CONSOLE_BUFFER at 0x480e8000 after the board
+returned to slot A.
+
+===========================================================================
+ROUND 1 -- watchdog proof. TORR 0x2AEA (30 s a stage, 60 s to reset), with a
+deliberate for(;;) at the end of board_late_init(). Image
+5b8c8a75276b6244fcc720445aa9a6f7.
+===========================================================================
+...
+GLB mux0=00000073 eb0=0000000f div0=00000001
+WDT en=00000001 torr=00002aea ccvr=08a1c45b abort=000002c0
+PERIPH mux0=000fbf98 eb0=00037ffe eb3=000fffff rst3=00000000
+== end ==
+wdt proof: hanging here on purpose
+
+The log ends there. No "resetting ...", so U-Boot did not reset itself; the
+board was on slot A 96 s after the reboot command (t=1788893363 -> 1788893459).
+
+  WDT en    1          running
+  torr      0x2aea     30 s per stage, two stages to reset
+  ccvr      counting
+  abort     0x2c0      COMM_ABORT_CFG bits 6,7,9 -- WDT0_EN set, so the
+                       expiry reaches the SoC
+  mux0      bit 19 set (0x80000)   counter source = 24 MHz
+  eb0       bit 14 set (0x4000)    AX630C_CLK_WDT0_EB
+  eb3       bit 19 set (0x80000)   AX630C_PCLK_WDT0_EB
+  rst3      0x0                    both WDT0 resets released
+
+===========================================================================
+ROUND 2 -- four reads WITHOUT re-identifying the card first. Image
+58d7f05a76164ecb2a575bef203a7f28. Shows why the probe must re-init.
+===========================================================================
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 10 bmax 65535
+read lba 00000000 cnt 1 -> 0 resp 00000000 stat 00000000
+read lba 00000000 cnt 2 -> 0 resp 00000000 stat 00000000
+read lba 00002600 cnt 1 -> 0 resp 00000000 stat 00000000
+read lba 00002600 cnt 2 -> 0 resp 00000000 stat 00000000
+SRS 08=00000200 0c=101a0033      <- CMD16 SET_BLOCKLEN, argument 512
+
+All four die at CMD16, before any read command is issued: after the failed
+environment read the controller will not run even a command. The probe was
+measuring the wreckage, not the question.
+
+===========================================================================
+ROUND 4 -- four reads AFTER mmc_init(). Image 1aeac411e1a097629b600151706ae2f4
+(ADMA2-32, no Auto-CMD12).
+===========================================================================
+cdns tune opcode 21 map XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.X..... streak 33 end 32 pick 16
+read probe: re-init 0
+read probe: hc 1 ocr c0ff8080 rca 0001 blksz 512 lba 61079552 bw 8 mode 10 bmax 65535
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00000000 cnt 2 -> 0 cmd 123a0033 arg 00000000 resp 00000900 stat 00108000
+read lba 00002600 cnt 1 -> 0 cmd 101a0037 arg 00000200 resp 00000000 stat 00000000
+read lba 00002600 cnt 2 -> 0 cmd 101a0037 arg 00000200 resp 00000000 stat 00000000
+
+  cmd 113a0013  index 0x11 = CMD17 READ_SINGLE_BLOCK
+                mode 0x0013 = DMA | BLK_CNT_EN | READ            -> 1 block read
+  cmd 123a0033  index 0x12 = CMD18 READ_MULTIPLE_BLOCK
+                mode 0x0033 = DMA | BLK_CNT_EN | READ | MULTI    -> DATA_TIMEOUT
+
+  resp 00000900   R1: CURRENT_STATE 4 (TRAN), READY_FOR_DATA. No OUT_OF_RANGE
+                  (bit 31), no ADDRESS_MISALIGN (bit 30), in either case.
+  stat 00108000   bit 15 ERROR_INTERRUPT + bit 20 DATA_TIMEOUT_ERR.
+                  No ADMA error (bit 25).
+
+===========================================================================
+ROUND 5 -- Auto-CMD12. Image b0410f419d37614792bdf007c531568f.
+===========================================================================
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+read lba 00000000 cnt 2 -> 0 cmd 123a0037 arg 00000000 resp 00000900 stat 00108000
+
+Transfer mode 0x0037 -- SDHCI_TRNS_ACMD12 (bit 2) is set, so the patch landed.
+Identical failure. Rejected.
+
+===========================================================================
+ROUND 7 -- SDMA, the first-stage loader's own path. Image
+5a21a916285fdda1e383f7a272081cae, CONFIG_MMC_SDHCI_SDMA=y with ADMA off
+(verified in the generated config).
+===========================================================================
+read probe: re-init 0
+read lba 00000000 cnt 1 -> 1 cmd 113a0013 arg 00000000 resp 00000900 stat 00000000
+Transfer data timeout
+read lba 00000000 cnt 2 -> 0 cmd 123a0037 arg 00000000 resp 00000900 stat 00108000
+
+Identical again. With the earlier ADMA2-32, ADMA2-96 and PIO rounds, every data
+transfer engine the driver has now fails multi-block and passes single-block.
+
+===========================================================================
+Rounds 3 and 6 were dark past the 300 s watchdog reload, which places those
+hangs before arch_cpu_init(). Hangs on this board are intermittent (rung 2j),
+so neither says anything about the change it was carrying; round 7 is round 6
+repeated.

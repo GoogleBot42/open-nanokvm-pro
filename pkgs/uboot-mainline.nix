@@ -673,6 +673,9 @@ let
     #include <stdio.h>
     #include <linux/bitops.h>
     #include <linux/delay.h>
+    #include <blk.h>
+    #include <mmc.h>
+    #include <memalign.h>
     #include <asm/io.h>
     #include <asm/global_data.h>
 
@@ -750,8 +753,185 @@ let
     	       readl((void *)(AX630C_CPU_SYS_GLB + 0x00)),
     	       readl((void *)(AX630C_CPU_SYS_GLB + 0x04)),
     	       readl((void *)(AX630C_CPU_SYS_GLB + 0x0c)));
+    	printf("WDT en=%08x torr=%08x ccvr=%08x abort=%08x\n",
+    	       readl((void *)0x04840000UL), readl((void *)0x0484000cUL),
+    	       readl((void *)0x04840024UL), readl((void *)0x023400a8UL));
+    	printf("PERIPH mux0=%08x eb0=%08x eb3=%08x rst3=%08x\n",
+    	       readl((void *)0x04870000UL), readl((void *)0x04870004UL),
+    	       readl((void *)0x04870010UL), readl((void *)0x04870024UL));
     	printf("== end ==\n");
     }
+
+    /*
+     * Rung 2k step 1: four reads that split "addressed reads fail" from
+     * "multi-block reads fail". Every transfer that has worked so far is
+     * address-less and single-block (EXT_CSD, the CMD21 tuning blocks); every
+     * transfer that has failed is both addressed and multi-block. These four
+     * separate the two axes:
+     *
+     *   LBA 0      count 1     addressed, single
+     *   LBA 0      count 2     addressed, multi
+     *   LBA 0x2600 count 1     addressed high, single
+     *   LBA 0x2600 count 2     addressed high, multi
+     *
+     * After each one the controller RESPONSE0 word carries the R1 the card
+     * returned -- bit 31 OUT_OF_RANGE and bit 30 ADDRESS_MISALIGN are the two
+     * that would indict addressing -- and INT_STATUS carries whatever error
+     * was raised. Both are read straight from the SRS block rather than
+     * inferred, because blk_dread() throws the response away.
+     */
+    static void ax630c_try_read(struct blk_desc *desc, lbaint_t lba,
+    			    lbaint_t cnt, void *buf)
+    {
+    	unsigned long n;
+
+    	n = blk_dread(desc, lba, cnt, buf);
+    	printf("read lba %08lx cnt %lu -> %lu cmd %08x arg %08x"
+    	       " resp %08x stat %08x\n",
+    	       (unsigned long)lba, (unsigned long)cnt, n,
+    	       readl((void *)(AX630C_EMMC_SRS + 0x0c)),
+    	       readl((void *)(AX630C_EMMC_SRS + 0x08)),
+    	       readl((void *)(AX630C_EMMC_SRS + 0x10)),
+    	       readl((void *)(AX630C_EMMC_SRS + 0x30)));
+    }
+
+    static void ax630c_read_probe(void)
+    {
+    	ALLOC_CACHE_ALIGN_BUFFER(u8, buf, 1024);
+    	struct blk_desc *desc;
+    	struct mmc *mmc;
+
+    	mmc = find_mmc_device(0);
+    	if (!mmc) {
+    		printf("read probe: no mmc 0\n");
+    		return;
+    	}
+
+    	/*
+    	 * Re-identify the card first. The environment read has already
+    	 * failed by the time this runs, and it leaves the controller in a
+    	 * state where even CMD16 gets no response -- so a probe taken
+    	 * without this measures the wreckage, not the question.
+    	 */
+    	mmc->has_init = 0;
+    	printf("read probe: re-init %d\n", mmc_init(mmc));
+
+    	desc = mmc_get_blk_desc(mmc);
+    	printf("read probe: hc %d ocr %08x rca %04x blksz %lu lba %lu"
+    	       " bw %d mode %d bmax %lu\n",
+    	       mmc->high_capacity, mmc->ocr, mmc->rca,
+    	       (unsigned long)desc->blksz, (unsigned long)desc->lba,
+    	       mmc->bus_width, (int)mmc->selected_mode,
+    	       (unsigned long)mmc->cfg->b_max);
+
+    	ax630c_try_read(desc, 0, 1, buf);
+    	ax630c_try_read(desc, 0, 2, buf);
+    	ax630c_try_read(desc, 0x2600, 1, buf);
+    	ax630c_try_read(desc, 0x2600, 2, buf);
+    }
+
+    /*
+     * WDT0, armed from board_early_init_f() -- BEFORE relocation, and that
+     * placement is the whole point. A hang banks nothing on this board: the
+     * pre-console buffer and the slot register both die with the power cycle
+     * that is the only way to recover, so a dark round teaches nothing. A
+     * running watchdog turns a hang into a chip reset instead; slot B has
+     * already consumed its bootable bit, so the reset lands on slot A and
+     * Linux reads the buffer back. Rung 2j armed this from
+     * board_early_init_r() and a hung round still sat dark for ten minutes,
+     * which says the hangs happen earlier than that -- so it moves as early as
+     * C runs at all.
+     *
+     * Pre-relocation means NO STATICS (BSS overlays .rela.dyn on arm64) and no
+     * udelay() (the timer is not necessarily up yet); the TORR_LOAD and CRR
+     * strobes are level-sensitive across a clock-domain crossing, so they get
+     * a counted spin instead.
+     *
+     * The block needs four things outside itself, all of which the vendor SPL
+     * or chip reset already leave in place (docs/reference/mainline/
+     * wdt-model-20260906.md 7.1) -- written anyway, because they are idempotent
+     * alias writes and they remove the dependency on what ran before us:
+     *
+     *   periph_clk 0x0487_0000, one set/clear pair per value word
+     *     SW_RST3 clear 0xF4  bits 1,0  release arst then prst (1 = held)
+     *     CLK_EB0 set   0xB0  bit 14    AX630C_CLK_WDT0_EB, the counter gate
+     *     CLK_EB3 set   0xC8  bit 19    AX630C_PCLK_WDT0_EB, the APB gate
+     *     CLK_MUX0 set  0xA8  bit 19    AX630C_CLK_WDT0_SEL = 24 MHz source
+     *
+     * The fifth is COMM_ABORT_CFG bit 7 at 0x0234_00A8, which gates whether the
+     * expiry reaches the SoC at all. The SPL sets it (0x2C0) and bit 0 of that
+     * same word is a software chip reset, so it is read and printed, never
+     * written.
+     *
+     * TORR counts 64Ki counter ticks per stage and the block resets on the
+     * SECOND expiry, so the reload is half the timeout: 0xD693 at 24 MHz is
+     * 150 s a stage, 300 s to reset -- long enough for a working boot to reach
+     * userspace and for the kernel ax630c-wdt to adopt the running dog.
+     */
+    #define AX630C_PERIPH_CLK	0x04870000UL
+    #define AX630C_PERIPH_MUX0_SET	(AX630C_PERIPH_CLK + 0xa8)
+    #define AX630C_PERIPH_EB0_SET	(AX630C_PERIPH_CLK + 0xb0)
+    #define AX630C_PERIPH_EB3_SET	(AX630C_PERIPH_CLK + 0xc8)
+    #define AX630C_PERIPH_RST3_CLR	(AX630C_PERIPH_CLK + 0xf4)
+
+    #define AX630C_WDT0		0x04840000UL
+    #define AX630C_WDT_EN		(AX630C_WDT0 + 0x00)
+    #define AX630C_WDT_TORR		(AX630C_WDT0 + 0x0c)
+    #define AX630C_WDT_TORR_LOAD	(AX630C_WDT0 + 0x18)
+    #define AX630C_WDT_CRR		(AX630C_WDT0 + 0x30)
+    #define AX630C_WDT_CRR_KICK	0x61696370U
+    #define AX630C_WDT_TORR_300S	0xD693U
+
+    int board_early_init_f(void);
+
+    static void ax630c_wdt_pause(void)
+    {
+    	volatile unsigned int n;
+
+    	for (n = 0; n < 2000; n++)
+    		;
+    }
+
+    /*
+     * arch_cpu_init() is the earliest initcall in board_init_f that a board
+     * may own -- ahead of initf_dm() and board_early_init_f(), with only
+     * setup_mon_len(), fdtdec_setup() and initf_malloc() before it. Rung 2k
+     * armed the dog from board_early_init_f() and a hung round still outlived
+     * the 300 s reload, which places the hang earlier than that, so the arm
+     * moves as far forward as an initcall goes.
+     */
+    int arch_cpu_init(void)
+    {
+    	return board_early_init_f();
+    }
+
+    int board_early_init_f(void)
+    {
+    	/* Release the two resets, arst before prst, then the two gates. */
+    	writel(2, (void *)AX630C_PERIPH_RST3_CLR);
+    	writel(1, (void *)AX630C_PERIPH_RST3_CLR);
+    	writel(1 << 14, (void *)AX630C_PERIPH_EB0_SET);
+    	writel(1 << 19, (void *)AX630C_PERIPH_EB3_SET);
+    	writel(1 << 19, (void *)AX630C_PERIPH_MUX0_SET);
+
+    	/* Stop the dog before reprogramming it, as the kernel driver does. */
+    	writel(0, (void *)AX630C_WDT_EN);
+
+    	writel(AX630C_WDT_TORR_300S, (void *)AX630C_WDT_TORR);
+    	writel(1, (void *)AX630C_WDT_TORR_LOAD);
+    	ax630c_wdt_pause();
+    	writel(0, (void *)AX630C_WDT_TORR_LOAD);
+
+    	writel(AX630C_WDT_CRR_KICK, (void *)AX630C_WDT_CRR);
+    	ax630c_wdt_pause();
+    	writel(0, (void *)AX630C_WDT_CRR);
+    	writel(0, (void *)AX630C_WDT_CRR);
+
+    	writel(1, (void *)AX630C_WDT_EN);
+
+    	return 0;
+    }
+
 
     /*
      * Everything printed from here on goes to CONFIG_PRE_CONSOLE_BUFFER and
@@ -762,11 +942,14 @@ let
     {
     	gd->flags &= ~GD_FLG_HAVE_CONSOLE;
     	ax630c_emmc_dump();
+    	ax630c_read_probe();
+    	ax630c_emmc_dump();
 
     	return 0;
     }'
 
     echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
+    echo 'CONFIG_BOARD_EARLY_INIT_F=y' >> configs/${defconfig}
 
     # Rung 2j: the tuning sweep, printed -- the measurement that excluded the
     # sampling phase as a cause of the eMMC data failure. The sweep already
