@@ -3561,3 +3561,73 @@ register clears on power loss. Slot A, `p3`, `p5`, `p12`, `p14` and the rootfs
 have never been written in any rung. `uboot_b` holds run 3's image, `/boot` the
 payload with `boot.panic_on_fail panic=10`, p7 the two variables
 `arm-slotb.sh` sets, and `/root/rung2/restore.sh` undoes all three.
+
+### Rung 2i, built (2026-09-08) — one register dump, both sides, ready for hardware
+
+Built offline while the board was down. No theory in this rung: one dump from
+U-Boot at the moment the environment read has failed, one from the working
+Linux, and a diff.
+
+#### What the SPL's own Cadence driver does, from source
+
+`boot/bl1/driver/mmc/{sdhci_cdns.c,mmc.c,axera_mmc.c}` — read, because the SPL
+moves data off this eMMC at exactly our stage and with `SRS15 = 0`, so whatever
+it does is sufficient. Verified against the source rather than taken on trust:
+
+| PHY register | SPL writes | our DT |
+|---|---:|---:|
+| `SD_HS` 0x00 | 2 | 2 |
+| `SD_DEFAULT` 0x01 | 18 | 4 (SD slot only) |
+| `EMMC_LEGACY` 0x06 | 10 | *never written* |
+| `EMMC_SDR` 0x07 | 2 | 2 |
+| `SDCLK` 0x0b | 45 | 45 |
+| `HSMMC` 0x0c | 23 | 31 (HS200/400 only) |
+| `STROBE` 0x0d | 18 | 18 |
+
+Two more differences worth naming. The SPL initialises with **`HRS06` mode 1**,
+`SDHCI_CDNS_HRS06_MODE_MMC_LEGACY`, a value upstream's header does not define
+at all and its mode mapping never produces — the source calls it "cdns special
+HRS EMM mode config". And it **sets the card clock itself**
+(`axera_sys_glb_clk_set`): source `npll_400m`, divider 1, through
+`CPU_SYS_GLB` at **`0x1900000`** — `CLK_MUX0 +0x00` bits [6:5], `CLK_EB0 +0x04`
+bit 2, `CLK_DIV0 +0x0C` bits [5:0] with bit 6 as the update strobe — then
+pulses `emmc_card_sw_rst` for the DLL, and passes `CLK_200M` as the base. That
+block is our Linux `clock-controller@1900000`, always on.
+
+So in HS/SDR the effective PHY values ought to match, and the interesting
+question is what the hardware actually holds — including whether the card clock
+U-Boot divides down from is really the 200 MHz `CAPS0` claims. If the rate
+differs, every divider is wrong, and commands survive what eight data lines
+cannot.
+
+#### The dump, and where it is taken from
+
+`board_late_init()` — after `initr_env()`, so the environment read has already
+failed and the controller is in the state that failed it, and after
+`console_init_r()`. **Once, from a cold call site.** Rung 2h's attempt to take
+the same measurement from `sdhci_cdns_set_control_reg()`, which the MMC core
+calls on every `set_ios`, took the board dark; that is the mistake this rung
+does not repeat.
+
+**eMMC (`0x1B40000`) only** — the SD slot is never touched. It prints one hex
+table: `SRS00`–`SRS17` (block size/count, argument, transfer mode, response,
+buffer, present state, host control, clock and timeout, interrupt status and
+both enables, `HOST_CONTROL2`, both capability words), `HRS00`–`HRS0A`, the PHY
+delay registers `0x00`–`0x0d` read back through the `HRS04` access port
+(address in `[5:0]`, `RD` bit 25, `ACK` bit 26, `RDATA` `[23:16]`; the strobe is
+cleared again after each read), and the three `CPU_SYS_GLB` clock words.
+
+The matching Linux-side dump is
+[`harness/sd4hc-dump2.sh`](reference/mainline/uboot-mainline-20260908/harness/sd4hc-dump2.sh),
+same table, word loops on `/dev/mem`. **Its PHY half is opt-in behind `--phy`**,
+because reading a PHY register means writing the `HRS04` strobe on a controller
+Linux is using for the rootfs. A read changes no PHY value and the strobe is
+dropped afterwards, but it is still a poke at a live controller: take the plain
+table first, and add `--phy` only if the rest does not explain the difference.
+
+#### Ready for hardware
+
+Console image `185 424` bytes, md5 `0a7668570265e28fbd2f8104e748b90b`. Shipping
+image and `checks.uboot-mainline` unchanged and green — the dump is in the
+console variant only. The run is the standard one, and the Linux-side dump is
+taken **before** anything is written.
