@@ -768,6 +768,47 @@ let
 
     echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
 
+    # Rung 2j: the tuning sweep, printed -- the measurement that excluded the
+    # sampling phase as a cause of the eMMC data failure. The sweep already
+    # knows which points pass; it just throws the map away. Printing it showed
+    # 32 to 34 of the 40 points passing a real, pattern-checked 128-byte CMD21
+    # read, the pick landing on 15 (Linux's own value), and the 2048-block
+    # environment read timing out regardless. Runs once per controller init.
+    substituteInPlace drivers/mmc/sdhci-cadence.c --replace-fail \
+      '	for (i = 0; i < SDHCI_CDNS_MAX_TUNING_LOOP; i++) {
+    		if (sdhci_cdns_set_tune_val(plat, i) ||
+    		    mmc_send_tuning(mmc, opcode)) { /* bad */
+    			cur_streak = 0;
+    		} else { /* good */
+    			cur_streak++;
+    			if (cur_streak > max_streak) {
+    				max_streak = cur_streak;
+    				end_of_streak = i;
+    			}
+    		}
+    	}' \
+      '	char map[SDHCI_CDNS_MAX_TUNING_LOOP + 1];
+
+    	for (i = 0; i < SDHCI_CDNS_MAX_TUNING_LOOP; i++) {
+    		if (sdhci_cdns_set_tune_val(plat, i) ||
+    		    mmc_send_tuning(mmc, opcode)) { /* bad */
+    			cur_streak = 0;
+    			map[i] = 46;
+    		} else { /* good */
+    			cur_streak++;
+    			map[i] = 88;
+    			if (cur_streak > max_streak) {
+    				max_streak = cur_streak;
+    				end_of_streak = i;
+    			}
+    		}
+    	}
+
+    	map[SDHCI_CDNS_MAX_TUNING_LOOP] = 0;
+    	printf("cdns tune opcode %u map %s streak %d end %d pick %d\n",
+    	       opcode, map, max_streak, end_of_streak,
+    	       end_of_streak - max_streak / 2);'
+
     # One line at probe: the three HRS words the boot firmware left, plus
     # SRS15. The SRS15 half answers a question rung 3 needs -- whether the
     # first-stage loader sets SDHCI_CTRL_VDD_180 for us, or whether the 1.8 V

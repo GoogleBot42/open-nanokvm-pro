@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer still fails. **Seven** upstream U-Boot bugs found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, and `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus). Rung 2i diffed the full SD4HC register table against the working Linux: base clock, PHY delays, divider, timeout, driver type, signal voltage, bus width and `HRS06` mode now all match, and the card still answers CMD18 in TRAN and never drives data. What is left is V4 mode, which mainline U-Boot does not implement at all. Forty-two runs. See "What exists now (rung 2)" through "(rung 2i)" below |
+| 2 | **PARTIAL 2026-09-08.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot runs end to end** -- MMU, driver model, both SD4HC controllers, card identified, console, `main_loop`, `preboot`, `bootcmd`, `part_cmdline` resolving p16 -- and every eMMC DATA transfer still fails. **Seven** upstream U-Boot bugs found and fixed on the way (page-aligned relocation, hex `dev:part`, `fixed-emmc-driver-type`, the two `IS_SD` gates on `SDHCI_CTRL_VDD_180`, a fixed vqmmc rail treated as a set_value failure, the UHS timing field written for eMMC, and `sdhci_setup_cfg()` clearing a DT-declared 8-bit bus). Rung 2i diffed the full SD4HC register table against the working Linux -- base clock, PHY delays, divider, timeout, driver type, signal voltage, bus width and `HRS06` mode all match. Rung 2j then measured the tuning window: **32-34 of 40 sampling phases pass a real 128-byte CMD21 read, the pick lands on Linux's own value 15, and the 2048-block read still times out** -- phase, PHY and clock are excluded, and HS200-off and block-aligned ADMA were both tried and rejected. What is left is V4 mode, which mainline U-Boot does not implement at all. Forty-eight runs. See "What exists now (rung 2)" through "(rung 2j)" below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -3710,3 +3710,75 @@ Device left on slot A, register `0x00000014`, `uboot_b` / p7 / `/boot` restored
 byte-for-byte (p6 `1521dc39f8a50e726c708fde2c8edce2`, p7
 `6a579b4ea52ced8ea7ab8cafe2b5102a`), `checkboot` `Result=success`, `nanokvm`
 active, web 200.
+
+### What exists now (rung 2j, 2026-09-08) — the tuning window is 34 wide, and the read still fails
+
+Six hardware rounds; full detail in
+[`RUNG2J.md`](reference/mainline/uboot-mainline-20260908/RUNG2J.md), the sweeps
+in [`tune-map-20260908.txt`](reference/mainline/uboot-mainline-20260908/tune-map-20260908.txt).
+
+The hypothesis was an edge-of-window tuning pick: U-Boot chooses HRS06 tune 17
+where Linux chooses 15, and a value that passes one 128-byte CMD21 block and
+fails a 1 MiB CMD18 is what a marginal sampling phase looks like. Instrumenting
+`sdhci_cdns_execute_tuning()` to print its own pass/fail map disproves it
+outright:
+
+```
+cdns tune opcode 21 map XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX...... streak 34 end 33 pick 16
+cdns tune opcode 21 map XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX........ streak 32 end 31 pick 15
+```
+
+Tuning points 0–31 (or 0–33) all pass; only the top few of the 40 fail, and the
+pick is the exact centre — **15 in the second run, Linux's own value**. The 1 MiB
+environment read timed out anyway, with a register table byte-identical to the
+run that picked 16. And these passes are real transfers: `mmc_send_tuning()`
+reads 128 bytes through the same sdhci/ADMA path and `memcmp()`s the result
+against the expected pattern.
+
+> **A 128-byte single-block read succeeds at 32–34 of 40 sampling phases; a
+> 2048-block read fails at every one of them.** Phase, PHY delay, tuning and
+> clock are all excluded.
+
+Two fixes tried and rejected, both recorded rather than kept:
+
+- **Dropping `CONFIG_MMC_HS200_SUPPORT`** so U-Boot settles at `MMC_HS_52` like
+  the SPL (verified compiled out: no `MMC_SUPPORTS_TUNING` in the generated
+  config, no `execute_tuning` in the ELF). The board went dark — but see below,
+  a dark board proves nothing here.
+- **`ADMA_MAX_LEN` 65532 → 65536.** U-Boot chunks ADMA descriptors at 65532
+  bytes, which is not a multiple of 512, so every intermediate boundary in a
+  transfer longer than that lands 508 bytes inside a block; Linux has always
+  used 65536, which is block aligned. The theory fit the size dependence
+  perfectly and changed nothing. Reverted — an unproven behaviour change is a
+  confound for the next rung.
+
+**Hangs on this board are intermittent.** The same image, in two consecutive
+rounds, hung once and reset cleanly once, with the environment read failing
+identically in both and therefore the same built-in `bootcmd` running down the
+same path. A dark board is not evidence about the change under test; two of six
+rounds went to learning that.
+
+**A watchdog does not arm from U-Boot.** The obvious answer to an unobservable
+hang is to make it a reset: slot B's bootable bit is already consumed, so the
+reset lands on slot A and Linux reads the buffer back. `board_early_init_r()`
+(before `initr_env()`) was given the exact sequence our own `ax630c_wdt` uses —
+24 MHz source, TORR `0xD693` for 300 s, TORR_LOAD strobe, magic-word kick,
+WDT_EN. A control run with the arm in place and the rest known-good returned
+normally with a full console, so the **arm site is harmless**; a hung round with
+the same arm sat dark for ten minutes without resetting, so the **dog never
+runs**. The kernel driver takes clocks *and resets* from the peripheral clock
+controller before touching the block; U-Boot enables neither, so the writes are
+posted into a block that is not clocked. Rung 2e's `mw`-only "watchdog reset"
+was, on this reading, something else entirely. **Releasing that clock and reset
+is the prerequisite for making any future rung's hang observable.**
+
+What is left is **V4 mode**, now the only structural difference between a driver
+that reads this eMMC and one that does not — and the only candidate that
+explains a failure which depends on transfer size. Linux sets `HOST_CONTROL2`
+bits 12 and 13 and runs 64-bit ADMA2 descriptors; mainline U-Boot has no V4
+support at all.
+
+Device left on slot A, register `0x00000015`, `uboot_b` restored byte-for-byte
+(p6 `1521dc39f8a50e726c708fde2c8edce2`), the environment vendor-clean
+(`bootcmd=axera_boot`, no `preboot`), `/boot` back to `ver` alone, `checkboot`
+`Result=success`, `nanokvm` active, web 200.

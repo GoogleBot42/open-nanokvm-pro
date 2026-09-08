@@ -1,0 +1,47 @@
+Rung 2j (#89), 2026-09-08 -- the Cadence tuning sweep, printed.
+
+Instrumentation: sdhci_cdns_execute_tuning() records a pass/fail character per
+tuning point and prints the map, the longest streak, its end index and the value
+the existing midpoint expression picks. X = mmc_send_tuning() returned 0, which
+means a 128-byte CMD21 read completed AND memcmp()d equal to the expected
+tuning pattern. Read from the pre-console buffer at 0x480e8000.
+
+--- run 1, image 064f5bb1682ca573c473c7861bd68220 -------------------------
+Loading Environment from MMC... cdns tune opcode 21 map XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX...... streak 34 end 33 pick 16
+Transfer data timeout
+*** Warning - !read failed, using default environment
+...
+HRS 10=00000000 14=00000000 18=00001004 1c=00000000     <- HRS06 tune 16
+SRS 28=00000f34  2c=000e0207  30=00108000  3c=00080000
+PHY 00=  2 01=  4 02=  1 03=  2 04=  1 05=  2 06= 18 07=  2
+PHY 08=  2 09=196 0a=  2 0b= 45 0c= 31 0d= 18
+ ** fs_devread read error - block
+Can't set block device
+resetting ...
+slot register on return: 0x90000014
+
+--- run 2, image 9e81af13edb60eff0e40d19d297e1a9f (ADMA_MAX_LEN 65536) ----
+Loading Environment from MMC... cdns tune opcode 21 map XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX........ streak 32 end 31 pick 15
+Transfer data timeout
+*** Warning - !read failed, using default environment
+...
+HRS 10=00000000 14=00000000 18=00000f04 1c=00000000     <- HRS06 tune 15, Linux's value
+SRS 28=00000f34  2c=000e0207  30=00108000  3c=00080000
+PHY 00=  2 01=  4 02=  1 03=  2 04=  1 05=  2 06= 18 07=  2
+PHY 08=  2 09=195 0a=  2 0b= 45 0c= 31 0d= 18
+ ** fs_devread read error - block
+Can't set block device
+resetting ...
+slot register on return: 0x90000015
+
+The same image, run twice: once it hung for ten minutes with no reset, once it
+came back with this console. Hangs on this board are intermittent and are not
+evidence about the change under test.
+
+--- earlier runs, for the HRS06 tune column ------------------------------
+rung 2i round 3 (4-bit)  HRS 18=00000f04   tune 15
+rung 2i round 4 (8-bit)  HRS 18=00001104   tune 17
+rung 2j control          HRS 18=00000f04   tune 15
+
+--- Linux side ------------------------------------------------------------
+HRS 18 = 00000f04   mode 4 (HS200), tune 15
