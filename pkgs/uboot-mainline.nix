@@ -78,6 +78,7 @@ let
     ./uboot-mainline/patches/0015-mmc-sdhci-auto-cmd23-for-multi-block-in-v4-mode.patch
     ./uboot-mainline/patches/0016-arm-axera-arm-wdt0-from-save_boot_params.patch
     ./uboot-mainline/patches/0017-mmc-sdhci-cadence-single-block-only-workaround.patch
+    ./uboot-mainline/patches/0018-ax630c-fix-fdt-placement-and-retry-the-boot-payload.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not

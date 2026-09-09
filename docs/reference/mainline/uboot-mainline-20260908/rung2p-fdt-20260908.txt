@@ -1,0 +1,99 @@
+Rung 2p (#89), 2026-09-08. U-Boot console from CONFIG_PRE_CONSOLE_BUFFER at
+0x480e8000, read from slot A after each return. U-Boot image
+abd4acfd8d912db3f28ca01dea89c4c9 (patch 0018: fdt_high/initrd_high = 0x5f000000,
+payload reads retried 3x). Appliance kernel 7fb2938e..., stock dtb dcfd46f1...,
+watchdog-disabled dtb 53aadeda... .
+
+===========================================================================
+ROUND 1 -- mem=512M DROPPED. Dark 17 minutes, NO watchdog reset. Power cycle.
+===========================================================================
+Identical configuration WITH mem=512M reset itself at 337 s every time, so the
+difference is the memory limit, not the watchdog plumbing. Every reserved-memory
+node is inside the first 512 MB (atf 0x40040000, optee 0x44200000,
+vendor-pstore 0x48000000, ramoops 0x480e0000, bringup-log 0x480e8000), so
+whatever the kernel touched above 512 MB is not described in the DT. A hang that
+also defeats WDT0 is the AXI-stall signature on this SoC.
+
+  free -m on the flashed appliance: total 428 MB. It has been running on half
+  its RAM.
+
+===========================================================================
+ROUND 2 -- mem=512M restored, 3x retries, no re-init between them.
+Slot register 0xB0000015 (28, 29, 31). 102 s.
+===========================================================================
+Error reading cluster
+Failed to load '/extlinux/extlinux.conf'
+Error reading cluster
+Failed to load '/extlinux/extlinux.conf'
+1375 bytes read in 24 ms (55.7 KiB/s)
+Retrieving file: /extlinux/extlinux.conf
+Transfer data timeout
+Transfer data timeout
+Invalid FAT entry
+Error reading config file
+Retrieving file: /extlinux/extlinux.conf
+NanoKVM-Pro (mainline chain, appliance)
+1:	NixOS appliance, mainline 7.1.3
+Enter choice: 1:	NixOS appliance, mainline 7.1.3
+Retrieving file: /Image
+Error reading cluster
+Skipping nixos for failure retrieving kernel
+resetting ...
+
+  Two failures then a success on a 1375-byte file -- three single blocks. The
+  failures are bursty, not per-block: a DATA_TIMEOUT poisons the controller and
+  U-Boot's per-command CMD/DATA reset does not clear it.
+
+===========================================================================
+ROUND 3 -- `mmc rescan` in front of each attempt. Slot register 0x30000015
+(28, 29; NO failure bit). Recovery at 337 s = the 300 s watchdog.
+===========================================================================
+1375 bytes read in 24 ms (55.7 KiB/s)
+Retrieving file: /extlinux/extlinux.conf
+NanoKVM-Pro (mainline chain, appliance)
+1:	NixOS appliance, mainline 7.1.3
+Enter choice: 1:	NixOS appliance, mainline 7.1.3
+Retrieving file: /Image
+append: mem=512M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 ...
+        root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=... 
+        boot.panic_on_fail=1 panic=10 clk_ignore_unused
+Retrieving file: /ax630c-nowdt.dtb
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+Working FDT set to 49200000
+   Loading Device Tree to 000000005effa000, end 000000005effff58 ... OK
+Working FDT set to 5effa000
+Starting kernel ...
+
+  0x5effa000 -- under the 0x5f000000 ceiling and inside mem=512M. The fix
+  works; compare 0x7e68c000 in rung 2o.
+
+  No failure bit means sysboot never returned: the kernel was booted.
+  /sys/fs/pstore EMPTY afterwards -- the kernel dies before ramoops probes.
+
+  env used: stored (set by rescan.sh). bootcmd:
+    run bootone || run bootone || run bootone || run bootone; mw.l ${msreg_set} ${ms_failed}; reset
+    bootone = mmc rescan; mw.l ${msreg_set} ${ms_extlinux}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg}
+
+===========================================================================
+ROUND 4 -- WASTED. Slot register 0x10000015 (28 only). 335 s.
+===========================================================================
+Net:   No ethernet found.
+Hit any key to stop autoboot: 0
+Unknown command 'axera_boot' - try 'help'
+ax630c#
+
+  The vendor U-Boot on slot A rewrites bootcmd=axera_boot and SAVES it on every
+  boot. This round armed slot B without re-setting the environment, so mainline
+  U-Boot imported the vendor bootcmd, failed on an unknown command, and sat at
+  its prompt until the watchdog fired. arm-slotb.sh re-sets the env; a
+  hand-rolled arm sequence must too.
+
+===========================================================================
+ROUND 5 -- stock dtb (watchdog ENABLED), no clk_ignore_unused, env re-set.
+Dark, no reset, power cycle.
+===========================================================================
+Expected: ax630c_wdt stops WDT0 at probe, so a kernel that reaches the probe and
+then fails leaves no channel at all. Not a worse outcome than round 3 -- the
+probe is much later than ramoops -- but unobservable. The two channels are
+mutually exclusive as things stand.

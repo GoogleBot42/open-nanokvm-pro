@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Mon, 8 Sep 2026 00:00:00 -0600
+Subject: [PATCH] ax630c: fix FDT placement and retry the boot payload
+
+Two boot failures, both measured on hardware, both in the environment
+this board ships rather than in any driver.
+
+`fdt_high` and `initrd_high` were `0xffffffffffffffff`. U-Boot warns
+about exactly that value -- "known to cause boot failures due to
+placement of DT at non-8-byte-aligned addresses. This system will likely
+fail to boot" -- and it is not what the board wants anyway. Unset, U-Boot
+relocates the device tree against its own `ram_top`, which is the real
+1 GiB, and parks it at `0x7e68c000`; a kernel told `mem=512M` cannot map
+that, so it dies before any console and before ramoops, leaving nothing
+behind to say why. A fixed in-RAM ceiling below the relocation area
+removes the dependency on `ram_top` in both directions: the device tree
+lands in the first 512 MB whether or not the kernel is given a memory
+limit.
+
+The retries are the second fix. Multi-block transfers do not work on this
+eMMC controller, so the board runs with `cdns,single-block-only` -- and
+single-block reads have a residual failure rate of their own. A 48.8 MiB
+kernel is about a hundred thousand of them, and one timeout anywhere in
+that run ends the boot with "Error reading cluster". Three attempts turn
+a boot that fails roughly half the time into one that does not.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ configs/ax630c_nanokvm_pro_defconfig |  2 +-
+ include/configs/ax630c.h             | 10 ++++++++--
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/include/configs/ax630c.h b/include/configs/ax630c.h
+--- a/include/configs/ax630c.h
++++ b/include/configs/ax630c.h
+@@ -224,3 +224,4 @@
+-	"initrd_high=0xffffffffffffffff\0"				\
+-	"fdt_high=0xffffffffffffffff\0"					\
++	/* A ceiling, NOT ~0 and not unset: both misplace the DT. */	\
++	"initrd_high=0x5f000000\0"					\
++	"fdt_high=0x5f000000\0"						\
+ 	"bootdev=0\0"							\
+diff --git a/configs/ax630c_nanokvm_pro_defconfig b/configs/ax630c_nanokvm_pro_defconfig
+--- a/configs/ax630c_nanokvm_pro_defconfig
++++ b/configs/ax630c_nanokvm_pro_defconfig
+@@ -49,1 +49,1 @@
+-CONFIG_BOOTCOMMAND="if load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg}; then mw.l ${msreg_set} ${ms_extlinux}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg}; fi; mw.l ${msreg_set} ${ms_failed}; reset"
++CONFIG_BOOTCOMMAND="if load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg} || load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg} || load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg}; then mw.l ${msreg_set} ${ms_extlinux}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg} || sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg} || sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg}; fi; mw.l ${msreg_set} ${ms_failed}; reset"

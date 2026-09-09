@@ -2216,7 +2216,7 @@ the eMMC.
 |---|---|---|---|
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
-| 2 | **PARTIAL 2026-09-08, chain proven to `booti` and the hand-off diagnosed.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot loads the environment, reads `extlinux.conf`, loads the appliance kernel and dtb, sets `bootargs` and reaches `booti`** — milestone bits 28+29+30, no failure bit — on the `cdns,single-block-only` stopgap (patch `0017`) for the **#91** multi-block bug. The kernel then dies before any console because **U-Boot relocates the FDT to `0x7e68c000` (~1006 MB) while the cmdline says `mem=512M`**: a device tree outside the memory the kernel is told exists. Fix is `fdt_high = 0x5f000000`, staged but not yet exercised — the env read is itself flaky under the stopgap (~half the rounds time out on the first transfer and fall back to the built-in `bootcmd`). Observability is now complete: WDT0 armed from `save_boot_params`, watchdog DT node disabled **plus `clk_ignore_unused`** (disabling the node orphans `clk_wdt0_eb` and `clk_disable_unused` gates the counter off), giving a 337 s reset and a readable slot register on any kernel hang. **Ten** upstream U-Boot bugs/gaps fixed on the way. Seventy-nine runs. See "What exists now (rung 2)" through "(rung 2o)" below |
+| 2 | **PARTIAL 2026-09-08, U-Boot hands off to the kernel.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **mainline U-Boot reads its environment, reads `extlinux.conf`, loads the 48.8 MiB appliance kernel and the dtb, places the device tree correctly and `sysboot`s into it** — slot register `0x30000015`, bits 28+29, no failure bit, so `sysboot` never returned. The kernel then starts and does not reach the network. Needed two fixes on top of the #91 `cdns,single-block-only` stopgap: `fdt_high`/`initrd_high` = `0x5f000000` (patch `0018`; unset, U-Boot relocated the DT to `0x7e68c000`, outside the `mem=512M` map, and the kernel died before any console), and **`mmc rescan` in front of every retry** — a `DATA_TIMEOUT` poisons this controller and a bare retry hits the same wall. `mem=512M` cannot simply be dropped: without it the board hangs past WDT0, so something above 512 MB is not described in `reserved-memory`. **Ten** upstream U-Boot bugs/gaps fixed on the way. Eighty-four runs. See "What exists now (rung 2)" through "(rung 2p)" and **"Handoff for rung 3"** below |
 | 3 | **Promote to slot A** from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), keeping the kernel slots | the product boots the new chain with no slot trick | as rung 2 on slot A. Slot B keeps the previous pair as the rescue copy |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
@@ -4072,3 +4072,135 @@ Device left on slot A, register `0x00000014`, `uboot_b` restored byte-for-byte
 (p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean
 (`bootsystem=A`), `/boot` back to `ver` alone, `nanokvm-checkboot` enabled,
 `checkboot` `Result=success`, `nanokvm` active, web 200.
+
+### What exists now (rung 2p, 2026-09-08) — the FDT lands correctly; the retry has to re-init the card
+
+Five rounds against a budget of four. Detail in
+[`RUNG2P.md`](reference/mainline/uboot-mainline-20260908/RUNG2P.md), consoles in
+[`rung2p-fdt-20260908.txt`](reference/mainline/uboot-mainline-20260908/rung2p-fdt-20260908.txt).
+Row 2 is still not done: the kernel starts and does not reach the network.
+
+**The FDT fix works.** Patch `0018` sets `fdt_high` and `initrd_high` to
+`0x5f000000` in the built-in environment, and the device tree now lands at
+`0x5effa000` — under the ceiling, inside the `mem=512M` window — against
+`0x7e68c000` in rung 2o. Placement no longer depends on `ram_top`.
+
+**Retries only work if they re-initialise the card.** The same patch wraps the
+payload reads in three attempts, and that is not enough: the console shows two
+`Error reading cluster` failures then a success on a **1375-byte** file — three
+single blocks. The failures are bursty because a `DATA_TIMEOUT` poisons this
+controller and U-Boot's per-command `SDHCI_RESET_CMD`/`_DATA` does not clear it
+(rung 2k). Putting **`mmc rescan`** in front of each attempt does clear it, and
+with it the boot read `extlinux.conf`, the 48.8 MiB kernel and the dtb and
+handed off — slot register `0x30000015`, bits 28 and 29, no failure bit, so
+`sysboot` never returned. **That belongs in the built-in `bootcmd`; it is
+currently only in the stored environment.**
+
+**`mem=512M` cannot simply be dropped.** Removing it left the board dark for
+seventeen minutes *with no watchdog reset*, where the identical configuration
+with it reset itself at 337 s every time — and a hang that also defeats WDT0 is
+the AXI-stall signature on this SoC. Every `reserved-memory` node is inside the
+first 512 MB, so whatever is above it is not described in the device tree; a
+TrustZone/TZASC region would not be. The appliance really is running on half its
+RAM (`free -m` total **428 MB**) and that is worth fixing, but rung 3 should find
+where the vendor U-Boot injects the argument and what it protects first.
+
+**What still fails.** With the FDT correct and the payload loaded, the kernel
+starts and then either dies before ramoops probes (watchdog node disabled +
+`clk_ignore_unused`: reset at 337 s, `/sys/fs/pstore` empty) or goes dark and
+stays dark (stock dtb: `ax630c_wdt` stops WDT0 at probe). The second is *further
+along*, not worse — but the two evidence channels are mutually exclusive as
+things stand, and that is the thing to design around next.
+
+**One round was lost to the environment**, and the mechanism is worth knowing:
+`Unknown command 'axera_boot'`. **The vendor U-Boot on slot A rewrites
+`bootcmd=axera_boot` and saves it on every boot**, so any run that arms slot B
+without re-setting the environment inherits it and mainline U-Boot sits at its
+prompt until the watchdog fires.
+
+Device left on slot A, register `0x00000014`, `uboot_b` restored byte-for-byte
+(p6 `1521dc39f8a50e726c708fde2c8edce2`), environment vendor-clean, `/boot` back
+to `ver` alone, `checkboot` `Result=success`, `nanokvm` active, web 200.
+
+### Handoff for rung 3
+
+Everything below is current as of 2026-09-08. No history; read
+`RUNG2*.md` only if a claim here surprises you.
+
+**Device at rest.** Slot A = flashed NixOS appliance (26.11pre-git, mainline
+`7.1.3-nanokvm`, root p17, ~428 MB usable). p6 `uboot_b` = vendor image, md5
+`1521dc39f8a50e726c708fde2c8edce2`. p7 = vendor environment (`bootcmd=axera_boot`,
+`bootsystem=A`). p16 `/boot` = `ver` only. Slot register `0x02390024` reads
+`0x00000014`. Never write p1/p2/p3/p5/p12/p14/p17.
+
+**On the device, `/root/rung2/`:** `restore.sh` (puts p6, p7 and `/boot` back and
+re-arms slot A — always finish with it), `arm-slotb.sh` (re-sets the env, zeroes
+the pre-console buffer, arms B), `run3.sh` (write image + stage `/boot` + arm),
+`rescan.sh` (the working `mmc rescan` bootcmd + arm), `uboot_b.orig`,
+`p7-env.orig`, `boot-backup/`, `Image`, `ax630c-nanokvm-pro.dtb`,
+`ax630c-nowdt.dtb`, `extlinux2p.conf`, and the staged U-Boot images.
+
+**Build outputs.** `.#uboot-mainline` = signed image for p6. `-console` adds the
+pre-console buffer dump, the eMMC register dump and the four-read probe; `-debug`
+adds milestone words (mutually exclusive with `-console`).
+`.#kernel-mainline-appliance` → `Image`, 51132928 B, md5 `7fb2938e…` — the
+appliance kernel with its initrd embedded, identical to what slot A runs.
+`.#dtb-mainline` → `ax630c-nanokvm-pro.dtb`, md5 `dcfd46f1…`.
+`.#atf-mainline` is already in p4. Payload recipe:
+`docs/reference/mainline/uboot-mainline-20260908/harness/rung2o-payload.sh`;
+working extlinux in the same directory.
+
+**Boot-test loop.**
+1. `dd` the image to `/dev/mmcblk0p6`, `sync`, `echo 3 > /proc/sys/vm/drop_caches`,
+   then hash `head -c <size> /dev/mmcblk0p6` — verify from the medium, not the file.
+2. Stage `/boot`: `Image`, the dtb, `extlinux/extlinux.conf`.
+3. **Re-set the environment every single time** (`arm-slotb.sh` or `rescan.sh`) —
+   slot A's vendor U-Boot rewrites `bootcmd=axera_boot` and saves it on every boot.
+4. Arm: clear mask `devmem 0x0239002C 32 0xFFFFF000`, then `0x14`, then
+   `devmem 0x02390028 32 0x28`. Zero the pre-console buffer
+   (`dd if=/dev/zero of=/dev/mem bs=4096 seek=295144 count=8`).
+5. `systemctl reboot`. Poll ≥4 min — the kernel load alone is ~105 s at 474 KiB/s.
+6. **Before any power cycle**, read: `devmem 0x02390024`, the pre-console buffer
+   (`dd if=/dev/mem bs=4096 skip=295144 count=6 | strings`), and `/sys/fs/pstore`.
+   A power cycle destroys all three.
+7. Power cycle only when needed: `~/.claude/skills/power-switch/switch.sh
+   "nanokvm switch" off|on|state`. Confirm with `state`; never during a block write.
+8. Finish with `restore.sh`, then verify `checkboot` `Result=success`,
+   `nanokvm` active, web 200.
+
+**Milestone bits** (register `0x02390024`, SET alias `+4`, CLR alias `+8`):
+28 `ms_uboot` (preboot), 29 `ms_extlinux` (payload read), 30 `ms_altboot`,
+31 `ms_failed`. Bits 12–27 are Linux's. Low bits are the A/B slot.
+
+**Observability.** WDT0 is armed from `save_boot_params` (patch `0016`), 300 s,
+so a U-Boot hang resets and everything survives. For a *kernel* hang you must
+choose: disable `/soc/watchdog@4840000` in the dtb **and** pass
+`clk_ignore_unused` (without it `clk_disable_unused` gates `clk_wdt0_eb` off and
+the dog stops) — you get a 337 s reset and a readable register, but the appliance
+runs without its watchdog driver; or use the stock dtb and get no reset at all,
+because `ax630c_wdt` stops WDT0 at probe. Making both work at once is the next
+harness improvement.
+
+**Environment.** The built-in `CFG_EXTRA_ENV_SETTINGS` + `CONFIG_BOOTCOMMAND` are
+the fallback; a stored env replaces them wholesale, so the stored env must carry
+every variable the bootcmd expands. The env read itself fails roughly half the
+time (`Loading Environment from MMC... Transfer data timeout`) — #91. `bootcount`
+is built in but has never been readable.
+
+**Traps that cost rounds.** `patch` silently truncates a hunk to its declared
+line count — verify the built artefact when a patch's tail is load-bearing.
+Never `printf` from a hot driver path. Never read `SDHCI_BUFFER_DATA_PORT`
+speculatively (wedges the AXI bus past a watchdog reset). `tools/kvmssh`'s
+`/dev/tcp` pre-probe reports a live board as unreachable in some sandboxes —
+confirm with `socat - TCP:$ip:22 </dev/null`. Do not drop `mem=512M` without
+finding what is above it.
+
+**Left for rung 3.** Get the appliance to userspace under mainline U-Boot (it
+starts and does not reach the network); then promote to slot A — p3/p5 writes,
+an environment regenerated for mainline U-Boot rather than inherited from the
+vendor, `mem=` removed at its source once what it protects is known, and
+`nanokvm-checkboot` semantics on a mainline-U-Boot slot A. Move the `mmc rescan`
+retry into the built-in `bootcmd`.
+
+**Parked.** #91 (multi-block never starts; full exclusion list there), SDHCI v4
+64-bit descriptors, HS400ES.

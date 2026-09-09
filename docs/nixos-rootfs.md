@@ -921,6 +921,27 @@ number, so closed gaps keep their slot and new ones are appended.
     boot, where `/proc/ax_proc/uid` exists, and comparing the derived MAC with
     the one the device already has.
 
+14. **The appliance runs on half its RAM, and `mem=512M` is not ours to drop
+    yet.** The kernel command line the flashed board boots with carries
+    `mem=512M` -- `free -m` reports a total of **428 MB** on a 1 GiB board. It is
+    a vendor leftover for media carveouts the open stack does not use, and the
+    appliance never chose it: the **vendor-derived U-Boot injects it from its own
+    bootargs**, so it arrives with the kernel rather than from
+    `nixos/appliance.nix`.
+
+    Once the appliance kernel is loaded by **mainline** U-Boot the argument is
+    ours to set, and it should go -- but not blindly. Removing it was measured on
+    2026-09-08 (#89 rung 2p) and the board **hung past WDT0**, where the
+    identical boot with `mem=512M` reset itself at 337 s every time; a hang that
+    also defeats the watchdog is the AXI-stall signature on this SoC. Every
+    `reserved-memory` node is inside the first 512 MB (atf `0x40040000`, optee
+    `0x44200000`, vendor-pstore `0x48000000`, ramoops `0x480e0000`, bringup-log
+    `0x480e8000`), so whatever is above it is **not described in the device
+    tree** -- a TrustZone or TZASC-protected window would not be.
+
+    So: find where the vendor U-Boot injects `mem=`, and what the region above
+    512 MB is, before deleting it. Recorded for rung 3 of #26.
+
 ---
 
 ## Validation ladder
