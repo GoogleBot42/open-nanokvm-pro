@@ -534,15 +534,39 @@ propose SG2002 work without flagging this gap up front.
   eMMC multi-block never delivers data under mainline U-Boot (card streams,
   host deaf; every register/mode/engine excluded; single-block workaround
   patch 0017 ships; wants a logic capture of CLK+DAT0 — Jeremy asked); **#90**
-  SPL half (signed SPL carries the EIP-130 firmware twice by ROM contract; the
-  no-EIP SPL is a rung-4 experiment); **#92** reboot oops; **#88** parked
-  behind #84 (no U-Boot splash, Jeremy). **Rung 4 in flight** (single layout
-  definition, SPL rebuilt without OP-TEE/twins/gzipd, in-place migration, the
-  p1 write gated on the coordinator's go); rung 5 = rollback drill on
-  `bootcount`, which retires **#79**. The board is agent-power-cyclable
+  CLOSED 2026-09-09 (see below); **#92** reboot oops; **#88** parked
+  behind #84 (no U-Boot splash, Jeremy). **Rung 4 is DONE** — see the
+  2026-09-09 entry below; rung 5 = rollback drill on `bootcount`, which
+  retires **#79**. The board is agent-power-cyclable
   (`nanokvm switch` plug) since 2026-09-09.
+  **2026-09-09 — #89 RUNG 4 DONE, and #90 CLOSED with it.** The eMMC stopped
+  having a vendor partition scheme: it is `spl` (the first 768 KiB, the
+  BootROM's, outside every table) plus `disk` (everything after), and `disk`
+  carries a spec-conformant GPT at its own LBA 0 — protective MBR at physical
+  LBA 1536, alternate header in the eMMC's last sector, five named partitions
+  with DPS type GUIDs. `rootfs` keeps its physical start, which is what let the
+  whole conversion happen in place from a shell. Root is `/dev/loop0p5` and
+  `/boot` is `/dev/loop0p4`, both on a loop device stage 1 puts over
+  `/dev/mmcblk0p2`; U-Boot reads the same table through
+  `CONFIG_EFI_PARTITION_BASE_LBA=1536` (patch `0023`, upstream-shaped, proved by
+  `.#checks.uboot-gpt` running sandbox U-Boot against a model of the eMMC).
+  `nixos/lib/emmc-layout.nix` is the one definition; `pkgs/spl-minimal.nix` is
+  the SPL recompiled for those offsets — the layout and the first-stage loader
+  are now one artefact. `.#migrate-layout` did the in-place conversion with
+  every write verified from the medium.
+  **#90 is closed:** the sign tool's `-fw` takes a file, an empty file gives
+  `fw_size = 0`, and the BootROM accepts it (two warm reboots and a cold cycle).
+  `.#spl-minimal` is blob-free by default; **the aic8800 wireless firmware is
+  now the only closed content on the image.**
+  Open from this rung: **rung 5** = the `bootcount` rollback drill, which wants
+  `DM_BOOTCOUNT_SYSCON` (patch `0020` stopped U-Boot reading the env off the
+  eMMC) and retires **#79** and `nanokvm-checkboot`. **#91** unchanged and now
+  the boot chain's main cost. **#92** is the suspect for the one unexplained
+  event: the first boot after the SPL write hung eight minutes and a power cycle
+  fixed it; six boots since were clean. `SUPPPORT_GZIPD=FALSE` (retires
+  `ax_gzip`, the last prebuilt x86-64 host tool) is a clean follow-up now.
   Next: **#83**/**#84** are unblocked by #81 and can run device-serialized
-  behind #89's rungs; **#79** is superseded by #89 rung 5; **#85** (aic8800)
+  behind #89's rungs; **#79** is superseded by #89 rung 5 (not yet built); **#85** (aic8800)
   is an owner decision, `needs-human`.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make

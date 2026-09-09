@@ -198,14 +198,17 @@ interactive prompt no longer needs Jeremy:
 SW=~/.claude/skills/power-switch/switch.sh
 $SW "nanokvm switch" state          # {"state":"ON","power":3.4,...}  idle appliance ≈ 3.5 W
 $SW "nanokvm switch" off; sleep 5; $SW "nanokvm switch" state   # power 0, state OFF
-$SW "nanokvm switch" on             # SSH answers ~30 s later; slot register back to 0x14
+$SW "nanokvm switch" on             # mainline chain: SSH in 2-3.5 min (measured
+                                    # 2026-09-09 over six boots, cold and warm)
 ```
 
 Rules: read every volatile channel first (slot register `devmem 0x02390024`,
 the U-Boot pre-console buffer, ramoops/pstore) — a cold cycle clears DRAM and the
 register. Confirm with `state`, not with the publish. Do not cycle during a
 block write (`dd` to an eMMC partition) — wait for the hash-verify. One cycle per
-failed boot; give the boot ~90 s before deciding it is dark.
+failed boot; give the mainline chain **8 minutes** before deciding it is dark --
+most of that is the single-block eMMC read of a 51 MB `Image` (#91), and one
+rung-4 boot came back only after a cycle at eight minutes.
 
 **Pre-probe caveat (2026-09-09):** `tools/kvmssh` skips an address whose
 `bash -c 'echo > /dev/tcp/$ip/22'` probe fails. In a subagent sandbox that
@@ -214,3 +217,41 @@ redirection can be blocked outright, so a healthy board reads as
 negative and lost a finished run's console buffer. When a probe says
 unreachable and the board *should* be up, confirm with
 `socat - TCP:$ip:22 </dev/null` (prints the SSH banner) before acting.
+
+## Switching the NixOS appliance — there is no `nix` on the board
+
+`nixos-rebuild switch --target-host` and `nix copy` both need a Nix on the far
+end, and the appliance has none: it is a store tree plus systemd, nothing more
+(`command -v nix-store` → nothing). So a configuration switch is done by hand,
+and it is three steps. Measured 2026-09-09 (#89 rung 4), where it took the board
+from a vendor-layout `fw_env.config`/`fstab` to the GPT layout's.
+
+```sh
+# 1. Which store paths are missing on the board? (Usually a handful --
+#    an /etc, an fstab, a system-path, the initrd, the toplevel.)
+NEW=$(nix build .#nixosConfigurations.nanokvm-pro.config.system.build.toplevel \
+        --no-link --print-out-paths)
+nix-store -qR "$NEW" > /tmp/req.txt
+cat /tmp/req.txt | tools/kvmssh 'cat > /root/req.txt;
+  while read -r p; do [ -e "$p" ] || echo "$p"; done < /root/req.txt'
+
+# 2. Ship them as a plain tar. /nix/store is a READ-ONLY BIND on this board;
+#    remount it rw, unpack, and put the ro flag back (`remount,bind,ro` --
+#    plain `remount,ro` silently does nothing on a bind mount).
+cd /nix/store && tar -czf /tmp/newsys.tar.gz <the missing basenames>
+tools/kvmscp /tmp/newsys.tar.gz /root/
+tools/kvmssh 'mount -o remount,rw /nix/store
+              tar -C /nix/store -xzf /root/newsys.tar.gz
+              mount -o remount,bind,ro /nix/store'
+
+# 3. Set the profile the way `nix-env --set` would, then activate.
+tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-2-link
+              ln -sfn system-2-link /nix/var/nix/profiles/system
+              $NEW/bin/switch-to-configuration switch"
+```
+
+`/init` is a symlink to `/nix/var/nix/profiles/system/init`, so step 3 is also
+what the next boot takes — no boot-chain write. What it does **not** update is
+`/boot`: the kernel `Image`, the dtb and `extlinux.conf` are baked by the flake
+into the `/boot` filesystem image, so a configuration whose kernel changed needs
+those replaced too (`.#bootfs`, or the `.#migrate-layout` kit's `boot` region).

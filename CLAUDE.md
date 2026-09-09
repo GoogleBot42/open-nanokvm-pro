@@ -154,7 +154,9 @@ that is arbitration, not a bug.
 - **The eMMC is not reliably `mmcblk0` on mainline, and when it loses it has NO
   partitions at all.** The three SD4HC instances probe concurrently and the
   eMMC's layout comes from the `blkdevparts=mmcblk0:...` cmdline clause, which
-  binds the table to a device *name* (there is no on-disk partition table). Lose
+  binds the split to a device *name*. Since #89 rung 4 that clause is only two
+  entries (`spl` + `disk`) and the real table is a GPT inside `disk` — but the
+  clause is still what creates `disk`, so the race is unchanged: lose
   the race and the table lands on the empty SD slot while the eMMC comes up bare
   -- two boots in five, measured in #78. Locating the partition by name does not
   help, because in the losing case nothing is named. Fixed by `aliases { mmc0 =
