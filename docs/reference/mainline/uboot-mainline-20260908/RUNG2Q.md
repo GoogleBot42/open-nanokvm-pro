@@ -151,3 +151,62 @@ own the same bytes.
 `read()` refuses a `no-map` reserved region, silently. mmap works, but a bulk
 copy out of the mapping SIGBUSes, because arm64 maps it as Device memory.
 `harness/rdmem.py` mmaps and reads aligned u32s.
+
+## The second half: fourteen pads nothing owned
+
+Fixing the interface select was necessary and not sufficient. Round 3 reported
+`Active PHY interface: RGMII (1)` -- and still `MDIO device at address 1 is
+missing`. The MDIO core scans all 32 addresses at registration, so nothing
+answered anywhere: MDC and MDIO were not reaching the PHY at all.
+
+The RGMII bus and its management pair are fourteen pads --- `RGMII_MDCK`,
+`RGMII_MDIO`, and the twelve RXD/RXDV/RXCLK/TXD/TXEN/TXCLK data pads. **No
+pinctrl group named them and no GPIO consumer claimed them**, so Linux never
+programmed them; it inherited whatever the loader left. On the running slot-A
+board they read `0x0000000F` at `0x104f003c`..`0x104f0108` -- mux 0, drive
+strength 15 -- which the vendor-derived U-Boot writes because it has an
+ethernet driver. Mainline U-Boot prints `Net:   No ethernet found.` and leaves
+them alone.
+
+A `gmac_pins` group in the board DT, referenced from `&gmac`, makes the kernel
+program them itself. Round 5, first boot:
+
+```
+axera-dwmac 104c0000.ethernet: Active PHY interface: RGMII (1)
+axera-dwmac 104c0000.ethernet end0: PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet]
+axera-dwmac 104c0000.ethernet end0: Link is Up - 1Gbps/Full - flow control off
+```
+
+SSH in 153 seconds, against 396 s (a watchdog reset) on every previous round.
+
+This is the SW_PWR pinmux trap one bus over, and the general rule it teaches is
+worth more than either instance: **a pad that no DT node names is a pad your
+port does not own.** It works only for as long as the bootloader you happened
+to test under keeps programming it, and the failure surfaces the moment you
+replace that bootloader -- which is exactly what a mainline port does.
+
+## Round 4 tested nothing, and #91 is why
+
+`Loading Environment from MMC... Transfer data timeout` /
+`*** Warning - !read failed, using default environment`. The stored env failed
+to load, U-Boot fell back to the built-in `CONFIG_BOOTCOMMAND`, and the `md.l`
+dumps that round existed to collect never ran. Any diagnostic that lives in the
+stored environment is a coin flip until #91 is fixed; put it in the built-in
+bootcmd or in the kernel.
+
+## Registers, measured
+
+Flash syscon `0x10030000`, under mainline U-Boot immediately before `sysboot`
+(left) and on the running slot-A appliance (right):
+
+| off | mainline U-Boot | slot A (Linux) | what |
+|---|---|---|---|
+| +0x00 | `00300b40` | `00330b60` | clock muxes; `[5:4]` tx mux is Linux's |
+| +0x04 | `00005e6c` | `00007a2c` | gates; bit 13 = `ephy_clk_eb` |
+| +0x14 | `3c0002e0` | `3c0002e0` | EMAC reset released, on-chip EPHY held |
+| +0x20 | `400001d1` | `400021d1` | bit 0 = on-chip EPHY shut down |
+| +0x28 | `00000000` | `00000600` | **PHY interface select** |
+
+And with both fixes in place, read from the slot-B kernel itself at dwmac
+probe: syscon `28=00000600`, pads `03c`/`048`/`084`/`108` = `0000000f`, rates
+`csr=312000000 tx=5000000 ephy=25000000`.

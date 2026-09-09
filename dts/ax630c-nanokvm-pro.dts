@@ -225,6 +225,8 @@
 	status = "okay";
 	phy-mode = "rgmii-id";
 	phy-handle = <&phy1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac_pins>;
 
 	mdio {
 		compatible = "snps,dwmac-mdio";
@@ -348,6 +350,50 @@
 			pins = "EPHY_LED0";
 			bias-pull-up;
 			drive-strength = <3>;
+			input-schmitt-disable;
+		};
+	};
+
+	/*
+	 * The RGMII bus and its management pair (#89 rung 2q).
+	 *
+	 * These fourteen pads were the last thing on the board that NOTHING in
+	 * Linux programmed: no pinctrl group named them and no GPIO consumer
+	 * claimed them, so the kernel simply inherited whatever the loader had
+	 * left. The vendor-derived U-Boot has an ethernet driver and leaves
+	 * every one of them at mux 0, drive-strength 15 (read back as
+	 * 0x0000000F at 0x104f003c..0x104f0108 on the running board). Mainline
+	 * U-Boot has no ethernet driver, leaves them alone, and MDC/MDIO
+	 * therefore never reach the PHY: the bus scan finds nothing at any of
+	 * the 32 addresses and stmmac reports
+	 *
+	 *   mdio_bus stmmac-0: MDIO device at address 1 is missing.
+	 *
+	 * A board that only works because a particular bootloader happened to
+	 * program its pads is not ported. Naming them here is the same lesson
+	 * as the SW_PWR trap, one bus over.
+	 *
+	 * EPHY_CLK, EPHY_RSTN, EPHY_LED0 and EPHY_LED1 are deliberately NOT in
+	 * this group: they are GPIOs on this board and their mux is programmed
+	 * by the GPIO claim.
+	 */
+	gmac_pins: gmac-pins {
+		gmac-mdio {
+			pins = "RGMII_MDCK", "RGMII_MDIO";
+			function = "rgmii";
+			drive-strength = <15>;
+			bias-disable;
+			input-schmitt-disable;
+		};
+
+		gmac-rgmii {
+			pins = "RGMII_RXD0", "RGMII_RXD1", "RGMII_RXD2",
+			       "RGMII_RXD3", "RGMII_RXDV", "RGMII_RXCLK",
+			       "RGMII_TXD0", "RGMII_TXD1", "RGMII_TXD2",
+			       "RGMII_TXD3", "RGMII_TXEN", "RGMII_TXCLK";
+			function = "rgmii";
+			drive-strength = <15>;
+			bias-disable;
 			input-schmitt-disable;
 		};
 	};
