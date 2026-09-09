@@ -2,10 +2,11 @@
 # ===========================================================================
 # In-place eMMC layout migration, run FROM the running appliance (#89 rung 4).
 #
-# Turns the vendor's 17-partition A/B map into the six-partition minimal one
-# WITHOUT moving the root filesystem: both layouts put `rootfs` at the same
-# byte, so everything this script writes lands inside the span the old p1-p16
-# occupied and the filesystem it is running from is never touched.
+# Turns the vendor's 17-partition A/B map into two logical devices -- `spl`,
+# the 768 KiB the BootROM owns, and `disk`, which carries a real GPT -- WITHOUT
+# moving the root filesystem: both layouts start `rootfs` at the same byte, so
+# everything written here lands inside the span the old p1-p16 occupied (plus
+# the last 32 KiB of the device, where the alternate GPT header must live).
 #
 # Every number below is substituted from nixos/lib/emmc-layout.nix by
 # pkgs/migrate-layout.nix. Do not edit them here.
@@ -18,9 +19,9 @@
 # is written the only way back is AXDL.
 #
 #   migrate-layout backup    save the whole pre-migration span + /boot + env
-#   migrate-layout write     atf, uboot, env, boot at their NEW offsets
-#   migrate-layout spl       write p1  (requires --i-have-the-go)
-#   migrate-layout restore   put the saved span back, byte for byte
+#   migrate-layout write     the GPT, atf, uboot, env, boot -- everything but p1
+#   migrate-layout spl       write the SPL  (requires --i-have-the-go)
+#   migrate-layout restore   put the saved bytes back, exactly
 #   migrate-layout status    what is on the medium right now
 #   migrate-layout flags     after the reboot: copy the server's runtime flag
 #                            files back into the fresh /boot
@@ -32,16 +33,19 @@ WORK=${MIGRATE_WORK:-/root/rung4}
 IMAGES=${MIGRATE_IMAGES:-}
 
 # ---- the layout, substituted from nixos/lib/emmc-layout.nix ---------------
-SPL_OFF=@SPL_OFF@;     SPL_SIZE=@SPL_SIZE@
-ATF_OFF=@ATF_OFF@;     ATF_SIZE=@ATF_SIZE@
-UBOOT_OFF=@UBOOT_OFF@; UBOOT_SIZE=@UBOOT_SIZE@
-ENV_OFF=@ENV_OFF@;     ENV_SIZE=@ENV_SIZE@
-BOOT_OFF=@BOOT_OFF@;   BOOT_SIZE=@BOOT_SIZE@
+DEVICE_BYTES=@DEVICE_BYTES@
+SPL_OFF=@SPL_OFF@;   SPL_SIZE=@SPL_SIZE@
 ROOT_OFF=@ROOT_OFF@
+ALT_OFF=@ALT_OFF@;   ALT_SIZE=@ALT_SIZE@
 NEW_ROOT_DEV=@NEW_ROOT_DEV@
 OLD_ROOT_DEV=@OLD_ROOT_DEV@
 CLAUSE="@CLAUSE@"
 FW_ENV="@FW_ENV@"
+GPT_BASE_LBA=@GPT_BASE_LBA@
+
+# name offset size image   -- everything the `write` phase puts down, in order.
+# `spl` is deliberately NOT here; it is the gate.
+REGIONS="@REGIONS@"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'migrate-layout: %s\n' "$*" >&2; exit 1; }
@@ -62,23 +66,36 @@ hash_span() { # off len
 
 hash_file() { sha256sum "$1" | cut -d' ' -f1; }
 
-# Refuse any write that could reach the root filesystem or run off a boundary.
+# Refuse any write that could reach the root filesystem or the ROM's region.
 check_span() { # name off len
   local n=$1 off=$2 len=$3
-  [ $(( off % 512 )) -eq 0 ] || die "$n: offset $off is not sector-aligned"
-  [ $(( off + len )) -le "$ROOT_OFF" ] \
-    || die "$n: $off+$len ends at $(( off + len )), past the rootfs start $ROOT_OFF"
+  [ $(( off % 4096 )) -eq 0 ] || die "$n: offset $off is not 4 KiB aligned"
+  [ $(( off + len )) -le "$DEVICE_BYTES" ] || die "$n: runs off the end of the device"
+  if [ "$off" -lt "$ROOT_OFF" ]; then
+    [ "$off" -ge "$SPL_SIZE" ] || die "$n: $off is inside the BootROM's region"
+    [ $(( off + len )) -le "$ROOT_OFF" ] \
+      || die "$n: $off+$len ends at $(( off + len )), past the rootfs start $ROOT_OFF"
+  else
+    # The only thing allowed past the rootfs start is the alternate GPT, and
+    # only in the device's last sectors.
+    [ "$off" = "$ALT_OFF" ] || die "$n: $off is inside the root filesystem"
+  fi
 }
 
-# The invariant the whole migration rests on: root must still begin where both
-# layouts say it does.
-check_root_start() {
-  local want=$(( ROOT_OFF / 512 )) got
+# The two invariants the whole migration rests on.
+check_device() {
+  local got
+  got=$(blockdev --getsize64 "$DEV")
+  [ "$got" = "$DEVICE_BYTES" ] \
+    || die "$DEV is $got B, the layout was generated for $DEVICE_BYTES B -- WRONG BOARD"
+  say "  device size $got B -- matches the layout"
+
+  local want=$(( ROOT_OFF / 512 ))
   for p in "${OLD_ROOT_DEV##*/}" "${NEW_ROOT_DEV##*/}"; do
     if [ -r "/sys/class/block/$p/start" ]; then
       got=$(cat "/sys/class/block/$p/start")
       [ "$got" = "$want" ] \
-        || die "$p starts at sector $got, expected $want -- WRONG BOARD OR WRONG LAYOUT"
+        || die "$p starts at sector $got, expected $want -- WRONG LAYOUT"
       say "  root partition $p starts at sector $got (0x$(printf %X "$ROOT_OFF")) -- as expected"
       return 0
     fi
@@ -88,15 +105,18 @@ check_root_start() {
 
 need_images() {
   [ -n "$IMAGES" ] || IMAGES=$(dirname "$0")/../images
-  for f in atf.bin uboot.bin env.bin bootfs.ext4.gz spl.bin; do
+  local f
+  while read -r _ _ _ f; do
+    [ -n "$f" ] || continue
     [ -r "$IMAGES/$f" ] || die "missing image $IMAGES/$f (set MIGRATE_IMAGES)"
-  done
+  done <<< "$REGIONS"
+  [ -r "$IMAGES/spl.bin" ] || die "missing image $IMAGES/spl.bin"
   say "images: $IMAGES"
 }
 
 # ---------------------------------------------------------------- backup ---
 cmd_backup() {
-  check_root_start
+  check_device
   mkdir -p "$WORK"
 
   say "== recording the pre-migration state"
@@ -107,6 +127,7 @@ cmd_backup() {
     echo "--- slot register";      { have devmem && devmem 0x02390024; } || true
     echo "--- fw_printenv";        { have fw_printenv && fw_printenv; } 2>&1 || true
     echo "--- mounts";             grep mmcblk /proc/mounts || true
+    echo "--- rootfs geometry";    dumpe2fs -h "$OLD_ROOT_DEV" 2>/dev/null | grep -iE "block count|block size"
   } > "$WORK/pre-state.txt"
 
   say "== backing up the whole pre-rootfs span ($ROOT_OFF bytes)"
@@ -120,6 +141,20 @@ cmd_backup() {
     || die "backup does not match the medium ($onfile != $onmedium)"
   say "  pre-layout.img sha256 $onfile  (verified against the medium)"
   echo "$onfile  pre-layout.img" > "$WORK/pre-layout.img.sha256"
+
+  # The alternate GPT header goes in the device's last sectors, which today are
+  # the tail of the root partition. Those blocks are free (checked before this
+  # was ever run), but they still get backed up, because "free" is a property
+  # of a filesystem and this is a raw write.
+  say "== backing up the last $ALT_SIZE bytes of the device"
+  dd if="$DEV" of="$WORK/tail.img" bs=4096 skip=$(( ALT_OFF / 4096 )) \
+     status=none iflag=fullblock conv=fsync
+  drop_caches
+  onmedium=$(hash_span "$ALT_OFF" "$ALT_SIZE")
+  onfile=$(hash_file "$WORK/tail.img")
+  [ "$onmedium" = "$onfile" ] || die "tail backup does not match the medium"
+  say "  tail.img sha256 $onfile  (verified against the medium)"
+  echo "$onfile  tail.img" > "$WORK/tail.img.sha256"
 
   say "== backing up /boot as files"
   rm -rf "$WORK/boot-backup"; mkdir -p "$WORK/boot-backup"
@@ -146,7 +181,7 @@ write_span() {
   local len
   len=$(stat -c %s "$file")
   check_span "$name" "$off" "$size"
-  [ "$len" -le "$size" ] || die "$name: image is $len B, partition is $size B"
+  [ "$len" -le "$size" ] || die "$name: image is $len B, region is $size B"
   [ $(( len % 4096 )) -eq 0 ] || die "$name: image length $len is not a 4 KiB multiple"
 
   say "-- $name: $len B -> $DEV @ $off (0x$(printf %X "$off"))"
@@ -162,14 +197,14 @@ write_span() {
 }
 
 cmd_write() {
-  check_root_start
+  check_device
   need_images
   [ -r "$WORK/pre-layout.img.sha256" ] || die "run 'backup' first"
+  [ -r "$WORK/tail.img.sha256" ] || die "run 'backup' first (no tail backup)"
   mkdir -p "$WORK"
   : > "$WORK/written.sha256"
 
-  # `boot` is written last of the four and it is the one that destroys the old
-  # /boot, so unmount before anything.
+  # `boot` destroys the old /boot, so unmount before anything.
   if boot_mounted; then
     say "== unmounting /boot"
     umount /boot || die "could not unmount /boot (something is holding it open)"
@@ -179,11 +214,16 @@ cmd_write() {
   gunzip -c "$IMAGES/bootfs.ext4.gz" > "$WORK/bootfs.ext4"
 
   say
-  say "== writing the new layout (everything except p1)"
-  write_span atf   "$ATF_OFF"   "$ATF_SIZE"   "$IMAGES/atf.bin"
-  write_span uboot "$UBOOT_OFF" "$UBOOT_SIZE" "$IMAGES/uboot.bin"
-  write_span env   "$ENV_OFF"   "$ENV_SIZE"   "$IMAGES/env.bin"
-  write_span boot  "$BOOT_OFF"  "$BOOT_SIZE"  "$WORK/bootfs.ext4"
+  say "== writing the new layout (everything except the SPL)"
+  local name off size file src
+  while read -r name off size file; do
+    [ -n "$name" ] || continue
+    case "$file" in
+      bootfs.ext4.gz) src="$WORK/bootfs.ext4" ;;
+      *)              src="$IMAGES/$file" ;;
+    esac
+    write_span "$name" "$off" "$size" "$src"
+  done <<< "$REGIONS"
   rm -f "$WORK/bootfs.ext4"
 
   say
@@ -192,8 +232,8 @@ cmd_write() {
   say
   say "  The old atf (0x140000) and uboot (0x1C0000) partitions are inside the"
   say "  span just written, and both A/B copies are gone. The vendor SPL still"
-  say "  in p1 would read BL31 and U-Boot from those addresses. Do not reboot"
-  say "  and do not power-cycle."
+  say "  in the first 768 KiB would read BL31 and U-Boot from those addresses."
+  say "  Do not reboot and do not power-cycle."
   say
   say "  Forward -- the ONE-WAY step, only with the coordinator's go:"
   say "      $0 spl --i-have-the-go"
@@ -210,40 +250,62 @@ cmd_write() {
 # ------------------------------------------------------------------- spl ---
 cmd_spl() {
   [ "${1:-}" = "--i-have-the-go" ] \
-    || die "writing p1 is one-way (a bad SPL means AXDL). Pass --i-have-the-go."
-  check_root_start
+    || die "writing the SPL is one-way (a bad SPL means AXDL). Pass --i-have-the-go."
+  check_device
   need_images
   [ -r "$WORK/pre-layout.img.sha256" ] || die "run 'backup' first"
 
-  say "== pre-state of p1"
+  say "== pre-state of the spl region"
   say "   on the medium: $(hash_span "$SPL_OFF" "$SPL_SIZE")"
   say "   new image:     $(hash_file "$IMAGES/spl.bin")"
 
-  write_span spl "$SPL_OFF" "$SPL_SIZE" "$IMAGES/spl.bin"
+  # check_span refuses anything inside the ROM's region, which is exactly what
+  # this is, so it is written directly -- with the same verification.
+  local len
+  len=$(stat -c %s "$IMAGES/spl.bin")
+  [ "$len" -le "$SPL_SIZE" ] || die "spl: image is $len B, region is $SPL_SIZE B"
+  say "-- spl: $len B -> $DEV @ $SPL_OFF"
+  dd if="$IMAGES/spl.bin" of="$DEV" bs=4096 seek=$(( SPL_OFF / 4096 )) \
+     status=none conv=fsync,notrunc iflag=fullblock
+  drop_caches
+  local want got
+  want=$(hash_file "$IMAGES/spl.bin")
+  got=$(hash_span "$SPL_OFF" "$len")
+  [ "$want" = "$got" ] || die "spl: read-back mismatch ($got != $want)"
+  say "   verified from the medium: $want"
+  printf '%s  spl @%s len %s\n' "$want" "$SPL_OFF" "$len" >> "$WORK/written.sha256"
 
   say
-  say "p1 written and verified. The next boot runs the new first-stage loader."
-  say "Reboot when ready; expect ~2 min to SSH."
+  say "The SPL is written and verified. The next boot runs the new chain."
+  say "Reboot when ready; expect ~3 min to SSH."
 }
 
 # --------------------------------------------------------------- restore ---
 cmd_restore() {
   [ -r "$WORK/pre-layout.img" ] || die "no backup at $WORK/pre-layout.img"
-  local want
+  local want twant
   want=$(cut -d' ' -f1 < "$WORK/pre-layout.img.sha256")
+  twant=$(cut -d' ' -f1 < "$WORK/tail.img.sha256")
   [ "$(hash_file "$WORK/pre-layout.img")" = "$want" ] \
     || die "the backup file itself is corrupt; do NOT write it"
+  [ "$(hash_file "$WORK/tail.img")" = "$twant" ] \
+    || die "the tail backup is corrupt; do NOT write it"
 
   if boot_mounted; then umount /boot || true; fi
 
   say "== restoring $ROOT_OFF bytes from $WORK/pre-layout.img"
   dd if="$WORK/pre-layout.img" of="$DEV" bs=4096 count=$(( ROOT_OFF / 4096 )) \
      status=none conv=fsync,notrunc iflag=fullblock
+  say "== restoring the last $ALT_SIZE bytes from $WORK/tail.img"
+  dd if="$WORK/tail.img" of="$DEV" bs=4096 seek=$(( ALT_OFF / 4096 )) \
+     status=none conv=fsync,notrunc iflag=fullblock
   drop_caches
   local got
   got=$(hash_span 0 "$ROOT_OFF")
   [ "$got" = "$want" ] || die "restore read-back mismatch ($got != $want)"
-  say "   verified from the medium: $got"
+  got=$(hash_span "$ALT_OFF" "$ALT_SIZE")
+  [ "$got" = "$twant" ] || die "tail restore read-back mismatch"
+  say "   both verified from the medium"
   say
   say "The vendor layout is back, byte for byte. Reboot to use it."
 }
@@ -253,24 +315,27 @@ cmd_status() {
   drop_caches
   say
   say "on the medium now:"
-  printf '  %-6s %-12s %-12s %s\n' part offset size sha256
-  for row in \
-    "spl $SPL_OFF $SPL_SIZE" \
-    "atf $ATF_OFF $ATF_SIZE" \
-    "uboot $UBOOT_OFF $UBOOT_SIZE" \
-    "env $ENV_OFF $ENV_SIZE"; do
-    set -- $row
-    printf '  %-6s 0x%-10X %-12s %s\n' "$1" "$2" "$3" "$(hash_span "$2" "$3")"
-  done
-  # `boot` is 275 MiB; hash its first 4 MiB (superblock + the first group's
-  # metadata), which is enough to tell an ext4 from a FAT32 or from garbage.
-  printf '  %-6s 0x%-10X %-12s %s (first 4 MiB)\n' \
-    boot "$BOOT_OFF" "$BOOT_SIZE" "$(hash_span "$BOOT_OFF" $((4*1024*1024)))"
+  printf '  %-8s %-12s %-12s %s\n' region offset size sha256
+  printf '  %-8s 0x%-10X %-12s %s\n' spl "$SPL_OFF" "$SPL_SIZE" "$(hash_span "$SPL_OFF" "$SPL_SIZE")"
+  local name off size file
+  while read -r name off size file; do
+    [ -n "$name" ] || continue
+    # `boot` is 272 MiB; hash its first 4 MiB, which is enough to tell an ext4
+    # from a FAT32 or from garbage.
+    if [ "$size" -gt $((8*1024*1024)) ]; then
+      printf '  %-8s 0x%-10X %-12s %s (first 4 MiB)\n' \
+        "$name" "$off" "$size" "$(hash_span "$off" $((4*1024*1024)))"
+    else
+      printf '  %-8s 0x%-10X %-12s %s\n' "$name" "$off" "$size" "$(hash_span "$off" "$size")"
+    fi
+  done <<< "$REGIONS"
   say
   say "after the reboot the oracle is:"
   say "  /proc/cmdline carries  $CLAUSE"
-  say "  lsblk shows six partitions, root on $NEW_ROOT_DEV"
-  say "  /etc/fw_env.config is  $FW_ENV"
+  say "  lsblk shows mmcblk0p1 (768K) + mmcblk0p2, and loop0p1..5 over p2"
+  say "  root on $NEW_ROOT_DEV, /etc/fw_env.config = $FW_ENV"
+  say "  sgdisk -p on a loop over mmcblk0p2 lists five named partitions"
+  say "  (U-Boot reads the same table at LBA $GPT_BASE_LBA)"
 }
 
 # ----------------------------------------------------------------- flags ---
@@ -279,7 +344,7 @@ cmd_status() {
 # writes there (usb.ncm, usb.disk0, eth.nodhcp, hostname, ...). Those are in
 # the backup; put them back once the new /boot is mounted.
 cmd_flags() {
-  boot_mounted || die "/boot is not mounted (nixos-rebuild to the minimal-layout system first)"
+  boot_mounted || die "/boot is not mounted (switch to the minimal-layout system first)"
   [ -d "$WORK/boot-backup" ] || die "no $WORK/boot-backup"
   local n=0
   for f in "$WORK"/boot-backup/*; do
@@ -301,5 +366,5 @@ case "${1:-}" in
   spl)     shift; cmd_spl "$@" ;;
   restore) shift; cmd_restore "$@" ;;
   status)  shift; cmd_status "$@" ;;
-  *) sed -n "2,28p" "$0" >&2; exit 2 ;;
+  *) sed -n "2,29p" "$0" >&2; exit 2 ;;
 esac

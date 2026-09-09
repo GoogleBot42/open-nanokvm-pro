@@ -108,6 +108,9 @@ let
     {
       layoutName = name;
       gpt = false;
+      # What the `blkdevparts=` clause describes. For the vendor layout that
+      # is the whole table; the GPT layout below overrides it with two.
+      kernelParts = parts;
       inherit parts byName need clause hex deviceBytes;
       has = n: byName ? ${n};
       blkdevparts = "blkdevparts=mmcblk0:${clause}";
@@ -283,7 +286,30 @@ let
   flashByName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) flashParts);
 
   # ---- what Linux is told -------------------------------------------------
+  # Two entries and no more. This is the ONE thing the kernel can be told
+  # without an on-disk table, and all it has to do is hand back `disk` as a
+  # block device; the GPT inside it does the rest, once stage 1 has put a loop
+  # over it. Nothing addresses these two by number except that loop setup.
   kernelClause = "${bytesToSpec splBytes}(spl),-(disk)";
+
+  kernelParts = [
+    {
+      name = "spl";
+      number = 1;
+      offset = 0;
+      size = splBytes;
+      sizeSpec = bytesToSpec splBytes;
+      device = "/dev/mmcblk0p1";
+    }
+    {
+      name = "disk";
+      number = 2;
+      offset = splBytes;
+      size = null;
+      sizeSpec = "-";
+      device = "/dev/mmcblk0p2";
+    }
+  ];
 
   minimal = {
     layoutName = "minimal";
@@ -291,7 +317,7 @@ let
     inherit deviceBytes splBytes gptBaseLba diskBytes diskLbaCount diskLastLba
       gptHeaderLba gptArrayLba gptArrayLbas firstUsableLba lastUsableLba
       altArrayLba altHeaderLba altBytes firstPartLba sector hex
-      gptParts gptByName flashParts flashByName kernelClause;
+      gptParts gptByName flashParts flashByName kernelClause kernelParts;
 
     diskGuid = "4e4b564d-0000-4000-8000-00006e616e6f";
 

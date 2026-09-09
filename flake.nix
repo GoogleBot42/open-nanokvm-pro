@@ -609,7 +609,7 @@
         mkApplianceAxpImage = bootChain: import ./nixos/axp-image.nix {
           inherit bootChain;
           inherit pkgs project version boot uboot-env logo mkBootfsFor;
-          inherit atf-mainline uboot-mainline spl-minimal;
+          inherit atf-mainline uboot-mainline spl-minimal gpt-image;
           dtbSlotImage = dtb-mainline-slot-image;
           artifacts = import ./nixos/lib/appliance-artifacts.nix {
             inherit pkgs;
@@ -730,7 +730,7 @@
         # image it writes, all derived from nixos/lib/emmc-layout.nix. Copied
         # to the board and run there; see pkgs/migrate-layout.nix.
         migrate-layout = callPkg ./pkgs/migrate-layout.nix {
-          inherit atf-mainline uboot-mainline spl-minimal uboot-env bootfs project;
+          inherit atf-mainline uboot-mainline spl-minimal gpt-image uboot-env bootfs project;
         };
 
         # Non-destructive microSD boot image (dd-able .img): boots the whole

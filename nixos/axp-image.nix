@@ -9,6 +9,7 @@
 , atf-mainline # pkgs/atf-mainline.nix -- mainline TF-A BL31, signed
 , uboot-mainline # pkgs/uboot-mainline.nix -- mainline U-Boot BL33, signed
 , spl-minimal # pkgs/spl-minimal.nix -- the SPL rebuilt for the minimal layout
+, gpt-image # pkgs/gpt-image.nix -- the generated GPT (primary + alternate)
 , dtbSlotImage # the signed mainline dtb partition image
 , artifacts # nixos/lib/appliance-artifacts.nix
 , mkKernel # initrd cpio -> the appliance kernel
@@ -134,6 +135,14 @@ let
   # partitions it does not have are simply never referenced.
   allPartitionImages = {
     spl = { member = "spl${sfx}_${project}_signed.bin"; file = splImg; };
+    # The two GPT structures. They are not partitions in any other sense --
+    # `gpt` is the 1 MiB the protective MBR, header and entry array live in at
+    # the front of `disk`, and `gptalt` is the last 32 KiB of the device, whose
+    # final 16896 bytes are the backup array and the alternate header. The
+    # flasher writes whole partitions at a base, which is the only reason the
+    # second one is expressed as a padded 32 KiB image.
+    gpt = { member = "gpt_primary.bin"; file = "${gpt-image}/gpt-primary.bin"; };
+    gptalt = { member = "gpt_alternate.bin"; file = "${gpt-image}/gpt-alt-member.bin"; };
     ddrinit = { member = "ddrinit_${project}_signed.bin"; file = bootImg "ddrinit_${project}_signed.bin"; };
     atf = { member = "atf${sfx}_bl31_signed.bin"; file = atfImg; };
     atf_b = { member = "atf_b${sfx}_bl31_signed.bin"; file = atfImg; };

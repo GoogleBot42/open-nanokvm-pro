@@ -94,10 +94,20 @@ static void test_layout(void)
 	      "p0 was returned; partitions are 1-based");
 }
 
-/* The two partitions everything downstream addresses by number. */
+/*
+ * The two partitions everything downstream addresses by number.
+ *
+ * Under the GPT layout (#89 rung 4) the blkdevparts= clause carves the raw
+ * eMMC into `spl` and `disk` and nothing else: `boot` and `rootfs` are GPT
+ * partitions on a loop device over `disk`, and .#checks.uboot-gpt is what
+ * proves those. EXPECTED_BOOT_PART = 0 means "not in this table".
+ */
 static void test_named(void)
 {
 	struct disk_partition info;
+
+	if (!EXPECTED_BOOT_PART && !EXPECTED_ROOT_PART)
+		return;
 
 	if (part_driver_cmdline.get_info(&mmc0, EXPECTED_BOOT_PART, &info))
 		check(0, "the boot partition p%d is missing",

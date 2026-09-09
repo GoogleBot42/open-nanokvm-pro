@@ -501,10 +501,86 @@ in
     boot.initrd.kernelModules = lib.mkForce [ ];
     boot.initrd.availableKernelModules = lib.mkForce [ ];
 
-    # `losetup` for the image-file root below. Busybox in the initrd has an
-    # applet, but the real one is 100 KB and behaves the same everywhere.
-    boot.initrd.extraUtilsCommands = lib.mkIf cfg.rootImage.enable ''
-      copy_bin_and_libs ${pkgs.util-linux}/bin/losetup
+    # `losetup` for the image-file root below and for the GPT mapping. Busybox
+    # in the initrd has an applet, but the real one is 100 KB, behaves the same
+    # everywhere, and is the only one that takes `-P`.
+    # `resize2fs` is the minimal layout's one-time shrink -- see the comment on
+    # preLVMCommands below.
+    boot.initrd.extraUtilsCommands = lib.mkMerge [
+      (lib.mkIf cfg.rootImage.enable ''
+        copy_bin_and_libs ${pkgs.util-linux}/bin/losetup
+      '')
+      (lib.mkIf (cfg.emmcLayout == "minimal") ''
+        copy_bin_and_libs ${pkgs.util-linux}/bin/losetup
+        copy_bin_and_libs ${pkgs.e2fsprogs}/bin/resize2fs
+      '')
+    ];
+
+    # =====================================================================
+    # MAPPING `disk`: the GPT the kernel cannot be told to look for
+    # =====================================================================
+    # The eMMC is two logical devices (#89 rung 4): `spl`, the 768 KiB the
+    # BootROM reads its first-stage loader from, and `disk`, everything after
+    # it. `disk` carries a spec-conformant GPT at its own LBA 0 -- but Linux
+    # has no way to be told "parse a partition table at an offset", so the
+    # kernel command line splits the raw eMMC in two with
+    # `blkdevparts=mmcblk0:768K(spl),-(disk)` and stage 1 puts a loop device
+    # over the second half. The in-kernel EFI parser then does the rest, and
+    # /dev/loop0p1..5 appear with their GPT names.
+    #
+    # This has to happen before any filesystem is mounted, which is what
+    # preLVMCommands is: after udev has settled, before the root is looked for.
+    boot.initrd.preLVMCommands = lib.mkIf (cfg.emmcLayout == "minimal") ''
+      # THE eMMC IS NOT RELIABLY mmcblk0 unless something makes it so -- three
+      # SD4HC instances probe concurrently on this SoC. `aliases { mmc0 =
+      # &emmc; }` in dts/ax630c.dtsi is what pins it, and the blkdevparts=
+      # clause binds the split to that name, so if the alias ever lapses the
+      # split lands on an empty slot and NOTHING here can recover it. Wait for
+      # the device the clause created rather than assuming it is instant.
+      nktry=0
+      while [ ! -e ${parts.diskDevice} ] && [ "$nktry" -lt 60 ]; do
+        sleep 1
+        nktry=$((nktry + 1))
+      done
+      if [ ! -e ${parts.diskDevice} ]; then
+        echo "nanokvm: ${parts.diskDevice} never appeared -- is blkdevparts= on the cmdline?" >&2
+        cat /proc/partitions >&2 || true
+      else
+        # The loop module creates loop0..7 at init; udev makes the nodes. Only
+        # make one by hand if that has not happened, because the root device is
+        # a compile-time constant and it says loop0.
+        if [ ! -e ${parts.loopDevice} ]; then
+          modprobe loop 2>/dev/null || true
+          nktry=0
+          while [ ! -e ${parts.loopDevice} ] && [ "$nktry" -lt 10 ]; do
+            sleep 1
+            nktry=$((nktry + 1))
+          done
+          [ -e ${parts.loopDevice} ] || mknod ${parts.loopDevice} b 7 0
+        fi
+
+        echo "nanokvm: mapping ${parts.diskDevice} -> ${parts.loopDevice} (GPT)"
+        losetup -P ${parts.loopDevice} ${parts.diskDevice} \
+          || echo "nanokvm: losetup failed" >&2
+        udevadm settle || true
+
+        # THE FILESYSTEM IS FIVE BLOCKS TOO BIG ON THE FIRST BOOT AFTER THE
+        # MIGRATION, and ext4 refuses to mount rather than truncating. The old
+        # 17-partition table ran `rootfs` to the last byte of the eMMC and the
+        # filesystem was grown to fill it; a GPT reserves the last 33 LBAs for
+        # the alternate header, so the new partition is 16896 bytes shorter.
+        #
+        # `resize2fs` with no size argument resizes to the device, shrinking
+        # included, and it only demands a check when it has to -- so on every
+        # boot after the first this is one command, no fsck, "Nothing to do!".
+        if [ -e ${parts.root.device} ]; then
+          if ! resize2fs ${parts.root.device}; then
+            echo "nanokvm: checking ${parts.root.device} before resizing it"
+            e2fsck -fp ${parts.root.device} || true
+            resize2fs ${parts.root.device} || true
+          fi
+        fi
+      fi
     '';
 
     # Mount the carrier filesystem and attach the image before stage 1 goes
