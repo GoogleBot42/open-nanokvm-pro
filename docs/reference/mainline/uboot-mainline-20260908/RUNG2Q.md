@@ -92,3 +92,62 @@ The appliance **oopses on every `reboot`**, on slot A, on the vendor chain:
 `do_kernel_restart()` walks the restart-handler chain and calls a NULL
 `notifier_call`. The reset still happens, so it has been invisible; it is a
 real defect in the restart path and gets its own issue.
+
+## The whole boot log, and the one line that matters
+
+`rung2q-slotb-console-20260909.txt` is a complete slot-B boot under mainline
+U-Boot, 25478 bytes, first printk to last -- read out of the ramoops console
+zone with `harness/rdmem.py`. The kernel boots to systemd, mounts p17, flushes
+the journal. It fails at exactly one thing:
+
+```
+[    0.928222] axera-dwmac 104c0000.ethernet: Active PHY interface: RMII (4)
+[    1.018676] mdio_bus stmmac-0: MDIO device at address 1 is missing.
+[   15.709643] axera-dwmac ... end0: cannot attach to PHY (error: -ENODEV)
+```
+
+Slot A -- same kernel, same dtb, same rootfs -- says `Active PHY interface:
+RGMII (1)` and finds the RTL8211F. The difference is one register. U-Boot's own
+dump, taken from `bootcmd` immediately before `sysboot`:
+
+```
+10030000: 00300b40 00005e6c 000ff43f 00000000
+10030010: 00000000 3c0002e0 0000606a 00000270
+10030020: 400001d1 00000000 00000000 00000000
+```
+
+`+0x28` -- the flash syscon's PHY interface select -- is **0** under mainline
+U-Boot and **0x600** (RGMII, external pads) on the running slot-A system. The
+vendor-derived U-Boot has an ethernet driver and programs it; mainline U-Boot
+prints `Net:   No ethernet found.` and leaves it alone.
+
+`dwmac-axera` writes 0x600 itself, so this should not have mattered -- except it
+wrote it AFTER pulsing the MAC's block reset, and **the MAC samples the select
+at the release of that reset**. Under the vendor loader the value was already
+right and the ordering never showed. Under mainline U-Boot the MAC comes out of
+reset believing it is RMII, the RGMII pads are not driven, and MDIO address 1
+answers nothing.
+
+The fix is to write the select first. One statement swap.
+
+## Two harness fixes this round also needed
+
+`watchdog.open_timeout` on the command line. `ax630c_wdt` adopts U-Boot's
+running dog (`WDOG_HW_RUNNING`) and, with `CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED`
+and `CONFIG_WATCHDOG_OPEN_TIMEOUT=0`, the core pets it forever from kernel
+context -- nothing in the appliance opens `/dev/watchdog`. That is the whole of
+"dark and stays dark". With an open deadline the board resets ~4 minutes in and
+the log is waiting on the next boot.
+
+`systemd.mask=systemd-pstore.service` for any boot that has to be read whole:
+unlinking a pstore record calls `ramoops_pstore_erase()`, which zaps the LIVE
+console zone. And the ramoops console zone grew from 0x4000 to 0x8000, bounded
+above by 0x480e0000 so that a slot-A system still running an older dtb cannot
+own the same bytes.
+
+## Reading a no-map region
+
+`dd if=/dev/mem` of the console zone returns **zero bytes with exit status 0**:
+`read()` refuses a `no-map` reserved region, silently. mmap works, but a bulk
+copy out of the mapping SIGBUSes, because arm64 maps it as Device memory.
+`harness/rdmem.py` mmaps and reads aligned u32s.

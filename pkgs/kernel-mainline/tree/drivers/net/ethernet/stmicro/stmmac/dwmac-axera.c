@@ -11,7 +11,9 @@
  *                 through the clock framework, not from here
  *   +0x14 bit 8   EMAC block software reset, active high
  *   +0x28 [10:9]  PHY interface select: bit 9 = RGMII (vs RMII),
- *                 bit 10 = drive the external pads (vs the on-chip EPHY)
+ *                 bit 10 = drive the external pads (vs the on-chip EPHY).
+ *                 The MAC samples this at the release of the block reset, so
+ *                 it must be written BEFORE the reset -- see the probe.
  *
  * The board wires an external JLSemi JL2101 in RGMII mode, so the on-chip EPHY
  * is irrelevant here: firmware leaves it held in reset (+0x14 bit 9 set) and
@@ -171,16 +173,34 @@ static int ax630c_dwmac_probe(struct platform_device *pdev)
 	plat_dat->set_clk_tx_rate = ax630c_dwmac_set_clk_tx_rate;
 	plat_dat->bsp_priv = dwmac;
 
-	ret = ax630c_dwmac_reset(dwmac);
-	if (ret)
-		return dev_err_probe(dev, ret, "EMAC block reset failed\n");
-
+	/*
+	 * SELECT THE INTERFACE, THEN RESET. Not the other way round: the MAC
+	 * SAMPLES the select at the release of its block reset and reports
+	 * what it sampled in the DMA HW feature register, which is what stmmac
+	 * prints as "Active PHY interface". Writing the select afterwards
+	 * changes the pad routing but not the MAC's idea of what it is talking
+	 * to, and the MDIO bus then finds nothing:
+	 *
+	 *   axera-dwmac 104c0000.ethernet: Active PHY interface: RMII (4)
+	 *   mdio_bus stmmac-0: MDIO device at address 1 is missing.
+	 *
+	 * The old order worked for a year because the vendor-derived U-Boot
+	 * leaves the select at RGMII already (+0x28 = 0x600) and the write was
+	 * a no-op. Mainline U-Boot has no ethernet driver and leaves it at 0,
+	 * so on that loader the same kernel booted to userspace with no
+	 * network at all -- which, on a board whose only channel is SSH, is
+	 * indistinguishable from a kernel that never started (#89 rung 2q).
+	 */
 	ret = ax630c_dwmac_set_interface(dwmac, plat_dat->phy_interface);
 	if (ret)
 		return dev_err_probe(dev, ret, "PHY interface select failed\n");
 
+	ret = ax630c_dwmac_reset(dwmac);
+	if (ret)
+		return dev_err_probe(dev, ret, "EMAC block reset failed\n");
+
 	/*
-	 * Block reset and pad select are done, so the PHY now leaves reset
+	 * Pad select and block reset are done, so the PHY now leaves reset
 	 * into a MAC that is already out of reset and already told which pads
 	 * to drive. That ordering is why the reset-gpios pulse belongs to the
 	 * MDIO core: it happens inside stmmac_dvr_probe(), when the bus

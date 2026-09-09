@@ -142,15 +142,21 @@
 		 *
 		 * Both sizes are powers of two because ramoops rounds them down
 		 * to one anyway, so a DT that has to be simulated to know its
-		 * own layout is worse than a DT that is simply explicit. 0x10000
+		 * own layout is worse than a DT that is simply explicit. 0x8000
 		 * console and the 0x4000 remainder as two 0x2000 dump records.
 		 *
 		 * **The console zone must hold a WHOLE boot log.** At 0x4000 it
-		 * did not: a full appliance boot is about 27 KB of console text,
-		 * the ring kept only the last 16 KB, and the MDIO bus scan at
-		 * t=1 s -- the thing rung 2q had to see -- had already been
-		 * overwritten by the time the board reset. 64 KiB covers the
-		 * boot with room to spare.
+		 * did not: a full appliance boot is 25478 bytes of console text
+		 * (measured), the ring kept only the last 16 KB, and the MDIO
+		 * bus scan at t=1 s -- the thing rung 2q had to see -- had been
+		 * overwritten by the time the board reset. 0x8000 covers it.
+		 *
+		 * The region also stops at 0x480e0000 on purpose: a slot-B
+		 * excursion is read back by a slot-A system that may still be
+		 * running an OLDER dtb, whose own ramoops owns 0x480e0000
+		 * upwards and zeroes it on the very boot that is supposed to
+		 * recover the log. Keep this window disjoint from every address
+		 * the reader might claim.
 		 *
 		 * This is the only channel that survives when userspace never
 		 * runs: the console zone holds the boot log from the first
@@ -166,8 +172,8 @@
 		 */
 		ramoops@480d4000 {
 			compatible = "ramoops";
-			reg = <0x0 0x480d4000 0x0 0x14000>;
-			console-size = <0x10000>;
+			reg = <0x0 0x480d4000 0x0 0xc000>;
+			console-size = <0x8000>;
 			record-size = <0x2000>;
 			mem-type = <1>;
 		};
