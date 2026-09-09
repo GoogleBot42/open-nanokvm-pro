@@ -525,8 +525,15 @@
             initramfsCompression = "ZSTD";
             inherit variant;
           };
+        # THE MINIMAL-LAYOUT INITRD, and that is load-bearing (#89 rung 4).
+        # Stage 1 mounts root BY DEVICE, so an initrd built for the vendor
+        # layout looks for /dev/mmcblk0p17 -- which does not exist once the
+        # layout changes. This kernel is what `.#bootfs` and therefore
+        # `.#migrate-layout` put on /boot, so it has to be the one that knows
+        # root is p6. The .axp builders take the initrd of the configuration
+        # they are imaging, so they were never at risk.
         kernel-mainline-appliance =
-          mkApplianceKernel nixos-appliance.initrd "appliance";
+          mkApplianceKernel nixos-appliance-mainline-chain.initrd "appliance";
         kernel-mainline-appliance-loop =
           mkApplianceKernel nixos-appliance-loop.initrd "appliance-loop";
         kernel-mainline-appliance-qemu =
