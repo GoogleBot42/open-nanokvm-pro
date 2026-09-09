@@ -199,6 +199,13 @@ that is arbitration, not a bug.
 Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/device.env`
 (untracked). See the kvm-device skill.
 
+**Since 2026-09-11 slot A boots the MAINLINE chain** (mainline TF-A BL31 in p3,
+mainline U-Boot in p5, extlinux + Image + dtb on p16, mainline env in p7); slot B
+(p4 mainline BL31, p6 vendor-derived U-Boot) is the SPL's automatic fallback.
+A good boot reads `0x30000015` in the slot register and takes ~3 min to SSH
+(single-block eMMC reads, #91). `docs/mainline-port.md` §11.10 "Handoff for
+rung 4" is the current device contract.
+
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
