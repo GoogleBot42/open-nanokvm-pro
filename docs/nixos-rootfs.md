@@ -386,6 +386,25 @@ truncating (`bad geometry: block count … exceeds size of device`). Stage 1 run
 included; it demands a check only when it has to, so every boot after the first
 is one command and no fsck.
 
+**Rejected alternative: a hybrid SPL header carrying the GPT (2026-09-12).**
+Since we sign the SPL ourselves, its 1 KB header could carry a protective MBR
+and the GPT header in place: the RSA signature field occupies header bytes
+444–827, which covers the MBR partition table (446–509), its `0x55AA`
+(510–511) and the GPT header (512–603), and that signature is only verified
+when the efuse `SECURE_BOOT_EN` bit is set (`boot/bl1/core/boot/boot.c`
+`is_secure_enable()`; unburned here). The partition array can live at any
+LBA the header names, so LBA 2 onward stays the SPL payload. Linux and U-Boot
+would then see a spec-conformant GPT at LBA 1 with no `blkdevparts` split, no
+loop mapping and no base-LBA patch. It was not done because the header's
+word checksum (`verify_img_header`: `calc_word_chksum` over everything after
+`magic_data`) covers those same bytes: every GPT header rewrite — any
+`sgdisk`/`parted` edit, since the header CRC changes — silently invalidates
+the SPL header, and the next boot is an AXDL trip. An additive checksum could
+be compensated with a fix-up word, but only by a step every partition tool
+would have to know about. The split keeps the SPL out of every writer's path,
+which is the property that matters. Revisit only if the ROM's checksum window
+turns out narrower than the SPL's mirror of it.
+
 ### 7. Init system — and the SysV layer nobody documented
 
 systemd, and now nothing else. The vendor image ran a live `rc-local.service`
