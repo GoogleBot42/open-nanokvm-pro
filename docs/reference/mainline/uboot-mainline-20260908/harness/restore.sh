@@ -1,6 +1,11 @@
 #!/bin/sh
 # rung 2 (#89) teardown: put uboot_b, the environment and /boot back exactly as
 # they were, and leave the slot register on slot A.
+#
+# /boot is emptied by CONTENT, not by a list of names. The earlier version
+# removed the three files it happened to know about, and every round that
+# staged a differently-named dtb left one behind (rung 2q ended with
+# ax630c-2q3.dtb and ax630c-2q5.dtb still there after a "successful" restore).
 set -e
 cd /root/rung2
 
@@ -14,12 +19,15 @@ head -c 1572864 /dev/mmcblk0p6 | md5sum
 head -c 1048576 /dev/mmcblk0p7 | md5sum
 
 echo "=== restore /boot ==="
-rm -f /boot/Image /boot/ax630c-nanokvm-pro.dtb
-rm -f /boot/extlinux/extlinux.conf /boot/extlinux/extlinux-fallback.conf
-rmdir /boot/extlinux 2>/dev/null || true
+rm -rf /boot/extlinux
+find /boot -mindepth 1 -maxdepth 1 -type f -exec rm -f {} +
 cp -a /root/rung2/boot-backup/. /boot/
 sync; echo 3 > /proc/sys/vm/drop_caches
 find /boot | sort
+if [ "$(find /boot -mindepth 1 | wc -l)" != 1 ]; then
+	echo "!! /boot is not 'ver' alone -- look at it before going further"
+	exit 1
+fi
 df -h /boot
 
 echo "=== env ==="
