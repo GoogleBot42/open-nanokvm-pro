@@ -4,6 +4,7 @@
 , consoleToBuffer ? false
 , traceBoot ? false
 , teeConsole ? false
+, probeMmc ? false
 , ... }:
 
 # ===========================================================================
@@ -83,6 +84,8 @@ let
     ./uboot-mainline/patches/0018-ax630c-fix-fdt-placement-and-retry-the-boot-payload.patch
     ./uboot-mainline/patches/0019-ax630c-rescan-the-card-between-boot-attempts.patch
     ./uboot-mainline/patches/0020-ax630c-do-not-read-the-environment-off-the-emmc.patch
+    ./uboot-mainline/patches/0021-mmc-do-not-offer-the-card-a-voltage-the-board-cannot-.patch
+    ./uboot-mainline/patches/0022-mmc-retry-a-failed-block-read-before-giving-up.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -1088,6 +1091,102 @@ let
     		/* Send to the standard output */
     		pre_console_puts(s);
     		fputs(stdout, s);'
+
+    # #89 rung 3b: say which mode the card ended up in. The question the round
+    # asks is whether a re-initialisation after a failed transfer lands on the
+    # same configuration as the first one, and upstream announces neither.
+    substituteInPlace drivers/mmc/mmc.c --replace-fail \
+      '			err = mmc_read_and_compare_ext_csd(mmc);
+    			if (!err)
+    				return 0;' \
+      '			err = mmc_read_and_compare_ext_csd(mmc);
+    			if (!err) {
+    				printf("mmc: selected mode %d, %d-bit, %u Hz, signal %d\n",
+    				       mmc->selected_mode, mmc->bus_width,
+    				       mmc->clock, mmc->signal_voltage);
+    				return 0;
+    			}'
+  '';
+
+  # -------------------------------------------------------------------------
+  # probeMmc = true: the tee image plus a one-shot eMMC interrogation in
+  # `preboot` (#89 rung 3b; the data goes on #91). A diagnostic, never
+  # flashed as the product. It answers three questions in one boot:
+  #
+  #   A  an open-ended CMD18 (no CMD23, no Auto CMD12), with the card's own
+  #      state read by CMD13 BEFORE any CMD12 and before the controller is
+  #      reset -- CURRENT_STATE 5 (DATA) means the card was streaming and the
+  #      host went deaf, 4 (TRAN) means it never started.
+  #   B  the single-block failure rate in MMC_HS and in HS200, from the
+  #      "retrying read" lines of two equal reads.
+  #   C  that a forced re-initialisation lands back on the same mode as the
+  #      first one -- the acceptance test for patch 0021.
+  # -------------------------------------------------------------------------
+  probePostPatch = ''
+    # `mmc dev <dev> <part> <mode>` pins a speed mode.
+    echo 'CONFIG_MMC_SPEED_MODE_SET=y' >> configs/${defconfig}
+
+    # `bmax` in the environment lifts the cdns,single-block-only cap, so one
+    # open-ended CMD18 can be issued on demand and nothing else changes.
+    substituteInPlace drivers/mmc/mmc-uclass.c --replace-fail \
+      '#include <bootdev.h>' \
+      '#include <bootdev.h>
+    #include <env.h>'
+
+    substituteInPlace drivers/mmc/mmc-uclass.c --replace-fail \
+      'int mmc_get_b_max(struct mmc *mmc, void *dst, lbaint_t blkcnt)
+    {
+    	return dm_mmc_get_b_max(mmc->dev, dst, blkcnt);
+    }' \
+      'int mmc_get_b_max(struct mmc *mmc, void *dst, lbaint_t blkcnt)
+    {
+    	ulong ov = env_get_ulong("bmax", 10, 0);
+
+    	if (ov)
+    		return ov;
+
+    	return dm_mmc_get_b_max(mmc->dev, dst, blkcnt);
+    }'
+
+    substituteInPlace drivers/mmc/sdhci.c --replace-fail \
+      '	sdhci_reset(host, SDHCI_RESET_CMD);
+    	sdhci_reset(host, SDHCI_RESET_DATA);
+    	if (stat & SDHCI_INT_TIMEOUT)' \
+      '	{
+    		u32 pst = sdhci_readl(host, SDHCI_PRESENT_STATE);
+    		u32 st = 0, resp = 0;
+    		int i;
+
+    		printf("probe: cmd%d failed int %08x present %08x\n",
+    		       cmd->cmdidx, stat, pst);
+
+    		/* CMD13, by hand, before anything is reset or stopped. */
+    		sdhci_writel(host, host->mmc->rca << 16, SDHCI_ARGUMENT);
+    		sdhci_writew(host, SDHCI_MAKE_CMD(MMC_CMD_SEND_STATUS,
+    						  SDHCI_CMD_RESP_SHORT |
+    						  SDHCI_CMD_CRC |
+    						  SDHCI_CMD_INDEX),
+    			     SDHCI_COMMAND);
+    		for (i = 0; i < 20000; i++) {
+    			st = sdhci_readl(host, SDHCI_INT_STATUS);
+    			if (st & (SDHCI_INT_RESPONSE | SDHCI_INT_ERROR))
+    				break;
+    			udelay(10);
+    		}
+    		resp = sdhci_readl(host, SDHCI_RESPONSE);
+    		printf("probe: cmd13 int %08x resp %08x state %d\n",
+    		       st, resp, (resp >> 9) & 0xf);
+    		sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
+    	}
+    	sdhci_reset(host, SDHCI_RESET_CMD);
+    	sdhci_reset(host, SDHCI_RESET_DATA);
+    	if (stat & SDHCI_INT_TIMEOUT)'
+
+    # The probe sequence itself. No environment is stored (patch 0020), so
+    # this is the only place it can live.
+    sed -i 's|^CONFIG_PREBOOT=.*|CONFIG_PREBOOT="mw.l 0x02390028 0x10000000; mmc dev 0; echo PROBE-A-CMD18; setenv bmax 2; mmc read 0x4a000000 0x4ae00 2; setenv bmax 1; echo PROBE-B-HS; mmc dev 0 0 1; mmc read 0x4a000000 0x4ae00 0x4000; echo PROBE-B-HS200; mmc dev 0 0 10; mmc read 0x4a000000 0x4ae00 0x4000; echo PROBE-C-REINIT; mmc dev 0; echo PROBE-END"|' configs/${defconfig}
+    grep -q 'PROBE-END' configs/${defconfig} \
+      || { echo "ERROR: could not install the probe preboot" >&2; exit 1; }
   '';
 
   variant = assert lib.assertMsg (!dcacheOff || debugMilestones)
@@ -1100,7 +1199,8 @@ let
     + lib.optionalString dcacheOff "-nommu"
     + lib.optionalString consoleToBuffer "-console"
     + lib.optionalString traceBoot "-trace"
-    + lib.optionalString teeConsole "-tee";
+    + lib.optionalString teeConsole "-tee"
+    + lib.optionalString probeMmc "-probe";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -1161,7 +1261,8 @@ let
       + lib.optionalString dcacheOff dcacheOffPostPatch
       + lib.optionalString consoleToBuffer consolePostPatch
       + lib.optionalString traceBoot tracePostPatch
-      + lib.optionalString teeConsole teePostPatch;
+      + lib.optionalString teeConsole teePostPatch
+      + lib.optionalString probeMmc probePostPatch;
 
     makeFlags = [
       "ARCH=arm"

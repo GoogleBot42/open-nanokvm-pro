@@ -1,0 +1,84 @@
+From 92a3b4c5d6e7f8091a2b3c4d5e6f70819200220 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 9 Sep 2026 09:10:00 -0600
+Subject: [PATCH 22/22] mmc: retry a failed block read before giving up
+
+mmc_bread() treats one failed transfer as a failed read of the whole request.
+Everything above it -- the filesystem drivers, the environment, the boot
+scripts -- treats a failed read as a failed boot, so a single transient costs
+the board its operating system.
+
+A failed transfer is not evidence that the medium is bad. sdhci_send_command()
+already resets the command and data lines on its way out, so the next attempt
+starts from a clean controller, and the card is still there. Attempt each
+chunk up to three times, waiting for the card to report itself ready in
+between, and only then report the failure. The warning names the device and
+the LBA so a retry that succeeds is still visible in the console log rather
+than being silently absorbed.
+
+Measured on an Axera AX630C (Sipeed NanoKVM-Pro) reading a 48.8 MiB kernel as
+100k single-block commands, where the residual failure rate of one transfer in
+some tens of thousands was otherwise fatal to the boot.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/mmc.c | 34 ++++++++++++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 8888888..9999999 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -455,6 +455,19 @@
+ 	return mmc_send_cmd(mmc, &cmd, NULL);
+ }
+ 
++/*
++ * How many times a read is attempted before the block layer calls it a failure,
++ * and how long the card is given to become ready between attempts.
++ *
++ * A data transfer that fails is not evidence that the medium is bad: the host
++ * controller resets its command and data lines on the way out, so the next
++ * attempt starts from a clean state. Giving up on the first one turns any
++ * transient into a failed boot, which on a board whose only storage is this
++ * card is the difference between a delay and a brick.
++ */
++#define MMC_READ_RETRIES		3
++#define MMC_READ_RETRY_BUSY_MS		100
++
+ static int mmc_read_blocks(struct mmc *mmc, void *dst, lbaint_t start,
+ 			   lbaint_t blkcnt)
+ {
+@@ -549,10 +562,27 @@
+ 	b_max = mmc_get_b_max(mmc, dst, blkcnt);
+ 
+ 	do {
++		int tries = MMC_READ_RETRIES;
++
+ 		cur = (blocks_todo > b_max) ? b_max : blocks_todo;
+-		if (mmc_read_blocks(mmc, dst, start, cur) != cur) {
+-			pr_debug("%s: Failed to read blocks\n", __func__);
+-			return 0;
++		while (mmc_read_blocks(mmc, dst, start, cur) != cur) {
++			if (--tries <= 0) {
++				pr_debug("%s: Failed to read blocks\n",
++					 __func__);
++				return 0;
++			}
++
++			/*
++			 * The transfer failed and the host driver has reset the
++			 * command and data lines, but the card may still be
++			 * finishing what it was asked to do. Wait for it to
++			 * report itself ready before asking again; the result
++			 * does not matter, the retry itself is the test.
++			 */
++			mmc_poll_for_busy(mmc, MMC_READ_RETRY_BUSY_MS);
++
++			log_warning("mmc%d: retrying read at " LBAF "\n",
++				    dev_num, start);
+ 		}
+ 		blocks_todo -= cur;
+ 		start += cur;
+-- 
+2.55.0

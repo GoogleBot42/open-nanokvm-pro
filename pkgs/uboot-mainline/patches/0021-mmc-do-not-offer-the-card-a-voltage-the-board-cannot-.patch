@@ -1,0 +1,171 @@
+From 8192a3b4c5d6e7f8091a2b3c4d5e6f7081920021 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 9 Sep 2026 09:00:00 -0600
+Subject: [PATCH 21/22] mmc: do not offer the card a signal voltage the board
+ cannot drive
+
+mmc_select_mode_and_width() walks the speed modes from fastest to slowest and,
+for every candidate, asks mmc_set_lowest_voltage() to pick an I/O level. Every
+mode below MMC_DDR_52 -- MMC_HS_52, MMC_HS and MMC_LEGACY -- is offered
+MMC_SIGNAL_VOLTAGE_330 and nothing else.
+
+On a board whose vqmmc rail is a fixed 1.8 V regulator that offer cannot be
+taken. sdhci_set_voltage() prints "failed to set vqmmc-voltage to 3.3V" and
+returns without touching Host Control2, and because the host half of the
+switch goes through ->set_control_reg(), which returns void,
+mmc_set_signal_voltage() reports success anyway. The mode is then configured
+with the controller still signalling at 1.8 V and the core believing it is at
+3.3 V, the confirming ext_csd read fails, and the walk moves on. Nine
+candidates later:
+
+  failed to set vqmmc-voltage to 3.3V     (x9)
+  unable to select a mode: -5
+  *** Warning - No block device, using default environment
+
+The card had already enumerated at 1.8 V; there was nothing wrong with it.
+Measured on an Axera AX630C (Sipeed NanoKVM-Pro), whose eMMC I/O rail is a
+fixed 1.8 V regulator, on every re-initialisation after a failed transfer --
+which is to say the board could not recover from one, because the re-init
+meant to recover it destroys the working configuration.
+
+Ask the supply what it can produce. mmc_vqmmc_signal_voltages() turns the
+vqmmc regulator's constraints into a mask of MMC_SIGNAL_VOLTAGE_* levels;
+mmc_set_lowest_voltage() intersects the allowed mask with it, so a level the
+board cannot drive is never selected. Boards with no vqmmc-supply, and
+supplies with neither constraints nor a readable value, get the full mask and
+behave exactly as before.
+
+That alone would leave a 1.8 V-only board with no mode at all below
+MMC_DDR_52, so also offer 1.8 V for the backwards-compatible and high-speed
+timings when the supply cannot reach 3.3 V. Those timings are defined at
+either I/O level -- EXT_CSD CARD_TYPE bits 0 and 1 name no voltage -- and on a
+board that can do 3.3 V the intersection above masks the addition straight
+back out, so nothing changes there.
+
+mmc_vqmmc_below_330(), which chooses the initial state, becomes one line on
+top of the same helper, so initialisation and re-initialisation now decide the
+I/O level from a single place.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ drivers/mmc/mmc.c | 79 ++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 65 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/mmc/mmc.c b/drivers/mmc/mmc.c
+index 7777777..8888888 100644
+--- a/drivers/mmc/mmc.c
++++ b/drivers/mmc/mmc.c
+@@ -1971,10 +1971,61 @@
+ 	return -EBADMSG;
+ }
+ 
++/*
++ * Which signal voltages can the I/O supply actually deliver?
++ *
++ * The mmc core assumes it may ask for any level the card announces and learn
++ * from the return value that the board cannot do it. It cannot: the host-side
++ * half of the switch goes through ->set_control_reg(), which returns void, so
++ * mmc_set_signal_voltage() reports success whatever became of the regulator. A
++ * board whose vqmmc rail is a fixed 1.8 V regulator therefore looks, to the
++ * core, exactly like a board that can switch to 3.3 V.
++ *
++ * Ask the supply's constraints instead and return the set of
++ * MMC_SIGNAL_VOLTAGE_* levels it can reach. Boards with no vqmmc-supply, and
++ * supplies with neither constraints nor a readable value, get the full set --
++ * the behaviour the core has always had.
++ */
++static uint mmc_vqmmc_signal_voltages(struct mmc *mmc)
++{
++#if CONFIG_IS_ENABLED(DM_REGULATOR)
++	struct dm_regulator_uclass_plat *plat;
++	int min_uV, max_uV;
++	uint mask = 0;
++
++	if (!mmc->vqmmc_supply)
++		return MMC_ALL_SIGNAL_VOLTAGE;
++
++	plat = dev_get_uclass_plat(mmc->vqmmc_supply);
++	min_uV = plat ? plat->min_uV : -ENODATA;
++	max_uV = plat ? plat->max_uV : -ENODATA;
++
++	if (min_uV == -ENODATA || max_uV == -ENODATA || max_uV < min_uV) {
++		/* No usable constraints: take the rail where it stands. */
++		min_uV = regulator_get_value(mmc->vqmmc_supply);
++		max_uV = min_uV;
++		if (min_uV <= 0)
++			return MMC_ALL_SIGNAL_VOLTAGE;
++	}
++
++	if (min_uV <= 1300000 && max_uV >= 1100000)
++		mask |= MMC_SIGNAL_VOLTAGE_120;
++	if (min_uV <= 1950000 && max_uV >= 1700000)
++		mask |= MMC_SIGNAL_VOLTAGE_180;
++	if (min_uV <= 3600000 && max_uV >= 2700000)
++		mask |= MMC_SIGNAL_VOLTAGE_330;
++
++	return mask ? mask : MMC_ALL_SIGNAL_VOLTAGE;
++#else
++	return MMC_ALL_SIGNAL_VOLTAGE;
++#endif
++}
++
+ #if CONFIG_IS_ENABLED(MMC_IO_VOLTAGE)
+ static int mmc_set_lowest_voltage(struct mmc *mmc, enum bus_mode mode,
+ 				  uint32_t allowed_mask)
+ {
++	u32 supply_mask = mmc_vqmmc_signal_voltages(mmc);
+ 	u32 card_mask = 0;
+ 
+ 	switch (mode) {
+@@ -1997,9 +2048,21 @@
+ 		break;
+ 	default:
+ 		card_mask |= MMC_SIGNAL_VOLTAGE_330;
++		/*
++		 * The backwards-compatible and high-speed timings are defined
++		 * at either I/O level -- EXT_CSD CARD_TYPE bits 0 and 1 name
++		 * no voltage. Offer 1.8 V for them when the supply cannot
++		 * reach 3.3 V, or a board with a fixed 1.8 V rail is left with
++		 * no selectable mode at all once the faster ones have failed.
++		 */
++		if (!(supply_mask & MMC_SIGNAL_VOLTAGE_330))
++			card_mask |= MMC_SIGNAL_VOLTAGE_180;
+ 		break;
+ 	}
+ 
++	/* Never offer the card a level the board cannot drive. */
++	allowed_mask &= supply_mask;
++
+ 	while (card_mask & allowed_mask) {
+ 		enum mmc_voltage best_match;
+ 
+@@ -2856,24 +2919,12 @@
+ /*
+  * Can the I/O supply actually produce 3.3 V? A board whose vqmmc rail is a
+  * fixed 1.8 V regulator cannot, and must be driven at 1.8 V from the very
+- * first command. Asking for 3.3 V and waiting for an error does not discover
+- * that: the host-side switch goes through ->set_control_reg(), which returns
+- * void, so mmc_set_signal_voltage() reports success either way.
++ * first command. See mmc_vqmmc_signal_voltages() for why asking for 3.3 V and
++ * waiting for an error does not discover that.
+  */
+ static bool mmc_vqmmc_below_330(struct mmc *mmc)
+ {
+-#if CONFIG_IS_ENABLED(DM_REGULATOR)
+-	int uV;
+-
+-	if (!mmc->vqmmc_supply)
+-		return false;
+-
+-	uV = regulator_get_value(mmc->vqmmc_supply);
+-
+-	return uV > 0 && uV < 2700000;
+-#else
+-	return false;
+-#endif
++	return !(mmc_vqmmc_signal_voltages(mmc) & MMC_SIGNAL_VOLTAGE_330);
+ }
+ 
+ /*
+-- 
+2.55.0

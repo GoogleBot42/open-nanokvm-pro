@@ -658,6 +658,17 @@
           teeConsole = true;
         };
 
+        # The tee image plus a one-shot eMMC interrogation in `preboot`
+        # (#89 rung 3b, data for #91): one open-ended CMD18 with the card's
+        # own CMD13 state read before any CMD12 or controller reset, a
+        # single-block read in MMC_HS and in HS200, and a forced re-init.
+        # A diagnostic; never flashed as the product.
+        uboot-mainline-probe = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          teeConsole = true;
+          probeMmc = true;
+        };
+
         # The MMU is never switched on, so the boot walks straight past rung
         # 2's mmu_setup() hang and exercises what the rung is actually for --
         # sdhci-cadence, part_cmdline, the environment, extlinux, booti. Slow,
@@ -702,7 +713,7 @@
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
-            uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee
+            uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;
 
