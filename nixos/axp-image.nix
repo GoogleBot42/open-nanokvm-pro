@@ -5,9 +5,10 @@
 , boot # pkgs/boot.nix -- the whole from-source boot chain + the FDL agents
 , uboot-env # pkgs/uboot-env.nix
 , logo # pkgs/logo.nix
-, mkBootfs # kernel Image -> pkgs/bootfs.nix (/boot AND the boot payload)
+, mkBootfsFor # layoutName -> kernel Image -> pkgs/bootfs.nix (/boot + payload)
 , atf-mainline # pkgs/atf-mainline.nix -- mainline TF-A BL31, signed
 , uboot-mainline # pkgs/uboot-mainline.nix -- mainline U-Boot BL33, signed
+, spl-minimal # pkgs/spl-minimal.nix -- the SPL rebuilt for the minimal layout
 , dtbSlotImage # the signed mainline dtb partition image
 , artifacts # nixos/lib/appliance-artifacts.nix
 , mkKernel # initrd cpio -> the appliance kernel
@@ -55,7 +56,11 @@
 }:
 
 let
-  parts = import ./emmc-partitions.nix { inherit lib; };
+  # The boot chain decides the layout, because the SPL is COMPILED for one:
+  # the vendor SPL knows the 17-partition map, `.#spl-minimal` knows the six.
+  # An image that mixed them would be a board that stops booting (#89 rung 4).
+  layoutName = if bootChain == "mainline" then "minimal" else "vendor";
+  parts = import ./emmc-partitions.nix { inherit lib; layout = layoutName; };
 
   initrd = artifacts.mkInitrd { inherit initialRamdisk initrdFile; };
   rootfs = artifacts.mkRootfs { inherit toplevel initrd version variant rootDevice; };
@@ -74,19 +79,17 @@ let
   # extlinux.conf + Image + dtb -- which is what mainline U-Boot's `bootcmd`
   # reads. `kernel`/`dtb` stay packed as a rescue copy that nothing loads.
   #
-  # It is NOT the default, because the chain does not yet boot reliably. On
-  # hardware (2026-09-09) it boots and reaches a running NixOS, and it also
-  # fails roughly two boots in three, always the same way: an eMMC data
-  # transfer times out, and this board cannot recover from that. Multi-block
-  # transfers do not work on its Cadence SD4HC (#91), so it runs with
-  # `cdns,single-block-only`; a timed-out single-block read is cleared by
-  # re-initialising the card, and re-initialisation walks
-  # `mmc_select_mode_and_width()` down to modes that need 3.3 V I/O, which a
-  # fixed 1.8 V vqmmc rail cannot supply. The card ends with no mode and no
-  # block device. In an in-place promotion the SPL's A/B fallback catches
-  # that -- slot B still holds the vendor-derived U-Boot -- but a FLASHED
-  # image has the same U-Boot in both slots and no fallback at all, which is
-  # why this flag exists and why it is off. #91 is the gate.
+  # SINCE #89 RUNG 4 IT ALSO CHANGES THE LAYOUT. The mainline variant packs
+  # the six-partition minimal map with `.#spl-minimal` -- an SPL compiled for
+  # those offsets -- and drops `ddrinit`, `optee`, `logo`, `dtb`, `kernel` and
+  # every `_b` twin. The vendor variant keeps all seventeen, because the
+  # vendor SPL is compiled for them; it is the AXDL recovery image.
+  #
+  # It is still NOT the default. On hardware the mainline chain now boots
+  # reliably (rung 3b: 10/10 slot-B boots, three slot-A boots), but a FLASHED
+  # image has no second bootloader to fall back to at all, whereas an in-place
+  # promotion always had the vendor chain behind it. Rung 5's bootcount
+  # rollback is what replaces that safety net.
   mainlineChain = bootChain == "mainline";
 
   atfImg =
@@ -98,11 +101,19 @@ let
     then "${uboot-mainline}/images/u-boot_mainline_signed.bin"
     else bootImg "u-boot_signed.bin";
 
+  splImg =
+    if mainlineChain
+    then "${spl-minimal}/images/spl_${project}_signed.bin"
+    else bootImg "spl_${project}_signed.bin";
+
   # The extlinux payload rides in /boot only when the loader that reads it is
   # the one being installed; under the vendor chain U-Boot loads the kernel
   # from the signed `kernel` partition by byte offset and 51 MB of unread
   # Image on p16 would be dead weight.
-  bootfs = if mainlineChain then mkBootfs "${kernel}/Image" else mkBootfs null;
+  bootfs =
+    if mainlineChain
+    then mkBootfsFor layoutName "${kernel}/Image"
+    else mkBootfsFor layoutName null;
 
   # Member names say which chain is inside, so a bundle can be identified from
   # its own file list.
@@ -118,8 +129,11 @@ let
   # partition name -> the member the manifest points at. `rawSize` is the size
   # the partition actually has to hold, for members whose stored form is
   # smaller than what the device unpacks (the Android-sparse rootfs).
-  partitionImages = {
-    spl = { member = "spl_${project}_signed.bin"; file = bootImg "spl_${project}_signed.bin"; };
+  # One entry per partition IN THE ACTIVE LAYOUT. The vendor map has all
+  # seventeen; the minimal map has six, and the twelve entries below that name
+  # partitions it does not have are simply never referenced.
+  allPartitionImages = {
+    spl = { member = "spl${sfx}_${project}_signed.bin"; file = splImg; };
     ddrinit = { member = "ddrinit_${project}_signed.bin"; file = bootImg "ddrinit_${project}_signed.bin"; };
     atf = { member = "atf${sfx}_bl31_signed.bin"; file = atfImg; };
     atf_b = { member = "atf_b${sfx}_bl31_signed.bin"; file = atfImg; };
@@ -134,32 +148,21 @@ let
     dtb_b = { member = "${project}_b_signed.dtb"; file = "${dtbSlotImage}/${project}_mainline_signed.dtb"; };
     kernel = { member = "kernel.bin"; file = "${kernelSlotImage}/kernel_b.bin"; };
     kernel_b = { member = "kernel_b.bin"; file = "${kernelSlotImage}/kernel_b.bin"; };
-    boot = { member = "bootfs.fat32"; file = "${bootfs}"; };
+    boot = { member = if mainlineChain then "bootfs.ext4" else "bootfs.fat32"; file = "${bootfs}"; };
     rootfs = { member = "nixos_rootfs_sparse.ext4"; file = "${rootfs}/ubuntu_rootfs_sparse.ext4"; };
   };
 
+  partNames = map (p: p.name) parts.parts;
+  partitionImages = lib.getAttrs partNames allPartitionImages;
+
   # The vendor's write order, kept: `spl` goes LAST, so an interrupted flash
   # leaves a board that falls into AXDL rather than one whose first-stage
-  # loader runs with nothing behind it.
-  imgOrder = [
-    "env"
-    "ddrinit"
-    "atf"
-    "atf_b"
-    "uboot"
-    "uboot_b"
-    "logo"
-    "logo_b"
-    "optee"
-    "optee_b"
-    "dtb"
-    "dtb_b"
-    "kernel"
-    "kernel_b"
-    "boot"
-    "rootfs"
-    "spl"
-  ];
+  # loader runs with nothing behind it, and `env` goes FIRST. Everything
+  # between keeps on-disk order -- which, for the vendor layout, reproduces
+  # the vendor manifest's order exactly.
+  imgOrder = [ "env" ]
+    ++ (lib.filter (n: n != "spl" && n != "env") partNames)
+    ++ [ "spl" ];
 
   # Host-side download agents. `name` is load-bearing: axdl-rs finds FDL1 and
   # FDL2 by the `name` attribute, not by <Type> or <ID>, and requires their
@@ -190,7 +193,9 @@ let
     pname = "nanokvm-pro-nixos-firmware-image${lib.optionalString mainlineChain "-mainline"}";
     inherit version;
     artifact = "${project}-nixos${sfx}.axp";
-    slotPairs = [
+    # Only pairs whose BOTH halves exist in the active layout. The minimal
+    # layout has no twins at all, which is the point of it.
+    slotPairs = lib.filter (p: parts.has p.a && parts.has p.b) [
       { a = "kernel"; b = "kernel_b"; }
       { a = "dtb"; b = "dtb_b"; }
       { a = "optee"; b = "optee_b"; }
@@ -198,15 +203,40 @@ let
       { a = "uboot"; b = "uboot_b"; }
       { a = "logo"; b = "logo_b"; }
     ];
-    signedMembers = [ "spl" "ddrinit" "atf" "atf_b" "uboot" "uboot_b" "optee" "optee_b" "dtb" "dtb_b" "kernel" "kernel_b" ];
+    signedMembers = lib.filter parts.has
+      [ "spl" "ddrinit" "atf" "atf_b" "uboot" "uboot_b" "optee" "optee_b" "dtb" "dtb_b" "kernel" "kernel_b" ];
     notes = ''
       NanoKVM-Pro NixOS appliance firmware (.axp) -- built from scratch (#78/#26).
 
       There is NO vendor bundle behind this image. Every partition it stores was
-      built by this flake:
+      built by this flake. LAYOUT: ${layoutName}, ${
+        toString (lib.length parts.parts)} partitions.
 
-        spl      spl_${project}_signed.bin   pkgs/boot.nix
-        ddrinit  ddrinit_${project}_signed.bin              pkgs/boot.nix
+      ${parts.table}
+      BOOT CHAIN: ${bootChain}.
+
+      ${if mainlineChain then ''
+        spl             SPL rebuilt for THIS layout         pkgs/spl-minimal.nix
+        atf             ${chainName} bl31, signed
+        uboot           ${ubootName} bl33, signed
+        env             U-Boot's own default env + a delta  pkgs/uboot-env.nix
+        boot            ${bootfsName}
+        rootfs          NixOS appliance ext4 (sparse)       nixos/appliance.nix
+
+      The mainline chain replaces BL31 and BL33 with upstream TF-A and U-Boot
+      plus this repo's patches, and boots the kernel with `sysboot` off
+      /boot/extlinux/extlinux.conf -- so there is no `kernel`, `dtb`, `optee`,
+      `logo` or `ddrinit` partition and no `_b` twin. The SPL is rebuilt for
+      exactly these offsets, which is why the two cannot be mixed: the vendor
+      SPL would read BL31 and U-Boot from the vendor map's addresses.
+
+      It is still not the default. A FLASHED image has no second bootloader to
+      fall back to, whereas the in-place promotion this layout came from
+      always had the vendor chain behind it. Rung 5's `bootcount` rollback is
+      what replaces that.
+      '' else ''
+        spl             spl_${project}_signed.bin           pkgs/boot.nix
+        ddrinit         ddrinit_${project}_signed.bin       pkgs/boot.nix
         atf/atf_b       ${chainName} bl31, signed
         uboot/uboot_b   ${ubootName} bl33, signed
         env             U-Boot's own default env + a delta  pkgs/uboot-env.nix
@@ -217,25 +247,22 @@ let
         boot            ${bootfsName}
         rootfs          NixOS appliance ext4 (sparse)       nixos/appliance.nix
 
-      BOOT CHAIN: ${bootChain}. The mainline variant (`bootChain =
-      "mainline"`) replaces BL31 and BL33 with upstream TF-A and U-Boot plus
-      this repo's patches and boots the kernel with `sysboot` off
-      /boot/extlinux/extlinux.conf; it is not the default, because that chain
-      still loses roughly two boots in three to #91 and a flashed image has
-      no other bootloader to fall back to. nixos/axp-image.nix explains it.
-      OP-TEE stays only because this SPL build hangs without a BL32 it can
-      verify; nothing running on the board uses it.
-
+      This is the VENDOR-layout image, and it is the AXDL recovery for a board
+      whose minimal-layout SPL did not come up: it restores the 17-partition
+      map, the vendor SPL that is compiled for it, and a NixOS that is built
+      for it. OP-TEE stays only because this SPL build hangs without a BL32 it
+      can verify; nothing running on the board uses it.
+      ''}
       Flash-time only, never stored on the eMMC: FDL1 and FDL2, the download
       agents the flasher pushes into BootROM RAM -- also from pkgs/boot.nix.
 
         nix run .#axdl -- --file <this file> --wait-for-device
 
-      FIRST BOOT: stage 1 fsck's and grows the rootfs to p17, the appliance
-      derives its MAC and hostname from the SoC UID, and sshd comes up with
-      root's password `sipeed`. Read docs/flashing-and-recovery.md before
-      flashing: this OVERWRITES the vendor system, and the only way back is
-      AXDL with a vendor .axp.
+      FIRST BOOT: stage 1 fsck's and grows the rootfs to ${parts.root.device},
+      the appliance derives its MAC and hostname from the SoC UID, and sshd
+      comes up with root's password `sipeed`. Read
+      docs/flashing-and-recovery.md before flashing: this OVERWRITES the
+      vendor system, and the only way back is AXDL with a vendor .axp.
     '';
   };
 in

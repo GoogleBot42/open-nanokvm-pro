@@ -69,8 +69,13 @@
 		 * vendor DT's, so the kernel does not need to be told twice.
 		 * U-Boot appends its own mem= from the board-id ADC read; that
 		 * is harmless and will be dropped when U-Boot moves (#26).
+		 *
+		 * The clause below is the MINIMAL layout (#89 rung 4): six
+		 * partitions, no A/B twins, no ddrinit/optee/logo/kernel/dtb.
+		 * nixos/lib/emmc-layout.nix is where it is defined and it
+		 * ASSERTS that this string matches, so the two cannot drift.
 		 */
-		bootargs = "console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 loglevel=8 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1M(env),6M(logo),6M(logo_b),1M(optee),1M(optee_b),1M(dtb),1M(dtb_b),64M(kernel),64M(kernel_b),128M(boot),-(rootfs)";
+		bootargs = "console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 loglevel=8 root=/dev/mmcblk0p6 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),256K(atf),1536K(uboot),256K(env),275M(boot),-(rootfs)";
 	};
 
 	/*

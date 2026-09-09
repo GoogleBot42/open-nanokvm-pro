@@ -1,7 +1,14 @@
-{ pkgs, uboot, envSize ? 1048576, ... }:
+{ pkgs, uboot
+, # The stored environment is exactly CONFIG_ENV_SIZE, which is the `env`
+  # partition's size in nixos/lib/emmc-layout.nix -- the same number
+  # pkgs/uboot-mainline.nix compiles in and the same one /etc/fw_env.config
+  # carries. Taking it from the layout is what stops the three disagreeing.
+  envSize ? (import ../nixos/emmc-partitions.nix { inherit (pkgs) lib; }).env.size
+, ... }:
 
 # ===========================================================================
-# The U-Boot environment partition image (p7 `env`, 1 MiB), from source.
+# The U-Boot environment partition image (the `env` partition), from source.
+# Under the minimal layout (#89 rung 4) that is p4, 256 KiB, at 0x280000.
 #
 # THE VENDOR .axp SHIPS NO ENVIRONMENT AT ALL. Its only env-related manifest
 # entry is an `ERASEENV` action with `select="0"`, and the SDK's XML generator
@@ -39,17 +46,20 @@
 # `.#nixos-firmware-image` packs both members from the same build, so a flash
 # can never disagree; a hand-written p5 must be paired with a hand-written p7.
 #
-# WHERE IT GOES. `CONFIG_ENV_IS_IN_MMC=y`, `CONFIG_SYS_MMC_ENV_DEV 0`,
-# `CONFIG_SYS_MMC_ENV_PART 0` -- the eMMC user area, at the `env` partition's
-# offset, a single copy (no `CONFIG_SYS_REDUNDAND_ENVIRONMENT`, so the image is
-# a 4-byte CRC32 followed by the NUL-separated variables, with no flag byte).
-# The image is `envRegionSize` (16 KiB), NOT the 1 MiB partition -- see
-# nixos/emmc-partitions.nix for why that number is what it is.
-# nixos/emmc-partitions.nix computes that offset (0x4C0000) from the
-# `blkdevparts=` clause, and #78 confirmed it ON HARDWARE: the
-# appliance's `fw_printenv -n bootsystem` read out of the live environment
-# there, which it could not have done had either number or the CRC layout been
-# wrong. It is also what /etc/fw_env.config on the appliance points at.
+# WHERE IT GOES. The eMMC user area, at the `env` partition's offset, a single
+# copy (no `CONFIG_SYS_REDUNDAND_ENVIRONMENT`, so the image is a 4-byte CRC32
+# followed by the NUL-separated variables, with no flag byte). The image is
+# exactly the partition size, which is also CONFIG_ENV_SIZE and the size in
+# /etc/fw_env.config -- all three come from nixos/lib/emmc-layout.nix, so they
+# cannot drift. #78 confirmed the arrangement ON HARDWARE: the appliance's
+# `fw_printenv -n bootsystem` read out of the live environment, which it could
+# not have done had either number or the CRC layout been wrong.
+#
+# U-BOOT ITSELF NO LONGER READS IT (patch 0020, #89 rung 3b):
+# `CONFIG_ENV_IS_NOWHERE`, because the read is 2048 single-block transfers
+# before the boot has done anything and one timing out is not recoverable.
+# The partition stays because `fw_printenv`/`fw_setenv` from Linux still use
+# it, and because rung 5's rollback contract wants somewhere to keep state.
 # ===========================================================================
 
 pkgs.runCommand "nanokvm-uboot-env.bin"

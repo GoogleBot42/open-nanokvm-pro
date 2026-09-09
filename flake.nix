@@ -129,15 +129,28 @@
         # `null` = /boot with `ver` alone, which is what the vendor-derived
         # chain wants: it loads the kernel from the signed `kernel` partition
         # and never looks here.
-        mkBootfs = kernelImage: callPkg ./pkgs/bootfs.nix {
-          inherit version;
-          payload = pkgs.lib.optionalAttrs (kernelImage != null) {
-            "Image" = kernelImage;
-            "ax630c-nanokvm-pro.dtb" = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
-            "extlinux/extlinux.conf" = extlinuxConf;
-            "extlinux/extlinux-fallback.conf" = extlinuxConf;
+        #
+        # SIZE AND FILESYSTEM COME FROM THE LAYOUT (#89 rung 4): 128 MiB of
+        # FAT32 under the vendor 17-partition map, 275 MiB of ext4 under the
+        # minimal six. nixos/lib/emmc-layout.nix is the single definition.
+        mkBootfsFor = layoutName: kernelImage:
+          let l = import ./nixos/emmc-partitions.nix {
+            inherit (pkgs) lib;
+            layout = layoutName;
           };
-        };
+          in
+          callPkg ./pkgs/bootfs.nix {
+            inherit version;
+            size = l.bootfs.size;
+            fsType = if layoutName == "vendor" then "vfat" else "ext4";
+            payload = pkgs.lib.optionalAttrs (kernelImage != null) {
+              "Image" = kernelImage;
+              "ax630c-nanokvm-pro.dtb" = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
+              "extlinux/extlinux.conf" = extlinuxConf;
+              "extlinux/extlinux-fallback.conf" = extlinuxConf;
+            };
+          };
+        mkBootfs = mkBootfsFor "minimal";
         bootfs = mkBootfs "${kernel-mainline-appliance}/Image";
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
@@ -448,14 +461,24 @@
         # The shipped variant also carries the .axp builder: nixos/image-axp.nix
         # defines `system.build.axpImage` from this configuration's own closure,
         # which is what `.#nixos-firmware-image` is.
+        #
+        # LAYOUT FOLLOWS THE CHAIN (#89 rung 4). The vendor chain's SPL is
+        # compiled for the 17-partition map, so a system imaged with it must
+        # have its root device, /boot and fw_env.config built for that map;
+        # the mainline chain gets the six-partition minimal one. The two evals
+        # therefore no longer share a rootfs closure.
         nixos-appliance = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
-          applianceModules = [ ./nixos/image-axp.nix ];
+          applianceModules = [
+            ./nixos/image-axp.nix
+            { nanokvm.emmcLayout = "vendor"; }
+          ];
           imageBuilder = applianceAxpImage;
         });
-        # Same closure, different image builder: only `system.build.axpImage`
-        # differs, so the rootfs derivation is shared with the line above.
         nixos-appliance-mainline-chain = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
-          applianceModules = [ ./nixos/image-axp.nix ];
+          applianceModules = [
+            ./nixos/image-axp.nix
+            { nanokvm.emmcLayout = "minimal"; }
+          ];
           imageBuilder = applianceAxpImageMainline;
         });
         nixos-appliance-loop = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
@@ -578,8 +601,8 @@
         # images.
         mkApplianceAxpImage = bootChain: import ./nixos/axp-image.nix {
           inherit bootChain;
-          inherit pkgs project version boot uboot-env logo mkBootfs;
-          inherit atf-mainline uboot-mainline;
+          inherit pkgs project version boot uboot-env logo mkBootfsFor;
+          inherit atf-mainline uboot-mainline spl-minimal;
           dtbSlotImage = dtb-mainline-slot-image;
           artifacts = import ./nixos/lib/appliance-artifacts.nix {
             inherit pkgs;
@@ -619,6 +642,21 @@
         # it yet. docs/mainline-port.md 11.10.
         axSign = callPkg ./pkgs/ax-sign.nix { };
         uboot-mainline = callPkg ./pkgs/uboot-mainline.nix { inherit axSign; };
+
+        # ---- the SPL, rebuilt for the minimal layout (#89 rung 4) ---------
+        #
+        # The one artefact the layout change cannot be made without: the SPL
+        # finds BL31 and BL33 by compile-time byte offsets, so it is compiled
+        # from the same nixos/lib/emmc-layout.nix list the kernel command line
+        # and the .axp manifest come from. Writing it to p1 is the single
+        # one-way step of the port -- a bad SPL means AXDL.
+        spl-minimal = callPkg ./pkgs/spl-minimal.nix { };
+
+        # The same SPL signed with an EMPTY firmware member, so the closed
+        # EIP-130 blob is absent from the container entirely (#90). Whether
+        # the BootROM boots without it is undocumented; this is the
+        # experiment, and it is NOT what rung 4 writes.
+        spl-minimal-noeip = callPkg ./pkgs/spl-minimal.nix { withEip = false; };
 
         # The same image plus milestone writes through every board_init_r hook
         # U-Boot already calls, so a BL33 that dies before `preboot` still says
@@ -679,6 +717,13 @@
           dcacheOff = true;
         };
 
+        # The in-place layout migration kit (#89 rung 4): the script plus every
+        # image it writes, all derived from nixos/lib/emmc-layout.nix. Copied
+        # to the board and run there; see pkgs/migrate-layout.nix.
+        migrate-layout = callPkg ./pkgs/migrate-layout.nix {
+          inherit atf-mainline uboot-mainline spl-minimal uboot-env bootfs project;
+        };
+
         # Non-destructive microSD boot image (dd-able .img): boots the whole
         # from-source stack from a card, eMMC untouched. Byte-matched to the
         # official v1.0.15 SD image; builds its own UART0 boot chain + SD-root
@@ -710,10 +755,12 @@
             nanokvm-server nanokvm-server-libgpiod nanokvm-gpio
             nanokvm-web nanokvm-display libsns-dummy
             update-package
-            base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
+            base-axp rootfs nixos-appliance nixos-appliance-mainline-chain
+            nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
+            spl-minimal spl-minimal-noeip migrate-layout
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;
 
@@ -753,14 +800,18 @@
           # A/B pairs identical and the Axera signed headers intact (#78).
           nixos-axp-manifest = nixos-firmware-image.verify;
           emmc-partition-map =
-            let p = import ./nixos/emmc-partitions.nix { inherit (pkgs) lib; };
-            in pkgs.writeText "emmc-partition-map" (
-              pkgs.lib.concatMapStrings
-                (e: "p${toString e.number}\t${e.name}\t${p.hex e.offset}\t"
-                  + (if e.size == null then "(remainder)" else p.hex e.size) + "\n")
-                p.parts
-              + "\nfw_env.config: ${p.fwEnvConfig}"
-            );
+            let
+              l = import ./nixos/lib/emmc-layout.nix { inherit (pkgs) lib; };
+              render = p: ''
+                === ${p.layoutName} (${toString (pkgs.lib.length p.parts)} partitions)
+                ${p.table}
+                ${p.blkdevparts}
+                fw_env.config: ${p.fwEnvConfig}'';
+            in
+            pkgs.writeText "emmc-partition-map" ''
+              ${render l.vendor}
+              ${render l.minimal}
+            '';
         };
 
         # `nix run .#axdl -- --file result/*.axp --wait-for-device`
@@ -782,7 +833,15 @@
       # It is built from the x86_64-linux instantiation because every flashable
       # output of this flake is (pkgs/boot.nix's packer is x86-64-only); the
       # SYSTEM it describes is aarch64-linux.
+      #
+      # `.#nanokvm-pro` IS THE MINIMAL-LAYOUT SYSTEM (#89 rung 4), because
+      # that is what the board runs:
+      #   nixos-rebuild switch --flake .#nanokvm-pro --target-host root@<dev>
+      # `.#nanokvm-pro-vendor-layout` is the same appliance built for the
+      # 17-partition map -- the system inside the AXDL recovery image.
       nixosConfigurations.nanokvm-pro =
+        perSystem.packages.x86_64-linux.nixos-appliance-mainline-chain.eval;
+      nixosConfigurations.nanokvm-pro-vendor-layout =
         perSystem.packages.x86_64-linux.nixos-appliance.eval;
       nixosConfigurations.nanokvm-pro-loop =
         perSystem.packages.x86_64-linux.nixos-appliance-loop.eval;

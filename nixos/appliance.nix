@@ -46,7 +46,14 @@
 # ===========================================================================
 
 let
-  parts = import ./emmc-partitions.nix { inherit lib; };
+  # THE eMMC LAYOUT (#89 rung 4). `nanokvm.emmcLayout` picks which of the two
+  # layouts nixos/lib/emmc-layout.nix defines this system is built for:
+  # "minimal" (six partitions, the mainline chain, the default) or "vendor"
+  # (the shipped 17, which the vendor chain's SPL is compiled for and which an
+  # AXDL recovery puts back). The root device, /boot, its filesystem type and
+  # /etc/fw_env.config all follow from it.
+  layoutOf = n: import ./emmc-partitions.nix { inherit lib; layout = n; };
+  parts = layoutOf cfg.emmcLayout;
   cfg = config.nanokvm;
 
   # ---- /kvmapp : the app tree the service model copies to tmpfs ----------
@@ -282,9 +289,27 @@ in
   # 0. Options -- the knobs the hardware tests and the sibling issues use
   # =====================================================================
   options.nanokvm = {
+    emmcLayout = lib.mkOption {
+      type = lib.types.enum [ "minimal" "vendor" ];
+      default = "minimal";
+      description = ''
+        Which eMMC partition layout this system is built for
+        (nixos/lib/emmc-layout.nix).
+
+        `minimal` is the six-partition layout the mainline boot chain runs on
+        (#89 rung 4): spl, atf, uboot, env, boot, rootfs -- no A/B twins, no
+        ddrinit, no OP-TEE, no separate kernel/dtb partitions, /boot on ext4.
+
+        `vendor` is the 17-partition A/B map the board shipped with. The
+        vendor boot chain's SPL is COMPILED for it, so a system imaged with
+        that chain must be built with this, and it is what an AXDL recovery
+        restores.
+      '';
+    };
+
     rootDevice = lib.mkOption {
       type = lib.types.str;
-      default = parts.root.device;
+      default = (layoutOf config.nanokvm.emmcLayout).root.device;
       description = ''
         Block device holding the NixOS root filesystem. Derived from the
         `blkdevparts=` clause, which is the only definition of this eMMC's
@@ -541,16 +566,24 @@ in
       autoResize = !cfg.rootImage.enable;
     };
 
-    # p16, vfat, and it must be WRITABLE: the server keeps its USB-gadget
-    # feature flags there (usb.ncm, usb.disk0, usb.uac2, eth.nodhcp, ...), the
-    # module loader sources /boot/configs, and the vendor initramfs contract
-    # still uses /boot/rec and /boot/check_resize2fs on a vendor boot.
-    # umask=000 matches the device.
-    fileSystems."/boot" = {
-      device = parts.bootfs.device;
-      fsType = "vfat";
-      options = [ "nofail" "noatime" "umask=000" ];
-    };
+    # /boot, and it must be WRITABLE: the server keeps its USB-gadget feature
+    # flags there (usb.ncm, usb.disk0, usb.uac2, eth.nodhcp, ...), the module
+    # loader sources /boot/configs, and the vendor initramfs contract still
+    # uses /boot/rec and /boot/check_resize2fs on a vendor boot. Since #89
+    # rung 3 it also holds the boot payload -- extlinux.conf, Image, dtb.
+    #
+    # EXT4 UNDER THE MINIMAL LAYOUT. The kernel needs ext4 for root anyway, so
+    # putting /boot on it retires the CONFIG_VFAT_FS + NLS-codepage trap
+    # documented in docs/nixos-rootfs.md (without those tables the mount fails
+    # -EINVAL and every USB-gadget flag silently reads as absent). `umask` is
+    # a vfat-only option; on ext4 the permissions are in the filesystem.
+    fileSystems."/boot" =
+      let vfat = cfg.emmcLayout == "vendor"; in
+      {
+        device = parts.bootfs.device;
+        fsType = if vfat then "vfat" else "ext4";
+        options = [ "nofail" "noatime" ] ++ lib.optional vfat "umask=000";
+      };
 
     swapDevices = [ ];
 
@@ -814,6 +847,17 @@ in
     # file now ships (see section 4), so the unit is live -- and #79 is what
     # puts a health gate in front of it (After=nanokvm-healthy.target) instead
     # of re-arming unconditionally the way the vendor does.
+    #
+    # UNDER THE MINIMAL LAYOUT THE SLOT BITS SELECT NOTHING (#89 rung 4). The
+    # rebuilt SPL has `*_BAK_FLASH_BASE` equal to the A bases, so slot A and
+    # slot B are the same two partitions and `select_slot_ab()` picks between
+    # two identical addresses. The unit is kept anyway, for two reasons: it
+    # keeps bits 2-5 of 0x02390024 in a DETERMINISTIC state (slot A, armed),
+    # which is what makes `0x300000x5` a readable oracle rather than a value
+    # that alternates every boot; and it keeps the mechanism alive for a
+    # vendor-layout system, where the bits do still choose. Rung 5 replaces
+    # the whole thing with U-Boot's `bootcount`/`altbootcmd` over
+    # DM_BOOTCOUNT_SYSCON on this same register.
     systemd.services.nanokvm-checkboot = lib.mkIf cfg.checkboot.enable {
       description = "Confirm the active A/B boot slot (S99checkboot equivalent)";
       wantedBy = [ "multi-user.target" ];
