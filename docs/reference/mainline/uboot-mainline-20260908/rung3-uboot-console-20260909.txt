@@ -1,0 +1,98 @@
+#89 rung 3, 2026-09-09 -- mainline U-Boot on SLOT A, read out of
+CONFIG_PRE_CONSOLE_BUFFER (0x480e8000) from the next boot.
+
+Both captures are the SHIPPING image plus one change: `.#uboot-mainline-tee`
+copies every console write into the pre-console buffer and takes nothing away
+(serial output and console input both stay live), so the boot behaves exactly
+as the product's does. `.#uboot-mainline-trace` is the other variant -- it
+clears GD_FLG_HAVE_CONSOLE instead, which also disables tstc()/getchar(), so
+it is NOT safe to draw conclusions from about a failing boot.
+
+===========================================================================
+A. A FAILING BOOT (cold power-on, CONFIG_ENV_IS_IN_MMC)
+===========================================================================
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  17 devices, 12 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from MMC... Transfer data timeout
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+failed to set vqmmc-voltage to 3.3V
+unable to select a mode: -5
+*** Warning - No block device, using default environment
+
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+Hit any key to stop autoboot: 1  0
+Retrieving file: /extlinux/extlinux.conf
+Transfer data timeout
+Transfer data timeout
+1:	nixos
+Retrieving file: /Image
+Transfer data timeout
+Error reading cluster
+Skipping nixos for failure retrieving kernel
+resetting ...
+
+READ IT LIKE THIS. The 1 MiB environment read is the first data transfer of
+the boot and, with `cdns,single-block-only` (#91), 2048 separate single-block
+commands. One times out. The recovery is a card re-init, and
+mmc_select_mode_and_width() walks down towards the legacy modes, which ask for
+3.3 V I/O signalling -- nine mode candidates, nine refusals, because this
+board's vqmmc is a FIXED 1.8 V rail. The card ends with no mode selected and
+no block device, and every read after that is degraded: the 689-byte
+extlinux.conf takes three attempts, the 48.8 MiB kernel never arrives.
+`mmc rescan` in front of each retry cannot help -- it is the same re-init.
+
+The slot register afterwards reads 0xB00000xx: bits 28 (preboot), 29
+(extlinux attempted) and 31 (nothing booted), and the low bits show the SPL
+had moved to slot B. Which is the fallback working: slot B still held the
+vendor-derived U-Boot, and the appliance came up on it.
+
+===========================================================================
+B. A GOOD BOOT (warm reboot, CONFIG_ENV_IS_NOWHERE -- patch 0020)
+===========================================================================
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  17 devices, 12 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from nowhere... OK
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+Hit any key to stop autoboot: 1  0
+Retrieving file: /extlinux/extlinux.conf
+1:	nixos
+Retrieving file: /Image
+append: mem=512M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x00,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1M(env),6M(logo),6M(logo_b),1M(optee),1M(optee_b),1M(dtb),1M(dtb_b),64M(kernel),64M(kernel_b),128M(boot),-(rootfs) logomode=vo0@dsi_dpi_video boot.panic_on_fail=1 panic=10
+Retrieving file: /ax630c-nanokvm-pro.dtb
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+Working FDT set to 49200000
+   Loading Device Tree to 000000005eff8000, end 000000005efff0f4 ... OK
+Working FDT set to 5eff8000
+
+Starting kernel ...
+
+Slot register 0x30000014: bits 28 and 29, no failure bit, slot A with
+SLOTA_BOOTABLE re-armed by nanokvm-checkboot. `psci: SMC Calling Convention
+v1.5` in the kernel log (mainline BL31), /proc/cmdline is the APPEND above,
+`systemctl is-system-running` = running, web 200.

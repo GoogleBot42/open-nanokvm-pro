@@ -97,6 +97,16 @@ a slot-A image: every A/B pair in the vendor bundle is byte-identical, and the
 1 KB Axera signed header carries no slot field. A slot image is bound to its
 slot by the partition it lands in and by `bootsystem`, nothing else.
 
+**The boot chain is still the vendor-derived one** — Axera's bl1, their TF-A
+2.7 fork and their U-Boot 2020.04 fork, all built from source by
+`pkgs/boot.nix`. `.#nixos-firmware-image-mainline` builds the same appliance
+with **mainline TF-A 2.15 and mainline U-Boot 2026.07** above the SPL, booting
+the kernel with `sysboot` from `/boot/extlinux/extlinux.conf` (#89). That chain
+has booted this board (rung 3), and it loses roughly two boots in three to #91,
+so it is not what `.#nixos-firmware-image` flashes. Rung 4 is where the
+vendor-derived U-Boot goes away for good;
+[mainline-port.md](mainline-port.md) §11.10 has the state of it.
+
 ### Three differences from flashing the vendor bundle
 
 **It writes the `env` partition; the vendor bundle does not.** Sipeed's `.axp`
