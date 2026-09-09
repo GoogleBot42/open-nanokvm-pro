@@ -125,6 +125,18 @@ that is arbitration, not a bug.
   unless `printk_devkmsg` is `on` (systemd sets it, an initramfs does not) --
   which silently eats everything past the tenth line.
   `docs/mainline-port.md` section 8; `pkgs/kernel-mainline/initramfs/`.
+- **`/sys/fs/pstore` is empty on a HEALTHY appliance boot**: `systemd-pstore`
+  archives every record into `/var/lib/systemd/pstore/` and unlinks it ~10 s
+  in. An empty `/sys/fs/pstore` says nothing about whether the previous kernel
+  logged; read the archive. On #89 that misreading turned "kernel booted to
+  systemd, ethernet dead" into "kernel died before ramoops" for two rungs.
+  Run the control experiment (warm-reboot a known-good boot and look) before
+  trusting any absence-of-evidence channel.
+- **A pad no DT node names is a pad the port does not own.** Linux inherits
+  whatever the loader left on it, so it works under the vendor U-Boot and dies
+  under mainline U-Boot (which programs nothing). The fourteen RGMII pads had
+  no pinctrl group until #89 rung 2q; every peripheral needs its pins in a
+  named group, checked against the pad table, not "it worked on slot A".
 - **`patch` silently truncates a hunk to its declared line count.** A hunk
   header saying `+1,78` over an 81-line body drops the last three lines with
   no error, and `nix build` reports success; on #89 that ate the `b` back
