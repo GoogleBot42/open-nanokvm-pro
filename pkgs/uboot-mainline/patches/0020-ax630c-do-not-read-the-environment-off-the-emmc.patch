@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 9 Sep 2026 04:00:00 -0600
+Subject: [PATCH] ax630c: do not read the environment off the eMMC
+
+The environment read is the first data transfer of every boot and, at
+CONFIG_ENV_SIZE = 1 MiB, by far the largest one before the payload. This
+board cannot afford it. Multi-block transfers do not work on its Cadence
+SD4HC, so it runs with `cdns,single-block-only`, and a 1 MiB environment
+is 2048 separate single-block reads before U-Boot has done anything.
+
+One of them timing out is not recoverable, which is the part that makes
+this fatal rather than slow. Measured on hardware, from a boot captured
+in the pre-console buffer:
+
+  Loading Environment from MMC... Transfer data timeout
+  failed to set vqmmc-voltage to 3.3V        (nine times)
+  unable to select a mode: -5
+  *** Warning - No block device, using default environment
+  ...
+  Retrieving file: /Image
+  Transfer data timeout
+  Error reading cluster
+  Skipping nixos for failure retrieving kernel
+
+The re-initialisation that would clear the timeout walks
+mmc_select_mode_and_width() down towards the legacy modes, and those ask
+for 3.3 V I/O signalling. This board's vqmmc is a fixed 1.8 V rail, so
+the switch cannot happen; the card ends with no mode selected and no
+block device, and every read after that fails too. `mmc rescan` in the
+boot retries cannot help, because it is the same code path.
+
+Nothing is lost by not reading it. The whole boot is described by
+CONFIG_BOOTCOMMAND and CFG_EXTRA_ENV_SETTINGS, which are compiled in;
+the stored environment existed to carry `bootcount` and the A/B slot
+name, and both of those are read and written from Linux with
+fw_printenv/fw_setenv, which addresses the partition itself and is
+unaffected. `bootcount` in the environment does become unavailable to
+U-Boot, so a future health-gated rollback wants DM_BOOTCOUNT_SYSCON --
+this SoC has exactly the sort of reset-surviving scratch register that
+backend is for, and it is already the boot's evidence channel.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ configs/ax630c_nanokvm_pro_defconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configs/ax630c_nanokvm_pro_defconfig b/configs/ax630c_nanokvm_pro_defconfig
+--- a/configs/ax630c_nanokvm_pro_defconfig
++++ b/configs/ax630c_nanokvm_pro_defconfig
+@@ -30,7 +30,7 @@
+ CONFIG_CMDLINE_PARTITION=y
+ CONFIG_CMDLINE_PARTITION_DEFAULT="blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1M(env),6M(logo),6M(logo_b),1M(optee),1M(optee_b),1M(dtb),1M(dtb_b),64M(kernel),64M(kernel_b),128M(boot),-(rootfs)"
+ # CONFIG_EFI_PARTITION is not set
+-CONFIG_ENV_IS_IN_MMC=y
++CONFIG_ENV_IS_NOWHERE=y
+ CONFIG_BOOTCOUNT_LIMIT=y
+ CONFIG_BOOTCOUNT_ENV=y
+ CONFIG_BOOTCOUNT_BOOTLIMIT=3

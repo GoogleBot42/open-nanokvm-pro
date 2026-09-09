@@ -43,8 +43,10 @@
 # `CONFIG_SYS_MMC_ENV_PART 0` -- the eMMC user area, at the `env` partition's
 # offset, a single copy (no `CONFIG_SYS_REDUNDAND_ENVIRONMENT`, so the image is
 # a 4-byte CRC32 followed by the NUL-separated variables, with no flag byte).
-# nixos/emmc-partitions.nix computes that offset (0x4C0000) and size (0x100000)
-# from the `blkdevparts=` clause, and #78 confirmed both ON HARDWARE: the
+# The image is `envRegionSize` (16 KiB), NOT the 1 MiB partition -- see
+# nixos/emmc-partitions.nix for why that number is what it is.
+# nixos/emmc-partitions.nix computes that offset (0x4C0000) from the
+# `blkdevparts=` clause, and #78 confirmed it ON HARDWARE: the
 # appliance's `fw_printenv -n bootsystem` read out of the live environment
 # there, which it could not have done had either number or the CRC layout been
 # wrong. It is also what /etc/fw_env.config on the appliance points at.

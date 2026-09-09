@@ -2,6 +2,8 @@
 , debugMilestones ? false
 , dcacheOff ? false
 , consoleToBuffer ? false
+, traceBoot ? false
+, teeConsole ? false
 , ... }:
 
 # ===========================================================================
@@ -80,6 +82,7 @@ let
     ./uboot-mainline/patches/0017-mmc-sdhci-cadence-single-block-only-workaround.patch
     ./uboot-mainline/patches/0018-ax630c-fix-fdt-placement-and-retry-the-boot-payload.patch
     ./uboot-mainline/patches/0019-ax630c-rescan-the-card-between-boot-attempts.patch
+    ./uboot-mainline/patches/0020-ax630c-do-not-read-the-environment-off-the-emmc.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -985,13 +988,119 @@ let
     #define CFG_SYS_SDRAM_BASE		0x40000000'
   '';
 
+  # -------------------------------------------------------------------------
+  # traceBoot = true: the SHIPPING image, with its console redirected into the
+  # pre-console buffer from board_late_init() onwards (#89 rung 3).
+  #
+  # `consoleToBuffer` does this too, but it drags a whole rung's worth of eMMC
+  # probes in with it and answers a question that is already answered. This
+  # variant changes nothing a boot depends on: it clears GD_FLG_HAVE_CONSOLE
+  # one hook before main_loop, so `bootcmd`, `sysboot` and every error message
+  # they print land in DRAM at CONFIG_PRE_CON_BUF_ADDR instead of a UART
+  # nobody can reach. The window has to be mapped uncached or the writes stop
+  # reaching DRAM the moment the dcache comes on.
+  #
+  # A diagnostic build, never a shipped one -- read the buffer from the NEXT
+  # boot with `dd if=/dev/mem bs=4096 skip=$((0x480e8000/4096)) count=2`.
+  # -------------------------------------------------------------------------
+  tracePostPatch = ''
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      '	}, {
+    		/* Terminator */' \
+      '	}, {
+    		/* #89 rung 3 trace: the pstore window, uncached, so the
+    		 * pre-console buffer keeps reaching DRAM with the dcache on. */
+    		.virt = 0x48000000UL,
+    		.phys = 0x48000000UL,
+    		.size = 0x00100000UL,
+    		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
+    			 PTE_BLOCK_NON_SHARE |
+    			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+    	}, {
+    		/* Terminator */'
+
+    substituteInPlace board/axera/ax630c/ax630c.c --replace-fail \
+      '#include <init.h>
+    #include <stdio.h>' \
+      '#include <init.h>
+    #include <stdio.h>
+    #include <asm/global_data.h>
+
+    DECLARE_GLOBAL_DATA_PTR;
+
+    /*
+     * Everything printed from here on goes to CONFIG_PRE_CONSOLE_BUFFER and
+     * nowhere else. This board has no reachable console; the buffer is the
+     * only one it has.
+     */
+    int board_late_init(void)
+    {
+    	gd->flags &= ~GD_FLG_HAVE_CONSOLE;
+
+    	return 0;
+    }'
+
+    echo 'CONFIG_BOARD_LATE_INIT=y' >> configs/${defconfig}
+  '';
+
+  # -------------------------------------------------------------------------
+  # teeConsole = true: the SHIPPING image, with every console write ALSO
+  # copied into the pre-console buffer (#89 rung 3).
+  #
+  # `traceBoot` observes by taking the console away, which changes what the
+  # boot does -- `putc`, `puts`, `tstc` and `getchar` all check
+  # GD_FLG_HAVE_CONSOLE, so a build that cannot print also cannot read the
+  # UART. This one changes nothing: serial output still goes to serial and
+  # console input is still live; the DRAM ring just gets a copy. It is the
+  # variant to reach for when the question is "what did the FAILING boot
+  # print", rather than "does the boot work with the console gone".
+  # -------------------------------------------------------------------------
+  teePostPatch = ''
+    substituteInPlace arch/arm/mach-axera/soc.c --replace-fail \
+      '	}, {
+    		/* Terminator */' \
+      '	}, {
+    		/* #89 rung 3: the pstore window, uncached, so the pre-console
+    		 * buffer keeps reaching DRAM with the dcache on. */
+    		.virt = 0x48000000UL,
+    		.phys = 0x48000000UL,
+    		.size = 0x00100000UL,
+    		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
+    			 PTE_BLOCK_NON_SHARE |
+    			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
+    	}, {
+    		/* Terminator */'
+
+    substituteInPlace common/console.c --replace-fail \
+      '	if (gd->flags & GD_FLG_DEVINIT) {
+    		/* Send to the standard output */
+    		fputc(stdout, c);' \
+      '	if (gd->flags & GD_FLG_DEVINIT) {
+    		/* Send to the standard output */
+    		pre_console_putc(c);
+    		fputc(stdout, c);'
+
+    substituteInPlace common/console.c --replace-fail \
+      '	if (gd->flags & GD_FLG_DEVINIT) {
+    		/* Send to the standard output */
+    		fputs(stdout, s);' \
+      '	if (gd->flags & GD_FLG_DEVINIT) {
+    		/* Send to the standard output */
+    		pre_console_puts(s);
+    		fputs(stdout, s);'
+  '';
+
   variant = assert lib.assertMsg (!dcacheOff || debugMilestones)
     "uboot-mainline: dcacheOff needs debugMilestones -- the enable_caches() it flips is in that patch";
     assert lib.assertMsg (!(consoleToBuffer && debugMilestones))
       "uboot-mainline: consoleToBuffer and debugMilestones are exclusive -- the debug patch already carries the console capture";
+    assert lib.assertMsg (!(traceBoot && (consoleToBuffer || debugMilestones)))
+      "uboot-mainline: traceBoot is the shipping image plus a console redirect; it does not combine with the rung-2 debug builds";
     lib.optionalString debugMilestones "-debug"
     + lib.optionalString dcacheOff "-nommu"
-    + lib.optionalString consoleToBuffer "-console";
+    + lib.optionalString consoleToBuffer "-console"
+    + lib.optionalString traceBoot "-trace"
+    + lib.optionalString teeConsole "-tee";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -1050,7 +1159,9 @@ let
       echo "layout: env at $envOffset size $envSize, /boot is p$bootPart"
     '' + lib.optionalString debugMilestones milestonePostPatch
       + lib.optionalString dcacheOff dcacheOffPostPatch
-      + lib.optionalString consoleToBuffer consolePostPatch;
+      + lib.optionalString consoleToBuffer consolePostPatch
+      + lib.optionalString traceBoot tracePostPatch
+      + lib.optionalString teeConsole teePostPatch;
 
     makeFlags = [
       "ARCH=arm"

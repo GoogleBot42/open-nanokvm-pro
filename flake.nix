@@ -126,9 +126,12 @@
         # known-good generation is the one being installed.
         extlinuxConf = pkgs.writeText "extlinux.conf"
           (import ./pkgs/extlinux.nix { inherit pkgs; });
+        # `null` = /boot with `ver` alone, which is what the vendor-derived
+        # chain wants: it loads the kernel from the signed `kernel` partition
+        # and never looks here.
         mkBootfs = kernelImage: callPkg ./pkgs/bootfs.nix {
           inherit version;
-          payload = {
+          payload = pkgs.lib.optionalAttrs (kernelImage != null) {
             "Image" = kernelImage;
             "ax630c-nanokvm-pro.dtb" = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
             "extlinux/extlinux.conf" = extlinuxConf;
@@ -449,6 +452,12 @@
           applianceModules = [ ./nixos/image-axp.nix ];
           imageBuilder = applianceAxpImage;
         });
+        # Same closure, different image builder: only `system.build.axpImage`
+        # differs, so the rootfs derivation is shared with the line above.
+        nixos-appliance-mainline-chain = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+          applianceModules = [ ./nixos/image-axp.nix ];
+          imageBuilder = applianceAxpImageMainline;
+        });
         nixos-appliance-loop = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
           variant = "loop-image";
           applianceModules = [ ./nixos/loop-test.nix ];
@@ -567,7 +576,8 @@
         # `.#nixosConfigurations.nanokvm-pro.config.system.build.axpImage` are
         # one derivation, and the image can never disagree with the system it
         # images.
-        applianceAxpImage = import ./nixos/axp-image.nix {
+        mkApplianceAxpImage = bootChain: import ./nixos/axp-image.nix {
+          inherit bootChain;
           inherit pkgs project version boot uboot-env logo mkBootfs;
           inherit atf-mainline uboot-mainline;
           dtbSlotImage = dtb-mainline-slot-image;
@@ -578,8 +588,21 @@
           mkKernel = initrd: mkApplianceKernel initrd "appliance";
           mkSlotImage = kern: mkApplianceSlotImage kern "appliance";
         };
+        applianceAxpImage = mkApplianceAxpImage "vendor";
+        applianceAxpImageMainline = mkApplianceAxpImage "mainline";
+
         nixos-firmware-image =
           nixos-appliance.eval.config.system.build.axpImage;
+
+        # The same appliance, imaged with the MAINLINE boot chain: mainline
+        # TF-A BL31 + mainline U-Boot in both slots, and the kernel loaded by
+        # `sysboot` from /boot/extlinux/extlinux.conf (#89 rung 3). The rootfs
+        # closure is identical to `.#nixos-firmware-image`'s -- only the boot
+        # members and /boot differ. NOT for flashing yet: nixos/axp-image.nix
+        # says why (#91), and an image whose two slots hold the same U-Boot
+        # has no fallback when that U-Boot's payload read fails.
+        nixos-firmware-image-mainline =
+          nixos-appliance-mainline-chain.eval.config.system.build.axpImage;
 
         # Final flashable .axp: our dtb/kernel/boot-chain/rootfs member-swapped
         # into a copy of the base .axp (pure zip rewrite).
@@ -615,6 +638,24 @@
         uboot-mainline-console = callPkg ./pkgs/uboot-mainline.nix {
           inherit axSign;
           consoleToBuffer = true;
+        };
+
+        # The SHIPPING image with its console redirected into the pre-console
+        # buffer from board_late_init() on -- so `bootcmd`, `sysboot` and their
+        # error messages are readable from the next boot. Nothing else differs
+        # from `.#uboot-mainline`. A diagnostic; never flashed as the product.
+        uboot-mainline-trace = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          traceBoot = true;
+        };
+
+        # The SHIPPING image with every console write ALSO copied into the
+        # pre-console buffer. Unlike `-trace` it takes nothing away: serial
+        # output and console input both stay live, so the boot behaves exactly
+        # as the product does and the DRAM ring records what it printed.
+        uboot-mainline-tee = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          teeConsole = true;
         };
 
         # The MMU is never switched on, so the boot walks straight past rung
@@ -661,8 +702,8 @@
             base-axp rootfs nixos-appliance nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
-            uboot-mainline-nommu
-            firmware-image nixos-firmware-image sd-image
+            uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee
+            firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;
 
           default = firmware-image;
