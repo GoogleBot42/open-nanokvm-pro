@@ -5,7 +5,9 @@
 , boot # pkgs/boot.nix -- the whole from-source boot chain + the FDL agents
 , uboot-env # pkgs/uboot-env.nix
 , logo # pkgs/logo.nix
-, bootfs # pkgs/bootfs.nix
+, mkBootfs # kernel Image -> pkgs/bootfs.nix (/boot AND the boot payload)
+, atf-mainline # pkgs/atf-mainline.nix -- mainline TF-A BL31, signed
+, uboot-mainline # pkgs/uboot-mainline.nix -- mainline U-Boot BL33, signed
 , dtbSlotImage # the signed mainline dtb partition image
 , artifacts # nixos/lib/appliance-artifacts.nix
 , mkKernel # initrd cpio -> the appliance kernel
@@ -62,16 +64,26 @@ let
 
   bootImg = f: "${boot}/images/${f}";
 
+  # #89 rung 3: the boot chain above the SPL is MAINLINE. `atf` and `uboot`
+  # (and their twins, which are byte-identical as always) carry mainline TF-A
+  # 2.15 with our plat/axera/ax630c and mainline U-Boot 2026.07 with our board
+  # port -- both signed and axgzip'd into exactly the container the SPL reads.
+  # The vendor-derived U-Boot survives only where the board already has one:
+  # slot B of a device promoted in place, as the automatic fallback. A flash
+  # of this image has no vendor bootloader anywhere on it.
+  atfImg = "${atf-mainline}/images/atf_bl31_mainline_signed.bin";
+  ubootImg = "${uboot-mainline}/images/u-boot_mainline_signed.bin";
+
   # partition name -> the member the manifest points at. `rawSize` is the size
   # the partition actually has to hold, for members whose stored form is
   # smaller than what the device unpacks (the Android-sparse rootfs).
   partitionImages = {
     spl = { member = "spl_${project}_signed.bin"; file = bootImg "spl_${project}_signed.bin"; };
     ddrinit = { member = "ddrinit_${project}_signed.bin"; file = bootImg "ddrinit_${project}_signed.bin"; };
-    atf = { member = "atf_bl31_signed.bin"; file = bootImg "atf_bl31_signed.bin"; };
-    atf_b = { member = "atf_b_bl31_signed.bin"; file = bootImg "atf_b_bl31_signed.bin"; };
-    uboot = { member = "u-boot_signed.bin"; file = bootImg "u-boot_signed.bin"; };
-    uboot_b = { member = "u-boot_b_signed.bin"; file = bootImg "u-boot_b_signed.bin"; };
+    atf = { member = "atf_bl31_mainline_signed.bin"; file = atfImg; };
+    atf_b = { member = "atf_b_bl31_mainline_signed.bin"; file = atfImg; };
+    uboot = { member = "u-boot_mainline_signed.bin"; file = ubootImg; };
+    uboot_b = { member = "u-boot_b_mainline_signed.bin"; file = ubootImg; };
     env = { member = "uboot_env.bin"; file = "${uboot-env}"; };
     logo = { member = "logo.bmp"; file = "${logo}"; };
     logo_b = { member = "logo_b.bmp"; file = "${logo}"; };
@@ -81,7 +93,7 @@ let
     dtb_b = { member = "${project}_b_signed.dtb"; file = "${dtbSlotImage}/${project}_mainline_signed.dtb"; };
     kernel = { member = "kernel.bin"; file = "${kernelSlotImage}/kernel_b.bin"; };
     kernel_b = { member = "kernel_b.bin"; file = "${kernelSlotImage}/kernel_b.bin"; };
-    boot = { member = "bootfs.fat32"; file = "${bootfs}"; };
+    boot = { member = "bootfs.fat32"; file = "${mkBootfs "${kernel}/Image"}"; };
     rootfs = { member = "nixos_rootfs_sparse.ext4"; file = "${rootfs}/ubuntu_rootfs_sparse.ext4"; };
   };
 
@@ -154,15 +166,23 @@ let
 
         spl      spl_${project}_signed.bin   pkgs/boot.nix
         ddrinit  ddrinit_${project}_signed.bin              pkgs/boot.nix
-        atf/atf_b       ATF bl31, signed                    pkgs/boot.nix
-        uboot/uboot_b   U-Boot 2020.04 bl33, signed         pkgs/boot.nix
-        env             mkenvimage over committed text      pkgs/uboot-env.nix
+        atf/atf_b       MAINLINE TF-A 2.15 bl31, signed     pkgs/atf-mainline.nix
+        uboot/uboot_b   MAINLINE U-Boot 2026.07 bl33        pkgs/uboot-mainline.nix
+        env             U-Boot's own default env + a delta  pkgs/uboot-env.nix
         logo/logo_b     800x480 24-bpp BMP                  pkgs/logo.nix
         optee/optee_b   OP-TEE bl32, signed                 pkgs/boot.nix
         dtb/dtb_b       mainline DT from dts/               pkgs/dtb-mainline.nix
         kernel/kernel_b mainline Linux + NixOS stage 1      pkgs/kernel-mainline.nix
-        boot            FAT32 /boot                         pkgs/bootfs.nix
+        boot            FAT32 /boot + extlinux + Image+dtb  pkgs/bootfs.nix
         rootfs          NixOS appliance ext4 (sparse)       nixos/appliance.nix
+
+      THE BOOT CHAIN IS MAINLINE ABOVE THE SPL (#89 rung 3). Axera's bl1
+      loads BL31 and BL33 by compile-time byte offset and jumps; from BL31 on,
+      everything is upstream plus this repo's patches. The kernel is loaded by
+      `sysboot` from /boot/extlinux/extlinux.conf, so `kernel`/`dtb` are a
+      rescue copy rather than the boot path -- U-Boot never reads them.
+      OP-TEE stays only because this SPL build hangs without a BL32 it can
+      verify; nothing running on the board uses it.
 
       Flash-time only, never stored on the eMMC: FDL1 and FDL2, the download
       agents the flasher pushes into BootROM RAM -- also from pkgs/boot.nix.

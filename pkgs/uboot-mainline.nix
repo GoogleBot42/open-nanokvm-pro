@@ -79,6 +79,7 @@ let
     ./uboot-mainline/patches/0016-arm-axera-arm-wdt0-from-save_boot_params.patch
     ./uboot-mainline/patches/0017-mmc-sdhci-cadence-single-block-only-workaround.patch
     ./uboot-mainline/patches/0018-ax630c-fix-fdt-placement-and-retry-the-boot-payload.patch
+    ./uboot-mainline/patches/0019-ax630c-rescan-the-card-between-boot-attempts.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -1066,6 +1067,16 @@ let
       runHook postConfigure
     '';
 
+    # The compiled-in default environment, as text, one `name=value` per line.
+    # Upstream's own target for it (`scripts/get_default_envs.sh`, which dumps
+    # `.rodata.default_environment` out of `env/common.o`), so what lands here
+    # is the linked image's environment and not a transcription of the header
+    # it came from. pkgs/uboot-env.nix builds the stored environment out of
+    # this file, which is why the two can never disagree.
+    postBuild = ''
+      make $makeFlags u-boot-initial-env
+    '';
+
     installPhase = ''
       runHook preInstall
 
@@ -1074,6 +1085,7 @@ let
       cp u-boot.dtb "$out/images/u-boot.dtb"
       cp u-boot     "$out/images/u-boot.elf"
       cp .config    "$out/config/config"
+      cp u-boot-initial-env "$out/config/u-boot-initial-env"
       cp configs/${defconfig} "$out/config/${defconfig}"
 
       # The driver the host-side parser test compiles. Copied rather than

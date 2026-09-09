@@ -113,9 +113,29 @@
         # inherits from Sipeed's release bundle, built from source instead --
         # they are what makes `.#nixos-firmware-image` a from-scratch .axp
         # rather than a member swap.
-        uboot-env = callPkg ./pkgs/uboot-env.nix { inherit boot; };
+        # The stored environment is generated from the MAINLINE U-Boot's own
+        # compiled-in default (#89 rung 3), so p5 and p7 cannot disagree.
+        uboot-env = callPkg ./pkgs/uboot-env.nix { uboot = uboot-mainline; };
         logo = callPkg ./pkgs/logo.nix { };
-        bootfs = callPkg ./pkgs/bootfs.nix { inherit version; };
+
+        # /boot, and since rung 3 the whole boot payload: mainline U-Boot's
+        # bootcmd runs `sysboot ... /extlinux/extlinux.conf` off this
+        # partition, so the kernel and the device tree ride in it rather than
+        # in the signed `kernel`/`dtb` partitions the vendor chain loaded by
+        # byte offset. `extlinux-fallback.conf` starts as a copy: the only
+        # known-good generation is the one being installed.
+        extlinuxConf = pkgs.writeText "extlinux.conf"
+          (import ./pkgs/extlinux.nix { inherit pkgs; });
+        mkBootfs = kernelImage: callPkg ./pkgs/bootfs.nix {
+          inherit version;
+          payload = {
+            "Image" = kernelImage;
+            "ax630c-nanokvm-pro.dtb" = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
+            "extlinux/extlinux.conf" = extlinuxConf;
+            "extlinux/extlinux-fallback.conf" = extlinuxConf;
+          };
+        };
+        bootfs = mkBootfs "${kernel-mainline-appliance}/Image";
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
@@ -548,7 +568,8 @@
         # one derivation, and the image can never disagree with the system it
         # images.
         applianceAxpImage = import ./nixos/axp-image.nix {
-          inherit pkgs project version boot uboot-env logo bootfs;
+          inherit pkgs project version boot uboot-env logo mkBootfs;
+          inherit atf-mainline uboot-mainline;
           dtbSlotImage = dtb-mainline-slot-image;
           artifacts = import ./nixos/lib/appliance-artifacts.nix {
             inherit pkgs;

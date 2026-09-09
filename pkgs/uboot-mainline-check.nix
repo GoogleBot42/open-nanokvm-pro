@@ -121,6 +121,8 @@ pkgs.runCommand "uboot-mainline-check"
     # "** Invalid partition 22 **" and resets (measured 2026-09-08).
     for want in 'bootpart=${lib.toLower (lib.toHexString layout.bootfs.number)}' 'bootlimit=3' \
                 'msreg_set=0x02390028' 'preboot=mw.l' 'altbootcmd=mw.l' \
+                'bootone=mmc rescan' 'bootfallback=mmc rescan' \
+                'bootcmd=run bootone' \
                 'ms_uboot=0x10000000' 'ms_extlinux=0x20000000' \
                 'ms_altboot=0x40000000' 'ms_failed=0x80000000'; do
       grep -qa "$want" "$ub/images/u-boot.bin" \

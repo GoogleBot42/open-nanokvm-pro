@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Tue, 9 Sep 2026 00:00:00 -0600
+Subject: [PATCH] ax630c: rescan the card between boot attempts
+
+Retrying the payload read is not enough on this board. Multi-block
+transfers do not work on its Cadence SD4HC, so it runs with
+`cdns,single-block-only`, and when one of the hundred thousand single
+block reads a 48.8 MiB kernel needs does time out, the controller is left
+in a state every subsequent read fails in the same way. Three back-to-back
+`sysboot`s therefore fail three times for the price of one.
+
+`mmc rescan` re-runs `mmc_init()`, which does clear it: measured on
+hardware, four attempts with a rescan in front of each boot the board
+reliably where three without one did not. That sequence has only ever
+lived in the stored environment, where it is a coin flip -- this board's
+environment read fails about half the time, and a boot that falls back to
+the built-in `CONFIG_BOOTCOMMAND` got the retries without the rescan. Move
+it into the built-in environment so the board boots the same way whether
+or not its environment loads.
+
+`altbootcmd` gets the same treatment; the milestone write stays at the
+head of it, where a fallback boot records itself before trying anything.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+ configs/ax630c_nanokvm_pro_defconfig |  4 ++--
+ include/configs/ax630c.h             | 10 ++++++++++
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/ax630c.h b/include/configs/ax630c.h
+--- a/include/configs/ax630c.h
++++ b/include/configs/ax630c.h
+@@ -37,6 +37,16 @@
+ 	"bootpart=10\0"		/* HEX: dev:part is base 16, so p16 */	\
+ 	"extlinux_cfg=/extlinux/extlinux.conf\0"			\
+ 	"extlinux_fallback=/extlinux/extlinux-fallback.conf\0"		\
++	/* One attempt at the payload. `mmc rescan` re-runs mmc_init(),	*/ \
++	/* which is what unwedges a controller left broken by a timed-	*/ \
++	/* out single-block read; without it a retry fails identically.	*/ \
++	"bootone=mmc rescan;"						\
++		" mw.l ${msreg_set} ${ms_extlinux};"			\
++		" sysboot mmc ${bootdev}:${bootpart} any"		\
++		" ${scriptaddr} ${extlinux_cfg}\0"			\
++	"bootfallback=mmc rescan;"					\
++		" sysboot mmc ${bootdev}:${bootpart} any"		\
++		" ${scriptaddr} ${extlinux_fallback}\0"			\
+ 	AX630C_MILESTONE_ENV
+ 
+ /*
+diff --git a/configs/ax630c_nanokvm_pro_defconfig b/configs/ax630c_nanokvm_pro_defconfig
+--- a/configs/ax630c_nanokvm_pro_defconfig
++++ b/configs/ax630c_nanokvm_pro_defconfig
+@@ -16,7 +16,7 @@
+ # CONFIG_EFI_LOADER is not set
+ CONFIG_BOOTSTD_DEFAULTS=y
+ CONFIG_BOOTDELAY=1
+-CONFIG_BOOTCOMMAND="if load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg} || load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg} || load mmc ${bootdev}:${bootpart} ${scriptaddr} ${extlinux_cfg}; then mw.l ${msreg_set} ${ms_extlinux}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg} || sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg} || sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_cfg}; fi; mw.l ${msreg_set} ${ms_failed}; reset"
++CONFIG_BOOTCOMMAND="run bootone || run bootone || run bootone || run bootone; mw.l ${msreg_set} ${ms_failed}; reset"
+ CONFIG_USE_PREBOOT=y
+ CONFIG_PREBOOT="mw.l ${msreg_set} ${ms_uboot}"
+ CONFIG_SYS_PBSIZE=1074
+@@ -34,7 +34,7 @@
+ CONFIG_BOOTCOUNT_LIMIT=y
+ CONFIG_BOOTCOUNT_ENV=y
+ CONFIG_BOOTCOUNT_BOOTLIMIT=3
+-CONFIG_BOOTCOUNT_ALTBOOTCMD="mw.l ${msreg_set} ${ms_altboot}; sysboot mmc ${bootdev}:${bootpart} any ${scriptaddr} ${extlinux_fallback}; reset"
++CONFIG_BOOTCOUNT_ALTBOOTCMD="mw.l ${msreg_set} ${ms_altboot}; run bootfallback || run bootfallback || run bootfallback || run bootfallback; mw.l ${msreg_set} ${ms_failed}; reset"
+ CONFIG_DM_REGULATOR=y
+ CONFIG_DM_REGULATOR_FIXED=y
+ CONFIG_MMC_IO_VOLTAGE=y

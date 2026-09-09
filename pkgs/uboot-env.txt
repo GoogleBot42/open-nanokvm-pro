@@ -1,3 +1,37 @@
-bootdelay=0
-baudrate=115200
+# The stored U-Boot environment (p7 `env`), DELTA ONLY.
+#
+# Everything the bootloader itself needs -- bootcmd, preboot, altbootcmd, the
+# load addresses, bootpart, the milestone words -- is COMPILED INTO mainline
+# U-Boot and is lifted from the built image at pack time (pkgs/uboot-env.nix).
+# Only variables that do not exist in the compiled-in default belong here:
+# state somebody writes at runtime, and which has to survive a reboot.
+#
+# bootcount / upgrade_available
+#   The CONFIG_BOOTCOUNT_ENV contract. `bootcount_load()` and
+#   `bootcount_store()` both no-op while `upgrade_available` is 0, so the
+#   counter is inert as shipped and `altbootcmd` can never fire by accident.
+#   Setting `upgrade_available=1` before a risky generation switch arms it:
+#   U-Boot then counts boots, and `bootlimit=3` (compiled in) runs
+#   `altbootcmd`, which boots /extlinux/extlinux-fallback.conf. Health-gated
+#   clearing (`fw_setenv bootcount 0`) is #79's half of that and is not wired
+#   up yet -- these two exist so the variables are readable and writable from
+#   the appliance today.
+#
+# bootsystem
+#   Read by `nanokvm-checkboot.service`, which re-arms the A/B slot register
+#   for the slot named here. Under the VENDOR U-Boot this was an output --
+#   `set_slot_ab()` read the register and wrote it back every boot. Mainline
+#   U-Boot has no A/B logic at all, so on a mainline slot A it is a constant,
+#   and it says "slot A": the mainline chain lives in atf/uboot (p3/p5) and
+#   the slot-B twins are the fallback. It self-corrects if the board ever
+#   falls back, because the vendor-derived U-Boot on slot B still writes it.
+#
+# WHAT IS DELIBERATELY ABSENT. `bootargs`: mainline U-Boot's bootcmd runs
+# `sysboot`, which builds the kernel command line from the APPEND line of
+# /boot/extlinux/extlinux.conf and overwrites `bootargs` with it. A stored
+# bootargs would be read by nothing on slot A. (The vendor-derived U-Boot on
+# slot B falls back to its own compiled-in BOOTARGS_EMMC when the environment
+# has none, so the fallback chain does not need it either.)
+bootcount=0
+upgrade_available=0
 bootsystem=A

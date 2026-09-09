@@ -1,4 +1,4 @@
-{ pkgs, size ? 128 * 1024 * 1024, version ? "0.0.0-dev", files ? { }, ... }:
+{ pkgs, size ? 128 * 1024 * 1024, version ? "0.0.0-dev", files ? { }, payload ? { }, ... }:
 
 # ===========================================================================
 # The `/boot` partition image (p16 `boot`, 128 MiB vfat), from source.
@@ -19,11 +19,18 @@
 # WHAT THE APPLIANCE NEEDS. `/boot` is mounted `nofail,noatime,umask=000` and
 # must stay WRITABLE: NanoKVM-Server writes `eth.nodhcp`, `hostname`,
 # `usb.disk0`, `usb.ncm`, `usb.uac2`, `usb.disk1.{sd,emmc}` there and reads
-# `ver`. So the image ships `ver` and nothing else -- the vendor's two /init
-# flags are dead (NixOS stage 1 does the fsck and the resize), `configs` fed a
-# module loader the appliance does not have, and every gadget flag is a runtime
-# choice, not a shipped default. An empty-but-formatted /boot is the correct
-# initial state.
+# `ver`. The vendor's two /init flags are dead (NixOS stage 1 does the fsck and
+# the resize), and `configs` fed a module loader the appliance does not have.
+#
+# SINCE #89 RUNG 3 IT IS ALSO THE BOOT PAYLOAD. Mainline U-Boot's bootcmd runs
+# `sysboot mmc 0:10 any ... /extlinux/extlinux.conf`, so the kernel, the device
+# tree and the command line all live here rather than in the signed `kernel`
+# and `dtb` partitions the vendor chain loads by byte offset. `payload` is the
+# attrset that carries them; a name may contain `/` and the directory is
+# created. `extlinux-fallback.conf` is what `altbootcmd` boots when
+# `bootcount` passes `bootlimit`; it ships as a copy of `extlinux.conf`,
+# which is the correct initial state -- the only known-good generation is the
+# one being installed.
 #
 # Deterministic: fixed volume id, and every source file carries the store's
 # epoch-0 mtime, which mtools clamps to the FAT epoch.
@@ -37,6 +44,15 @@ let
   stage = pkgs.linkFarm "nanokvm-bootfs-files" (lib.mapAttrsToList
     (name: text: { inherit name; path = pkgs.writeText "bootfs-${name}" text; })
     content);
+
+  # payload: "path/under/boot" -> store path. Copied in verbatim, so an Image
+  # or a dtb goes in without a round trip through a Nix string.
+  payloadCopy = lib.concatStringsSep "\n" (lib.mapAttrsToList
+    (name: src:
+      let dir = builtins.dirOf name; in
+      lib.optionalString (dir != ".") "mmd -i bootfs.fat32 \"::/${dir}\" || true"
+      + "\n  mcopy -i bootfs.fat32 ${lib.escapeShellArg src} \"::/${name}\"")
+    payload);
 in
 pkgs.runCommand "nanokvm-bootfs.fat32"
 {
@@ -50,8 +66,10 @@ pkgs.runCommand "nanokvm-bootfs.fat32"
     mcopy -i bootfs.fat32 "$f" "::/$(basename "$f")"
   done
 
+  ${payloadCopy}
+
   echo "=== /boot contents ==="
-  mdir -i bootfs.fat32 ::
+  mdir -i bootfs.fat32 -/ ::
   mtype -i bootfs.fat32 ::/ver
 
   cp bootfs.fat32 "$out"
