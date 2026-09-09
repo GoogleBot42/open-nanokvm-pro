@@ -4509,10 +4509,10 @@ artefact. `pkgs/spl-minimal.nix` replaces the vendor's hand-written
 
 47816 B raw, inside the BootROM's 50 K slot; 262144 B signed.
 
-`.#spl-minimal-noeip` is the same SPL signed with an EMPTY `-fw` member, so
-`fw_size`/`fw_check_sum` are 0 and the closed EIP-130 firmware is not spliced at
-all (build-asserted: zero copies, against two in the default). #90's exit, and
-an experiment that needs AXDL standing by.
+`.#spl-minimal` is signed with an EMPTY `-fw` member, so `fw_size` and
+`fw_check_sum` are 0 and the closed EIP-130 firmware is not spliced in at all
+(build-asserted: zero copies, against two in `.#spl-minimal-eip`). That is #90
+closed -- see below.
 
 #### U-Boot: patch `0023`, and a test that runs it
 
@@ -4612,13 +4612,44 @@ IT.** `systemctl reboot` at 12:51:27 UTC; no SSH, no open port and a flat 3 W
 draw for eight minutes; power cycled at 12:59:30; kernel start 13:04:04, SSH
 13:05:02. `journalctl --list-boots` shows no boot between the two, so the board
 really did sit in the boot chain rather than booting and losing the network.
-It has not recurred: every warm reboot since has come back, and the boot chain
-on those takes ~100 s — the same as rung 3b's, so moving `/boot` from FAT32 to
-ext4 did not cost anything measurable. The cold boot that rescued it took 4.5
-minutes, which is a cold DDR training the warm path skips. #92 (the appliance
-oopses on `reboot`) is the obvious suspect for a warm restart in particular
-leaving the controller in a state the next boot cannot use, and it is rung 5's
-to settle if it recurs.
+It has not recurred. Six boots since -- three warm reboots on the with-EIP
+SPL, two warm and one cold on the no-EIP one -- all reached SSH in 2:15 to
+3:36, so neither the ext4 `/boot` nor a cold start costs anything measurable
+and the eight-minute hang stands alone. #92 (the appliance oopses on
+`reboot`) is the obvious suspect for a warm restart in particular leaving the
+controller in a state the next boot cannot use; it is rung 5's to settle if it
+recurs.
+
+
+#### #90 closed on the same rung: the SPL is blob-free
+
+`spl_AX620E_sign.py` splices `eip_ax620e.bin` — the closed EIP-130 crypto-engine
+firmware, 78528 B, byte-identical to the array U-Boot used to link — into the
+SPL *package* at `fw_flash_addr` 0xCC00 and `fw_bak_flash_addr` 0x2CC00, and the
+signed header declares its `fw_size` and `fw_check_sum`. There is no defconfig
+symbol for it: it is a BootROM contract. Which is why #90 had stalled with the
+U-Boot half done and the SPL half open.
+
+**But `-fw` takes a file, and a file can be empty.** A zero-byte firmware member
+gives `fw_size = 0`, `fw_check_sum = 0`, and `copy_data_by_bytes(..., 0)`
+splices nothing. No script edit; the build asserts **zero** copies of the
+fingerprint against two in `.#spl-minimal-eip`.
+
+Whether the ROM tolerates that was undocumented — nothing in `bl1/`, the linker
+scripts, the build system or the manifest says, and the SDK's docs are Chinese
+PDFs with no extractable text here. So it was run, with the recovery image built
+and its path known, on a board whose only way back was AXDL.
+
+**It boots.** Two warm reboots and a cold power cycle, each reaching SSH in
+2:15-3:36 with register `0x30000014`, `psci: SMC Calling Convention v1.5`, root
+on `/dev/loop0p5`, `systemctl is-system-running` = `running` and web 200 —
+indistinguishable from the with-EIP boots either side of them. `.#spl-minimal`
+is therefore blob-free by default and that is what the board runs
+(`b2051547219b7e16bc105835a86e289a01c1653d80eaaef12064d5692fc034e4`);
+`.#spl-minimal-eip` is kept as the fallback, one `dd` away.
+
+**The eMMC image now carries no closed content at all except the aic8800
+wireless firmware** — the one exception the blob policy allows.
 
 ---
 
@@ -4653,20 +4684,15 @@ trip, not a brick.** Flash `.#nixos-firmware-image` (vendor boot chain, vendor
 SPL, seventeen partitions, and a NixOS built for that map) or a stock Sipeed
 `.axp` over AXDL: `User` held ~10 s at power-on plus a USB cable.
 
-**Two measurements rung 4 leaves owed.**
-
-1. **The boot chain takes ~4.5 minutes now, up from ~110 s.** The likely cause
-   is `/boot` moving from FAT32 to ext4 under a `cdns,single-block-only`
-   controller (#91). Worth one experiment: time `ext4load` against `fatload` of
-   the same 51 MB, or simply watch the pre-console buffer with
-   `.#uboot-mainline-tee`. If it is the filesystem, #91 is worth more than it
-   was.
-2. **The first boot after the SPL write hung and a power cycle fixed it.** No
-   boot appears between the two in `journalctl --list-boots`, so it was the boot
-   chain, not the network. Suspect #92 (the appliance oopses on `reboot`)
-   leaving the controller in a state the ROM or SPL does not clear. If warm
-   reboots turn out to be reliable in the three-reboot record above, this was a
-   one-off; if not, it is rung 5's first problem.
+**One thing rung 4 leaves owed.** **The first boot after the SPL write hung and
+a power cycle fixed it** — eight minutes with no SSH, no open port and a flat
+3 W draw, and no boot between the two in `journalctl --list-boots`, so it was
+the boot chain and not the network. It did not recur across the six boots since
+(three warm on the with-EIP SPL, two warm and one cold on the no-EIP one, all
+reaching SSH in 2:15-3:36). Suspect #92 (the appliance oopses on `reboot`)
+leaving the controller in a state the ROM or SPL does not clear. Treat it as a
+one-off until it happens twice; if it does, it is rung 5's first problem, and
+`.#uboot-mainline-tee`'s pre-console buffer is the way to see where it stops.
 
 **Rung 5 proper — the rollback drill.** Install a deliberately broken
 generation, let `bootcount` reach `bootlimit`, and watch the board come back on
@@ -4689,9 +4715,10 @@ the previous one, unattended. What it needs:
    kept only because it keeps bits 2-5 deterministic, which is what makes
    `0x300000x4` a readable oracle.
 
-**Also open.** #90's remaining half is `.#spl-minimal-noeip` — built,
-build-asserted blob-free, and needing one gated hardware run with AXDL standing
-by. #91 (multi-block transfers) is unfixed and now costs more than it did.
-`mem=512M` is still unexplained and still not droppable. `SUPPPORT_GZIPD=FALSE`
-would retire `ax_gzip`, the last prebuilt x86-64 host tool, and is a clean
-follow-up now that the layout is settled.
+**Also open.** #90 is **closed** — `.#spl-minimal` is blob-free and the board
+runs it; `.#spl-minimal-eip` rebuilds the vendor-shaped container if a unit ever
+turns out to need it. #91 (multi-block transfers) is unfixed and still costs the
+boot chain most of its ~2 minutes. `mem=512M` is still unexplained and still not
+droppable. `SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt
+x86-64 host tool, and is a clean follow-up now that the layout is settled and
+the board can be recovered from a shell for every stage but the SPL.

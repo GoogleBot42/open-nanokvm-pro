@@ -2,10 +2,15 @@
 , # The layout the SPL is compiled for. Its `atf` and `uboot` offsets become
   # the SPL's ATF_HEADER_FLASH_BASE / UBOOT_HEADER_FLASH_BASE constants.
   layout ? import ../nixos/emmc-partitions.nix { inherit (pkgs) lib; layout = "minimal"; }
-, # #90: sign WITHOUT the closed EIP-130 crypto-engine firmware. The BootROM
-  # contract for that firmware is undocumented, so this is an EXPERIMENT --
-  # `.#spl-minimal-noeip` -- and not the image rung 4 writes to p1.
-  withEip ? true
+, # #90. `withEip = false` (the DEFAULT since 2026-09-09) signs the SPL with an
+  # EMPTY firmware member: `fw_size` and `fw_check_sum` are 0 and no EIP-130
+  # bytes are spliced at 0xCC00/0x2CC00 at all. The BootROM was not documented
+  # to tolerate that, and the SDK says nothing either way -- so it was run on
+  # hardware (#89 rung 4, 2026-09-09): two warm reboots and a cold power cycle,
+  # all clean, register `0x30000014`, web 200. `withEip = true` rebuilds the
+  # vendor-shaped container as `.#spl-minimal-eip`, kept as the fallback a
+  # `dd` away should a unit ever refuse it.
+  withEip ? false
 , ... }:
 
 # ===========================================================================
@@ -166,7 +171,7 @@ let
   partitionMakFile = pkgs.writeText "partition_ab.mak" partitionMak;
   layoutTableFile = pkgs.writeText "emmc-layout.txt" layout.table;
 
-  variant = lib.optionalString (!withEip) "-noeip";
+  variant = lib.optionalString withEip "-eip";
 in
 pkgs.stdenv.mkDerivation {
   pname = "nanokvm-pro-spl-minimal${variant}";
@@ -252,11 +257,12 @@ pkgs.stdenv.mkDerivation {
     fi
 
     ${lib.optionalString (!withEip) ''
-    # ---- #90 experiment: sign with an EMPTY firmware member ---------------
+    # ---- #90: sign with an EMPTY firmware member --------------------------
     # `-fw` is mandatory and the file must exist, so the omission is expressed
     # as a zero-byte file: fw_size and fw_check_sum become 0 in the header and
-    # no firmware bytes are spliced at 0xCC00 / 0x2CC00. Whether the BootROM
-    # tolerates that is exactly what the experiment asks.
+    # no firmware bytes are spliced at 0xCC00 / 0x2CC00. Nothing documented
+    # said the BootROM would accept that; it does -- hardware-proven
+    # 2026-09-09, two warm reboots and a cold power cycle.
     : > "$TMPDIR/empty_fw.bin"
     python3 "$HOME_PATH/build/tools/imgsign/spl_AX620E_sign.py" \
       -i "$raw" \
@@ -308,7 +314,7 @@ pkgs.stdenv.mkDerivation {
     cp ${layoutTableFile} "$out/images/layout.txt"
     cp "$HOME_PATH/build/projects/${project}/partition_ab.mak" "$out/images/partition.mak"
 
-    echo "=== SPL (${layout.layoutName} layout${lib.optionalString (!withEip) ", no EIP firmware"}) ==="
+    echo "=== SPL (${layout.layoutName} layout, ${if withEip then "vendor container WITH the closed EIP-130 firmware" else "blob-free"}) ==="
     ls -l "$out/images"
 
     runHook postInstall
@@ -320,7 +326,7 @@ pkgs.stdenv.mkDerivation {
   meta = {
     description =
       "AX630C first-stage loader (bl1/spl) compiled for the ${layout.layoutName} eMMC layout"
-      + lib.optionalString (!withEip) ", signed without the closed EIP-130 firmware (#90)";
+      + (if withEip then ", signed with the vendor container's closed EIP-130 firmware (the #90 fallback)" else ", signed without the closed EIP-130 firmware (#90)");
     # The vendor sign flow reaches for prebuilt x86-64 host tooling.
     platforms = [ "x86_64-linux" ];
   };

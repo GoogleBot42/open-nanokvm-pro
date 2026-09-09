@@ -211,16 +211,21 @@ is `/dev/loop0p4`; U-Boot reads the same table through
 first-stage loader are one artefact, so a layout change means an SPL
 rebuild**, and a bad SPL is an AXDL bench trip. There are no A/B twins any
 more; both `_BAK` bases point at the A bases, so the slot register's SLOT
-bits select nothing. A good boot reads `0x30000014` and takes ~3 min to SSH
-(single-block eMMC reads, #91). `docs/mainline-port.md` §11.10 "Handoff for
-rung 5" is the current device contract.
+bits select nothing. **That SPL is blob-free (#90):** signed with an empty
+`-fw` member, so the closed EIP-130 firmware is not spliced in at
+0xCC00/0x2CC00 at all — the BootROM accepts a header declaring `fw_size = 0`,
+proven across two warm reboots and a cold cycle. `.#spl-minimal-eip` rebuilds
+the vendor-shaped container if a unit ever needs it. A good boot reads
+`0x30000014` and takes 2-3.5 min to SSH (single-block eMMC reads, #91).
+`docs/mainline-port.md` §11.10 "Handoff for rung 5" is the current device
+contract.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
 cycle clears the slot register and lands on slot A; SSH is back ~30 s after
-`on` for the 4.19 image; a COLD boot of the mainline chain takes ~5.5 min to
-SSH (4.5 min of it boot chain, measured 2026-09-09) against ~3 min warm. Read the
+`on` for the 4.19 image; the mainline chain takes 2-3.5 min to SSH, cold or
+warm (six boots, 2026-09-09). Read the
 slot register / pstore / console buffer BEFORE cycling — the cycle destroys
 them. Jeremy's standing word: with self-recovery available, take more risk on
 slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.

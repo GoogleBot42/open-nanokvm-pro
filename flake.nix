@@ -659,13 +659,19 @@
         # one-way step of the port -- a bad SPL means AXDL.
         gpt-image = callPkg ./pkgs/gpt-image.nix { };
 
+        # BLOB-FREE since 2026-09-09 (#90): signed with an EMPTY firmware
+        # member, so the closed EIP-130 crypto-engine firmware is absent from
+        # the container entirely rather than spliced in at 0xCC00/0x2CC00.
+        # Nothing documented said the BootROM would accept a header declaring
+        # `fw_size = 0`; it does, proven on hardware across two warm reboots
+        # and a cold power cycle. That was the last closed payload on the
+        # eMMC image.
         spl-minimal = callPkg ./pkgs/spl-minimal.nix { };
 
-        # The same SPL signed with an EMPTY firmware member, so the closed
-        # EIP-130 blob is absent from the container entirely (#90). Whether
-        # the BootROM boots without it is undocumented; this is the
-        # experiment, and it is NOT what rung 4 writes.
-        spl-minimal-noeip = callPkg ./pkgs/spl-minimal.nix { withEip = false; };
+        # The vendor-shaped container, WITH the closed firmware spliced in --
+        # kept as the fallback a single `dd` away if a unit ever turns out to
+        # need it. Not what any image stores.
+        spl-minimal-eip = callPkg ./pkgs/spl-minimal.nix { withEip = true; };
 
         # The same image plus milestone writes through every board_init_r hook
         # U-Boot already calls, so a BL33 that dies before `preboot` still says
@@ -769,7 +775,7 @@
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
-            gpt-image spl-minimal spl-minimal-noeip migrate-layout
+            gpt-image spl-minimal spl-minimal-eip migrate-layout
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;
 
