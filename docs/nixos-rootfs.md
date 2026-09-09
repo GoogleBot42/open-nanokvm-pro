@@ -502,8 +502,28 @@ word checksum (`verify_img_header`: `calc_word_chksum` over everything after
 the SPL header, and the next boot is an AXDL trip. An additive checksum could
 be compensated with a fix-up word, but only by a step every partition tool
 would have to know about. The split keeps the SPL out of every writer's path,
-which is the property that matters. Revisit only if the ROM's checksum window
-turns out narrower than the SPL's mirror of it.
+which is the property that matters.
+
+**And the ROM's window is not narrower — measured on hardware, #93,
+2026-09-12.** The open question was whether the BootROM mirrors the SPL's own
+`verify_img_header`, or whether it skips the checksum over that region with
+`SECURE_BOOT_EN` unburned. It does not skip it. The signed container's header is
+written twice (offset 0 and `0x20000`, `IMG_BAK_ENABLE` set in
+`capability = 0x54FAFE`), so **both** copies were given the same one-byte flip
+at header offset `0x300` — inside `signature[]`, exactly where the pMBR and GPT
+header would sit — with `check_sum` deliberately left stale. That image was
+written to p1 and verified from the medium after `drop_caches`. The board never
+came back: 16 minutes after a warm reboot and 10 more after a cold power cycle,
+no SSH, no ping, plug draw flat at 2.9 W, against a normal 2–3.5 min to SSH.
+Two bytes, nothing else on the eMMC touched. Recovery was AXDL.
+
+So the header is not a place any other tool can write, and the split layout
+stands. The follow-up experiment — the same flip with `check_sum` recomputed,
+which would separate "the ROM checks the checksum" from "the ROM also verifies
+RSA without the efuse" — is academic for this decision: a checksum-only ROM
+still means a `sgdisk` run bricks the board unless every writer knows to emit a
+fix-up word. Evidence, images and the checksum tooling:
+`docs/reference/mainline/spl-header-20260912/`.
 
 ### 7. Init system — and the SysV layer nobody documented
 
