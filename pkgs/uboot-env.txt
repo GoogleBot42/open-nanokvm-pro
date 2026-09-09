@@ -6,16 +6,17 @@
 # Only variables that do not exist in the compiled-in default belong here:
 # state somebody writes at runtime, and which has to survive a reboot.
 #
-# bootcount / upgrade_available
-#   The CONFIG_BOOTCOUNT_ENV contract. `bootcount_load()` and
-#   `bootcount_store()` both no-op while `upgrade_available` is 0, so the
-#   counter is inert as shipped and `altbootcmd` can never fire by accident.
-#   Setting `upgrade_available=1` before a risky generation switch arms it:
-#   U-Boot then counts boots, and `bootlimit=3` (compiled in) runs
-#   `altbootcmd`, which boots /extlinux/extlinux-fallback.conf. Health-gated
-#   clearing (`fw_setenv bootcount 0`) is #79's half of that and is not wired
-#   up yet -- these two exist so the variables are readable and writable from
-#   the appliance today.
+# bootcount / upgrade_available ARE NOT HERE ANY MORE (#89 rung 5).
+#   The counter moved OUT of the environment and into
+#   TOP_CHIPMODE_GLB_BACKUP1 (0x02390030) behind DM_BOOTCOUNT_SYSCON, because
+#   patch 0020 stopped U-Boot reading this partition at all and
+#   CONFIG_BOOTCOUNT_ENV needs a writable environment. A stored `bootcount`
+#   here would be a number nothing reads and nothing updates -- worse than
+#   absent, because `fw_printenv bootcount` would answer it. `upgrade_available`
+#   went with it: it was the CONFIG_BOOTCOUNT_ENV gate that kept U-Boot from
+#   writing the environment on every boot, and a register write needs no gate.
+#   The counter is read and cleared with `devmem 0x02390030 32`; the appliance's
+#   nanokvm-mark-good unit does it once a boot has proven healthy.
 #
 # bootsystem
 #   Read by `nanokvm-checkboot.service`, which re-arms the A/B slot register
@@ -32,6 +33,4 @@
 # bootargs would be read by nothing on slot A. (The vendor-derived U-Boot on
 # slot B falls back to its own compiled-in BOOTARGS_EMMC when the environment
 # has none, so the fallback chain does not need it either.)
-bootcount=0
-upgrade_available=0
 bootsystem=A

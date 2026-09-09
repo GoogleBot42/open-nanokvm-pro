@@ -247,40 +247,155 @@ let
     '';
   };
 
-  # ---- boot.loader.external installer ------------------------------------
-  # There is no bootloader to install. What a "boot install" means on this
-  # board is: write the new kernel Image and dtb into the INACTIVE A/B slot,
-  # then flip the U-Boot `bootsystem` env so the next boot takes it -- leaving
-  # the slot that currently works untouched as the rollback.
+  # ---- the boot payload's two configs ------------------------------------
+  # ONE generator, two files, and the difference between them is one token.
   #
-  # That flip is #79's contract (health-gated re-arm, RuntimeWatchdogSec, the
-  # cold-power-cycle caveat), and doing it half-way is worse than not doing it:
-  # a slot flipped without a health gate turns a bad generation into a board
-  # that needs Jeremy's hands on it. So the hook is inert until #79 enables it,
-  # and says so rather than failing a switch.
+  #   /boot/extlinux/extlinux.conf           the generation to boot
+  #   /boot/extlinux/extlinux-fallback.conf  the last one that was healthy
+  #
+  # U-Boot's `bootcmd` runs `sysboot ... ${extlinux_cfg}`; its `altbootcmd`,
+  # which `bootcount` > `bootlimit` selects, runs the same command against
+  # ${extlinux_fallback}. `sysboot` boots a config's DEFAULT entry and has no
+  # way to name a LABEL, so the choice of generation IS the choice of file --
+  # which is also why generations are not labels in one config here.
+  #
+  # The template carries @INIT@ where the generation's `init=` goes;
+  # nanokvm-install-boot substitutes the toplevel it was handed. Nothing else
+  # in the file varies, so a diff between the two configs is exactly the
+  # generation difference.
+  extlinuxTemplate = pkgs.writeText "extlinux.conf.in"
+    (import ../pkgs/extlinux.nix { inherit pkgs lib; init = "@INIT@"; });
+
+  # ---- boot.loader.external installer ------------------------------------
+  # "Installing the bootloader" on this board is writing one text file. There
+  # is no kernel to copy: `boot.kernel.enable = false`, the Image lives in
+  # /boot as a flake artefact with the stage-1 initrd inside it, and what a
+  # NixOS generation actually is here is a userspace closure. So the installer
+  # pins that closure into the default extlinux config and leaves the fallback
+  # alone -- the fallback is nanokvm-mark-good's to write, and only after a
+  # boot has proven itself.
+  #
+  # THE FALLBACK IS NEVER WRITTEN HERE. That is the whole safety property: at
+  # the moment of a switch the new generation has never booted, so promoting
+  # it to the rollback target would leave a board with two copies of the same
+  # untested system. The one exception is bootstrap -- if no fallback exists
+  # at all there is nothing to roll back TO, and a copy of the entry being
+  # installed is strictly better than a missing file.
   bootInstaller = pkgs.writeShellApplication {
     name = "nanokvm-install-boot";
-    runtimeInputs = with pkgs; [ coreutils ubootTools ];
+    runtimeInputs = with pkgs; [ coreutils gnused gnugrep ];
     text = ''
       set -eu
       toplevel="''${1:?usage: nanokvm-install-boot <toplevel>}"
 
-      echo "nanokvm: userspace generation installed: $toplevel"
-      echo "nanokvm: /init -> /nix/var/nix/profiles/system/init, so the next"
-      echo "         boot takes it with no boot-chain write at all."
+      dir=/boot/extlinux
+      conf="$dir/extlinux.conf"
+      fallback="$dir/extlinux-fallback.conf"
 
-      ${lib.optionalString (!cfg.bootUpdate.enable) ''
-        echo "nanokvm: kernel/dtb A/B updates are DISABLED (nanokvm.bootUpdate.enable"
-        echo "         = false). Flipping a slot without the health-gated re-arm of"
-        echo "         issue #79 can strand this board. Nothing was written."
-        exit 0
-      ''}
+      [ -d "$dir" ] || { echo "nanokvm: $dir is missing -- is /boot mounted?" >&2; exit 1; }
+
+      # Write, fsync, rename: a config half-written by a power cut is a board
+      # that boots nothing, and this partition is the only thing U-Boot reads.
+      tmp="$conf.new"
+      sed "s|@INIT@|$toplevel/init|" ${extlinuxTemplate} > "$tmp"
+      grep -q "init=$toplevel/init" "$tmp" \
+        || { echo "nanokvm: generated config does not name $toplevel" >&2; rm -f "$tmp"; exit 1; }
+      sync "$tmp"
+      mv "$tmp" "$conf"
+
+      if [ ! -e "$fallback" ]; then
+        echo "nanokvm: no rollback fallback yet -- seeding it with this generation"
+        cp "$conf" "$fallback.new"
+        sync "$fallback.new"
+        mv "$fallback.new" "$fallback"
+      fi
+      sync
+
+      echo "nanokvm: default generation is now $toplevel"
+      echo "nanokvm: fallback stays $(sed -n 's|.*init=\([^ ]*\)/init.*|\1|p' "$fallback")"
+      echo "nanokvm: the boot counter is armed; nanokvm-mark-good promotes this"
+      echo "         generation to the fallback only once the boot is healthy."
 
       ${lib.optionalString cfg.bootUpdate.enable ''
         echo "nanokvm: A/B kernel/dtb update is enabled but unimplemented (#79)." >&2
         echo "         Refusing to write ${parts.slotB.kernel.device} blindly." >&2
         exit 1
       ''}
+    '';
+  };
+
+  # ---- the health gate ---------------------------------------------------
+  # What "healthy" means for a KVM, in the three things it is FOR: the system
+  # finished starting, the web server answers, and the network works. A board
+  # that reaches a shell but serves nothing is not a board worth keeping as
+  # the rollback target.
+  #
+  # `systemctl is-system-running` is polled rather than ordered against,
+  # because it only becomes `running` when the initial transaction is EMPTY --
+  # a unit inside that transaction waiting for it would wait for itself. Hence
+  # the timer: the service it starts is its own job, outside the boot's.
+  markGood = pkgs.writeShellApplication {
+    name = "nanokvm-mark-good";
+    runtimeInputs = with pkgs; [ coreutils busybox curl iproute2 systemd gnugrep gnused ];
+    text = ''
+      set -eu
+
+      # TOP_CHIPMODE_GLB_BACKUP1, and the value U-Boot's DM_BOOTCOUNT_SYSCON
+      # backend reads as "magic present, count zero": CONFIG_SYS_BOOTCOUNT_MAGIC
+      # is 0xB001C041 and the four-byte mode keeps its top half in bits 31..16.
+      # A plain 32-bit store is right here -- nothing else owns this word, and
+      # unlike BACKUP0 there are no neighbouring bits to preserve.
+      BOOTCOUNT_REG=0x02390030
+      BOOTCOUNT_CLEAR=0xB0010000
+
+      deadline=$(( ${toString cfg.markGood.timeoutSec} ))
+      start=$(cut -d. -f1 /proc/uptime)
+
+      # /proc/uptime, never `date +%s`: timesyncd jumps the clock the moment
+      # DHCP lands, and a wall-clock deadline expires instantly when it does.
+      elapsed() { echo $(( $(cut -d. -f1 /proc/uptime) - start )); }
+
+      healthy() {
+        [ "$(systemctl is-system-running 2>/dev/null || true)" = running ] || return 1
+        ip -4 route show default | grep -q . || return 1
+        ${lib.optionalString cfg.server.enable ''
+          curl -sk -o /dev/null -m 5 https://127.0.0.1/ || return 1
+        ''}
+        return 0
+      }
+
+      while ! healthy; do
+        if [ "$(elapsed)" -ge "$deadline" ]; then
+          echo "mark-good: NOT healthy after ''${deadline}s -- leaving bootcount alone." >&2
+          echo "mark-good: is-system-running=$(systemctl is-system-running 2>&1 || true)" >&2
+          systemctl --failed --no-legend --no-pager >&2 || true
+          exit 1
+        fi
+        sleep 5
+      done
+
+      echo "mark-good: healthy after $(elapsed)s (bootcount was $(devmem $BOOTCOUNT_REG 32))"
+      devmem $BOOTCOUNT_REG 32 $BOOTCOUNT_CLEAR
+      echo "mark-good: bootcount cleared -> $(devmem $BOOTCOUNT_REG 32)"
+
+      # The fallback is regenerated from /run/booted-system, NOT copied from
+      # extlinux.conf. A `nixos-rebuild switch` between this boot and now has
+      # already rewritten extlinux.conf to name a generation that has never
+      # booted; copying it would promote an untested system on the strength of
+      # a different one's health. /run/booted-system is the only thing here
+      # that says what actually came up.
+      booted=$(readlink -f /run/booted-system)
+      fallback=/boot/extlinux/extlinux-fallback.conf
+      sed "s|@INIT@|$booted/init|" ${extlinuxTemplate} > "$fallback.new"
+      if cmp -s "$fallback.new" "$fallback"; then
+        rm -f "$fallback.new"
+        echo "mark-good: fallback already $booted"
+      else
+        sync "$fallback.new"
+        mv "$fallback.new" "$fallback"
+        sync
+        echo "mark-good: fallback promoted to $booted"
+      fi
     '';
   };
 in
@@ -385,6 +500,41 @@ in
         there, the next boot lands on slot A by itself. A booted appliance that
         re-armed would stay on slot B, and getting back would need either a
         working shell on it or Jeremy's hands on the power.
+      '';
+    };
+
+    markGood.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Clear U-Boot's boot counter and promote the running generation to the
+        rollback fallback, once this boot has been shown to be healthy
+        (#89 rung 5, and what closes #79).
+
+        With this OFF the counter is never cleared, so every boot counts and
+        the fourth consecutive one takes `altbootcmd`. That is the correct
+        behaviour for a deliberately-broken generation in a rollback drill --
+        and the reason the knob exists.
+      '';
+    };
+
+    markGood.delaySec = lib.mkOption {
+      type = lib.types.int;
+      default = 60;
+      description = ''
+        Seconds after boot before the health check first runs. The appliance
+        takes ~93 s of userspace on this board, so this is a floor, not a
+        deadline: the check polls from here until `markGood.timeoutSec`.
+      '';
+    };
+
+    markGood.timeoutSec = lib.mkOption {
+      type = lib.types.int;
+      default = 240;
+      description = ''
+        How long the health check keeps polling before giving up and leaving
+        the boot counter alone. Must stay well under the time three more boot
+        attempts would take, or a board that is merely slow looks broken.
       '';
     };
 
@@ -952,6 +1102,62 @@ in
           *)   echo "checkboot: bootsystem='$slot' not a/b -- refusing to write the slot register" >&2 ;;
         esac
       '';
+    };
+
+    # 5h. The rollback gate (#89 rung 5; this is what closes #79).
+    #
+    # U-Boot increments `bootcount` in TOP_CHIPMODE_GLB_BACKUP1 on every boot
+    # and, once it passes `bootlimit` (3), runs `altbootcmd` instead of
+    # `bootcmd` -- which sets milestone bit 30 and boots
+    # /boot/extlinux/extlinux-fallback.conf. This unit is the other half: it
+    # clears the counter, and promotes the config that booted to the fallback,
+    # ONLY once the system has been shown to work.
+    #
+    # A TIMER, not a `WantedBy=multi-user.target` service. The health check
+    # polls `systemctl is-system-running` for `running`, which is only reached
+    # when the boot's initial transaction is empty -- so a unit inside that
+    # transaction would be waiting on itself. A timer-started job is not part
+    # of it.
+    #
+    # THE FAILURE MODE IS THE SAFE ONE. If this unit does not run, or runs and
+    # finds the system unhealthy, the counter is simply not cleared and the
+    # next boot counts one higher. Three of those and the board rolls back by
+    # itself. Nothing here can strand the board; only NOT running it can end
+    # a boot on the fallback.
+    systemd.services.nanokvm-mark-good = lib.mkIf cfg.markGood.enable {
+      description = "Clear the boot counter and promote this generation to the rollback fallback";
+      after = [ "multi-user.target" "network-online.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${markGood}/bin/nanokvm-mark-good";
+      };
+    };
+
+    systemd.timers.nanokvm-mark-good = lib.mkIf cfg.markGood.enable {
+      description = "Run the boot health gate once, after this boot has had time to finish";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "${toString cfg.markGood.delaySec}s";
+        AccuracySec = "1s";
+        RemainAfterElapse = false;
+      };
+    };
+
+    # The hardware watchdog, petted from PID 1. Without this the ax630c
+    # watchdog is petted by the KERNEL for as long as the kernel schedules,
+    # which protects against nothing a user would call a hang. With it, a PID 1
+    # that stops running resets the board, the counter reaches `bootlimit`, and
+    # the rollback above happens unattended -- which is the whole point of a
+    # box whose console is a pad nobody can reach.
+    #
+    # 60 s is the driver's own default timeout (it programs TORR in units of
+    # 64Ki ticks of a 24 MHz counter, two stages); systemd pings at half that.
+    # RebootWatchdogSec covers a shutdown that wedges after the filesystems are
+    # gone, which is exactly where this board has no other way out.
+    systemd.watchdog = {
+      runtimeTime = "60s";
+      rebootTime = "3min";
     };
 
     # =====================================================================

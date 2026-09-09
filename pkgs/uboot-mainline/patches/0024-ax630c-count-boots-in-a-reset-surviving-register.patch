@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Wed, 9 Sep 2026 16:00:00 -0600
+Subject: [PATCH] ax630c: count boots in a reset-surviving register
+
+`bootcount` had nowhere to live on this board. Patch 0020 stopped U-Boot
+reading its environment off the eMMC -- the read is 2048 single-block
+transfers before the boot has done anything, and one of them timing out
+is not recoverable -- and CONFIG_BOOTCOUNT_ENV needs a writable
+environment. So the counter was inert: `bootlimit` was set, `altbootcmd`
+was written, and `bootcount_load()` returned 0 forever.
+
+DM_BOOTCOUNT_SYSCON is the backend for exactly this situation, and this
+SoC has the register it wants. TOP_CHIPMODE_GLB_BACKUP1 (0x02390030) is
+a 32-bit scratch word in the always-on chipmode block:
+
+  * The BootROM, the first-stage loader and TF-A leave it alone. The only
+    code anywhere in the vendor SDK that names it is a get/set pair in
+    bl1/board/board.c (get_boot_time/set_boot_time) that NOTHING calls --
+    grep the whole tree.
+  * It survives a warm reboot and a chip reset, like its neighbour
+    BACKUP0 at +0x24 -- the A/B slot and boot-milestone register this
+    port already uses as its evidence channel -- and clears on power
+    loss, which is the right lifetime for a boot counter.
+  * It is a whole word, so the driver's four-byte mode fits: magic 0xB001
+    in bits 31..16, count in bits 15..0. BACKUP0 could not host it; its
+    low bits are the vendor slot field and 28..31 are this port's
+    milestones.
+
+The counter is always armed. There is no `upgrade_available` gate the
+way CONFIG_BOOTCOUNT_ENV has one, because that gate existed to avoid
+writing the environment on every boot and a register write costs
+nothing. Every boot increments; a boot that reaches a healthy system
+clears it from Linux with one 32-bit write of 0xB0010000 to the same
+address. Three failures in a row and the fourth attempt takes
+`altbootcmd`, which boots the last generation that cleared the counter.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+--- a/arch/arm/dts/ax630c.dtsi
++++ b/arch/arm/dts/ax630c.dtsi
+@@ -59,6 +59,31 @@
+ 		value = <0x1>;
+ 	};
+ 
++	/*
++	 * The boot counter, in TOP_CHIPMODE_GLB_BACKUP1 (0x02390030 -- the
++	 * chipmode block + 0x30). A 32-bit scratch word that survives a warm
++	 * reboot and a chip reset and clears on power loss, which is exactly
++	 * the lifetime a boot counter wants. Nothing else in the boot chain
++	 * writes it.
++	 *
++	 * `reg` is two entries in the root's 2/2 cells: the register within
++	 * the syscon (offset 0x30, four bytes) and the counter's position
++	 * inside that register (offset 0, four bytes). With a four-byte
++	 * value the driver keeps CONFIG_SYS_BOOTCOUNT_MAGIC's top half in
++	 * bits 31..16 and the count in bits 15..0, so a cleared counter
++	 * reads 0xB0010000 and Linux clears it with one 32-bit write.
++	 *
++	 * /chosen/u-boot,bootcount-device is not set: this is the only
++	 * UCLASS_BOOTCOUNT device in the tree, so it is the one found.
++	 */
++	bootcount: bootcount {
++		compatible = "u-boot,bootcount-syscon";
++		syscon = <&chipmode_syscon>;
++		reg = <0x0 0x30 0x0 0x4>,
++		      <0x0 0x00 0x0 0x4>;
++		reg-names = "syscon_reg", "offset";
++	};
++
+ 	soc {
+ 		compatible = "simple-bus";
+ 		#address-cells = <2>;
+@@ -175,6 +200,18 @@
+ 		};
+ 
+ 		/*
++		 * TOP_CHIPMODE_GLB. +0x24 is the A/B slot and boot-milestone
++		 * register this port already writes with `mw.l` from the
++		 * environment; +0x30 is the boot counter below. Both are
++		 * scratch words the ROM, the first-stage loader and TF-A
++		 * leave alone.
++		 */
++		chipmode_syscon: syscon@2390000 {
++			compatible = "syscon", "simple-mfd";
++			reg = <0x0 0x2390000 0x0 0x1000>;
++		};
++
++		/*
+ 		 * uart0 is the boot console on hidden pads; uart1 is on an
+ 		 * exposed header pin but is not muxed to it by firmware and
+ 		 * has never been shown to work on this board. 208 MHz is the
+
+--- a/arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi
++++ b/arch/arm/dts/ax630c-nanokvm-pro-u-boot.dtsi
+@@ -20,3 +20,11 @@
+ &common_syscon {
+ 	bootph-all;
+ };
++
++&chipmode_syscon {
++	bootph-all;
++};
++
++&bootcount {
++	bootph-all;
++};
+
+--- a/configs/ax630c_nanokvm_pro_defconfig
++++ b/configs/ax630c_nanokvm_pro_defconfig
+@@ -32,7 +32,8 @@
+ # CONFIG_EFI_PARTITION is not set
+ CONFIG_ENV_IS_NOWHERE=y
+ CONFIG_BOOTCOUNT_LIMIT=y
+-CONFIG_BOOTCOUNT_ENV=y
++CONFIG_DM_BOOTCOUNT=y
++CONFIG_DM_BOOTCOUNT_SYSCON=y
+ CONFIG_BOOTCOUNT_BOOTLIMIT=3
+ CONFIG_BOOTCOUNT_ALTBOOTCMD="mw.l ${msreg_set} ${ms_altboot}; run bootfallback || run bootfallback || run bootfallback || run bootfallback; mw.l ${msreg_set} ${ms_failed}; reset"
+ CONFIG_DM_REGULATOR=y
+

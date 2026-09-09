@@ -87,6 +87,7 @@ let
     ./uboot-mainline/patches/0021-mmc-do-not-offer-the-card-a-voltage-the-board-cannot-.patch
     ./uboot-mainline/patches/0022-mmc-retry-a-failed-block-read-before-giving-up.patch
     ./uboot-mainline/patches/0023-part-efi-read-the-gpt-from-a-configurable-base-lba.patch
+    ./uboot-mainline/patches/0024-ax630c-count-boots-in-a-reset-surviving-register.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
