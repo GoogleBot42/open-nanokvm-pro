@@ -2217,7 +2217,7 @@ the eMMC.
 | 0 | **DONE 2026-09-08 (§11.9, §11.10).** `.#uboot-mainline` + `.#atf-mainline` build; `nix flake check` asserts the signed images fit 1536 K / 256 K and carry magic `0x55543322` | it compiles, links at `0x5C000400`/`0x40040000`, and fits | build output only |
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
 | 2 | **DONE 2026-09-09.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **The appliance boots the whole mainline chain to SSH in 153 s.** Slot register `0x30000018` (bits 28+29, slot B, no failure), `psci: SMC Calling Convention v1.5` (mainline BL31), `PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet]`, `Link is Up - 1Gbps/Full`, 428 MB, `systemctl is-system-running` = `running`, and a reboot returns to slot A on its own. Four fixes on top of the #91 `cdns,single-block-only` stopgap: `fdt_high`/`initrd_high` = `0x5f000000` (patch `0018`), **`mmc rescan` in front of every retry**, **`dwmac-axera` writing the PHY interface select BEFORE the block reset** (the MAC samples it at reset release; the vendor loader left it right, mainline U-Boot leaves it at 0), and **a `gmac_pins` pinctrl group for the fourteen RGMII pads** that no DT node had ever named. The last two are why "the kernel does not reach the network" looked for eighty-four runs like a kernel that never started. `mem=512M` still cannot simply be dropped. **Ten** upstream U-Boot bugs/gaps fixed on the way. Ninety runs. See "What exists now (rung 2)" through "(rung 2q)" below |
-| 3 | **PARTLY DONE 2026-09-09 — proven, not kept.** Promote to slot A from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), extlinux payload → `/boot` (p16) | the product boots the new chain with no slot trick | **Slot A did boot it**, whole oracle: `psci: SMC Calling Convention v1.5`, `/proc/cmdline` = the extlinux APPEND, `nanokvm-checkboot: slot A -> 0x2390028=0x10`, register `0x30000014`, `systemctl is-system-running` = `running`, web 200. It also **fails about two boots in three**, and #91 is why: a timed-out single-block transfer is unrecoverable here, because the re-init that would clear it walks `mmc_select_mode_and_width()` down to modes needing 3.3 V I/O that a fixed 1.8 V vqmmc cannot supply. The SPL's A/B fallback caught every failure (slot B, vendor-derived U-Boot, appliance up) — the rollback contract's other half, watched working for the first time. Device restored to the vendor chain; `.#nixos-firmware-image-mainline` builds the promoted image and is not the default. See "What exists now (rung 3)" and **"Handoff for rung 4"** below |
+| 3 | **DONE 2026-09-09 (rung 3b).** Promote to slot A from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), extlinux payload → `/boot` (p16) | the product boots the new chain with no slot trick | **Slot A did boot it**, whole oracle: `psci: SMC Calling Convention v1.5`, `/proc/cmdline` = the extlinux APPEND, `nanokvm-checkboot: slot A -> 0x2390028=0x10`, register `0x30000014`, `systemctl is-system-running` = `running`, web 200. Rung 3 lost it two boots in three; **rung 3b made the boot reliable and kept it.** Two U-Boot patches: `0021` — `mmc_set_lowest_voltage()` intersects the allowed I/O levels with what the **vqmmc supply can actually deliver**, and offers 1.8 V for the legacy/HS timings when it cannot reach 3.3 V, so a re-init on a fixed 1.8 V board no longer ends in nine refusals and `unable to select a mode`; `0022` — `mmc_bread()` **retries a failed transfer** (three attempts, waiting for the card in between) instead of turning one transient into a failed boot. Measured: **10/10 slot-B boots to SSH**, twelve read failures across ~10⁶ single-block commands, every one recovered by the first retry, zero re-inits, every init landing on `mode 12 (HS400ES), 8-bit, 50 MHz, signal 1.8 V`; then three consecutive slot-A boots, register `0x30000015`, `systemctl --failed` empty, web 200. The SPL's A/B fallback caught every rung-3 failure (slot B, vendor-derived U-Boot, appliance up) — the rollback contract's other half, watched working for the first time. `.#nixos-firmware-image-mainline` builds the promoted image and is still not the default (#91). See "What exists now (rung 3)", "(rung 3b)" and **"Handoff for rung 4"** below |
 | 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
 
@@ -4314,60 +4314,181 @@ p3 `d5017cec0cd168fd621ea768bd4612d8`, p5 `1521dc39f8a50e726c708fde2c8edce2`,
 register `0x00000015`, `nanokvm-checkboot` re-arming slot A, `nanokvm` active,
 web 200. `/root/rung3/` holds the backups, the staged images and `restore.sh`.
 
+
+---
+
+### What exists now (rung 3b, 2026-09-09) — SLOT A KEEPS IT
+
+**Row 3 is done.** Slot A runs mainline BL31 + mainline U-Boot + extlinux and
+stays there. Rung 3 had proven the chain boots and lost it two boots in three;
+this round found why a lost boot could not recover, fixed it twice over, and
+measured the result.
+
+Full write-up and both console captures:
+`docs/reference/mainline/uboot-mainline-20260908/RUNG3B.md` and
+`rung3b-console-20260909.txt`.
+
+#### The two patches
+
+**`0021` — never offer the card a signal voltage the board cannot drive.**
+`mmc_set_lowest_voltage()` offers `MMC_SIGNAL_VOLTAGE_330` and nothing else for
+every mode below `MMC_DDR_52`. On this board that offer cannot be taken and
+cannot report that it was not taken: `sdhci_set_voltage()` prints
+`failed to set vqmmc-voltage to 3.3V` and returns without touching Host
+Control2, and the host half of the switch goes through `->set_control_reg()`,
+which returns void. The mode is then configured with the controller signalling
+at 1.8 V and the core believing 3.3 V, the confirming ext_csd read fails, and
+the walk moves down — nine candidates, nine refusals, `unable to select a mode:
+-5`, no block device. The fix asks the vqmmc regulator's constraints what
+levels it can reach (`mmc_vqmmc_signal_voltages()`), intersects the allowed
+mask with them, and — because that alone would leave a 1.8 V-only board with no
+mode below `MMC_DDR_52` — offers 1.8 V for the backwards-compatible and
+high-speed timings when the supply cannot reach 3.3 V. EXT_CSD CARD_TYPE bits 0
+and 1 name no voltage, so that is legal; and on a board that can do 3.3 V the
+intersection masks the addition straight back out, so nothing changes there.
+`mmc_vqmmc_below_330()` (patch `0010`, the initial state) is now one line on top
+of the same helper, so init and re-init decide the I/O level in one place.
+
+**`0022` — retry a failed block read before giving up.** `mmc_bread()` treated
+one failed transfer as a failed read of the whole request, and everything above
+it treats a failed read as a failed boot. `sdhci_send_command()` already resets
+the command and data lines on its way out, so the next attempt starts from a
+clean controller. Three attempts per chunk, `mmc_poll_for_busy()` in between,
+and a `mmc%d: retrying read at <lba>` warning so a recovered failure is still
+visible instead of silently absorbed.
+
+Both are written against upstream and shaped for submission.
+
+#### The measurement: 10/10
+
+Ten consecutive slot-B boots of the appliance through the mainline chain, slot A
+left on the vendor-derived chain so any failure had somewhere to land. None did.
+Every boot reached SSH, `systemctl is-system-running` = `running`, register
+`0x30000029`. Wall time to SSH 171–211 s, of which ~110 s is the boot chain.
+
+Twelve read failures across roughly a million single-block commands — about 1.2
+per 100 000 — and **every one recovered by the first retry**; no LBA appears
+twice. Seven were U-Boot's own 10 s software timeout in
+`sdhci_transfer_data()`, worth ~10 s of boot each; five were an immediate
+`SDHCI_INT_ERROR`. They are bursty: three boots carried all twelve, seven
+carried none. **Not one re-initialisation happened in the ten**, so the ten
+boots do not exercise `0021` at all — that proof is the probe boot below.
+
+Every init, in every boot, lands on the same place:
+`mmc: selected mode 12, 8-bit, 50000000 Hz, signal 2` — `MMC_HS_400_ES`,
+8-bit, 50 MHz, 1.8 V signalling.
+
+#### The probe boot, and what it says about #91
+
+`.#uboot-mainline-probe` is the tee image plus a `preboot` that lifts the
+`cdns,single-block-only` cap for exactly one command, reads the card's own state
+with CMD13 **before any CMD12 and before the controller is reset**, reads 8 MiB
+in `MMC_HS` and 8 MiB in HS200, and forces a re-init. One boot, three answers.
+
+**The card starts; the host goes deaf. That reverses #91's headline.** On an
+open-ended CMD18 — no CMD23, no Auto CMD12 — `INT_STATUS` is `0x00000000` (no
+error interrupt at all; the failure is the software timeout waiting for
+`DATA_END`), `PRESENT_STATE` is `0x014f0236` with `DAT_LINE_ACTIVE` and
+`READ_TRANSFER_ACTIVE` **set** and DAT[3:0] = 0x4, and CMD13 answers
+`0x00000b00` — **CURRENT_STATE 5 = DATA**. Three attempts, three identical
+answers. #91 records the opposite ("all eight DAT lines high, no transfer
+active, state 4 = TRAN, it never started") because that CMD13 came *after* the
+controller reset, which is exactly what returns the card to TRAN. The rare
+CMD17 failure has the same host-side shape (`READ_TRANSFER_ACTIVE` still set,
+usually no error interrupt) with the card already back in TRAN — so CMD18 fails
+this way always and CMD17 fails this way rarely, and it is one bug.
+
+**Mode dependence is not answerable at that sample size.** `MMC_HS` and HS200
+each read 16 384 blocks with zero retries, but at 1.2e-5 per read that expects
+0.2 failures, so 0 and 0 discriminate nothing. A real comparison needs of the
+order of 10⁶ single-block reads per arm — about 35 minutes of bus time each,
+which does not fit one boot under a 300 s watchdog stage. The harness is in
+`.#uboot-mainline-probe`; only the read counts need raising.
+
+**HS200 tuning fails on this controller.** Six `CMD21` attempts returned
+`ERROR | DATA_TIMEOUT` and the core selected HS200 anyway, which then read
+8 MiB cleanly. Banked on #91; nothing depends on it, because the board runs
+HS400ES.
+
+**`0021` is hardware-proven.** Five separate re-initialisations happened in that
+one boot and the console carries no `failed to set vqmmc-voltage to 3.3V` and no
+`unable to select a mode`. The forced re-init lands on `mode 12, 8-bit,
+50000000 Hz, signal 2` — byte for byte the first init's line.
+
+#### The promotion
+
+Slot B put back to the vendor U-Boot first, so slot A still has somewhere to
+fall. Then p3 = mainline BL31, p5 = the rung-3b mainline U-Boot, p7 = the
+generated environment, `/boot` = the extlinux payload, slot A armed. Three
+consecutive warm reboots, each `0x30000015` (preboot + extlinux, no failure bit,
+slot A re-armed by `nanokvm-checkboot`), `systemctl --failed` empty, web 200,
+`/proc/cmdline` the extlinux APPEND.
+
 ---
 
 ### Handoff for rung 4
 
-Current as of 2026-09-09. No history; read "What exists now (rung 3)" above if
-a claim here surprises you.
+Current as of 2026-09-09, after rung 3b. No history; read "What exists now
+(rung 3b)" above if a claim here surprises you.
 
-**Device at rest.** Slot A = the flashed NixOS appliance on the
-**vendor-derived** boot chain (vendor TF-A in p3, vendor U-Boot in p5), root
-p17, mainline `7.1.3-nanokvm`, ~428 MB usable. p4 `atf_b` holds **mainline
-BL31** (rung 1, left there deliberately); p6 `uboot_b` holds the vendor U-Boot.
-p12–p15 hold the appliance dtb and kernel in both slots. `/boot` = `ver` alone.
-Register `0x00000015`. Never write p1/p2.
+**Device at rest — slot A IS the mainline chain now.** p3 `atf` = mainline BL31
+(`4d190bc975499b10ca82994ffa4f69eb` over its first 14592 B), p5 `uboot` = the
+rung-3b mainline U-Boot (`fc73ebc4c86e39a24d6ede2b76105cdc` over 184280 B), p7
+`env` = the generated environment (`e391296770af575836347217296d8386`,
+`bootsystem=A`, `bootcount=0`, `upgrade_available=0`), `/boot` (p16) = `Image` +
+`ax630c-nanokvm-pro.dtb` + `extlinux/extlinux.conf` +
+`extlinux/extlinux-fallback.conf` + `ver`. Root p17, mainline `7.1.3-nanokvm`.
+Register `0x30000015`.
 
-**On the device, `/root/rung3/`:** `restore.sh` (puts p3, p5, p7 and `/boot`
-back and re-arms slot A — always finish with it), `promote.sh` (stages `/boot`,
-writes p3/p5/p7, arms slot A; takes the extlinux.conf to install as its
-argument), `p3-atf.orig`, `p5-uboot.orig`, `p7-env.orig`, `boot-backup/`, and
-the staged images: `atf_mainline.bin`, `uboot_mainline.bin`, `uboot_tee.bin`,
-`uboot_env.bin`, `Image`, `ax630c-nanokvm-pro.dtb`, `extlinux.conf` (shipping)
-and `extlinux-dm.conf` (shipping + `watchdog.open_timeout=600`). `/root/rung2/`
-still holds rung 2's harness, including `rdmem.py` and `hold-wdt.sh`.
+**Slot B is the fallback and it is the VENDOR chain.** p4 `atf_b` holds mainline
+BL31 (rung 1, left there deliberately — it is what the mainline U-Boot needs if
+slot B is ever used for a mainline test); p6 `uboot_b` holds the vendor-derived
+U-Boot (`1521dc39f8a50e726c708fde2c8edce2` over 1572864 B). p12–p15 hold the
+appliance dtb and kernel in both slots. **Never write p1/p2.**
 
-**Promoting again, from a slot-B boot or a healthy slot A:**
-`/root/rung3/promote.sh extlinux.conf`, then `systemctl reboot`. It writes p7
-in the same step as p5 on purpose — the vendor-derived U-Boot on slot B
-rewrites `bootcmd=axera_boot` and `bootsystem=B` into p7 on every boot, so
-**after any fallback you must re-write p7 before arming slot A again**, or
-`nanokvm-checkboot` re-arms B and the board stays there.
+**On the device.** `/root/rung3b/` holds this round: `setup-slotb.sh` (stage
+`/boot`, write p6, point `bootsystem` at B), `armb.sh` (zero the evidence
+channels, arm slot B), `readboot.sh` (register, cmdline, pre-console buffer),
+`promote3b.sh` (slot B back to vendor, then p3/p5/p7 + arm slot A), and the
+three images `uboot_mainline_3b.bin`, `uboot_tee_3b.bin`, `uboot_probe_3b.bin`.
+`/root/rung3/` still holds rung 3's `restore.sh` (puts the VENDOR chain back on
+slot A and empties `/boot` — the way out if the mainline chain ever has to go),
+`promote.sh`, the `.orig` backups, `boot-backup/`, and the staged `Image`, dtb
+and `extlinux.conf`. `/root/rung2/` holds rung 2's harness including
+`uboot_b.orig`, `rdmem.py` and `hold-wdt.sh`.
 
-**Reading a failed slot-A boot.** Flash `.#uboot-mainline-tee` to p5 instead of
-the shipping image, arm slot A, and read the pre-console buffer from whatever
-boot comes back. Zero the buffer first
-(`dd if=/dev/zero of=/dev/mem bs=4096 seek=295144 count=2`) so a stale capture
-cannot be mistaken for a fresh one. A power cycle destroys the buffer — but a
-cold boot re-runs slot A and re-fills it with the same failure, so cycling to
-recover a dark board costs nothing.
+**Reading a failed boot.** Flash `/root/rung3b/uboot_tee_3b.bin` to p5 (or p6
+for a slot-B test), zero the buffer
+(`dd if=/dev/zero of=/dev/mem bs=4096 seek=295144 count=8`), boot, then read it
+from whatever boot comes back:
+`dd if=/dev/mem bs=4096 skip=295144 count=8 | tr -d '\000'`. The tee image is
+the shipping image plus a copy of every console write into the pre-console
+buffer plus one line naming the selected eMMC mode; it takes nothing away.
+`.#uboot-mainline-trace` is the other variant and is **the wrong tool** — it
+clears `GD_FLG_HAVE_CONSOLE`, which also disables `tstc()`/`getchar()`.
+The board's power is agent-controllable, so a dark board costs a plug cycle,
+not a bench trip — but read the register, the buffer and
+`/var/lib/systemd/pstore` *before* cycling.
 
-**The blocker is #91 and it is now characterised.** Multi-block transfers do
-not start on this Cadence SD4HC, and the single-block stopgap has a residual
-timeout rate whose recovery path is closed by the fixed 1.8 V vqmmc rail.
-Anything short of making transfers reliable is mitigation. The two mitigations
-already applied are `0019` and `0020`; a third that is cheap and untried is
-shrinking `CONFIG_ENV_SIZE` (now moot, since `0020` removed the read
-altogether), and a fourth is auditing what else U-Boot reads before the
-payload.
+**#91 is no longer a gate on booting, and it is still open.** The single-block
+stopgap plus the retry makes the boot reliable; the underlying bug — the host
+not collecting a transfer the card is streaming — is unfixed, and it costs
+~110 s of boot chain that a working CMD18 would make ~5 s. Rung 3b's evidence
+above narrows it a long way: it is a host-side data-path failure, not a card
+that declines to start.
 
-**A hung slot A is the one unrecoverable state**, and it happened three times.
-`watchdog.open_timeout=N` on the kernel command line turns it into a reset, but
-it is a deadman, not a setting: nothing in the appliance opens `/dev/watchdog`,
-so it also resets a perfectly healthy board N seconds in. The right fix is
-`systemd`'s `RuntimeWatchdogSec` (systemd opens and pets `/dev/watchdog`), and
-then `watchdog.open_timeout` can ship. That is an appliance change and wants
-doing before the mainline chain becomes the default.
+**A hung slot A is still the one bad state.** `watchdog.open_timeout=N` on the
+kernel command line turns it into a reset, but it is a deadman: nothing in the
+appliance opens `/dev/watchdog`, so it also resets a healthy board N seconds in.
+The right fix is systemd's `RuntimeWatchdogSec`, and then `watchdog.open_timeout`
+can ship. That is an appliance change and it wants doing before
+`.#nixos-firmware-image-mainline` becomes the default.
+
+**Why the mainline image is still not the default.** An in-place promotion has
+the vendor U-Boot on slot B to fall back to; a flashed
+`.#nixos-firmware-image-mainline` has the same U-Boot in both slots and no
+fallback at all. That argument is weaker now that 10/10 boots succeed, but it
+is not gone, and rung 4 deletes the twins anyway.
 
 **Rung 4 proper — the layout change, in place.** Nothing here has been started.
 `spl`, `atf`, `uboot`, `env`, `boot`, `rootfs` (§11.5), no twins, no ddrinit, no
@@ -4389,7 +4510,12 @@ needs, in dependency order:
 4. **p1 last, and it is one-way** — a bad SPL means AXDL, which means Jeremy's
    hands on the board. Everything before it is reversible from a shell.
 
+**Rung 5 needs `DM_BOOTCOUNT_SYSCON`.** Patch `0020` stopped U-Boot reading the
+environment off the eMMC, so `bootcount` in the env is no longer reachable from
+the bootloader. This SoC's reset-surviving scratch register is exactly what that
+backend is for, and it is already the boot's evidence channel.
+
 **Also open.** #92 (the appliance oopses on `reboot`, `do_kernel_restart()`
-calls a NULL `notifier_call`) — seen again this round, and harmless as ever.
-`mem=512M` is still unexplained and still not droppable. And rung 3's three
-dark boots have no explanation.
+calls a NULL `notifier_call`) — harmless as ever. `mem=512M` is still
+unexplained and still not droppable. Rung 3's three dark boots have no
+explanation and did not recur in rung 3b's fourteen.

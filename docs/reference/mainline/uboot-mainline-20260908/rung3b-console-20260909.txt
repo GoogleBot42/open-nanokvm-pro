@@ -1,0 +1,141 @@
+#89 rung 3b, 2026-09-09 -- the two console captures the round turns on.
+Read out of CONFIG_PRE_CONSOLE_BUFFER (0x480e8000) over SSH, from the boot
+that produced them. Analysis: RUNG3B.md.
+
+===========================================================================
+A. MEASUREMENT BOOT 1 of 10 -- .#uboot-mainline-tee on slot B.
+   Six read failures, two of them the 10 s software timeout, every one
+   recovered by the first retry. One init, no re-init.
+===========================================================================
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  17 devices, 12 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from nowhere... OK
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+Hit any key to stop autoboot: 1  0
+mmc: selected mode 12, 8-bit, 50000000 Hz, signal 2
+Retrieving file: /extlinux/extlinux.conf
+1:	nixos
+Retrieving file: /Image
+mmc0: retrying read at 7cd88
+Transfer data timeout
+mmc0: retrying read at 7d209
+mmc0: retrying read at 7ff6a
+mmc0: retrying read at 81549
+Transfer data timeout
+mmc0: retrying read at 86e4a
+mmc0: retrying read at 8a949
+mmc0: retrying read at 522a1
+append: mem=512M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x00,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/mmcblk0p17 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),512K(ddrinit),256K(atf),256K(atf_b),1536K(uboot),1536K(uboot_b),1M(env),6M(logo),6M(logo_b),1M(optee),1M(optee_b),1M(dtb),1M(dtb_b),64M(kernel),64M(kernel_b),128M(boot),-(rootfs) logomode=vo0@dsi_dpi_video boot.panic_on_fail=1 panic=10
+Retrieving file: /ax630c-nanokvm-pro.dtb
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+Working FDT set to 49200000
+   Loading Device Tree to 000000005eff8000, end 000000005efff0f4 ... OK
+Working FDT set to 5eff8000
+
+Starting kernel ...
+
+  Note the ordering. "Transfer data timeout" is printed by
+  sdhci_transfer_data() BEFORE mmc_bread()'s "retrying read" line, so a
+  retry line with no timeout above it is a fast SDHCI_INT_ERROR exit and a
+  retry line preceded by one is the 10 s software timeout. No LBA repeats:
+  every failure was recovered by the first retry.
+
+===========================================================================
+B. THE PROBE BOOT -- .#uboot-mainline-probe on slot B.
+   preboot lifts cdns,single-block-only for one command (bmax=2), reads the
+   card's own state with CMD13 before any CMD12 and before the controller
+   is reset, then reads 8 MiB in MMC_HS and 8 MiB in HS200, then forces a
+   re-init.
+
+   "probe: cmd8 failed" / "probe: cmd55 failed" at every init are the SD
+   probe timing out on an eMMC. Normal, and elided below.
+===========================================================================
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+...
+Net:   No ethernet found.
+mmc: selected mode 12, 8-bit, 50000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+PROBE-A-CMD18
+MMC read: dev # 0, block # 306688, count 2 ... Transfer data timeout
+probe: cmd18 failed int 00000000 present 014f0236
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 4ae00
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 014f0236
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 4ae00
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 014f0236
+probe: cmd13 int 00108001 resp 00000b00 state 5
+0 blocks read: ERROR
+PROBE-B-HS
+mmc: selected mode 1, 8-bit, 26000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+MMC read: dev # 0, block # 306688, count 16384 ... 16384 blocks read: OK
+PROBE-B-HS200
+probe: cmd21 failed int 00108000 present 01ff02f6
+probe: cmd13 int 00000001 resp 00000900 state 4
+   (x6 -- HS200 tuning, every attempt)
+mmc: selected mode 10, 8-bit, 50000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+MMC read: dev # 0, block # 306688, count 16384 ... 16384 blocks read: OK
+PROBE-C-REINIT
+mmc: selected mode 12, 8-bit, 50000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+PROBE-END
+Hit any key to stop autoboot: 1  0
+mmc: selected mode 12, 8-bit, 50000000 Hz, signal 2
+Retrieving file: /extlinux/extlinux.conf
+1:	nixos
+Retrieving file: /Image
+Transfer data timeout
+probe: cmd17 failed int 00000000 present 01ff02f6
+probe: cmd13 int 00000000 resp 00000900 state 4
+mmc0: retrying read at 60732
+Transfer data timeout
+probe: cmd17 failed int 00000000 present 01ff02f6
+probe: cmd13 int 00000000 resp 00000900 state 4
+mmc0: retrying read at 60df1
+Transfer data timeout
+probe: cmd17 failed int 00000000 present 01ff02f6
+probe: cmd13 int 00000000 resp 00000900 state 4
+mmc0: retrying read at 60e10
+probe: cmd17 failed int 00108000 present 01ff02f6
+probe: cmd13 int 00000001 resp 00000900 state 4
+mmc0: retrying read at 69711
+Transfer data timeout
+probe: cmd17 failed int 00000000 present 01ff02f6
+probe: cmd13 int 00000000 resp 00000900 state 4
+mmc0: retrying read at 6bcb2
+append: mem=512M console=ttyS0,115200n8 ...
+Retrieving file: /ax630c-nanokvm-pro.dtb
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+...
+Starting kernel ...
+
+  READ IT LIKE THIS. On CMD18 the card is in state 5 (DATA) with
+  DAT_LINE_ACTIVE and READ_TRANSFER_ACTIVE set and DAT[3:0] = 0x4 -- it is
+  streaming, and the host never collects. That is the reverse of what #91
+  records, and the difference is only that #91's CMD13 came after the
+  controller reset, which is what puts the card back in TRAN.
+
+  On the rare CMD17 failure the host side looks the same
+  (READ_TRANSFER_ACTIVE still set, usually no error interrupt at all) but
+  the card has already finished: state 4 (TRAN). One of the five raised
+  int 00108000 = ERROR | DATA_TIMEOUT_ERR.
