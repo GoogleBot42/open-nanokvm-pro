@@ -199,18 +199,28 @@ that is arbitration, not a bug.
 Use `tools/kvmssh` / `tools/kvmscp`; credentials live in `~/.config/nanokvm/device.env`
 (untracked). See the kvm-device skill.
 
-**Since 2026-09-11 slot A boots the MAINLINE chain** (mainline TF-A BL31 in p3,
-mainline U-Boot in p5, extlinux + Image + dtb on p16, mainline env in p7); slot B
-(p4 mainline BL31, p6 vendor-derived U-Boot) is the SPL's automatic fallback.
-A good boot reads `0x30000015` in the slot register and takes ~3 min to SSH
+**Since 2026-09-09 the eMMC is `spl` + a GPT-carrying `disk`** (#89 rung 4).
+The first 768 KiB are the BootROM's and are outside every partition table;
+everything after carries a real GPT at its own LBA 0 (protective MBR at
+physical LBA 1536). Linux gets there via
+`blkdevparts=mmcblk0:768K(spl),-(disk)` plus a stage-1
+`losetup -P /dev/loop0 /dev/mmcblk0p2`, so root is `/dev/loop0p5` and `/boot`
+is `/dev/loop0p4`; U-Boot reads the same table through
+`CONFIG_EFI_PARTITION_BASE_LBA=1536` (patch `0023`). The SPL is
+`.#spl-minimal`, compiled for those offsets — **the layout and the
+first-stage loader are one artefact, so a layout change means an SPL
+rebuild**, and a bad SPL is an AXDL bench trip. There are no A/B twins any
+more; both `_BAK` bases point at the A bases, so the slot register's SLOT
+bits select nothing. A good boot reads `0x30000014` and takes ~3 min to SSH
 (single-block eMMC reads, #91). `docs/mainline-port.md` §11.10 "Handoff for
-rung 4" is the current device contract.
+rung 5" is the current device contract.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
 cycle clears the slot register and lands on slot A; SSH is back ~30 s after
-`on` (tested 2026-09-09: off → 0 W, on → 2 W, booted, slot `0x14`). Read the
+`on` for the 4.19 image; a COLD boot of the mainline chain takes ~5.5 min to
+SSH (4.5 min of it boot chain, measured 2026-09-09) against ~3 min warm. Read the
 slot register / pstore / console buffer BEFORE cycling — the cycle destroys
 them. Jeremy's standing word: with self-recovery available, take more risk on
 slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.

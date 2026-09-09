@@ -203,24 +203,29 @@ about to mount; `e2fsck`'d and mounted the real root at `/realroot`; wrote
 `/realroot/etc/network/interfaces`; and `exec switch_root /realroot /sbin/init`.
 Every one of those jobs is now a NixOS mechanism or a unit.
 
-### 4. `/boot` — p16, vfat, and it must stay writable
+### 4. `/boot` — the boot payload, and it must stay writable
 
 This contract is unchanged and is not optional. `NanoKVM-Server` writes
 `/boot/eth.nodhcp`, `/boot/hostname`, `/boot/usb.disk0`, `/boot/usb.ncm`,
 `/boot/usb.uac2`, `/boot/usb.disk1.{sd,emmc}` and reads `/boot/ver`; the module
 loader sources `/boot/configs`; the vendor boot path uses `/boot/rec`,
 `/boot/first_time_boot` and `/boot/check_resize2fs`. Every USB-gadget feature is
-gated on a flag file there.
+gated on a flag file there. Since #89 rung 3 it is also the BOOT PAYLOAD:
+`extlinux/extlinux.conf`, the kernel `Image` and the device tree, which is what
+mainline U-Boot's `sysboot` reads.
 
-The appliance mounts it `nofail,noatime,umask=000` on `parts.bootfs.device`
-(p16, derived — see below). `nofail` so a missing or corrupt vfat cannot hold
-up a boot; `umask=000` matches the device.
+**It is ext4 since #89 rung 4, and 272 MiB.** The kernel needs ext4 for root
+anyway, so putting `/boot` on it retires a trap worth remembering: mounting FAT
+needs kernel config a minimal fragment does not get by default, and without
+`CONFIG_NLS_CODEPAGE_437` / `CONFIG_NLS_ISO8859_1` the mount fails `-EINVAL` and
+every USB-gadget flag silently reads as absent. Those symbols are still pinned in
+`pkgs/kernel-mainline/ax630c.config` because the vendor-layout recovery image
+still carries a vfat `/boot`.
 
-Mounting FAT needs kernel config that a minimal fragment does not get by
-default, so `pkgs/kernel-mainline/ax630c.config` pins `CONFIG_VFAT_FS`,
-`CONFIG_NLS_CODEPAGE_437` and `CONFIG_NLS_ISO8859_1` (plus `NLS_UTF8`). Without
-the NLS tables the mount fails with `-EINVAL` and every USB-gadget flag silently
-reads as absent.
+The appliance mounts it `nofail,noatime` on `parts.bootfs.device` — GPT
+partition 4, `/dev/loop0p4` (see below). `nofail` so a missing or corrupt
+filesystem cannot hold up a boot. `umask=000` was a vfat-only accommodation and
+is gone with the vfat.
 
 ### 5. Identity — the MAC is derived on every boot, not stored
 
@@ -288,50 +293,98 @@ and logs loudly rather than inventing one.
 shows the "no SoC UID available" path taken and `device_key: (none)`. The
 arithmetic is exercised nowhere yet.
 
-### 6. The eMMC map, and `/etc/fw_env.config`
+### 6. The eMMC map: `spl` + `disk`, and a real GPT
 
-This eMMC has **no on-disk partition table at all**. Its layout is the
-`blkdevparts=mmcblk0:…` clause of the kernel command line: U-Boot's
-`get_part_info()` parses it to find `kernel`/`dtb`/`rootfs` by name, and Linux
-turns it into `/dev/mmcblk0pN` via `CONFIG_CMDLINE_PARTITION`.
+**Why the eMMC is presented as two devices.** The AX630C BootROM reads its
+first-stage loader from byte 0 of the eMMC **user area**. Which area it reads is
+a pin strap on `chip_mode`, not a setting, and this board is strapped to the
+user area; its two eMMC boot partitions (`mmcblk0boot0`, `mmcblk0boot1`, 4 MiB
+each) are blank and unreachable without changing that strap. Both facts were
+measured on the device, 2026-09-09. So byte 0 belongs to the ROM, and neither an
+MBR (LBA 0) nor a GPT (LBA 0 for the protective MBR, 1–33 for the header and
+entry array) can live where the standard puts it.
 
-`nixos/emmc-partitions.nix` parses that same clause out of
-`dts/ax630c-nanokvm-pro.dts` and folds it once into partition numbers and byte
-offsets. Three numbers that used to be hand-copied into three different files —
-p16, p17, and the U-Boot environment offset — now come from the one string the
-bootloader itself reads, and the module `assert`s the shape it expects: 17
-partitions, `rootfs` at p17, `boot` at p16, and `env` at offset `0x4C0000` size
-`0x100000` (the sum of the six partitions before it: `spl`, `ddrinit`, `atf`,
-`atf_b`, `uboot`, `uboot_b`). The A/B slot pairs come from the same parse, so
-nothing downstream has to remember which number is which.
+Until #89 rung 4 the answer was to have no table at all: the layout was the
+`blkdevparts=mmcblk0:…` clause of the kernel command line, seventeen partitions,
+parsed by U-Boot on one side and `CONFIG_CMDLINE_PARTITION` on the other. It
+worked, and it cost every tool that speaks GPT.
 
-**Gap 3's `fw_env.config` TODO is closed.** `environment.etc."fw_env.config"` is
-`/dev/mmcblk0 0x4C0000 0x100000` — computed, asserted, and neither a guess nor a
-device capture. `nanokvm-checkboot.service` is therefore **live for the first
-time**; it was inert in the scaffold for want of this file. It reads `fw_printenv
--n bootsystem` and re-arms the current slot (`devmem 0x2390028 32 0x10` for A,
-`0x20` for B). `bootsystem` is written **uppercase** `A`/`B` by U-Boot's
-`set_slot_ab`, while the vendor's own script writes lowercase in places, so both
-are accepted; anything else refuses to write the register. The QEMU run took
-exactly that path (`bootsystem='' not a/b — refusing to write the slot
-register`), which is the behaviour the code was written for.
-`nanokvm.checkboot.enable` turns the unit off for exactly one case — the reversible slot-B test, where not
-re-arming is the whole safety argument (step 4 of the
-[validation ladder](#validation-ladder)).
+**The layout now splits the card in two.**
 
-`nix flake check` gains **`emmc-partition-map`**, a pure-eval text file printing
-all 17 partitions with offsets and sizes plus the resulting `fw_env.config`.
-That map also settles a documentation error: **OP-TEE is p10/p11; p8/p9 are
-`logo`/`logo_b`.** `pkgs/boot.nix`'s header comment said OP-TEE was p8/p9 and
-[updates.md](updates.md) had `logo` at p10/11; both are corrected.
-(`pkgs/image.nix` already had it right.)
+| | | |
+|---|---|---|
+| `spl` | the first 768 KiB | the ROM's image and nothing else; never inside a partition table |
+| `disk` | everything after it | carries a spec-conformant GPT at ITS OWN LBA 0 |
 
-Two caveats that remain owed:
+`disk`'s protective MBR is at physical LBA 1536, its header at 1537, its entry
+array at 1538–1569, its first usable LBA at 1570, and its alternate header in
+the last sector of the eMMC — exactly where the UEFI specification puts each of
+them, measured from `disk`'s own start. Five partitions with names, type GUIDs
+from the Discoverable Partitions Specification and pinned partition GUIDs:
 
-- **The env location has never been hexdumped against the real device.** Verify
-  before the first `fw_setenv`, not after.
-- **U-Boot rewrites the environment twice per boot** (`set_slot_ab`,
-  `update_cmdline`), so a userspace `fw_setenv` must not race a reboot.
+```
+p1 atf     1M    phys 0x1C0000    p4 boot    272M  phys 0x5C0000   (ext4)
+p2 uboot   2M    phys 0x2C0000    p5 rootfs  rest  phys 0x115C0000
+p3 env     1M    phys 0x4C0000
+```
+
+`sgdisk`, `sfdisk`, `parted`, `blkid` and `lsblk` all read it as an ordinary
+disk. `blkid` on the running board reports `PARTLABEL="rootfs"` and a stable
+`PARTUUID`.
+
+**How each side reaches it.**
+
+- **Linux** cannot be told to parse a table at an offset, so it is told the one
+  thing it can do without a table: `blkdevparts=mmcblk0:768K(spl),-(disk)`,
+  which yields `/dev/mmcblk0p1` and `/dev/mmcblk0p2`. Stage 1 then runs
+  `losetup -P /dev/loop0 /dev/mmcblk0p2` in `preLVMCommands` — after udev has
+  settled, before anything is mounted — and the in-kernel EFI parser brings up
+  `/dev/loop0p1..5`. Root is `loop0p5`, `/boot` is `loop0p4`.
+  `CONFIG_EFI_PARTITION` and `CONFIG_BLK_DEV_LOOP` are therefore both on the
+  root path: without either, the loop comes up bare and there is no root.
+- **U-Boot** reads the same table directly, through
+  `CONFIG_EFI_PARTITION_BASE_LBA=1536` (patch `0023`, upstream-shaped, with a
+  `gpt_base_lba` environment override). Inside `disk/part_efi.c` every LBA stays
+  table-relative; only a read and a partition's reported start translate. So
+  `sysboot mmc 0:4` finds `boot` by GPT partition number and `part list` prints
+  the device sectors `ext4load` will actually read.
+
+**One definition, seven consumers.** `nixos/lib/emmc-layout.nix` holds the list
+and renders three views of it — the GPT (disk-relative LBAs, handed to `sgdisk`
+by `pkgs/gpt-image.nix`), the flash view (physical byte offsets, for the `.axp`
+manifest and for `dd`), and the two-entry `blkdevparts=` clause. From those come
+the SPL's compiled-in `ATF_HEADER_FLASH_BASE` / `UBOOT_HEADER_FLASH_BASE`,
+U-Boot's `gpt_base_lba` and `bootpart`, `/etc/fw_env.config`, the NixOS
+`fileSystems` devices, the extlinux `APPEND`, and `tools/migrate-layout.sh`'s
+`dd seek=`. The module asserts they agree, and asserts the invariant the whole
+migration rests on: **`rootfs` starts at the same byte, 0x115C0000, as it did
+under the vendor's 17-partition map.**
+
+**`/etc/fw_env.config` is `/dev/mmcblk0 0x4C0000 0x100000`** — the `env`
+partition's PHYSICAL offset, so `fw_printenv`/`fw_setenv` address the raw eMMC
+and need no loop device. It is the same number `CONFIG_ENV_SIZE` is set from and
+the same one the stored environment image is built to.
+
+`nanokvm-checkboot.service` still re-arms the A/B slot bits of `0x02390024`.
+Under the minimal layout **those bits select nothing** — the rebuilt SPL has
+both `_BAK` bases equal to the A bases, so slot A and slot B are the same two
+partitions. It is kept because it keeps bits 2–5 in a deterministic state, which
+is what makes `0x300000x5` a readable oracle rather than a value that alternates
+every boot, and because it still chooses on a vendor-layout system. Rung 5
+replaces it with U-Boot's `bootcount`/`altbootcmd`.
+
+`nix flake check`'s **`emmc-partition-map`** prints both layouts — the vendor
+seventeen and the minimal six — with offsets, sizes and the resulting
+`fw_env.config`.
+
+**The one-time shrink.** A GPT reserves the last 33 LBAs of the device for the
+alternate header. The old table ran `rootfs` to the last byte of the eMMC and
+the filesystem had been grown to fill it, so after the migration the filesystem
+is 16896 bytes larger than its partition — and ext4 refuses to mount rather than
+truncating (`bad geometry: block count … exceeds size of device`). Stage 1 runs
+`resize2fs` with no size argument, which resizes to the device, shrinking
+included; it demands a check only when it has to, so every boot after the first
+is one command and no fsck.
 
 ### 7. Init system — and the SysV layer nobody documented
 

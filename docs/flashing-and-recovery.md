@@ -208,11 +208,42 @@ stock/working device, dump every partition so you can byte-restore later.
 
 ### The eMMC partition map
 
-`/proc/partitions` and `ls /dev/disk/by-partlabel/` don't surface names on
-this device (no partlabels are written) — the map below is the vendor layout,
-recovered from the `blkdevparts=` string this project's DTB embeds
-(`pkgs/dtb.nix`) and matching the signed-partition slot numbers used
-throughout `pkgs/*.nix`:
+**There are two, and which one a board has is decided by its SPL.**
+
+**The minimal layout (#89 rung 4)** — what
+`.#nixos-firmware-image-mainline` flashes and what `tools/migrate-layout.sh`
+converts a running board to. The eMMC is two logical devices: `spl`, the first
+768 KiB, which the BootROM reads and which is deliberately outside every
+partition table; and `disk`, everything after it, which carries an ordinary GPT
+at its own LBA 0 (protective MBR at physical LBA 1536, header at 1537, array at
+1538–1569, alternate header in the eMMC's last sector).
+
+| GPT # | Name | Physical offset | Size |
+|---|---|---|---|
+| — | (`spl`) | `0x0` | 768 K |
+| — | (GPT primary) | `0xC0000` | 17408 B |
+| 1 | `atf` | `0x1C0000` | 1 M |
+| 2 | `uboot` | `0x2C0000` | 2 M |
+| 3 | `env` | `0x4C0000` | 1 M |
+| 4 | `boot` | `0x5C0000` | 272 M, ext4 |
+| 5 | `rootfs` | `0x115C0000` | rest, less the last 33 LBAs |
+| — | (GPT alternate) | last 16896 B | |
+
+On the running board Linux reaches it through
+`blkdevparts=mmcblk0:768K(spl),-(disk)` plus a loop device stage 1 puts over
+`/dev/mmcblk0p2`, so the partitions are `/dev/loop0p1..5` and carry PARTLABELs.
+To read the table by hand, from the board or from a dumped image:
+
+```bash
+losetup -r -o 786432 -P /dev/loop9 /dev/mmcblk0
+sgdisk -p /dev/loop9        # or: lsblk /dev/loop9; blkid /dev/loop9p5
+losetup -d /dev/loop9
+```
+
+**The vendor layout** — seventeen partitions, no on-disk table at all, the map
+being the `blkdevparts=` clause of the kernel command line. This is what a stock
+Sipeed `.axp` and `.#nixos-firmware-image` (the vendor boot chain) flash, and
+therefore what an AXDL recovery restores.
 
 | # | Name | # | Name | # | Name |
 |---|---|---|---|---|---|
@@ -223,13 +254,17 @@ throughout `pkgs/*.nix`:
 | 5 | `uboot` | 11 | `optee_b` | 17 | `rootfs` |
 | 6 | `uboot_b` | 12 | `dtb` | | |
 
-Plus the two eMMC boot hardware areas, `mmcblk0boot0`/`mmcblk0boot1`, which
-aren't GPT partitions at all — dump them separately, as below.
+Both maps are generated from one definition, `nixos/lib/emmc-layout.nix`;
+`nix build .#checks.x86_64-linux.emmc-partition-map` prints them with offsets.
+
+Plus the two eMMC boot hardware areas, `mmcblk0boot0`/`mmcblk0boot1` — 4 MiB
+each, blank on this board, and not reachable as a boot source without changing
+the `chip_mode` strap. Dump them separately, as below.
 
 ```bash
 # On the device: list the eMMC partitions and their names.
 cat /proc/partitions
-ls -l /dev/disk/by-partlabel/ 2>/dev/null   # or parse the GPT
+ls -l /dev/disk/by-partlabel/ 2>/dev/null   # minimal layout only
 
 # Pull each partition + the boot areas (see the partition map above for names).
 for p in /dev/mmcblk0p*; do
@@ -242,11 +277,42 @@ ssh root@<device> "cat /proc/cmdline"     > backup/cmdline.txt
 ```
 
 Verify sizes look sane and the rootfs image gunzips + `debugfs`-stats cleanly.
-`p17` (`rootfs`) is the large one — ~30 GB, gzipped ~1.8 GB — back it up
-separately with streaming gzip as the loop above already does; budget the
-time/disk for it. To restore a single partition later, `dd` the raw image back
-onto the same `/dev/mmcblk0pN`; to fully recover, re-flash a stock `.axp` over
-AXDL (above).
+The rootfs is the large one — ~30 GB, gzipped ~1.8 GB — back it up separately
+with streaming gzip as the loop above already does; budget the time/disk for it.
+To restore a single partition later, `dd` the raw image back onto the same
+device; to fully recover, re-flash a stock `.axp` over AXDL (above).
+
+### Changing the layout on a running board
+
+`nix build .#migrate-layout` builds a self-contained kit — the script with every
+offset substituted from `nixos/lib/emmc-layout.nix`, the four signed images
+padded to 4 KiB, the generated GPT, and the 272 MiB `/boot` filesystem
+compressed for the copy over. Untar it on the board and run:
+
+```bash
+migrate-layout backup    # the whole 277.75 MiB pre-rootfs span + the device's
+                         # last 32 KiB + /boot as files, each verified against
+                         # the medium
+migrate-layout write     # GPT, atf, uboot, env, boot at their new offsets
+migrate-layout spl --i-have-the-go    # the one-way step
+migrate-layout restore   # puts every backed-up byte back
+```
+
+Two things to understand before starting.
+
+**The rootfs never moves.** Both layouts start it at byte `0x115C0000`, which is
+what makes an in-place conversion of a running system possible at all; the
+layout module asserts it and the script re-checks it on the device.
+
+**Between `write` and `spl` the board cannot boot.** The new `atf` and `uboot`
+land on top of the old ones — both A/B copies — so the vendor SPL still in the
+first 768 KiB would read its next stages from addresses that no longer hold
+them. `restore` is the way back and it needs a running shell, so do not
+power-cycle in that window. After `spl` the only way back is AXDL: flash
+`.#nixos-firmware-image` (vendor boot chain, vendor SPL, seventeen partitions)
+or a stock Sipeed `.axp`, both of which restore the vendor layout wholesale.
+That needs `User` held ~10 s at power-on and a USB cable — a bench trip, not a
+brick.
 
 ### Quick integrity check for signed-partition backups
 

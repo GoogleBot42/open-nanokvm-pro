@@ -2061,7 +2061,13 @@ plain PSCI and retires that shim.
 
 ### 11.5 The minimal layout
 
-**No on-disk partition table is possible.** The SPL sits at byte 0 of the user
+**SUPERSEDED BY RUNG 4 (2026-09-09).** The conclusion below -- that this eMMC
+can never carry a partition table -- is wrong, and the seven-partition proposal
+it leads to is not what shipped. A GPT *can* live here, at an offset: see "What
+exists now (rung 4)". The reasoning is kept because the constraint it starts
+from is real and still shapes the answer.
+
+**No on-disk partition table is possible AT LBA 0.** The SPL sits at byte 0 of the user
 area; a GPT needs LBA 1–33 and an MBR needs LBA 0. Both are inside the SPL
 image. (Moving the boot chain into the eMMC *boot* partitions would free the
 user area for a GPT, and the ROM has modes for it — but selecting one is a
@@ -2218,7 +2224,7 @@ the eMMC.
 | 1 | **DONE 2026-09-08.** eMMC `atf_b`, not an SD card: **mainline BL31** in slot B under the vendor SPL, with the vendor-derived U-Boot and the appliance kernel above it | the TF-A port: GIC, PSCI, second-core bring-up, BL33 handoff, `SYSTEM_RESET` | all four proven — the appliance boots slot B to SSH with both cores up. See "What exists now (rung 1)" below |
 | 2 | **DONE 2026-09-09.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **The appliance boots the whole mainline chain to SSH in 153 s.** Slot register `0x30000018` (bits 28+29, slot B, no failure), `psci: SMC Calling Convention v1.5` (mainline BL31), `PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet]`, `Link is Up - 1Gbps/Full`, 428 MB, `systemctl is-system-running` = `running`, and a reboot returns to slot A on its own. Four fixes on top of the #91 `cdns,single-block-only` stopgap: `fdt_high`/`initrd_high` = `0x5f000000` (patch `0018`), **`mmc rescan` in front of every retry**, **`dwmac-axera` writing the PHY interface select BEFORE the block reset** (the MAC samples it at reset release; the vendor loader left it right, mainline U-Boot leaves it at 0), and **a `gmac_pins` pinctrl group for the fourteen RGMII pads** that no DT node had ever named. The last two are why "the kernel does not reach the network" looked for eighty-four runs like a kernel that never started. `mem=512M` still cannot simply be dropped. **Ten** upstream U-Boot bugs/gaps fixed on the way. Ninety runs. See "What exists now (rung 2)" through "(rung 2q)" below |
 | 3 | **DONE 2026-09-09 (rung 3b).** Promote to slot A from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), extlinux payload → `/boot` (p16) | the product boots the new chain with no slot trick | **Slot A did boot it**, whole oracle: `psci: SMC Calling Convention v1.5`, `/proc/cmdline` = the extlinux APPEND, `nanokvm-checkboot: slot A -> 0x2390028=0x10`, register `0x30000014`, `systemctl is-system-running` = `running`, web 200. Rung 3 lost it two boots in three; **rung 3b made the boot reliable and kept it.** Two U-Boot patches: `0021` — `mmc_set_lowest_voltage()` intersects the allowed I/O levels with what the **vqmmc supply can actually deliver**, and offers 1.8 V for the legacy/HS timings when it cannot reach 3.3 V, so a re-init on a fixed 1.8 V board no longer ends in nine refusals and `unable to select a mode`; `0022` — `mmc_bread()` **retries a failed transfer** (three attempts, waiting for the card in between) instead of turning one transient into a failed boot. Measured: **10/10 slot-B boots to SSH**, twelve read failures across ~10⁶ single-block commands, every one recovered by the first retry, zero re-inits, every init landing on `mode 12 (HS400ES), 8-bit, 50 MHz, signal 1.8 V`; then three consecutive slot-A boots, register `0x30000015`, `systemctl --failed` empty, web 200. The SPL's A/B fallback caught every rung-3 failure (slot B, vendor-derived U-Boot, appliance up) — the rollback contract's other half, watched working for the first time. `.#nixos-firmware-image-mainline` builds the promoted image and is still not the default (#91). See "What exists now (rung 3)", "(rung 3b)" and **"Handoff for rung 4"** below |
-| 4 | **New layout, in place from Linux**: rootfs keeps its start; the new `spl`/`atf`/`uboot`/`env`/`boot` partitions are laid inside the first ~150 MB; rebuilt SPL (no ddrinit, no OP-TEE, no twins, `SUPPPORT_GZIPD=FALSE`) written to p1 **last** — the single one-way step (a bad SPL = AXDL) | the layout, the regenerated SPL offsets, and NixOS generations | `fw_printenv`, the milestone register, SSH |
+| 4 | **DONE 2026-09-09.** New layout, in place from Linux, and it is a **real GPT**: the eMMC is `spl` (the 768 KiB the BootROM owns, outside every table) plus `disk` (everything after, carrying a spec-conformant GPT at its own LBA 0 — protective MBR at physical LBA 1536, alternate header in the eMMC's last sector). Five named partitions with DPS type GUIDs; `rootfs` keeps its physical start so the running root never moved | the layout, the regenerated SPL offsets, U-Boot reading a GPT at a base LBA, and Linux reaching it through a loop device | **The board boots it.** `/proc/cmdline` = `root=/dev/loop0p5 … blkdevparts=mmcblk0:768K(spl),-(disk)`, `lsblk` = `mmcblk0p1`/`mmcblk0p2` + `loop0p1..5`, `blkid` shows the PARTLABELs, `fw_printenv bootpart` = 4, `psci: SMC Calling Convention v1.5`, register `0x30000014`, `systemctl is-system-running` = `running`, web 200. Three things had to be built to get there: `pkgs/spl-minimal.nix` (the SPL recompiled for the new offsets, OP-TEE and ddrinit dropped, both `_BAK` bases pointed at the A bases), U-Boot patch `0023` (`CONFIG_EFI_PARTITION_BASE_LBA`, upstream-shaped, proved by `.#checks.uboot-gpt` running sandbox U-Boot against a model of the eMMC), and a stage-1 `losetup -P` plus the one-time `resize2fs` a GPT's reserved tail forces. `.#migrate-layout` did the conversion from a shell with every write verified from the medium. The first boot after the SPL write hung and a power cycle fixed it; it has not recurred. See "What exists now (rung 4)" below |
 | 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
 
 The SD rungs are load-bearing and **there is no SD card in the device** — the
@@ -4426,96 +4432,266 @@ slot A re-armed by `nanokvm-checkboot`), `systemctl --failed` empty, web 200,
 
 ---
 
-### Handoff for rung 4
+### What exists now (rung 4, 2026-09-09) — THE BOARD HAS A REAL GPT
 
-Current as of 2026-09-09, after rung 3b. No history; read "What exists now
-(rung 3b)" above if a claim here surprises you.
+**Row 4 is done.** The eMMC no longer has a vendor partition scheme. It has a
+spec-conformant GUID Partition Table, and the board boots from it.
 
-**Device at rest — slot A IS the mainline chain now.** p3 `atf` = mainline BL31
-(`4d190bc975499b10ca82994ffa4f69eb` over its first 14592 B), p5 `uboot` = the
-rung-3b mainline U-Boot (`fc73ebc4c86e39a24d6ede2b76105cdc` over 184280 B), p7
-`env` = the generated environment (`e391296770af575836347217296d8386`,
-`bootsystem=A`, `bootcount=0`, `upgrade_available=0`), `/boot` (p16) = `Image` +
-`ax630c-nanokvm-pro.dtb` + `extlinux/extlinux.conf` +
-`extlinux/extlinux-fallback.conf` + `ver`. Root p17, mainline `7.1.3-nanokvm`.
-Register `0x30000015`.
+#### The shape, and why it is this shape
 
-**Slot B is the fallback and it is the VENDOR chain.** p4 `atf_b` holds mainline
-BL31 (rung 1, left there deliberately — it is what the mainline U-Boot needs if
-slot B is ever used for a mainline test); p6 `uboot_b` holds the vendor-derived
-U-Boot (`1521dc39f8a50e726c708fde2c8edce2` over 1572864 B). p12–p15 hold the
-appliance dtb and kernel in both slots. **Never write p1/p2.**
+The BootROM reads the first-stage loader from byte 0 of the eMMC **user area**;
+which area it reads is a `chip_mode` pin strap, not a setting, and the two 4 MiB
+eMMC boot partitions are blank and unreachable without changing it (both
+measured 2026-09-09). So LBA 0 belongs to the ROM and neither an MBR nor a GPT
+can live where the standard puts it.
 
-**On the device.** `/root/rung3b/` holds this round: `setup-slotb.sh` (stage
-`/boot`, write p6, point `bootsystem` at B), `armb.sh` (zero the evidence
-channels, arm slot B), `readboot.sh` (register, cmdline, pre-console buffer),
-`promote3b.sh` (slot B back to vendor, then p3/p5/p7 + arm slot A), and the
-three images `uboot_mainline_3b.bin`, `uboot_tee_3b.bin`, `uboot_probe_3b.bin`.
-`/root/rung3/` still holds rung 3's `restore.sh` (puts the VENDOR chain back on
-slot A and empties `/boot` — the way out if the mainline chain ever has to go),
-`promote.sh`, the `.orig` backups, `boot-backup/`, and the staged `Image`, dtb
-and `extlinux.conf`. `/root/rung2/` holds rung 2's harness including
-`uboot_b.orig`, `rdmem.py` and `hold-wdt.sh`.
+The answer is two logical devices. **`spl`** is the first 768 KiB: the ROM's
+image, and never inside any partition table. **`disk`** is everything after it,
+and it carries an ordinary GPT *at its own LBA 0* — protective MBR at physical
+LBA 1536, header at 1537, entry array at 1538-1569, first usable LBA 1570, and
+the alternate header in the eMMC's last sector, each exactly where the UEFI
+specification puts it relative to `disk`'s start.
 
-**Reading a failed boot.** Flash `/root/rung3b/uboot_tee_3b.bin` to p5 (or p6
-for a slot-B test), zero the buffer
-(`dd if=/dev/zero of=/dev/mem bs=4096 seek=295144 count=8`), boot, then read it
-from whatever boot comes back:
-`dd if=/dev/mem bs=4096 skip=295144 count=8 | tr -d '\000'`. The tee image is
-the shipping image plus a copy of every console write into the pre-console
-buffer plus one line naming the selected eMMC mode; it takes nothing away.
-`.#uboot-mainline-trace` is the other variant and is **the wrong tool** — it
-clears `GD_FLG_HAVE_CONSOLE`, which also disables `tstc()`/`getchar()`.
-The board's power is agent-controllable, so a dark board costs a plug cycle,
-not a bench trip — but read the register, the buffer and
-`/var/lib/systemd/pstore` *before* cycling.
+| GPT # | Name | disk LBA | physical | size | type GUID |
+|---|---|---|---|---|---|
+| 1 | `atf` | 2048-4095 | `0x1C0000` | 1 M | Linux reserved |
+| 2 | `uboot` | 4096-8191 | `0x2C0000` | 2 M | Linux reserved |
+| 3 | `env` | 8192-10239 | `0x4C0000` | 1 M | U-Boot environment |
+| 4 | `boot` | 10240-567295 | `0x5C0000` | 272 M, ext4 | XBOOTLDR |
+| 5 | `rootfs` | 567296-61077982 | `0x115C0000` | rest | Linux root (arm64) |
 
-**#91 is no longer a gate on booting, and it is still open.** The single-block
-stopgap plus the retry makes the boot reliable; the underlying bug — the host
-not collecting a transfer the card is streaming — is unfixed, and it costs
-~110 s of boot chain that a working CMD18 would make ~5 s. Rung 3b's evidence
-above narrows it a long way: it is a host-side data-path failure, not a card
-that declines to start.
+1 MiB alignment inside `disk` — which is also sgdisk's default, so a human
+running sgdisk on this disk lands on the same numbers — names, Discoverable
+Partitions Specification type GUIDs, and pinned partition GUIDs so two builds
+of the same layout are byte-identical.
 
-**A hung slot A is still the one bad state.** `watchdog.open_timeout=N` on the
-kernel command line turns it into a reset, but it is a deadman: nothing in the
-appliance opens `/dev/watchdog`, so it also resets a healthy board N seconds in.
-The right fix is systemd's `RuntimeWatchdogSec`, and then `watchdog.open_timeout`
-can ship. That is an appliance change and it wants doing before
-`.#nixos-firmware-image-mainline` becomes the default.
+**`rootfs` keeps its physical start, `0x115C0000` — the same byte the vendor's
+17-partition map put it at.** That is the invariant that made an in-place
+conversion of a running system possible, and `nixos/lib/emmc-layout.nix`
+asserts it.
 
-**Why the mainline image is still not the default.** An in-place promotion has
-the vendor U-Boot on slot B to fall back to; a flashed
-`.#nixos-firmware-image-mainline` has the same U-Boot in both slots and no
-fallback at all. That argument is weaker now that 10/10 boots succeed, but it
-is not gone, and rung 4 deletes the twins anyway.
+#### One definition, and what is generated from it
 
-**Rung 4 proper — the layout change, in place.** Nothing here has been started.
-`spl`, `atf`, `uboot`, `env`, `boot`, `rootfs` (§11.5), no twins, no ddrinit, no
-OP-TEE, `SUPPPORT_GZIPD` still TRUE unless the SPL is rebuilt for it. What it
-needs, in dependency order:
+`nixos/lib/emmc-layout.nix` holds the list and renders three views: the GPT
+(disk-relative LBAs, handed to sgdisk by `pkgs/gpt-image.nix`), the flash view
+(physical byte offsets, for the `.axp` manifest and for `dd`), and the
+two-entry `blkdevparts=` clause. From those come the SPL's compiled-in
+`ATF_HEADER_FLASH_BASE`/`UBOOT_HEADER_FLASH_BASE`, U-Boot's
+`CONFIG_EFI_PARTITION_BASE_LBA` and `bootpart`, `/etc/fw_env.config`,
+`CONFIG_ENV_SIZE`, the NixOS `fileSystems` devices, the extlinux `APPEND`, the
+`/boot` image's size and filesystem, and `tools/migrate-layout.sh`'s `dd
+seek=`. Nine assertions in that file cover the agreements that would otherwise
+only fail on a board that stopped booting.
 
-1. **A `nixos/layout.nix`** that the `.axp` manifest, `blkdevparts=`, U-Boot's
-   `CONFIG_CMDLINE_PARTITION_DEFAULT`, `/etc/fw_env.config` and a generated
-   `partition.mak` fragment all derive from — §11.5 item 4 is the important
-   one, because the SPL's `*_HEADER_FLASH_BASE` constants are a running sum of
-   partition sizes and today live in a hand-written vendor makefile.
-2. **A rebuilt SPL** with the new `FLASH_PARTITIONS`, `SUPPORT_DDRINIT_PART`
-   and `SUPPORT_OPTEE` off, and `*_BAK_FLASH_BASE` pointed at the A bases (or
-   `AX_SUPPORT_AB_PART` off). Keeping the vendor SPL and dropping the twins is
-   the one combination that hangs: the first boot that lands on slot B reads
-   whatever the new layout put at the old `_b` offsets (§11.2).
-3. **Moving the partitions from Linux**, rootfs start unchanged, everything
-   new inside the first ~150 MB.
-4. **p1 last, and it is one-way** — a bad SPL means AXDL, which means Jeremy's
-   hands on the board. Everything before it is reversible from a shell.
+#### The rebuilt SPL (`.#spl-minimal`)
 
-**Rung 5 needs `DM_BOOTCOUNT_SYSCON`.** Patch `0020` stopped U-Boot reading the
-environment off the eMMC, so `bootcount` in the env is no longer reachable from
-the bootloader. This SoC's reset-surviving scratch register is exactly what that
-backend is for, and it is already the boot's evidence channel.
+The SPL finds BL31 and BL33 by compile-time byte offset — nothing on the eMMC
+tells it where they are — so the layout and the first-stage loader are one
+artefact. `pkgs/spl-minimal.nix` replaces the vendor's hand-written
+`partition_ab.mak` with one generated from the same list, and:
 
-**Also open.** #92 (the appliance oopses on `reboot`, `do_kernel_restart()`
-calls a NULL `notifier_call`) — harmless as ever. `mem=512M` is still
-unexplained and still not droppable. Rung 3's three dark boots have no
-explanation and did not recur in rung 3b's fourteen.
+- `SUPPORT_OPTEE=FALSE`. With OP-TEE compiled in the SPL **hangs** if BL32 does
+  not verify, which makes an optional stage mandatory. Nothing uses it.
+- `SUPPORT_DDRINIT_PART=FALSE`. The vendor ships a signed header with an EMPTY
+  payload, so `mc20e_ddr_init()` has always read uninitialised OCM at
+  `0x03200400` — dropping the partition changes nothing about what it sees.
+- `*_BAK_FLASH_BASE` = the A bases. The twins were never a failover (with A/B
+  compiled in a bad header returns immediately), only a pair the slot register
+  chose between; pointing both at the same partition is a smaller change than
+  turning `AX_SUPPORT_AB_PART` off and keeps the code path the board has always
+  run. The SLOT bits of `0x02390024` now select between two identical
+  addresses.
+- `SUPPPORT_GZIPD` stays **TRUE**, deliberately. Turning it off would retire
+  `ax_gzip`, the last prebuilt x86-64 host tool, but it swaps a code path the
+  board runs every boot for one the vendor never ships and changes the on-disk
+  format of BL31 and BL33 at the same time — on the rung that writes p1. One
+  variable at a time; `pkgs/ax-sign.nix` is ready for it when it is taken.
+
+47816 B raw, inside the BootROM's 50 K slot; 262144 B signed.
+
+`.#spl-minimal-noeip` is the same SPL signed with an EMPTY `-fw` member, so
+`fw_size`/`fw_check_sum` are 0 and the closed EIP-130 firmware is not spliced at
+all (build-asserted: zero copies, against two in the default). #90's exit, and
+an experiment that needs AXDL standing by.
+
+#### U-Boot: patch `0023`, and a test that runs it
+
+`CONFIG_EFI_PARTITION_BASE_LBA` (with a `gpt_base_lba` environment override)
+makes `disk/part_efi.c` read a table at an offset. Inside the parser every LBA
+stays table-relative — exactly as though the region behind the offset were the
+whole device — and only two boundaries translate: a read adds the base, and a
+partition's reported start adds the base so the rest of U-Boot addresses real
+sectors. `part list` prints the same device LBAs, so what it shows is what
+`ext4load` reads. Upstream-shaped; `CONFIG_EFI_PARTITION_ENTRIES_OFF` already
+exists for the neighbouring problem and cannot solve this one, because it only
+moves the entry array. The write path (`gpt write`/`gpt restore`) is untouched
+and is not enabled here.
+
+`CONFIG_CMDLINE_PARTITION` is **off** in U-Boot now. `sysboot mmc 0:4` finds
+`boot` by GPT partition number.
+
+`.#checks.uboot-gpt` builds sandbox U-Boot from the same source and the same
+series and RUNS it against a 29 GiB sparse model of the eMMC whose first sectors
+are deliberately not a partition table. All five partitions come back at the
+physical LBAs the layout computes, and the primary table is accepted (no "Using
+Backup GPT"). That is three things reading the patch cannot prove: the MBR and
+header are found at the base, `last_usable_lba` validates against the
+table-relative size, and a partition's start is a device sector.
+
+#### Linux: a loop device, and one 20 ms repair
+
+The kernel cannot be told to parse a table at an offset, so it is told the one
+thing it can do without a table —
+`blkdevparts=mmcblk0:768K(spl),-(disk)` — and stage 1 runs
+`losetup -P /dev/loop0 /dev/mmcblk0p2` in `preLVMCommands`, after udev settles
+and before anything is mounted. The in-kernel EFI parser does the rest. From the
+boot log:
+
+```
+mmcblk0: p1(spl) p2(disk)
+loop0: detected capacity change from 0 to 61078016
+stage-1-init: nanokvm: mapping /dev/mmcblk0p2 -> /dev/loop0 (GPT)
+loop0: p1 p2 p3 p4 p5
+```
+
+`CONFIG_EFI_PARTITION` and `CONFIG_BLK_DEV_LOOP` are therefore both on the root
+path; without either the loop comes up bare and there is no root at all.
+
+**The one-time shrink.** A GPT reserves the device's last 33 LBAs for the
+alternate header, so a filesystem grown to the OLD table's end is 16896 bytes
+too big for its new partition — and ext4 refuses to mount rather than
+truncating. Stage 1 runs `resize2fs` with no size argument, which resizes to the
+device, shrinking included, and demands a check only when it has to. It did not
+have to:
+
+```
+stage-1-init: Resizing the filesystem on /dev/loop0p5 to 7563835 (4k) blocks.
+stage-1-init: The filesystem on /dev/loop0p5 is now 7563835 (4k) blocks long.
+```
+
+7563840 → 7563835 blocks, 20 ms, no fsck. The five blocks in question were
+measured free before any of this was written.
+
+#### The migration, and how it was verified
+
+`.#migrate-layout` is a self-contained kit: the script with every offset
+substituted from the layout, the signed images padded to 4 KiB (so each write
+can be read back and hashed at block granularity), the generated GPT, and the
+272 MiB `/boot` compressed to 23 MB for the copy over. `backup` saved the whole
+277.75 MiB pre-rootfs span **and** the device's last 32 KiB, each verified
+against the medium; `write` put down six regions in on-disk order, each
+verified from the medium after `drop_caches`; `spl` was the gate.
+
+Two pre-flight checks were done on the real medium before the one-way write,
+and both are worth repeating on any future layout change:
+
+- `losetup -r -o 786432 -P` over the raw eMMC — **the kernel's own EFI parser**
+  read the freshly written GPT and produced `loop0p1..5` at 1M/2M/1M/272M/28.9G
+  with their PARTLABELs and PARTUUIDs. `loop0p4` mounted ext4 and held `Image`
+  and the dtb, byte-identical to the flake's.
+- the sandbox U-Boot test above, which is the other side of the same table.
+
+#### The result on hardware
+
+| | |
+|---|---|
+| `/proc/cmdline` | `root=/dev/loop0p5 … blkdevparts=mmcblk0:768K(spl),-(disk)` |
+| `lsblk` | `mmcblk0p1` 768K, `mmcblk0p2` 29.1G, `loop0p1..5` |
+| `findmnt /` | `/dev/loop0p5 ext4 rw,noatime` |
+| `blkid` | `PARTLABEL="rootfs"`, `PARTUUID=…-000000000005` |
+| `/etc/fw_env.config` | `/dev/mmcblk0 0x4C0000 0x100000` |
+| `fw_printenv` | `bootpart=4`, `bootsystem=A`, `bootcount=0` |
+| `psci` | `SMC Calling Convention v1.5` (mainline BL31) |
+| register | `0x30000014` — SLOTA + SLOTA_BOOTABLE + `ms_uboot` + `ms_extlinux` |
+| `systemctl is-system-running` | `running`, nothing failed |
+| web | 200 |
+| `systemd-analyze` | 7.5 s kernel + 93 s userspace |
+
+**THE FIRST BOOT AFTER THE SPL WRITE DID NOT COME UP, AND A POWER CYCLE FIXED
+IT.** `systemctl reboot` at 12:51:27 UTC; no SSH, no open port and a flat 3 W
+draw for eight minutes; power cycled at 12:59:30; kernel start 13:04:04, SSH
+13:05:02. `journalctl --list-boots` shows no boot between the two, so the board
+really did sit in the boot chain rather than booting and losing the network.
+It has not recurred: every warm reboot since has come back, and the boot chain
+on those takes ~100 s — the same as rung 3b's, so moving `/boot` from FAT32 to
+ext4 did not cost anything measurable. The cold boot that rescued it took 4.5
+minutes, which is a cold DDR training the warm path skips. #92 (the appliance
+oopses on `reboot`) is the obvious suspect for a warm restart in particular
+leaving the controller in a state the next boot cannot use, and it is rung 5's
+to settle if it recurs.
+
+---
+
+### Handoff for rung 5
+
+Current as of 2026-09-09, after rung 4. No history; read "What exists now
+(rung 4)" above if a claim here surprises you.
+
+**The board's eMMC is `spl` + a GPT-carrying `disk`, and the vendor layout is
+gone from it.** `spl` = the first 768 KiB (the rebuilt `.#spl-minimal`,
+`27babb120b10ee05…` over 262144 B). `disk` = everything after, with the
+generated GPT at physical LBA 1536 and its alternate header in the eMMC's last
+sector. GPT partitions: `atf` = mainline BL31 (`0x1C0000`), `uboot` = the
+rung-3b mainline U-Boot plus patch `0023` (`0x2C0000`), `env` = the generated
+environment (`0x4C0000`, 1 MiB, `bootsystem=A`, `bootcount=0`, `bootpart=4`),
+`boot` = ext4 at `0x5C0000` with `Image` + dtb + `extlinux/`, `rootfs` at
+`0x115C0000`. Root is `/dev/loop0p5`, `/boot` is `/dev/loop0p4`, and the loop
+is created by stage 1.
+
+**On the device.** `/root/rung4/` holds the migration's backups: `pre-layout.img`
+(the whole 277.75 MiB pre-rootfs span as it was under the vendor layout,
+`da44279bc965d5833b38c62917f06ae6ad709fa9421e897ba49703604e28ae7b`),
+`tail.img` (the device's last 32 KiB, `c35020473aed1b46…`), `boot-backup/`,
+`pre-state.txt`, `env.txt` and `written.sha256`. `/root/rung4-kit/` is the whole
+`.#migrate-layout` kit, including `restore`, which is now only useful for going
+BACK to the vendor layout — and it cannot put the vendor SPL back, so a real
+rollback is AXDL. `/root/rung3b/`, `/root/rung3/` and `/root/rung2/` still hold
+the earlier rounds' harnesses.
+
+**A bad SPL is now the only unrecoverable-from-Linux state, and it is a bench
+trip, not a brick.** Flash `.#nixos-firmware-image` (vendor boot chain, vendor
+SPL, seventeen partitions, and a NixOS built for that map) or a stock Sipeed
+`.axp` over AXDL: `User` held ~10 s at power-on plus a USB cable.
+
+**Two measurements rung 4 leaves owed.**
+
+1. **The boot chain takes ~4.5 minutes now, up from ~110 s.** The likely cause
+   is `/boot` moving from FAT32 to ext4 under a `cdns,single-block-only`
+   controller (#91). Worth one experiment: time `ext4load` against `fatload` of
+   the same 51 MB, or simply watch the pre-console buffer with
+   `.#uboot-mainline-tee`. If it is the filesystem, #91 is worth more than it
+   was.
+2. **The first boot after the SPL write hung and a power cycle fixed it.** No
+   boot appears between the two in `journalctl --list-boots`, so it was the boot
+   chain, not the network. Suspect #92 (the appliance oopses on `reboot`)
+   leaving the controller in a state the ROM or SPL does not clear. If warm
+   reboots turn out to be reliable in the three-reboot record above, this was a
+   one-off; if not, it is rung 5's first problem.
+
+**Rung 5 proper — the rollback drill.** Install a deliberately broken
+generation, let `bootcount` reach `bootlimit`, and watch the board come back on
+the previous one, unattended. What it needs:
+
+1. **`DM_BOOTCOUNT_SYSCON`.** Patch `0020` stopped U-Boot reading the
+   environment off the eMMC, so `bootcount` in the env is no longer reachable
+   from the bootloader. This SoC's reset-surviving scratch register is exactly
+   what that backend is for, and it is already the boot's evidence channel —
+   bits 0-11 are free of the milestone assignment.
+2. **A health gate.** `nanokvm-mark-good.service`, `After=nanokvm-healthy.target`,
+   clearing `bootcount` and copying `extlinux.conf` → `extlinux-fallback.conf`,
+   so the fallback config is by construction "the last generation that passed
+   the health check".
+3. **Generations in `/boot`.** `boot.loader.generic-extlinux-compatible` is
+   still off; the payload is baked by the flake. Turning it on is what makes
+   `LABEL nixos-<n>` mean something and is the other half of the drill.
+4. **`nanokvm-checkboot` retires** when 1-3 land. Under the current layout its
+   slot bits already select nothing (both `_BAK` bases are the A bases); it is
+   kept only because it keeps bits 2-5 deterministic, which is what makes
+   `0x300000x4` a readable oracle.
+
+**Also open.** #90's remaining half is `.#spl-minimal-noeip` — built,
+build-asserted blob-free, and needing one gated hardware run with AXDL standing
+by. #91 (multi-block transfers) is unfixed and now costs more than it did.
+`mem=512M` is still unexplained and still not droppable. `SUPPPORT_GZIPD=FALSE`
+would retire `ax_gzip`, the last prebuilt x86-64 host tool, and is a clean
+follow-up now that the layout is settled.
