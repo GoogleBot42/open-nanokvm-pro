@@ -525,8 +525,25 @@ propose SG2002 work without flagging this gap up front.
   networkd sends a DUID. Also: the milestone clear-mask is `0xFFFF000`, not
   `0x7FFF000` (bit 27). Device left on slot A, slot B restored from
   `/root/pre75/*.bak` and verified from the medium.
-  Next: **#83**/**#84** are unblocked by #81; **#79** is unblocked by #78 (and
-  wants the SD card); **#85** (aic8800) is an owner decision, `needs-human`.
+  **2026-09-11 — #89 (mainline U-Boot + minimal layout) rungs 0-3 DONE:** slot A
+  boots mainline TF-A 2.15 + mainline U-Boot 2026.07 + extlinux into the
+  appliance, 10/10 boots, ~3 min to SSH; slot B keeps the vendor-derived U-Boot
+  as the SPL's automatic fallback. Twenty-two upstream-shaped U-Boot patches
+  (`pkgs/uboot-mainline/patches/`), seven of them genuine upstream bugs. The
+  narrative per rung is `docs/mainline-port.md` §11.10. Open from it: **#91**
+  eMMC multi-block never delivers data under mainline U-Boot (card streams,
+  host deaf; every register/mode/engine excluded; single-block workaround
+  patch 0017 ships; wants a logic capture of CLK+DAT0 — Jeremy asked); **#90**
+  SPL half (signed SPL carries the EIP-130 firmware twice by ROM contract; the
+  no-EIP SPL is a rung-4 experiment); **#92** reboot oops; **#88** parked
+  behind #84 (no U-Boot splash, Jeremy). **Rung 4 in flight** (single layout
+  definition, SPL rebuilt without OP-TEE/twins/gzipd, in-place migration, the
+  p1 write gated on the coordinator's go); rung 5 = rollback drill on
+  `bootcount`, which retires **#79**. The board is agent-power-cyclable
+  (`nanokvm switch` plug) since 2026-09-09.
+  Next: **#83**/**#84** are unblocked by #81 and can run device-serialized
+  behind #89's rungs; **#79** is superseded by #89 rung 5; **#85** (aic8800)
+  is an owner decision, `needs-human`.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing
