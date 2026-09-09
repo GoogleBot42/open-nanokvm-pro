@@ -1,0 +1,208 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Wed, 9 Sep 2026 08:00:00 -0600
+Subject: [PATCH] part: efi: read the GPT from a configurable base LBA
+
+A boot ROM that loads its first-stage image from the start of the boot
+medium owns the sectors the GUID Partition Table needs. The AX630C is
+one: its ROM reads the SPL from byte 0 of the eMMC user area, and which
+area it reads is a pin strap rather than a setting, so LBA 0 can never
+hold a protective MBR and LBAs 1-33 can never hold the header and entry
+array. Boards like this are usually given a vendor-specific scheme --
+a command-line partition string, a proprietary table -- and lose every
+tool that speaks GPT.
+
+They do not have to. Put the table at a fixed offset instead, describe
+the region behind that offset exactly as the specification describes a
+disk, and teach the parser where it starts. Everything else follows:
+`sgdisk`, `parted`, `blkid` and the kernel all read the region as an
+ordinary disk (on Linux, through a loop device over it), partitions
+keep their names, type GUIDs and partition GUIDs, and the alternate
+header sits in the medium's last LBA where the specification puts it.
+
+CONFIG_EFI_PARTITION_BASE_LBA is that offset, overridable at runtime
+with the `gpt_base_lba` environment variable. It defaults to 0, which
+is the standard layout, so nothing changes for anyone who does not set
+it. Inside the parser every LBA stays table-relative -- exactly as if
+the region were the whole device -- and only two boundaries translate:
+a read adds the base, and a partition's reported start adds the base so
+the rest of U-Boot addresses real sectors. `part list` prints the same
+device LBAs, so what it shows is what `ext4load` will read.
+
+This is the read path only. `gpt write` and `gpt restore` still build a
+table at LBA 0; a board that needs a based table can generate it with
+sgdisk and write it as raw sectors, which is what the AX630C's image
+builder does.
+
+CONFIG_EFI_PARTITION_ENTRIES_OFF already exists for a neighbouring
+problem -- "punching a hole into a device to create a gap for an SPL" --
+but it only moves the entry array, leaving the protective MBR and the
+header at LBAs 0 and 1, so it cannot help a device whose first sectors
+are not addressable at all.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+diff --git a/disk/Kconfig b/disk/Kconfig
+index 937ae1d..5868da8 100644
+--- a/disk/Kconfig
++++ b/disk/Kconfig
+@@ -138,6 +138,22 @@ config EFI_PARTITION_ENTRIES_OFF
+ 	  If unsure, leave at 0 (which will locate the partition
+ 	  entries at the first possible LBA following the GPT header).
+ 
++
++config EFI_PARTITION_BASE_LBA
++	int "LBA the GPT starts at"
++	depends on EFI_PARTITION
++	default 0
++	help
++	  Offset, in LBAs, of the protective MBR -- and therefore of the whole
++	  GPT -- from the start of the device. Set this when a boot ROM owns
++	  the first sectors of the boot medium and the table cannot live where
++	  the specification puts it; the region behind the offset is then
++	  described exactly as an ordinary disk would be, alternate header in
++	  the device's last LBA included. The "gpt_base_lba" environment
++	  variable overrides it at runtime.
++
++	  If unsure, leave at 0.
++
+ config SPL_EFI_PARTITION
+ 	bool "Enable EFI GPT partition table for SPL"
+ 	depends on  SPL
+diff --git a/disk/part_efi.c b/disk/part_efi.c
+index d8b17ec..85e9377 100644
+--- a/disk/part_efi.c
++++ b/disk/part_efi.c
+@@ -20,6 +20,7 @@
+ #include <asm/global_data.h>
+ #include <asm/unaligned.h>
+ #include <command.h>
++#include <env.h>
+ #include <fdtdec.h>
+ #include <malloc.h>
+ #include <memalign.h>
+@@ -47,6 +48,51 @@ static inline u32 efi_crc32(const void *buf, u32 len)
+ 	return crc32(0, buf, len);
+ }
+ 
++/*
++ * A boot ROM that reads its first-stage loader from the start of the boot
++ * medium leaves nowhere to put the protective MBR (LBA 0) and the GPT header
++ * (LBA 1). Such a device can still carry an ordinary, spec-conformant GPT if
++ * the whole table is placed at a known offset and every reader is told where
++ * it begins: CONFIG_EFI_PARTITION_BASE_LBA -- overridable at runtime with the
++ * "gpt_base_lba" environment variable -- is that offset, in LBAs.
++ *
++ * Everything inside the parser then works in table-relative LBAs, exactly as
++ * though the region behind the offset were the whole device, and only the two
++ * boundaries translate: a read adds the base, and a partition's reported
++ * start adds the base so the rest of U-Boot addresses real sectors. The
++ * alternate header still lives in the device's last LBA, which is also the
++ * last LBA of that region.
++ *
++ * The default is 0 -- the standard layout, one addition of zero.
++ */
++static lbaint_t __maybe_unused gpt_base_lba(struct blk_desc *desc)
++{
++	ulong base = CONFIG_EFI_PARTITION_BASE_LBA;
++
++#if !defined(CONFIG_SPL_BUILD)
++	base = env_get_ulong("gpt_base_lba", 10, base);
++#endif
++	/* A base at or past the end of the device would describe nothing. */
++	if (base >= desc->lba)
++		return 0;
++
++	return (lbaint_t)base;
++}
++
++/* How many LBAs the table describes: the device, less the base. */
++static lbaint_t __maybe_unused gpt_lba_count(struct blk_desc *desc)
++{
++	return desc->lba - gpt_base_lba(desc);
++}
++
++/* blk_dread() in table-relative LBAs. */
++static unsigned long __maybe_unused gpt_dread(struct blk_desc *desc,
++					      lbaint_t start, lbaint_t blkcnt,
++					      void *buffer)
++{
++	return blk_dread(desc, gpt_base_lba(desc) + start, blkcnt, buffer);
++}
++
+ /*
+  * Private function prototypes
+  */
+@@ -267,8 +313,8 @@ static void __maybe_unused part_print_efi(struct blk_desc *desc)
+ 			continue;
+ 
+ 		printf("%3d\t0x%08llx\t0x%08llx\t\"%s\"\n", (i + 1),
+-			le64_to_cpu(gpt_pte[i].starting_lba),
+-			le64_to_cpu(gpt_pte[i].ending_lba),
++			gpt_base_lba(desc) + le64_to_cpu(gpt_pte[i].starting_lba),
++			gpt_base_lba(desc) + le64_to_cpu(gpt_pte[i].ending_lba),
+ 			print_efiname(&gpt_pte[i]));
+ 		printf("\tattrs:\t0x%016llx\n", gpt_pte[i].attributes.raw);
+ 		uuid = (unsigned char *)gpt_pte[i].partition_type_guid.b;
+@@ -296,7 +342,8 @@ static int __maybe_unused part_get_info_efi(struct blk_desc *desc, int part,
+ 		return ret;
+ 
+ 	/* The 'lbaint_t' casting may limit the maximum disk size to 2 TB */
+-	info->start = (lbaint_t)le64_to_cpu(gpt_pte.starting_lba);
++	info->start = gpt_base_lba(desc) +
++		      (lbaint_t)le64_to_cpu(gpt_pte.starting_lba);
+ 	/* The ending LBA is inclusive, to calculate size, add 1 to it */
+ 	info->size = (lbaint_t)le64_to_cpu(gpt_pte.ending_lba) + 1
+ 		     - info->start;
+@@ -329,7 +376,7 @@ static int part_test_efi(struct blk_desc *desc)
+ 	ALLOC_CACHE_ALIGN_BUFFER_PAD(legacy_mbr, legacymbr, 1, desc->blksz);
+ 
+ 	/* Read legacy MBR from block 0 and validate it */
+-	if ((blk_dread(desc, 0, 1, (ulong *)legacymbr) != 1)
++	if ((gpt_dread(desc, 0, 1, (ulong *)legacymbr) != 1)
+ 		|| (is_pmbr_valid(legacymbr) != 1)) {
+ 		/*
+ 		 * TegraPT is compatible with EFI part, but it
+@@ -1051,13 +1098,13 @@ static int is_gpt_valid(struct blk_desc *desc, u64 lba, gpt_header *pgpt_head,
+ 	ALLOC_CACHE_ALIGN_BUFFER_PAD(legacy_mbr, mbr, 1, desc->blksz);
+ 
+ 	/* Read MBR Header from device */
+-	if (blk_dread(desc, 0, 1, (ulong *)mbr) != 1) {
++	if (gpt_dread(desc, 0, 1, (ulong *)mbr) != 1) {
+ 		log_debug("Can't read MBR header\n");
+ 		return 0;
+ 	}
+ 
+ 	/* Read GPT Header from device */
+-	if (blk_dread(desc, (lbaint_t)lba, 1, pgpt_head) != 1) {
++	if (gpt_dread(desc, (lbaint_t)lba, 1, pgpt_head) != 1) {
+ 		log_debug("Can't read GPT header\n");
+ 		return 0;
+ 	}
+@@ -1068,7 +1115,7 @@ static int is_gpt_valid(struct blk_desc *desc, u64 lba, gpt_header *pgpt_head,
+ 		return 2;
+ 	}
+ 
+-	if (validate_gpt_header(pgpt_head, (lbaint_t)lba, desc->lba))
++	if (validate_gpt_header(pgpt_head, (lbaint_t)lba, gpt_lba_count(desc)))
+ 		return 0;
+ 
+ 	if (desc->sig_type == SIG_TYPE_NONE) {
+@@ -1118,7 +1165,7 @@ static int find_valid_gpt(struct blk_desc *desc, gpt_header *gpt_head,
+ 		if (r != 2)
+ 			log_debug("Invalid GPT\n");
+ 
+-		if (is_gpt_valid(desc, desc->lba - 1, gpt_head, pgpt_pte)
++		if (is_gpt_valid(desc, gpt_lba_count(desc) - 1, gpt_head, pgpt_pte)
+ 		    != 1) {
+ 			log_debug("Invalid Backup GPT\n");
+ 			return 0;
+@@ -1173,7 +1220,7 @@ static gpt_entry *alloc_read_gpt_entries(struct blk_desc *desc,
+ 	/* Read GPT Entries from device */
+ 	blk = le64_to_cpu(pgpt_head->partition_entry_lba);
+ 	blk_cnt = BLOCK_CNT(count, desc);
+-	if (blk_dread(desc, blk, (lbaint_t)blk_cnt, pte) != blk_cnt) {
++	if (gpt_dread(desc, blk, (lbaint_t)blk_cnt, pte) != blk_cnt) {
+ 		log_debug("Can't read GPT Entries\n");
+ 		free(pte);
+ 		return NULL;

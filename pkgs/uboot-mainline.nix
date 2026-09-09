@@ -86,6 +86,7 @@ let
     ./uboot-mainline/patches/0020-ax630c-do-not-read-the-environment-off-the-emmc.patch
     ./uboot-mainline/patches/0021-mmc-do-not-offer-the-card-a-voltage-the-board-cannot-.patch
     ./uboot-mainline/patches/0022-mmc-retry-a-failed-block-read-before-giving-up.patch
+    ./uboot-mainline/patches/0023-part-efi-read-the-gpt-from-a-configurable-base-lba.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -1216,15 +1217,19 @@ let
       which gawk perl bash
     ]);
 
-    # Everything the layout defines, in the two places U-Boot reads it.
+    # Everything the layout defines, in the places U-Boot reads it.
     blkdevparts = layout.blkdevparts;
     envOffset = layout.hex layout.env.offset;
     envSize = layout.hex layout.env.size;
+    # Where the GPT begins, in LBAs from the start of the eMMC: the BootROM
+    # owns everything before it (#89 rung 4, patch 0023).
+    gptBaseLba = toString layout.gptBaseLba;
     # HEXADECIMAL, and this is not a typo. Every U-Boot command that takes a
     # `dev:part` string parses the partition with base 16
-    # (`blk_get_device_part_str()`), so `mmc 0:16` addresses partition 0x16 =
-    # 22 and the boot dies with "** Invalid partition 22 **". Measured on
-    # hardware 2026-09-08. p16 is `mmc 0:10`.
+    # (`blk_get_device_part_str()`), so partition 16 would be `mmc 0:10` and
+    # `mmc 0:16` would address partition 22 -- which is how the board came to
+    # print "** Invalid partition 22 **" and reset (measured 2026-09-08).
+    # Under the minimal layout `boot` is GPT partition 4, so this is "4".
     bootPart = lib.toLower (lib.toHexString layout.bootfs.number);
 
     postPatch = ''
@@ -1233,14 +1238,32 @@ let
       cfg=configs/${defconfig}
       hdr=include/configs/ax630c.h
 
-      # --- the eMMC layout, from dts/ax630c-nanokvm-pro.dts ----------------
-      # A mismatch here is not a build error on either side: U-Boot would
-      # simply find a different `boot` partition than Linux does, at a
-      # different offset, and the first symptom would be a board that stops
-      # booting. So substitute, then assert.
-      sed -i "s|^CONFIG_CMDLINE_PARTITION_DEFAULT=.*|CONFIG_CMDLINE_PARTITION_DEFAULT=\"$blkdevparts\"|" "$cfg"
-      grep -qF "CONFIG_CMDLINE_PARTITION_DEFAULT=\"$blkdevparts\"" "$cfg" \
-        || { echo "ERROR: could not set the blkdevparts clause in $cfg" >&2; exit 1; }
+      # --- the eMMC layout, from nixos/lib/emmc-layout.nix -----------------
+      # SINCE #89 RUNG 4 U-BOOT READS A REAL GPT. The eMMC is presented as two
+      # logical devices -- `spl`, the 768 KiB the BootROM owns, and `disk`,
+      # everything after it -- and `disk` carries a spec-conformant GPT at its
+      # own LBA 0. Patch 0023 teaches disk/part_efi.c to read a table at a base
+      # LBA, so `mmc 0` shows the five GPT partitions at their real device
+      # sectors and `sysboot mmc 0:$bootpart` finds `boot` by number.
+      #
+      # The blkdevparts= driver (patch 0004) is therefore off here. Linux still
+      # gets that clause on its command line -- it is the only way the kernel
+      # can carve `disk` out of the raw eMMC -- but U-Boot no longer parses it.
+      #
+      # A mismatch is not a build error on either side: U-Boot would simply
+      # find a different `boot` partition than Linux does, and the first
+      # symptom would be a board that stops booting. So substitute, then
+      # assert.
+      sed -i \
+        -e 's|^CONFIG_CMDLINE_PARTITION=y$|# CONFIG_CMDLINE_PARTITION is not set|' \
+        -e '/^CONFIG_CMDLINE_PARTITION_DEFAULT=/d' \
+        -e 's|^# CONFIG_EFI_PARTITION is not set$|CONFIG_EFI_PARTITION=y|' \
+        "$cfg"
+      grep -qx 'CONFIG_EFI_PARTITION=y' "$cfg" \
+        || { echo "ERROR: could not enable CONFIG_EFI_PARTITION in $cfg" >&2; exit 1; }
+      grep -qx '# CONFIG_CMDLINE_PARTITION is not set' "$cfg" \
+        || { echo "ERROR: CONFIG_CMDLINE_PARTITION is still on in $cfg" >&2; exit 1; }
+      printf '%s\n' "CONFIG_EFI_PARTITION_BASE_LBA=$gptBaseLba" >> "$cfg"
 
       sed -i "s|^CONFIG_ENV_OFFSET=.*|CONFIG_ENV_OFFSET=$envOffset|" "$cfg"
       sed -i "s|^CONFIG_ENV_SIZE=.*|CONFIG_ENV_SIZE=$envSize|" "$cfg"
@@ -1255,8 +1278,9 @@ let
       grep -qF "bootpart=$bootPart" "$hdr" \
         || { echo "ERROR: could not set bootpart in $hdr" >&2; exit 1; }
 
-      echo "layout: $blkdevparts"
-      echo "layout: env at $envOffset size $envSize, /boot is p$bootPart"
+      echo "layout: GPT at LBA $gptBaseLba; /boot is GPT partition $bootPart"
+      echo "layout: env at $envOffset size $envSize (physical, on /dev/mmcblk0)"
+      echo "layout: Linux is told $blkdevparts"
     '' + lib.optionalString debugMilestones milestonePostPatch
       + lib.optionalString dcacheOff dcacheOffPostPatch
       + lib.optionalString consoleToBuffer consolePostPatch
@@ -1341,7 +1365,7 @@ pkgs.runCommand "nanokvm-pro-uboot-mainline${variant}-${version}"
   {
     inherit version;
     passthru = {
-      inherit raw signed layout;
+      inherit raw signed layout src patches;
       textBase = textBase;
       ubootPartSize = ubootPart.size;
       patchList = map baseNameOf patches;

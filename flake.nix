@@ -657,6 +657,8 @@
         # from the same nixos/lib/emmc-layout.nix list the kernel command line
         # and the .axp manifest come from. Writing it to p1 is the single
         # one-way step of the port -- a bad SPL means AXDL.
+        gpt-image = callPkg ./pkgs/gpt-image.nix { };
+
         spl-minimal = callPkg ./pkgs/spl-minimal.nix { };
 
         # The same SPL signed with an EMPTY firmware member, so the closed
@@ -767,7 +769,7 @@
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
-            spl-minimal spl-minimal-noeip migrate-layout
+            gpt-image spl-minimal spl-minimal-noeip migrate-layout
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;
 
@@ -796,6 +798,11 @@
           # source -- yields the same table nixos/emmc-partitions.nix does.
           uboot-mainline = callPkg ./pkgs/uboot-mainline-check.nix {
             inherit uboot-mainline;
+          };
+          # The GPT-at-a-base-LBA parser (patch 0023), RUN rather than read:
+          # sandbox U-Boot against a faithful model of the eMMC (#89 rung 4).
+          uboot-gpt = callPkg ./pkgs/uboot-gpt-test.nix {
+            inherit uboot-mainline gpt-image;
           };
           # The eMMC partition map, parsed out of the blkdevparts= clause that
           # defines it, with the root/boot partition numbers and the U-Boot

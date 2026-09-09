@@ -3,56 +3,69 @@
 # ===========================================================================
 # THE eMMC LAYOUT. One definition, every consumer derived from it (#89 rung 4).
 #
-# This SoC's eMMC user area carries no on-disk partition table and cannot:
-# the BootROM reads the SPL from byte 0, so LBA 0 (an MBR) and LBAs 1-33 (a
-# GPT) are inside the first-stage loader. The table is therefore a STRING --
-# `blkdevparts=mmcblk0:...` -- and both sides of the boot read it: mainline
-# U-Boot through the `part_cmdline` driver (pkgs/uboot-mainline/patches/0004),
-# Linux through CONFIG_CMDLINE_PARTITION.
+# THE SHAPE OF THE PROBLEM. The AX630C BootROM reads the first-stage loader
+# from byte 0 of the eMMC USER AREA. Which area it reads is a pin strap, not
+# software (`get_boot_mode()` on `chip_mode`), and this board is strapped to
+# mode 0 -- the user area. Its two 4 MiB eMMC boot partitions are blank and
+# unreachable without changing that strap. So byte 0 belongs to the ROM, and
+# an MBR (LBA 0) or a GPT (LBA 0 for the protective MBR, 1-33 for the header
+# and array) cannot live where the standard puts it.
 #
-# Until rung 4 that string lived in dts/ax630c-nanokvm-pro.dts and this file's
-# predecessor PARSED it. That was the right shape while the layout was the
-# vendor's and could not be changed; it is the wrong shape now, because the
-# SPL's stage offsets are COMPILE-TIME constants (docs/mainline-port.md 11.2)
-# and a layout change that misses them produces a first-stage loader that
-# reads the wrong bytes and hangs, with no console to say so. So the list is
-# here, in Nix, and SEVEN consumers are generated from it:
+# THE ANSWER: TWO LOGICAL DEVICES.
 #
-#   1. the `blkdevparts=` clause on the kernel command line (pkgs/extlinux.nix)
-#   2. the same clause as U-Boot's CONFIG_CMDLINE_PARTITION_DEFAULT, plus
-#      CONFIG_ENV_OFFSET/SIZE and the hex `bootpart` (pkgs/uboot-mainline.nix)
-#   3. the .axp `<Partitions>` manifest (nixos/lib/make-axp-image.nix)
-#   4. /etc/fw_env.config and the NixOS fileSystems (nixos/appliance.nix)
-#   5. the SPL's *_HEADER_FLASH_BASE constants, as a generated makefile that
-#      REPLACES the vendor's hand-written partition_ab.mak (pkgs/spl-minimal.nix)
-#   6. the migration script's `dd seek=` offsets (tools/migrate-layout.sh)
-#   7. the DT `chosen/bootargs` fallback clause, asserted equal below
+#   spl    the first 768 KiB. The ROM's image and nothing else. It is never
+#          inside a partition table, because there is no table there.
+#   disk   everything after it. This carries a REAL, spec-conformant GPT at
+#          ITS OWN LBA 0 -- protective MBR at disk LBA 0, header at disk LBA
+#          1, entry array at disk LBA 2-33, first usable disk LBA 34, and the
+#          alternate header at the last LBA of the device, exactly as the
+#          UEFI specification requires. Partitions get names, type GUIDs and
+#          partition GUIDs; `lsblk`, `blkid`, `sgdisk` and `parted` all read
+#          it as an ordinary disk.
+#
+# Linux gets `disk` through the ONE thing the kernel can do without a table:
+# `blkdevparts=mmcblk0:768K(spl),-(disk)` splits the raw eMMC in two, and
+# stage 1 then does `losetup -P /dev/mmcblk0p2`, at which point the in-kernel
+# EFI parser scans the GPT and creates /dev/loop0p1..5. U-Boot gets it from a
+# `gpt_base_lba` patch to disk/part_efi.c: the same GPT, read at a base LBA.
+#
+# THREE VIEWS OF ONE LIST, all generated here:
+#
+#   gptParts    disk-relative LBAs. What the GPT itself declares, what
+#               pkgs/gpt-image.nix hands to sgdisk, and what U-Boot and Linux
+#               both read back.
+#   flashParts  physical byte offsets in the eMMC user area. What the .axp
+#               manifest describes and what tools/migrate-layout.sh `dd`s --
+#               including the `spl` region and the two GPT structures, which
+#               are not partitions in either of the other views.
+#   kernelParts the two-entry `blkdevparts=` clause, the only thing Linux is
+#               told directly.
+#
+# and from them: the SPL's compiled-in ATF/UBOOT flash bases, U-Boot's
+# `gpt_base_lba` and `bootpart`, /etc/fw_env.config, the NixOS `fileSystems`
+# devices, the extlinux APPEND, and the migration script's `dd seek=`.
+#
+# THE INVARIANT: `rootfs` KEEPS ITS PHYSICAL START, byte 0x115C0000 -- the
+# same byte the vendor's 17-partition map put it at. That is what lets the
+# whole conversion happen in place, from a shell, on a running system: the
+# filesystem the script is executing from is never moved. Everything before
+# it is sized to fit the span the old p1-p16 occupied. The assertion at the
+# bottom of this file is what keeps it true.
 #
 # TWO LAYOUTS EXIST, and both are real.
 #
-#   `vendor`  the 17-partition A/B map the board shipped with and the one the
-#             vendor boot chain requires (its SPL is compiled for it). It is
-#             what `.#nixos-firmware-image` and `.#firmware-image` flash, and
-#             therefore what an AXDL recovery puts back.
-#   `minimal` six partitions, no twins, no ddrinit, no OP-TEE, no logo, no
-#             kernel/dtb partitions -- extlinux carries those per generation.
-#             `.#nixos-firmware-image-mainline` flashes it and tools/
-#             migrate-layout.sh converts a running board to it in place.
-#
-# THE ROOTFS START IS THE INVARIANT. `minimal` lays its five boot-chain and
-# /boot partitions inside exactly the span the vendor layout's p1-p16 occupied,
-# so `rootfs` begins at the same byte (0x115C0000) in both. That is what makes
-# the migration possible from a running system: the filesystem holding the
-# script is never touched. The assertion at the bottom of this file is the
-# thing that keeps it true.
+#   `vendor`  the 17-partition A/B map the board shipped with, and the one
+#             the vendor SPL is compiled for. `.#nixos-firmware-image` flashes
+#             it; it is the AXDL recovery.
+#   `minimal` the two-device GPT layout above.
 # ===========================================================================
 
 let
+  sector = 512;
   units = { K = 1024; M = 1048576; G = 1073741824; };
 
-  # "768K" -> 786432, "275M" -> 288358400, "-" -> null (fill the device)
   toBytes = spec:
-    if spec == "-" then null
+    if spec == null || spec == "-" then null
     else
       let
         unit = lib.substring (lib.stringLength spec - 1) 1 spec;
@@ -63,12 +76,12 @@ let
 
   hex = v: "0x${lib.toUpper (lib.toHexString v)}";
 
-  mkLayout =
-    { name
-    , # [ { name = "spl"; size = "768K"; } ... ] in on-disk order; exactly one
-      # entry may carry size = "-", and it must be the last.
-      partitions
-    }:
+  # Nix has no % operator.
+  mod = a: b: a - (a / b) * b;
+
+  # ---- the vendor's 17, as a flat physical list --------------------------
+  mkFlatLayout =
+    { name, partitions, deviceBytes ? null }:
     let
       walk = lib.foldl'
         (acc: e:
@@ -86,63 +99,33 @@ let
           })
         { n = 1; off = 0; out = [ ]; }
         partitions;
-
       parts = walk.out;
       byName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) parts);
-
-      need = n:
-        if byName ? ${n} then byName.${n}
-        else throw "emmc-layout(${name}): no partition named '${n}'";
-
-      has = n: byName ? ${n};
-
-      clause = lib.concatStringsSep ","
-        (map (p: "${p.sizeSpec}(${p.name})") parts);
+      need = n: if byName ? ${n} then byName.${n}
+      else throw "emmc-layout(${name}): no partition named '${n}'";
+      clause = lib.concatStringsSep "," (map (p: "${p.sizeSpec}(${p.name})") parts);
     in
-    rec {
+    {
       layoutName = name;
-      inherit parts byName hex need has clause;
-
+      gpt = false;
+      inherit parts byName need clause hex deviceBytes;
+      has = n: byName ? ${n};
       blkdevparts = "blkdevparts=mmcblk0:${clause}";
-
       root = need "rootfs";
       bootfs = need "boot";
       env = need "env";
-
-      # Total bytes ahead of the rootfs -- the span the migration works inside.
-      preRootBytes = root.offset;
-
-      # /etc/fw_env.config for libubootenv's fw_printenv / fw_setenv: device,
-      # offset, size. Non-redundant single copy in the eMMC user area.
-      fwEnvConfig = "/dev/mmcblk0 ${hex env.offset} ${hex env.size}\n";
-
-      # ---- what the SPL is compiled with (docs/mainline-port.md 11.2) ------
-      # The SPL finds every later stage by a compile-time byte offset; nothing
-      # on the eMMC tells it where anything is. These are those offsets.
-      splBases = {
-        atf = need "atf";
-        uboot = need "uboot";
-      } // lib.optionalAttrs (has "ddrinit") { ddrinit = need "ddrinit"; }
-      // lib.optionalAttrs (has "optee") { optee = need "optee"; }
-      // lib.optionalAttrs (has "atf_b") { atf_b = need "atf_b"; }
-      // lib.optionalAttrs (has "uboot_b") { uboot_b = need "uboot_b"; }
-      // lib.optionalAttrs (has "optee_b") { optee_b = need "optee_b"; };
-
-      # A/B pairs, where they exist, so nothing downstream has to remember
-      # which number is which.
-      slotA = lib.optionalAttrs (has "kernel") { kernel = need "kernel"; dtb = need "dtb"; };
-      slotB = lib.optionalAttrs (has "kernel_b") { kernel = need "kernel_b"; dtb = need "dtb_b"; };
-
-      # A human-readable table, for docs and for the build log.
+      fwEnvConfig = "/dev/mmcblk0 ${hex (need "env").offset} ${hex (need "env").size}\n";
+      slotA = { kernel = need "kernel"; dtb = need "dtb"; };
+      slotB = { kernel = need "kernel_b"; dtb = need "dtb_b"; };
       table = lib.concatMapStrings
         (p: "p${toString p.number}\t${p.name}\t${hex p.offset}\t"
           + (if p.size == null then "(remainder)" else "${hex p.size}\t${p.sizeSpec}") + "\n")
         parts;
     };
 
-  # ---- the vendor's 17, exactly as the board shipped ----------------------
-  vendor = mkLayout {
+  vendor = mkFlatLayout {
     name = "vendor";
+    deviceBytes = null;
     partitions = [
       { name = "spl"; size = "768K"; }
       { name = "ddrinit"; size = "512K"; }
@@ -164,67 +147,234 @@ let
     ];
   };
 
-  # ---- the minimal six (#89 rung 4) --------------------------------------
-  #
-  # `boot` is 275M and not the 512M of the section-11.5 proposal for one
-  # reason: the rootfs start must not move, and 275M is exactly what is left
-  # of the vendor layout's first 277.75 MiB once spl/atf/uboot/env have taken
-  # their 2816 KiB. Growing /boot past that would mean moving 29 GiB of root.
-  minimal = mkLayout {
-    name = "minimal";
-    partitions = [
-      { name = "spl"; size = "768K"; }
-      { name = "atf"; size = "256K"; }
-      { name = "uboot"; size = "1536K"; }
-      { name = "env"; size = "256K"; }
-      { name = "boot"; size = "275M"; }
-      { name = "rootfs"; size = "-"; }
-    ];
-  };
+  # ======================================================================
+  # THE MINIMAL LAYOUT: spl + a GPT-carrying `disk`
+  # ======================================================================
 
-  # ---- the DT's copy of the clause, and the assertion that it agrees ------
-  # dts/ax630c-nanokvm-pro.dts carries the clause literally, because a .dts
-  # has to be a standalone compilable file. U-Boot's extlinux APPEND overrides
-  # /chosen/bootargs at `booti`, so the DT copy is a fallback -- but a fallback
-  # that disagreed with the real table would be a trap, so it is asserted.
-  dtsClause =
-    let
-      marker = "blkdevparts=mmcblk0:";
-      dts = builtins.readFile ../../dts/ax630c-nanokvm-pro.dts;
-      hit = lib.filter (l: lib.hasInfix marker l) (lib.splitString "\n" dts);
-    in
-    if hit == [ ] then throw "emmc-layout: no ${marker} in dts/ax630c-nanokvm-pro.dts"
-    else lib.head (lib.splitString "\"" (lib.last (lib.splitString marker (lib.head hit))));
+  # The eMMC on this board, measured 2026-09-09:
+  #   blockdev --getsize64 /dev/mmcblk0  ->  31272730624   (29.1 GiB)
+  #   mmcblk0boot0 / boot1               ->  4194304 each, blank, and only
+  #                                          reachable by changing the strap
+  # The GPT's alternate header and its `last_usable_lba` are functions of the
+  # device size, so the layout cannot be device-size-agnostic the way a
+  # `blkdevparts=` clause was. A board with a different eMMC needs this
+  # number changed and the GPT regenerated; the migration script asserts the
+  # device it is running on matches.
+  deviceBytes = 31272730624;
+
+  splBytes = 786432; # 768 KiB -- the ROM's region, and the base of `disk`
+  gptBaseLba = splBytes / sector; # 1536
+  diskBytes = deviceBytes - splBytes;
+  diskLbaCount = diskBytes / sector; # 61078016
+  diskLastLba = diskLbaCount - 1; # 61078015 (disk-relative)
+
+  # GPT geometry, disk-relative, straight from the UEFI spec.
+  gptHeaderLba = 1;
+  gptArrayLba = 2;
+  gptArrayLbas = 32; # 128 entries x 128 B
+  firstUsableLba = gptArrayLba + gptArrayLbas; # 34
+  lastUsableLba = diskLastLba - gptArrayLbas - 1; # 61077982
+  altArrayLba = lastUsableLba + 1; # 61077983
+  altHeaderLba = diskLastLba; # 61078015
+  # The whole alternate structure, as bytes at the very end of the device.
+  altBytes = (gptArrayLbas + 1) * sector; # 16896
+
+  # Partitions start at disk LBA 2048 -- the conventional 1 MiB alignment,
+  # which is also what sgdisk picks by default, so a human running sgdisk on
+  # this disk lands on the same numbers.
+  firstPartLba = 2048;
+
+  # Type GUIDs from the Discoverable Partitions Specification, so the table
+  # says what each partition IS rather than "Linux filesystem" five times.
+  guidLinuxReserved = "8DA63339-0007-60C0-C436-083AC8230908";
+  guidUbootEnv = "3DE21764-95BD-54BD-A5C3-4ABE786F38A8";
+  guidXbootldr = "BC13C2FF-59E6-4262-A352-B275FD6F7172";
+  guidRootArm64 = "B921B045-1DF0-41C3-AF44-4C6F280D3FAE";
+
+  gptSpec = [
+    # `atf` and `uboot` are raw signed containers the SPL loads by byte
+    # offset; the GPT entry exists so the space is named and reserved, not
+    # because anything parses it to find them.
+    { name = "atf"; size = "1M"; type = guidLinuxReserved; }
+    { name = "uboot"; size = "2M"; type = guidLinuxReserved; }
+    { name = "env"; size = "1M"; type = guidUbootEnv; }
+    # ext4: extlinux.conf, the kernel, the dtb, and the server's flag files.
+    { name = "boot"; size = "272M"; type = guidXbootldr; }
+    # null = to `last_usable_lba`, which is 33 LBAs short of the device end
+    # because that is where the alternate GPT lives.
+    { name = "rootfs"; size = null; type = guidRootArm64; }
+  ];
+
+  gptWalk = lib.foldl'
+    (acc: e:
+      let
+        bytes = toBytes e.size;
+        lbas = if bytes == null then (lastUsableLba - acc.lba + 1) else bytes / sector;
+      in {
+        n = acc.n + 1;
+        lba = acc.lba + lbas;
+        out = acc.out ++ [{
+          inherit (e) name type;
+          sizeSpec = e.size;
+          number = acc.n;
+          startLba = acc.lba; # disk-relative
+          endLba = acc.lba + lbas - 1; # inclusive, disk-relative
+          lbaCount = lbas;
+          size = lbas * sector;
+          offset = splBytes + acc.lba * sector; # PHYSICAL byte offset
+          device = "/dev/loop0p${toString acc.n}";
+          # Deterministic, so two builds of the same layout are byte-identical.
+          uuid = "4e4b564d-0001-4000-8000-00000000000${toString acc.n}";
+        }];
+      })
+    { n = 1; lba = firstPartLba; out = [ ]; }
+    gptSpec;
+
+  gptParts = gptWalk.out;
+  gptByName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) gptParts);
+  gptNeed = n:
+    if gptByName ? ${n} then gptByName.${n}
+    else throw "emmc-layout(minimal): no GPT partition named '${n}'";
+
+  # ---- the flash view: physical byte offsets, for the .axp and for `dd` ---
+  # Every byte of the user area is accounted for, in order, so the .axp's
+  # running-sum <Partitions> list and the migration script's `seek=` come
+  # from the same arithmetic as the GPT.
+  gptRegionBytes = (gptNeed "atf").offset - splBytes; # 1 MiB
+  rootfsFlashBytes = deviceBytes - (gptNeed "rootfs").offset - 32768;
+
+  bytesToSpec = b:
+    if mod b units.M == 0 then "${toString (b / units.M)}M"
+    else if mod b units.K == 0 then "${toString (b / units.K)}K"
+    else toString b;
+
+  flashSpec = [
+    { name = "spl"; size = bytesToSpec splBytes; }
+    { name = "gpt"; size = bytesToSpec gptRegionBytes; }
+  ] ++ (map (p: { inherit (p) name; size = bytesToSpec p.size; })
+    (lib.filter (p: p.name != "rootfs") gptParts))
+  ++ [
+    { name = "rootfs"; size = bytesToSpec rootfsFlashBytes; }
+    # The last 32 KiB of the device. Its final 16896 bytes are the alternate
+    # GPT (32 array LBAs + the header at the very last sector); the 15872 in
+    # front of them are zero padding, because the flasher writes whole
+    # partitions and cannot address a byte offset from the end.
+    { name = "gptalt"; size = "32K"; }
+  ];
+
+  flashWalk = lib.foldl'
+    (acc: e:
+      let bytes = toBytes e.size; in {
+        n = acc.n + 1;
+        off = acc.off + bytes;
+        out = acc.out ++ [{
+          inherit (e) name;
+          sizeSpec = e.size;
+          size = bytes;
+          number = acc.n;
+          offset = acc.off;
+          device = "/dev/mmcblk0"; # a byte range, not a block device
+        }];
+      })
+    { n = 1; off = 0; out = [ ]; }
+    flashSpec;
+
+  flashParts = flashWalk.out;
+  flashByName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) flashParts);
+
+  # ---- what Linux is told -------------------------------------------------
+  kernelClause = "${bytesToSpec splBytes}(spl),-(disk)";
+
+  minimal = {
+    layoutName = "minimal";
+    gpt = true;
+    inherit deviceBytes splBytes gptBaseLba diskBytes diskLbaCount diskLastLba
+      gptHeaderLba gptArrayLba gptArrayLbas firstUsableLba lastUsableLba
+      altArrayLba altHeaderLba altBytes firstPartLba sector hex
+      gptParts gptByName flashParts flashByName kernelClause;
+
+    diskGuid = "4e4b564d-0000-4000-8000-00006e616e6f";
+
+    # `parts` is the FLASH view, because that is what the .axp packer and the
+    # migration script iterate. GPT consumers use `gptParts`.
+    parts = flashParts;
+    byName = flashByName;
+    has = n: flashByName ? ${n};
+    need = n:
+      if flashByName ? ${n} then flashByName.${n}
+      else throw "emmc-layout(minimal): no flash region named '${n}'";
+
+    # The block devices the running system uses: the GPT partitions, as the
+    # loop device stage 1 sets up over /dev/mmcblk0p2.
+    root = gptNeed "rootfs";
+    bootfs = gptNeed "boot";
+    env = gptNeed "env";
+
+    # The two raw eMMC partitions the kernel command line creates.
+    splDevice = "/dev/mmcblk0p1";
+    diskDevice = "/dev/mmcblk0p2";
+    loopDevice = "/dev/loop0";
+
+    clause = kernelClause;
+    blkdevparts = "blkdevparts=mmcblk0:${kernelClause}";
+
+    # fw_setenv addresses the raw eMMC by PHYSICAL byte offset, so it needs
+    # no loop device and works from the earliest possible moment.
+    fwEnvConfig = "/dev/mmcblk0 ${hex (gptNeed "env").offset} ${hex (gptNeed "env").size}\n";
+
+    slotA = { };
+    slotB = { };
+
+    table =
+      "spl region  0x0 .. ${hex splBytes}   (${toString (splBytes / 1024)} KiB, BootROM, no table)\n"
+      + "disk base  ${hex splBytes} = LBA ${toString gptBaseLba}; GPT hdr LBA "
+      + "${toString (gptBaseLba + gptHeaderLba)}, array LBA "
+      + "${toString (gptBaseLba + gptArrayLba)}..${toString (gptBaseLba + gptArrayLba + gptArrayLbas - 1)} (physical)\n"
+      + lib.concatMapStrings
+        (p: "p${toString p.number}\t${p.name}\tdiskLBA ${toString p.startLba}..${toString p.endLba}"
+          + "\tphys ${hex p.offset}\t"
+          + (if p.sizeSpec == null then "(to last usable)" else p.sizeSpec) + "\n")
+        gptParts
+      + "alt GPT    phys ${hex (deviceBytes - altBytes)} .. ${hex deviceBytes} (${toString altBytes} B)\n";
+  };
 in
 
 # ---- build-time agreement checks ------------------------------------------
-# Every one of these is a thing that, if it drifted, would only be discovered
-# on a board that stopped booting.
 assert lib.assertMsg (lib.length vendor.parts == 17)
   "emmc-layout: the vendor layout must have 17 partitions";
 assert lib.assertMsg (vendor.root.number == 17 && vendor.bootfs.number == 16)
   "emmc-layout: the vendor layout's rootfs/boot moved off p17/p16";
 assert lib.assertMsg (vendor.env.offset == 4980736 && vendor.env.size == 1048576)
   "emmc-layout: the vendor env is not at 0x4C0000/0x100000";
-assert lib.assertMsg (lib.length minimal.parts == 6)
-  "emmc-layout: the minimal layout must have 6 partitions";
-assert lib.assertMsg (minimal.root.number == 6 && minimal.bootfs.number == 5)
-  "emmc-layout: the minimal layout's rootfs/boot moved off p6/p5";
+
 # THE invariant: the in-place migration is only possible while these agree.
 assert lib.assertMsg (minimal.root.offset == vendor.root.offset)
   ("emmc-layout: the minimal layout's rootfs starts at ${hex minimal.root.offset}, "
     + "the vendor layout's at ${hex vendor.root.offset} -- an in-place migration "
     + "would have to move 29 GiB of root filesystem");
-assert lib.assertMsg (minimal.env.offset == 2621440 && minimal.env.size == 262144)
-  "emmc-layout: the minimal env is not at 0x280000/0x40000";
-# The DT's fallback clause must be the layout the mainline chain actually runs.
-assert lib.assertMsg (dtsClause == minimal.clause)
-  ("emmc-layout: dts/ax630c-nanokvm-pro.dts carries\n  ${dtsClause}\n"
-    + "but the minimal layout is\n  ${minimal.clause}");
+
+# Nothing may reach back into the ROM's region, and nothing but rootfs may
+# reach past the rootfs start.
+assert lib.assertMsg ((lib.head minimal.gptParts).offset >= minimal.splBytes + 17408)
+  "emmc-layout: the first partition overlaps the GPT header/array";
+assert lib.assertMsg (lib.all (p: p.offset >= minimal.splBytes) minimal.gptParts)
+  "emmc-layout: a GPT partition reaches into the spl region";
+assert lib.assertMsg
+  (lib.all (p: p.offset + p.size <= minimal.root.offset)
+    (lib.filter (p: p.name != "rootfs") minimal.gptParts))
+  "emmc-layout: a boot-chain partition crosses the rootfs start";
+assert lib.assertMsg (minimal.root.endLba == minimal.lastUsableLba)
+  "emmc-layout: rootfs does not end at last_usable_lba";
+assert lib.assertMsg
+  ((lib.last minimal.flashParts).offset + (lib.last minimal.flashParts).size == minimal.deviceBytes)
+  "emmc-layout: the flash view does not cover the device exactly";
+assert lib.assertMsg
+  (lib.all (p: p.startLba * minimal.sector + minimal.splBytes == p.offset) minimal.gptParts)
+  "emmc-layout: a GPT LBA and its physical byte offset disagree";
+assert lib.assertMsg (mod (minimal.firstPartLba * minimal.sector) 1048576 == 0)
+  "emmc-layout: partitions are not 1 MiB aligned inside `disk`";
 
 {
-  inherit mkLayout vendor minimal hex toBytes;
-
-  # Name -> layout, for the module option and for callers that take a string.
+  inherit vendor minimal hex toBytes;
   byLayoutName = { inherit vendor minimal; };
 }
