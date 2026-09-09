@@ -169,6 +169,19 @@ that is arbitration, not a bug.
   userspace deadman on `/proc/uptime` -- NOT `date +%s`, because timesyncd jumps
   the clock months forward the moment DHCP lands and a wall-clock deadline
   expires instantly. `nixos/loop-test.nix`; both halves hardware-proven in #78.
+- **`boot.panic_on_fail=1` ON THE COMMAND LINE DOES NOTHING.** Upstream's
+  stage-1 parser is `case $o in boot.panic_on_fail|stage1panic=1)` and a shell
+  `case` pattern must match the WHOLE word, so the `=1` makes it match neither
+  alternative -- silently, with a cmdline that reads as if the deadman were
+  armed. The appliance carried exactly that from #89 rung 3 to rung 5 and
+  therefore had NO stage-1 deadman at all; the rung-5 rollback drill installed a
+  generation that could not boot, stage 1 sat in `read -n 1 reply` forever, the
+  board never reset, `bootcount` never climbed, `altbootcmd` was never reached,
+  and recovery was AXDL. **Never trust a safety net you have not watched fire.**
+  Set the variable from `preDeviceCommands` (which depends on no string) AND
+  emit the bare `boot.panic_on_fail` plus `stage1panic=1`; and note the initrd
+  is inside the kernel Image here, so applying that fix means writing `/boot`
+  from a board that still boots.
 - **Three separate things decide the appliance's identity, and each looks
   sufficient alone.** `hostnamectl` must be `--transient` (the plain call writes
   `/etc/hostname`, a read-only store symlink); `networking.hostName` must be
@@ -219,15 +232,37 @@ bits select nothing. **That SPL is blob-free (#90):** signed with an empty
 proven across two warm reboots and a cold cycle. `.#spl-minimal-eip` rebuilds
 the vendor-shaped container if a unit ever needs it. A good boot reads
 `0x30000014` and takes 2-3.5 min to SSH (single-block eMMC reads, #91).
-`docs/mainline-port.md` §11.10 "Handoff for rung 5" is the current device
-contract.
+`docs/mainline-port.md` §11.10 "Handoff" is the current device contract.
+
+**Rollback is live since rung 5 (#79 closed).** `bootcount` is
+`devmem 0x02390030 32` -- `0xB0010000` healthy, `0xB001000N` = N attempts
+since the last healthy boot -- and `bootlimit` is 3, so the FOURTH attempt
+runs `altbootcmd`, sets milestone bit 30 and boots
+`/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`. Those two
+files name two generations through a pinned `init=`, and `nanokvm-mark-good`
+(timer, `OnBootSec=60s`) clears the counter and regenerates the fallback from
+`/run/booted-system` once the system is `running`, routed and serving. To force
+a fallback by hand: `devmem 0x02390030 32 0xB001000A; reboot` -- and **that is
+the way to exercise the rollback, not a broken generation**: it proves
+`bootcount_error()`, `altbootcmd`, bit 30 and the fallback config in one boot
+and cannot strand the board. Details: `docs/nixos-rootfs.md` §4b.
+
+Hardware-proven 2026-09-09: the board rolled itself back onto the fallback
+generation, unattended, after four boot-chain attempts. What triggered it was
+**#91**, not a bad generation — U-Boot sometimes cannot read the 51 MB `Image`
+inside `bootcmd`'s four tries, and that now costs a rollback instead of a power
+cycle.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
 cycle clears the slot register and lands on slot A; SSH is back ~30 s after
 `on` for the 4.19 image; the mainline chain takes 2-3.5 min to SSH, cold or
-warm (six boots, 2026-09-09). Read the
+warm (six boots, 2026-09-09). **Leave it OFF for at least 15 s.** An 8-second
+cycle on 2026-09-09 came back into the same dark state the cycle was meant to
+clear; the 15-second one after it booted normally. **A flat ~3.3 W with no
+open port is the hang signature**; a healthy board draws the same at idle, so
+power tells you nothing on its own — only SSH does. Read the
 slot register / pstore / console buffer BEFORE cycling — the cycle destroys
 them. Jeremy's standing word: with self-recovery available, take more risk on
 slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.

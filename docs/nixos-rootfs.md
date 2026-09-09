@@ -134,16 +134,13 @@ after the NixOS archive, built under `fakeroot` because the build sandbox cannot
 `mknod`. The kernel's unpacker resets at each `TRAILER!!!` and keeps going,
 which is exactly how concatenated initramfs images are supported.
 
-### 2. No `init=`, and why `/init` is the generation switch
+### 2. `init=`, `/init`, and which one is the generation switch
 
-The command line comes from the **U-Boot environment**. `booti` →
-`image_setup_libfdt()` → `fdt_chosen()` writes env `bootargs` over
-`/chosen/bootargs`, so the device tree's copy loses
-([mainline-port.md](mainline-port.md) §5, trap 2). We do not write that
-environment, so there is no `init=` on the command line and there cannot be one.
+Two mechanisms, and since #89 rung 5 the second one is what a switch actually
+uses.
 
-NixOS stage 1 falls back to its built-in default, `stage2Init=/init`, and
-`switch_root`s to `$targetRoot/init`. The image ships:
+**The image ships a profile symlink**, and it is what boots when nothing says
+otherwise:
 
 ```
 /init      -> /nix/var/nix/profiles/system/init
@@ -151,15 +148,27 @@ NixOS stage 1 falls back to its built-in default, `stage2Init=/init`, and
 ```
 
 `/sbin/init` costs a symlink and is what the vendor initramfs would exec if this
-image were ever booted by the 4.19 kernel. `/init` is the live contract:
-**updating the system profile is the whole of a generation switch** — no
-bootloader, no config file, no partition write. `boot.loader.external` owns
-"install" for the kernel/dtb half and is deliberately inert until #79 puts a
-health gate in front of the A/B slot flip; it prints what it did rather than
-failing a switch.
+image were ever booted by the 4.19 kernel. `/init` is stage 1's built-in
+default (`stage2Init=/init`, `switch_root`ed into `$targetRoot`), so a freshly
+flashed board boots whatever the profile points at — no bootloader, no config
+file, no partition write.
 
-`nixos/rootfs.nix` asserts all of this offline, with `debugfs` against the built
-ext4: both symlinks are symlinks, the profile resolves, stage 2 is in the
+**A switch pins the generation into the boot config.** The command line comes
+from the extlinux `APPEND` line, which `sysboot` copies into `bootargs` before
+`booti` (the device tree's copy always loses to `fdt_chosen()`,
+[mainline-port.md](mainline-port.md) §5, trap 2). `boot.loader.external`'s
+install hook — `nanokvm-install-boot` — writes
+`/boot/extlinux/extlinux.conf` with `init=<toplevel>/init` for the generation
+being installed.
+
+**It has to, or there is no rollback.** U-Boot's `altbootcmd` boots a second
+config, `extlinux-fallback.conf`, and the only thing that distinguishes the two
+files is which generation they name. With the profile symlink in both, both
+entries resolve to the same userspace at boot time and the fallback is a copy of
+the thing that just failed. See "Rollback" below.
+
+`nixos/rootfs.nix` asserts the symlink half offline, with `debugfs` against the
+built ext4: both symlinks are symlinks, the profile resolves, stage 2 is in the
 closure, and `<toplevel>/init` starts with `#!`.
 
 ### 3. fsck and grow
@@ -226,6 +235,97 @@ The appliance mounts it `nofail,noatime` on `parts.bootfs.device` — GPT
 partition 4, `/dev/loop0p4` (see below). `nofail` so a missing or corrupt
 filesystem cannot hold up a boot. `umask=000` was a vfat-only accommodation and
 is gone with the vfat.
+
+### 4b. Rollback — two config files, a register, and a health gate
+
+**The mechanism, end to end (#89 rung 5; this is what closed #79).** There are
+no A/B twins and no slot register any more. There are two files in `/boot`:
+
+| file | who writes it | what it names |
+|---|---|---|
+| `extlinux/extlinux.conf` | `nanokvm-install-boot`, at every `nixos-rebuild switch`/`boot` | the generation being installed |
+| `extlinux/extlinux-fallback.conf` | `nanokvm-mark-good`, only after a boot has proven healthy | the last generation that worked |
+
+U-Boot's `bootcmd` boots the first; its `altbootcmd` boots the second.
+`sysboot` boots a config's `DEFAULT` entry and cannot be told to pick a `LABEL`,
+so **choosing a generation is choosing a file** — which is also why generations
+are not labels in one config here, and why `init=` must be pinned into the
+`APPEND` line (§2).
+
+**The counter is a register, not the environment.** `bootcount` lives in
+`TOP_CHIPMODE_GLB_BACKUP1` (`0x02390030`) behind U-Boot's
+`DM_BOOTCOUNT_SYSCON`, because patch `0020` stopped U-Boot reading the
+environment off the eMMC at all. The word holds the magic `0xB001` in bits
+31..16 and the count in bits 15..0, so:
+
+```
+0xB0010000   healthy, counter cleared
+0xB0010001   one boot attempt since the last healthy boot
+```
+
+It survives a warm reboot and a chip reset and clears on power loss — the right
+lifetime for a boot counter, and the reason a cold-started board always begins
+at zero. `bootlimit` is 3 and the test is `bootcount > bootlimit`, so **three
+attempts run `bootcmd` and the fourth runs `altbootcmd`**, which also sets
+milestone bit 30 (`0x40000000`) in the neighbouring register `0x02390024` — the
+serial-less evidence that a rollback happened.
+
+**Marking a boot good.** `nanokvm-mark-good.service`, started by a timer at
+`OnBootSec` (60 s by default), polls until all three of these hold or
+`markGood.timeoutSec` (240 s) runs out:
+
+- `systemctl is-system-running` is `running`,
+- there is a default IPv4 route,
+- the web server answers `https://127.0.0.1/`.
+
+Then it writes `0xB0010000` to the counter and regenerates
+`extlinux-fallback.conf` from `/run/booted-system`.
+
+Three details in that are load-bearing:
+
+- **A timer, not `WantedBy=multi-user.target`.** `is-system-running` only
+  reaches `running` when the boot's initial transaction is empty, so a unit
+  inside that transaction polling for it would be waiting for itself.
+- **`/run/booted-system`, not a copy of `extlinux.conf`.** A `nixos-rebuild
+  switch` between boot and now has already rewritten `extlinux.conf` to name a
+  generation that has never booted; copying it would promote an untested system
+  on the strength of a different one's health.
+- **`/proc/uptime`, not `date +%s`.** timesyncd jumps the clock months forward
+  the moment DHCP lands, and a wall-clock deadline expires instantly when it
+  does.
+
+**The failure mode is the safe one.** Nothing here can strand the board: if the
+gate does not run, or runs and finds the system unhealthy, the counter is simply
+not cleared and the next boot counts one higher. Only *not* rolling back
+requires something to work.
+
+**systemd's runtime watchdog is armed at 60 s** (`RuntimeWatchdogSec`), so a
+PID 1 that stops running resets the board into that count instead of leaving it
+dark. Without it the ax630c watchdog is petted from kernel context for as long
+as the kernel schedules, which protects against nothing a user would call a
+hang.
+
+**Forcing a fallback by hand**, e.g. to check what it would boot:
+
+```sh
+devmem 0x02390030 32 0xB001000A   # counter well past bootlimit
+reboot                            # next boot takes altbootcmd
+```
+
+and to see where things stand:
+
+```sh
+devmem 0x02390030 32                                   # 0xB0010000 = healthy
+devmem 0x02390024 32                                   # bit 30 set = rolled back
+grep -o 'init=[^ ]*' /boot/extlinux/extlinux.conf          # default generation
+grep -o 'init=[^ ]*' /boot/extlinux/extlinux-fallback.conf # fallback generation
+```
+
+A rollback is a *userspace* rollback. The kernel `Image` and device tree are
+flake artefacts in `/boot`, one copy, shared by both entries — `boot.kernel.enable
+= false` and the stage-1 initrd is inside the Image, so a NixOS generation on
+this board does not carry a kernel. A kernel change is still a `/boot` write and
+still has no automatic rollback; that is the remaining half of the contract.
 
 ### 5. Identity — the MAC is derived on every boot, not stored
 
@@ -1123,9 +1223,14 @@ These need Jeremy; nothing above can be done by an agent alone.
 - **AXDL is the whole safety net.** It lives in mask ROM and cannot be bricked,
   and Jeremy has exercised it — but it needs hands on the board, so a failed
   eMMC flash costs a physical trip, not a reboot.
-- **The A/B slot register does not survive a power cycle.** Every cold boot lands
-  on slot A with `SLOTA_BOOTABLE` clear; rollback state is warm-reset-only
-  ([mainline-port.md](mainline-port.md) §6).
+- **The boot counter does not survive a power cycle**, by design: it is a
+  scratch register in the always-on chipmode block, so a cold start always
+  begins at zero. A board that fails three warm attempts rolls back; a board
+  power-cycled between each failure never reaches the limit. The fallback
+  *config* is on disk and does survive, so the state that matters is durable —
+  only the count is not.
+- **A rollback rolls back userspace only.** One kernel `Image` in `/boot`,
+  shared by both entries; a kernel change has no automatic fallback.
 - **Silent-failure modes are the norm here.** The `/lib`-symlink bug in
   `pkgs/rootfs.nix` shipped once precisely because a missing file produced a dead
   capture path rather than a build error. The build-time contract assertions

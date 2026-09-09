@@ -666,6 +666,31 @@ in
       '')
     ];
 
+    # THE STAGE-1 DEADMAN, and it is not optional on this board.
+    #
+    # NixOS stage 1's `fail()` is INTERACTIVE: it prints a menu and blocks in
+    # `read -n 1 reply` on /dev/console. This board's console is a hidden,
+    # unterminated UART pad, so that is a board which is powered, warm and
+    # unreachable forever -- no reset, no watchdog (nothing arms WDT0 before
+    # Linux), and therefore no `bootcount` increment and no rollback. It has to
+    # be a panic, so that `panic=10` restarts the board into the count.
+    #
+    # SETTING IT FROM THE COMMAND LINE ALONE IS NOT ENOUGH, and believing it
+    # was cost a bench trip on 2026-09-09. Upstream parses
+    # `case $o in boot.panic_on_fail|stage1panic=1)`, and a shell `case`
+    # pattern must match the WHOLE word -- so the `boot.panic_on_fail=1` the
+    # extlinux APPEND had carried since rung 3 matched nothing at all and
+    # `panicOnFail` was never set. The rung-5 rollback drill installed a
+    # generation that could not boot, stage 1 sat in `read` instead of
+    # panicking, and the board had to be recovered by hand.
+    #
+    # preDeviceCommands is spliced in AFTER the command-line parse and after
+    # `trap 'fail' 0`, which is exactly where the variable has to land. The
+    # APPEND now carries the right tokens too; this does not depend on them.
+    boot.initrd.preDeviceCommands = lib.mkBefore ''
+      panicOnFail=1
+    '';
+
     # =====================================================================
     # MAPPING `disk`: the GPT the kernel cannot be told to look for
     # =====================================================================

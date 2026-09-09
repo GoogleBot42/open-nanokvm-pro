@@ -2130,6 +2130,12 @@ today. It is plausibly upstreamable — several SoC vendors carry the same Linux
 convention — but if upstream declines it, it stays a carried patch, which the
 issue explicitly allows.
 
+**SUPERSEDED IN ONE DETAIL BY RUNG 5:** `bootcount` did NOT end up in the
+environment. Patch `0020` stopped U-Boot reading that partition at all, so the
+counter went to `DM_BOOTCOUNT_SYSCON` over `TOP_CHIPMODE_GLB_BACKUP1`
+(`0x02390030`) instead, and `fw_setenv bootcount 0` became a `devmem` write.
+Everything else below is what shipped.
+
 **Distro boot gives #79 what it wanted, natively.** Mainline 2026.07 has
 `bootmeth_extlinux`, `BOOTCOUNT_BOOTLIMIT` and `BOOTCOUNT_ALTBOOTCMD`
 (`common/autoboot.c:482` runs `altbootcmd` when the limit is hit), with backends
@@ -2225,7 +2231,7 @@ the eMMC.
 | 2 | **DONE 2026-09-09.** eMMC `uboot_b` (p6) + `extlinux/extlinux.conf` + kernel + dtb on p16, slot B: mainline BL31 + **mainline U-Boot** → mainline kernel + NixOS | the whole new chain end to end: the board port, `part_cmdline`, sdhci-cadence, the env, `bootcount` | **The appliance boots the whole mainline chain to SSH in 153 s.** Slot register `0x30000018` (bits 28+29, slot B, no failure), `psci: SMC Calling Convention v1.5` (mainline BL31), `PHY [stmmac-0:01] driver [RTL8211F Gigabit Ethernet]`, `Link is Up - 1Gbps/Full`, 428 MB, `systemctl is-system-running` = `running`, and a reboot returns to slot A on its own. Four fixes on top of the #91 `cdns,single-block-only` stopgap: `fdt_high`/`initrd_high` = `0x5f000000` (patch `0018`), **`mmc rescan` in front of every retry**, **`dwmac-axera` writing the PHY interface select BEFORE the block reset** (the MAC samples it at reset release; the vendor loader left it right, mainline U-Boot leaves it at 0), and **a `gmac_pins` pinctrl group for the fourteen RGMII pads** that no DT node had ever named. The last two are why "the kernel does not reach the network" looked for eighty-four runs like a kernel that never started. `mem=512M` still cannot simply be dropped. **Ten** upstream U-Boot bugs/gaps fixed on the way. Ninety runs. See "What exists now (rung 2)" through "(rung 2q)" below |
 | 3 | **DONE 2026-09-09 (rung 3b).** Promote to slot A from the running appliance: mainline BL31 → `atf` (p3), mainline U-Boot → `uboot` (p5), extlinux payload → `/boot` (p16) | the product boots the new chain with no slot trick | **Slot A did boot it**, whole oracle: `psci: SMC Calling Convention v1.5`, `/proc/cmdline` = the extlinux APPEND, `nanokvm-checkboot: slot A -> 0x2390028=0x10`, register `0x30000014`, `systemctl is-system-running` = `running`, web 200. Rung 3 lost it two boots in three; **rung 3b made the boot reliable and kept it.** Two U-Boot patches: `0021` — `mmc_set_lowest_voltage()` intersects the allowed I/O levels with what the **vqmmc supply can actually deliver**, and offers 1.8 V for the legacy/HS timings when it cannot reach 3.3 V, so a re-init on a fixed 1.8 V board no longer ends in nine refusals and `unable to select a mode`; `0022` — `mmc_bread()` **retries a failed transfer** (three attempts, waiting for the card in between) instead of turning one transient into a failed boot. Measured: **10/10 slot-B boots to SSH**, twelve read failures across ~10⁶ single-block commands, every one recovered by the first retry, zero re-inits, every init landing on `mode 12 (HS400ES), 8-bit, 50 MHz, signal 1.8 V`; then three consecutive slot-A boots, register `0x30000015`, `systemctl --failed` empty, web 200. The SPL's A/B fallback caught every rung-3 failure (slot B, vendor-derived U-Boot, appliance up) — the rollback contract's other half, watched working for the first time. `.#nixos-firmware-image-mainline` builds the promoted image and is still not the default (#91). See "What exists now (rung 3)", "(rung 3b)" and **"Handoff for rung 4"** below |
 | 4 | **DONE 2026-09-09.** New layout, in place from Linux, and it is a **real GPT**: the eMMC is `spl` (the 768 KiB the BootROM owns, outside every table) plus `disk` (everything after, carrying a spec-conformant GPT at its own LBA 0 — protective MBR at physical LBA 1536, alternate header in the eMMC's last sector). Five named partitions with DPS type GUIDs; `rootfs` keeps its physical start so the running root never moved | the layout, the regenerated SPL offsets, U-Boot reading a GPT at a base LBA, and Linux reaching it through a loop device | **The board boots it.** `/proc/cmdline` = `root=/dev/loop0p5 … blkdevparts=mmcblk0:768K(spl),-(disk)`, `lsblk` = `mmcblk0p1`/`mmcblk0p2` + `loop0p1..5`, `blkid` shows the PARTLABELs, `fw_printenv bootpart` = 4, `psci: SMC Calling Convention v1.5`, register `0x30000014`, `systemctl is-system-running` = `running`, web 200. Three things had to be built to get there: `pkgs/spl-minimal.nix` (the SPL recompiled for the new offsets, OP-TEE and ddrinit dropped, both `_BAK` bases pointed at the A bases), U-Boot patch `0023` (`CONFIG_EFI_PARTITION_BASE_LBA`, upstream-shaped, proved by `.#checks.uboot-gpt` running sandbox U-Boot against a model of the eMMC), and a stage-1 `losetup -P` plus the one-time `resize2fs` a GPT's reserved tail forces. `.#migrate-layout` did the conversion from a shell with every write verified from the medium. The first boot after the SPL write hung and a power cycle fixed it; it has not recurred. See "What exists now (rung 4)" below |
-| 5 | **Rollback drill**: install a deliberately broken generation, let `bootcount` reach `bootlimit` | health-gated fallback, i.e. #79's contract on the new mechanism | the board comes back on the previous generation, unattended |
+| 5 | **DONE 2026-09-09; #79 closes with it.** `bootcount` moved out of the unreadable environment into `TOP_CHIPMODE_GLB_BACKUP1` (`0x02390030`) behind `DM_BOOTCOUNT_SYSCON` (patch `0024`); `nanokvm-install-boot` pins `init=<toplevel>/init` so the default and fallback extlinux configs name different generations; `nanokvm-mark-good` (timer, health-gated on `is-system-running` + a default route + the web server answering) clears the counter and promotes the fallback from `/run/booted-system`; `RuntimeWatchdogSec=60s` | health-gated fallback, i.e. #79's contract on the new mechanism | **The board rolled itself back, unattended.** Reboot at 16:37:02, SSH at 16:54:50, four boot-chain attempts and no human action in between: `/run/booted-system` = the FALLBACK's generation and not the default's, `bootcount was 0xB0010004` at the health gate, `0x02390024` = `0x70000014` with bit 30 (`ms_altboot`) set by `altbootcmd` itself, `running` with nothing failed. The counter half was proven separately — `0xB0010001` read back after a reboot is U-Boot's own increment across a chip reset. **One bug had to be fixed to get there, and it was ours:** the APPEND carried `boot.panic_on_fail=1` while upstream's parser is `case $o in boot.panic_on_fail\|stage1panic=1)`, which that string matches neither — so `panicOnFail` had never been set and a generation that could not boot sat in stage 1's interactive `read` forever instead of panicking. The first drill attempt stranded the board on exactly that and cost a plug cycle. Fixed two ways (`preDeviceCommands` sets the variable directly; the APPEND carries both real tokens) and hardware-proven, because it is what makes a failed attempt reset. See "What exists now (rung 5)" and the handoff |
 
 The SD rungs are load-bearing and **there is no SD card in the device** — the
 same blocker that still holds #76's root-on-SD half open (§8). Inserting one is
@@ -2243,8 +2249,12 @@ cheapness:
    the 12–15 an earlier draft of this section said.** Linux has since taken
    12–27 in full (#75 12–15, #76 16–17, #77 18–21, #82 22–24, #78 25–27), so
    the bootloader gets the top four. §11.10 has the assignment.
-2. **`bootcount`** in the env is itself evidence: `fw_printenv bootcount` after
-   a boot says how many attempts the bootloader made.
+2. **`bootcount`** is itself evidence: it says how many attempts the bootloader
+   has made since the last healthy boot. Since rung 5 it is **not** in the
+   environment (patch `0020` stopped U-Boot reading that) but in
+   `TOP_CHIPMODE_GLB_BACKUP1`, so the read is `devmem 0x02390030 32` and the
+   answer is `0xB001` in the top half plus the count: `0xB0010000` healthy,
+   `0xB0010002` two attempts.
 3. **`CONFIG_PRE_CONSOLE_BUFFER` + `PRE_CON_BUF_ADDR`** pointed into the spare
    tail of the vendor pstore window (the same place #75 banks a verbatim kernel
    log — and note the trap recorded there: the vendor kernel zaps every pstore
@@ -4653,72 +4663,290 @@ wireless firmware** — the one exception the blob policy allows.
 
 ---
 
-### Handoff for rung 5
+### What exists now (rung 5, 2026-09-09) — THE BOARD ROLLS ITSELF BACK
 
-Current as of 2026-09-09, after rung 4. No history; read "What exists now
-(rung 4)" above if a claim here surprises you.
+**Row 5 is done, and #79 closes with it.** A boot that does not come up is now a
+boot the board leaves behind on its own, with nobody watching and nothing to
+press: `bootcount` in a register U-Boot can reach, `altbootcmd` at the limit, a
+second extlinux config naming the last generation that passed a health check,
+and a gate that clears the counter when this one does.
 
-**The board's eMMC is `spl` + a GPT-carrying `disk`, and the vendor layout is
-gone from it.** `spl` = the first 768 KiB (the rebuilt `.#spl-minimal`,
-`27babb120b10ee05…` over 262144 B). `disk` = everything after, with the
-generated GPT at physical LBA 1536 and its alternate header in the eMMC's last
-sector. GPT partitions: `atf` = mainline BL31 (`0x1C0000`), `uboot` = the
-rung-3b mainline U-Boot plus patch `0023` (`0x2C0000`), `env` = the generated
-environment (`0x4C0000`, 1 MiB, `bootsystem=A`, `bootcount=0`, `bootpart=4`),
-`boot` = ext4 at `0x5C0000` with `Image` + dtb + `extlinux/`, `rootfs` at
-`0x115C0000`. Root is `/dev/loop0p5`, `/boot` is `/dev/loop0p4`, and the loop
-is created by stage 1.
+Getting there cost a bench trip, because the drill's first act uncovered a
+five-rung-old bug: the appliance's stage-1 deadman had never been armed, so a
+generation that cannot boot blocked forever instead of resetting. That is fixed,
+and fixing it is what let the rollback fire.
 
-**On the device.** `/root/rung4/` holds the migration's backups: `pre-layout.img`
-(the whole 277.75 MiB pre-rootfs span as it was under the vendor layout,
-`da44279bc965d5833b38c62917f06ae6ad709fa9421e897ba49703604e28ae7b`),
-`tail.img` (the device's last 32 KiB, `c35020473aed1b46…`), `boot-backup/`,
-`pre-state.txt`, `env.txt` and `written.sha256`. `/root/rung4-kit/` is the whole
-`.#migrate-layout` kit, including `restore`, which is now only useful for going
-BACK to the vendor layout — and it cannot put the vendor SPL back, so a real
-rollback is AXDL. `/root/rung3b/`, `/root/rung3/` and `/root/rung2/` still hold
-the earlier rounds' harnesses.
+#### Where `bootcount` lives, and why not in the environment
 
-**A bad SPL is now the only unrecoverable-from-Linux state, and it is a bench
-trip, not a brick.** Flash `.#nixos-firmware-image` (vendor boot chain, vendor
-SPL, seventeen partitions, and a NixOS built for that map) or a stock Sipeed
-`.axp` over AXDL: `User` held ~10 s at power-on plus a USB cable.
+Patch `0020` stopped U-Boot reading its environment off the eMMC (2048
+single-block reads before the boot has done anything, one of which timing out is
+unrecoverable), and `CONFIG_BOOTCOUNT_ENV` needs a writable environment. So the
+counter that `bootlimit=3` and `altbootcmd` were written against had been
+returning 0 on every boot since rung 3b: the whole rollback path was dead code.
 
-**One thing rung 4 leaves owed.** **The first boot after the SPL write hung and
-a power cycle fixed it** — eight minutes with no SSH, no open port and a flat
-3 W draw, and no boot between the two in `journalctl --list-boots`, so it was
-the boot chain and not the network. It did not recur across the six boots since
-(three warm on the with-EIP SPL, two warm and one cold on the no-EIP one, all
-reaching SSH in 2:15-3:36). Suspect #92 (the appliance oopses on `reboot`)
-leaving the controller in a state the ROM or SPL does not clear. Treat it as a
-one-off until it happens twice; if it does, it is rung 5's first problem, and
-`.#uboot-mainline-tee`'s pre-console buffer is the way to see where it stops.
+`DM_BOOTCOUNT_SYSCON` is the backend for exactly this, and the SoC has the
+register it wants. **`TOP_CHIPMODE_GLB_BACKUP1`, `0x02390030`** — the word next
+to the milestone register, in the same always-on chipmode block:
 
-**Rung 5 proper — the rollback drill.** Install a deliberately broken
-generation, let `bootcount` reach `bootlimit`, and watch the board come back on
-the previous one, unattended. What it needs:
+- **Nothing writes it.** The only code in the whole vendor SDK that names it is
+  a `get_boot_time`/`set_boot_time` pair in `boot/bl1/board/board.c` with no
+  callers anywhere. The ROM, the SPL and TF-A leave it alone.
+- **It survives what a counter must survive** — a warm reboot and a chip reset —
+  and clears on power loss, which is the right lifetime: a cold-started board
+  always begins at zero.
+- **It is a whole word**, so the driver's four-byte mode fits: magic `0xB001` in
+  bits 31..16, count in 15..0. `0xB0010000` is "healthy", `0xB0010001` is one
+  attempt. BACKUP0 could not host it — bits 0..5 are the vendor slot field and
+  28..31 are this port's boot milestones.
 
-1. **`DM_BOOTCOUNT_SYSCON`.** Patch `0020` stopped U-Boot reading the
-   environment off the eMMC, so `bootcount` in the env is no longer reachable
-   from the bootloader. This SoC's reset-surviving scratch register is exactly
-   what that backend is for, and it is already the boot's evidence channel —
-   bits 0-11 are free of the milestone assignment.
-2. **A health gate.** `nanokvm-mark-good.service`, `After=nanokvm-healthy.target`,
-   clearing `bootcount` and copying `extlinux.conf` → `extlinux-fallback.conf`,
-   so the fallback config is by construction "the last generation that passed
-   the health check".
-3. **Generations in `/boot`.** `boot.loader.generic-extlinux-compatible` is
-   still off; the payload is baked by the flake. Turning it on is what makes
-   `LABEL nixos-<n>` mean something and is the other half of the drill.
-4. **`nanokvm-checkboot` retires** when 1-3 land. Under the current layout its
-   slot bits already select nothing (both `_BAK` bases are the A bases); it is
-   kept only because it keeps bits 2-5 deterministic, which is what makes
-   `0x300000x4` a readable oracle.
+That is U-Boot patch `0024`: a `syscon@2390000` node, a root-level
+`u-boot,bootcount-syscon` node naming it, and `CONFIG_BOOTCOUNT_ENV` →
+`CONFIG_DM_BOOTCOUNT` + `CONFIG_DM_BOOTCOUNT_SYSCON` in the defconfig.
+`pkgs/uboot-env.txt` loses `bootcount` and `upgrade_available` with it: a stored
+number nothing reads and nothing updates is worse than no number, because
+`fw_printenv bootcount` would answer it.
 
-**Also open.** #90 is **closed** — `.#spl-minimal` is blob-free and the board
-runs it; `.#spl-minimal-eip` rebuilds the vendor-shaped container if a unit ever
-turns out to need it. #91 (multi-block transfers) is unfixed and still costs the
-boot chain most of its ~2 minutes. `mem=512M` is still unexplained and still not
-droppable. `SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt
-x86-64 host tool, and is a clean follow-up now that the layout is settled and
-the board can be recovered from a shell for every stage but the SPL.
+There is no `upgrade_available` gate any more either. That gate existed so
+`CONFIG_BOOTCOUNT_ENV` would not rewrite the environment on every boot; a
+register write costs nothing, so the counter is simply always armed.
+
+#### Two configs, and why the generation has to be pinned
+
+`sysboot` boots a config's `DEFAULT` entry and has no way to name a `LABEL`. So
+choosing a generation is choosing a **file**:
+
+| file | written by | names |
+|---|---|---|
+| `/boot/extlinux/extlinux.conf` | `nanokvm-install-boot`, on every switch | the generation being installed |
+| `/boot/extlinux/extlinux-fallback.conf` | `nanokvm-mark-good`, after a healthy boot | the last generation that worked |
+
+and `bootcmd` runs the first while `altbootcmd` runs the second.
+
+**`init=` had to come back onto the command line for this to mean anything.**
+Until rung 5 the appliance deliberately had no `init=`, so stage 1 fell back to
+`/init` — the system-profile symlink — and a generation switch was a symlink
+flip with no boot-chain write. That is a fine mechanism and it is still what a
+freshly flashed board uses, but it makes the two configs *identical in effect*:
+both resolve the same symlink at boot time, so `altbootcmd` would boot exactly
+the generation that just failed. The installer therefore pins
+`init=<toplevel>/init`, generated from one template
+(`pkgs/extlinux.nix`, `@INIT@`) so a diff between the two files is exactly the
+generation difference and nothing else.
+
+**The installer never writes the fallback.** At the moment of a switch the new
+generation has never booted; promoting it would leave the board with two copies
+of the same untested system. The one exception is bootstrap, when no fallback
+exists at all.
+
+#### The health gate
+
+`nanokvm-mark-good`, started by a timer at `OnBootSec=60s`, polls until the
+system is `running`, a default IPv4 route exists and `https://127.0.0.1/`
+answers — the three things a KVM is for — then clears the counter and
+regenerates the fallback. Three details are load-bearing:
+
+- **A timer, not a `multi-user.target` want.** `systemctl is-system-running`
+  only reaches `running` when the boot's initial transaction is empty, so a unit
+  inside that transaction polling for it waits for itself forever.
+- **`/run/booted-system`, not a copy of `extlinux.conf`.** A switch between boot
+  and now has already rewritten `extlinux.conf` to name a generation that has
+  never booted. Copying it would promote an untested system on the strength of a
+  different one's health.
+- **`/proc/uptime`, not `date +%s`** for the deadline — timesyncd jumps the
+  clock months forward the moment DHCP lands.
+
+**Every failure mode here is the safe one.** A gate that does not run, or runs
+and finds the board unhealthy, leaves the counter alone and the next boot counts
+one higher. Nothing in the mechanism can strand the board; only *not* rolling
+back needs something to work.
+
+`RuntimeWatchdogSec=60s` is armed alongside it. Without it the ax630c watchdog
+is petted from kernel context for as long as the kernel schedules, which
+protects against nothing a user would call a hang; with it a PID 1 that stops
+running resets the board into the count.
+
+#### On hardware: the board rolled itself back, twice
+
+**The counter, first.** Two reboots with patch `0024` in `uboot` (p2):
+
+```
+mark-good: healthy after 0s (bootcount was 0xB0010001)
+mark-good: bootcount cleared -> 0xB0010000
+mark-good: fallback promoted to /nix/store/nqp0gz1m…-nixos-system-…
+```
+
+`0xB0010001` is U-Boot's own write: magic present, one attempt. It read
+`0xB0010000` back across a chip reset, incremented it, stored it, and Linux
+read the result — so the driver binds, the regmap offset is right, the register
+survives the reset, and `bootcount_load`/`bootcount_store` agree with the
+`devmem` view.
+
+**Then the rollback, in anger.** Reboot at 16:37:02 with the default entry
+naming one generation and the fallback naming another. SSH came back at
+16:54:50 — sixteen minutes, four boot-chain attempts, no human action of any
+kind in between:
+
+| | |
+|---|---|
+| `/run/booted-system` | `/nix/store/nqp0gz1m…` — **the fallback's generation, not the default's** |
+| `bootcount` at mark-good | `0xB0010004` — four attempts |
+| `0x02390024` | `0x70000014` — bit 30, `ms_altboot`, set by `altbootcmd` itself |
+| `systemctl is-system-running` | `running`, nothing failed |
+
+Three attempts ran `bootcmd`; the fourth found `4 > bootlimit`, ran
+`altbootcmd`, set the milestone and booted `extlinux-fallback.conf`. Then
+`nanokvm-mark-good` cleared the counter. That is the whole contract, end to end,
+on the board.
+
+It had already happened once an hour earlier, with the counter driven up by
+brief power interruptions rather than by the board's own resets — same
+signature, `0x70000018` and `bootcount was 0xB0010004`, and the same landing on
+the fallback generation.
+
+**What actually failed those three attempts was not the generation.** Putting
+the identical default entry back and rebooting brought it up with
+`bootcount was 0xB0010002` — one failed attempt, then success. The failures are
+**#91**: U-Boot loading a 51 MB `Image` through single-block reads, and
+sometimes not managing it inside `bootcmd`'s four tries. Which is worth saying
+plainly: the rollback's first real customer was not a bad generation at all but
+the boot chain's own flakiness, and it did the right thing — a board that used
+to need a power cycle now retries three times and then boots the last
+known-good generation by itself.
+
+#### The bug that had to be fixed first: `boot.panic_on_fail=1` matches nothing
+
+The drill was supposed to be cleaner than that. It began by installing a
+generation whose closure was deliberately not on the board — the half-landed
+switch, which is what a broken generation looks like here — and rebooting. The
+board never came back: 32 minutes, a cold cycle, another 20, ~3.3 W throughout,
+and in the end it took the plug to get it out.
+
+NixOS stage 1's `fail()` is interactive. It prints a menu and blocks in
+`read -n 1 reply` on `/dev/console`, which on this board is a hidden,
+unterminated UART pad. `panicOnFail` is what turns that into `exit 1`, a kernel
+panic and a `panic=10` restart. Upstream parses it as
+
+```sh
+case $o in
+    boot.panic_on_fail|stage1panic=1)  panicOnFail=1 ;;
+```
+
+and a shell `case` pattern must match the **whole word**. The extlinux APPEND
+had carried `boot.panic_on_fail=1` since rung 3. It matches neither
+alternative, so `panicOnFail` has never been set on this appliance — the line
+that documented the deadman *was* the deadman's absence.
+
+Everything else followed. Stage 1 blocked instead of panicking, so the board
+never reset; never resetting, it never re-entered U-Boot; never re-entering
+U-Boot, `bootcount` stayed at 1 and `altbootcmd` could not fire. The rollback
+did not fail, it was never reached. And there is no second net behind it:
+nothing arms WDT0 before Linux (`wdt_arm` is in the environment but not wired
+into `preboot`, and its TORR value is still uncharacterised).
+
+Two fixes, because one of them should not have to be a string:
+
+- `nixos/appliance.nix` sets `panicOnFail=1` from
+  `boot.initrd.preDeviceCommands`, spliced in after the cmdline parse and after
+  `trap 'fail' 0` — exactly where the variable has to land, depending on no
+  string at all. `nixos/loop-test.nix` has done this correctly since #78; the
+  appliance never picked it up.
+- `pkgs/extlinux.nix` emits `boot.panic_on_fail` **and** `stage1panic=1`, the
+  two tokens the parser actually matches.
+
+The first fix lives in the stage-1 initrd, which on this board is inside the
+kernel `Image`, so applying it meant writing `/boot` — and it is the reason the
+rollback above could fire at all: with the deadman armed, a failed attempt
+panics and resets instead of sitting there. The old `Image` is kept at
+`/boot/Image.prev`.
+
+**The lesson is the general one.** A safety net nobody has watched fire is not a
+safety net. This one had been in the command line, in a comment and in the docs
+for three rungs, and it had never once worked.
+
+---
+
+### Handoff after rung 5
+
+Current as of 2026-09-09, after rung 5. No history; read "What exists now
+(rung 4)" and "(rung 5)" above if a claim here surprises you.
+
+**The board boots, and it now recovers from a boot that does not.** The eMMC is
+unchanged from rung 4 — `spl` plus a GPT-carrying `disk`, root `/dev/loop0p5`,
+`/boot` `/dev/loop0p4` — with two partitions rewritten and one file in `/boot`
+replaced:
+
+| what | where | md5 | note |
+|---|---|---|---|
+| mainline U-Boot + patch `0024` | `uboot`, `0x2C0000` | `6713c38d5158b37372a0defbb7530b05` over 188416 B | previous at `/root/rung5/uboot-prev.bin`, `a3191ad5366aacac36005b16031116ae` |
+| the generated environment | `env`, `0x4C0000` | `7d449d891ac140a9f7dc89a3d61795df`, 1 MiB | previous at `/root/rung5/env-prev.bin`, `fcf35dbf42c168b8a1af0d93b3a304b8` |
+| kernel `Image` with the armed deadman | `/boot/Image` | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
+
+Both partition writes were verified from the medium after `drop_caches`. The
+two `*-prev` files are on the ROOTFS, so an AXDL recovery destroys them —
+rebuild from the flake rather than relying on them.
+
+**Generations.** `/nix/var/nix/profiles/system` → `system-4-link` →
+`/nix/store/aklnqir1…`, the generation carrying the `panicOnFail` fix and the
+corrected APPEND. `extlinux.conf` and `extlinux-fallback.conf` both name it
+(mark-good promoted the fallback after it came up healthy). Generation 3
+(`/nix/store/nqp0gz1m…`) is still on the board and is what the board rolled back
+onto during the drill.
+
+**Reading the state**, all from a shell:
+
+```sh
+devmem 0x02390030 32        # bootcount: 0xB0010000 healthy, 0xB001000N = N attempts
+devmem 0x02390024 32        # 0x70000014 -> bit 30 set = this boot came via altbootcmd
+grep -o 'init=[^ ]*' /boot/extlinux/extlinux.conf          # default generation
+grep -o 'init=[^ ]*' /boot/extlinux/extlinux-fallback.conf # fallback generation
+journalctl -u nanokvm-mark-good -b 0
+```
+
+Bit 30 is sticky until a power cycle, so it says "a rollback has happened since
+the last cold start", not "this boot is the rollback" — pair it with
+`/run/booted-system`.
+
+**To exercise the rollback, do NOT install a broken generation.** Force it
+instead:
+
+```sh
+devmem 0x02390030 32 0xB001000A
+reboot
+```
+
+One boot, and it proves `bootcount_error()`, `altbootcmd`, milestone bit 30 and
+the fallback config all at once, with nothing to strand. Breaking a generation
+for real costs four boots and, if any deadman is missing, the plug.
+
+**#91 is now the loudest thing left, and rung 5 measured it.** U-Boot loading
+the 51 MB `Image` through single-block reads fails often enough that
+`bootcmd`'s four `bootone` tries are sometimes not enough: the drill's own
+rollback was triggered by three such runs in a row, and re-testing the same
+entry immediately afterwards still took two (`bootcount was 0xB0010002`). Every
+one of those is ~2 minutes. Fixing multi-block would take most of the boot time
+out and most of the flakiness with it.
+
+**Two healthy boots also hung this morning**, before any of rung 5 was on the
+board — one after `systemctl reboot`, one after a cold cycle. The journal of the
+first reaches `Starting File System Check on /dev/loop0p4` at t=16 s and then
+stops entirely, so the wedge is in the kernel and not in userspace;
+`RuntimeWatchdogSec` does not cover it, because PID 1 was alive and pinging.
+Arming WDT0 from U-Boot's `preboot` would, and that needs TORR characterised
+first — `wdt_arm` in the environment resets the board in about a second with the
+value it carries, which is why it is not wired in.
+
+**#92 is closed, not reproducible.** The live restart-handler chain reads as
+three valid entries (`syscon_restart_handle` 192, `psci_sys_reset` 129,
+`watchdog_restart_notifier` 128, `next` NULL) and three consecutive reboots left
+ramoops consoles ending at `reboot: Restarting system` with no oops. The
+technique is worth keeping: `restart_handler_list` is in `/proc/kallsyms`, the
+kernel image's physical base is in `/proc/iomem` ("Kernel code"), and walking
+the chain with `devmem` identifies a bad handler for zero boot cycles.
+`/root/rung5/evidence/` holds the captures.
+
+**Also open.** `mem=512M` is still unexplained and still not droppable.
+`SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt x86-64 host
+tool, and is a clean follow-up now that the layout is settled. And a rollback is
+still a *userspace* rollback: one `Image` in `/boot`, shared by both entries, so
+a kernel change has no automatic fallback — which is what `/boot/Image.prev`
+stands in for by hand.

@@ -70,7 +70,18 @@ let
     "logomode=vo0@dsi_dpi_video"
     # NixOS stage 1's fail() is INTERACTIVE: without this it blocks on `read`
     # from a console whose pads nobody can reach, and the board looks hung.
-    "boot.panic_on_fail=1"
+    #
+    # THE TOKEN HAS NO `=1`, AND THAT IS THE WHOLE POINT. Upstream's parser is
+    # `case $o in boot.panic_on_fail|stage1panic=1)`, and a shell `case`
+    # pattern must match the WHOLE word -- so `boot.panic_on_fail=1`, which is
+    # what this line said until 2026-09-09, matches NOTHING and silently leaves
+    # `panicOnFail` unset. It cost the rung-5 drill and a bench trip: a
+    # generation whose stage 1 failed sat in `read -n 1 reply` forever instead
+    # of panicking, so the board never reset and `bootcount` never counted.
+    # `nixos/appliance.nix` now also sets `panicOnFail=1` from
+    # `preDeviceCommands`, which does not depend on this string at all.
+    "boot.panic_on_fail"
+    "stage1panic=1"
     "panic=10"
   ] ++ lib.optional (init != "") "init=${init}"
     ++ lib.optional (extraAppend != "") extraAppend);
