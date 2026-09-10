@@ -650,6 +650,18 @@
         axSign = callPkg ./pkgs/ax-sign.nix { };
         uboot-mainline = callPkg ./pkgs/uboot-mainline.nix { inherit axSign; };
 
+        # The #91 multi-block probe sequence, shared by the variants below.
+        # `bmax` overrides the driver's b_max for exactly these two reads; the
+        # count arguments of `mmc read` are hex, `bmax` is decimal.
+        # It ends by re-initialising the card, so a failed transfer does not
+        # decide whether the boot that follows can read its own payload.
+        bmaxProbe =
+          "mmc dev 0; echo MB-A-CMD18-2; setenv bmax 2;"
+          + " mmc read 0x4a000000 0x4ae00 2;"
+          + " echo MB-B-CMD18-64; setenv bmax 64;"
+          + " mmc read 0x4a000000 0x4ae00 40;"
+          + " setenv bmax 1; echo MB-C-REINIT; mmc dev 0; echo MB-END";
+
         # ---- the SPL, rebuilt for the minimal layout (#89 rung 4) ---------
         #
         # The one artefact the layout change cannot be made without: the SPL
@@ -720,6 +732,43 @@
           inherit axSign;
           teeConsole = true;
           probeMmc = true;
+        };
+
+        # === the #91 multi-block measurement (2026-09-10) ==================
+        # The probe image with a `preboot` that issues a 2-block and a
+        # 64-block open-ended CMD18 and then hands the card back, so the
+        # appliance still boots and can be asked what happened. Safe to
+        # chainload: a candidate that cannot read its own payload is reset by
+        # WDT0 into the production U-Boot on flash, and the DRAM ring the
+        # answer lives in survives that reset.
+        #
+        # 64 blocks matters as well as 2: a 32 KiB transfer crosses the SDMA
+        # boundary a 512-byte single block never reaches.
+        uboot-mainline-probe-mb = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          teeConsole = true;
+          probeMmc = true;
+          probeTag = "-mb";
+          probeCmds = bmaxProbe;
+        };
+
+        # The negative control for the #91 answer: the same probe with the
+        # eMMC clock put back to the 50 MHz the tree carried before, which is
+        # the one thing that changed. Both of its CMD18s are expected to fail.
+        #
+        # It ends in `reset` rather than booting. With the single-block cap
+        # gone, a 50 MHz build cannot read its own payload either, and the
+        # retry storm that follows would wrap the 8 KiB DRAM ring the answer
+        # is written into. Resetting hands the board straight back to the
+        # production U-Boot on flash, whose own pre-console output is a dozen
+        # lines, so the probe's result survives to be read from Linux.
+        uboot-mainline-probe-mb-50m = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          teeConsole = true;
+          probeMmc = true;
+          probeTag = "-mb-50m";
+          probeCmds = bmaxProbe + "; reset";
+          emmcMaxFreq = 50000000;
         };
 
         # The tee image plus the AX630C first-stage loader's own SD4HC read
@@ -799,6 +848,7 @@
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
             uboot-mainline-spldrv uboot-mainline-hangtest
+            uboot-mainline-probe-mb uboot-mainline-probe-mb-50m
             gpt-image spl-minimal spl-minimal-eip migrate-layout
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;

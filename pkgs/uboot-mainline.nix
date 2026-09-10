@@ -5,7 +5,26 @@
 , traceBoot ? false
 , teeConsole ? false
 , probeMmc ? false
+  # What the probe's `preboot` runs, and the suffix that keeps two of them
+  # apart in the store. The default is #89 rung 3b's sequence.
+, probeCmds ? "mmc dev 0; echo PROBE-A-CMD18; setenv bmax 2; mmc read 0x4a000000 0x4ae00 2; setenv bmax 1; echo PROBE-B-HS; mmc dev 0 0 1; mmc read 0x4a000000 0x4ae00 0x4000; echo PROBE-B-HS200; mmc dev 0 0 10; mmc read 0x4a000000 0x4ae00 0x4000; echo PROBE-C-REINIT; mmc dev 0; echo PROBE-END"
+, probeTag ? ""
+  # The #91 leads that live in the eMMC node: the first-stage loader runs
+  # HS400ES at 200 MHz where the device tree says 50 MHz, and its PHY 0x0c
+  # (SDCLK delay in HS200/HS400) is 23 where the tree says 31. `null` keeps
+  # the tree's value. One of these per round -- that is the point of them.
+, emmcMaxFreq ? null
+, emmcPhyHsmmc ? null
 , splDrv ? false
+  # The `splmmc` sequence `preboot` runs, and the suffix that keeps two of them
+  # apart in the store. The default is the whole experiment in one boot; the
+  # staged variants exist because the whole experiment WEDGES THIS BOARD past
+  # WDT0 (2026-09-10, #91 round 4) and a wedge is only recoverable by a power
+  # cycle, which destroys the DRAM ring the answer was written into. A staged
+  # sequence banks the ring into spare flash blocks between steps, so the round
+  # that dies still says how far it got.
+, splDrvCmds ? "splmmc regs; splmmc init; splmmc probe 0x4a000000 0x4ae00"
+, splDrvTag ? ""
 , hangTest ? false
 , ... }:
 
@@ -82,7 +101,6 @@ let
     ./uboot-mainline/patches/0014-mmc-sdhci-cadence-support-hs400-enhanced-strobe.patch
     ./uboot-mainline/patches/0015-mmc-sdhci-auto-cmd23-for-multi-block-in-v4-mode.patch
     ./uboot-mainline/patches/0016-arm-axera-arm-wdt0-from-save_boot_params.patch
-    ./uboot-mainline/patches/0017-mmc-sdhci-cadence-single-block-only-workaround.patch
     ./uboot-mainline/patches/0018-ax630c-fix-fdt-placement-and-retry-the-boot-payload.patch
     ./uboot-mainline/patches/0019-ax630c-rescan-the-card-between-boot-attempts.patch
     ./uboot-mainline/patches/0020-ax630c-do-not-read-the-environment-off-the-emmc.patch
@@ -1134,8 +1152,11 @@ let
     # `mmc dev <dev> <part> <mode>` pins a speed mode.
     echo 'CONFIG_MMC_SPEED_MODE_SET=y' >> configs/${defconfig}
 
-    # `bmax` in the environment lifts the cdns,single-block-only cap, so one
-    # open-ended CMD18 can be issued on demand and nothing else changes.
+    # `bmax` in the environment overrides the driver's b_max, so a multi-block
+    # read can be asked for on demand and nothing else changes. It was written
+    # to lift the `cdns,single-block-only` cap (deleted 2026-09-10 with the #91
+    # fix); it is still how a round asks for one open-ended CMD18 of a chosen
+    # length without touching the transfer path the boot uses.
     substituteInPlace drivers/mmc/mmc-uclass.c --replace-fail \
       '#include <bootdev.h>' \
       '#include <bootdev.h>
@@ -1192,10 +1213,50 @@ let
 
     # The probe sequence itself. No environment is stored (patch 0020), so
     # this is the only place it can live.
-    sed -i 's|^CONFIG_PREBOOT=.*|CONFIG_PREBOOT="mw.l 0x02390028 0x10000000; mmc dev 0; echo PROBE-A-CMD18; setenv bmax 2; mmc read 0x4a000000 0x4ae00 2; setenv bmax 1; echo PROBE-B-HS; mmc dev 0 0 1; mmc read 0x4a000000 0x4ae00 0x4000; echo PROBE-B-HS200; mmc dev 0 0 10; mmc read 0x4a000000 0x4ae00 0x4000; echo PROBE-C-REINIT; mmc dev 0; echo PROBE-END"|' configs/${defconfig}
-    grep -q 'PROBE-END' configs/${defconfig} \
+    sed -i 's|^CONFIG_PREBOOT=.*|CONFIG_PREBOOT="mw.l 0x02390028 0x10000000; ${probeCmds}"|' configs/${defconfig}
+    # The sequence must have arrived whole: its last marker is what a reader
+    # of the DRAM ring uses to tell "the probe finished" from "the ring wrapped
+    # and ate the end of it".
+    grep -q 'CONFIG_PREBOOT=.*echo [A-Z-]*-END' configs/${defconfig} \
       || { echo "ERROR: could not install the probe preboot" >&2; exit 1; }
   '';
+
+  # -------------------------------------------------------------------------
+  # The #91 leads that live in the eMMC device-tree node (2026-09-10).
+  #
+  # The first-stage loader reads this card multi-block on every boot, and its
+  # source differs from mainline U-Boot's configuration in exactly four places
+  # (docs/reference/mainline/emmc-spldrv-20260912/README.md). Two of them are
+  # device-tree values, and these are they: the loader runs HS400ES at 200 MHz
+  # where the tree says 50 MHz, and its PHY 0x0c -- the SDCLK delay used in
+  # HS200 and HS400 -- is 23 where the tree says 31.
+  #
+  # HS400 is the one mode where the host samples on a strobe the CARD
+  # generates, against a fixed 18-tap delay that the vendor chose at 200 MHz.
+  # Nobody but mainline U-Boot has ever run this part in HS400ES at 50 MHz --
+  # Linux runs HS200, the loader runs HS400ES at 200 MHz -- and a strobe
+  # sampled at the wrong point produces exactly the observed signature: the
+  # card streams, no block is ever framed, no CRC error is raised because
+  # there is no framed block to check, and the only failure is U-Boot's own
+  # software timeout.
+  #
+  # THE CLOCK ONE IS SETTLED AND THE TREE NOW CARRIES THE ANSWER: 200 MHz.
+  # What is left here is the ability to put 50 MHz back for one boot, which is
+  # the negative control for that measurement and the only way to re-derive it
+  # without reading this file. The SD slot's own `max-frequency` is 50 MHz and
+  # must stay there, so the anchor is the eMMC's value, unique since the fix.
+  # -------------------------------------------------------------------------
+  emmcTweakPostPatch =
+    lib.optionalString (emmcMaxFreq != null) ''
+      substituteInPlace arch/arm/dts/ax630c.dtsi --replace-fail \
+        'max-frequency = <200000000>;' \
+        'max-frequency = <${toString emmcMaxFreq}>;'
+    ''
+    + lib.optionalString (emmcPhyHsmmc != null) ''
+      substituteInPlace arch/arm/dts/ax630c.dtsi --replace-fail \
+        'cdns,phy-dll-delay-sdclk-hsmmc = <31>;' \
+        'cdns,phy-dll-delay-sdclk-hsmmc = <${toString emmcPhyHsmmc}>;'
+    '';
 
   # -------------------------------------------------------------------------
   # splDrv = true: the tee image plus the first-stage loader's own SD4HC read
@@ -1245,9 +1306,11 @@ let
 
     # The probe's own console output is what carries the result, so it has to
     # come before anything that would push it out of the 8 KiB ring.
-    sed -i 's|^CONFIG_PREBOOT=.*|CONFIG_PREBOOT="mw.l ''${msreg_set} ''${ms_uboot}; splmmc regs; splmmc init; splmmc probe 0x4a000000 0x4ae00; mmc rescan"|' configs/${defconfig}
-    grep -q 'splmmc probe' configs/${defconfig} \
+    sed -i 's|^CONFIG_PREBOOT=.*|CONFIG_PREBOOT="mw.l ''${msreg_set} ''${ms_uboot}; ${splDrvCmds}; mmc rescan"|' configs/${defconfig}
+    grep -q 'splmmc' configs/${defconfig} \
       || { echo "ERROR: could not install the splmmc preboot" >&2; exit 1; }
+    grep -q 'CONFIG_PREBOOT=.*mmc rescan"$' configs/${defconfig} \
+      || { echo "ERROR: the preboot does not end by handing the controller back" >&2; exit 1; }
 
     # `patch` truncates a hunk to its declared line count in silence, and this
     # driver is 1460 lines of transcription whose tail is the command table.
@@ -1273,8 +1336,10 @@ let
     + lib.optionalString consoleToBuffer "-console"
     + lib.optionalString traceBoot "-trace"
     + lib.optionalString teeConsole "-tee"
-    + lib.optionalString probeMmc "-probe"
-    + lib.optionalString splDrv "-spldrv"
+    + lib.optionalString probeMmc ("-probe" + probeTag)
+    + lib.optionalString (emmcMaxFreq != null) "-f${toString (emmcMaxFreq / 1000000)}m"
+    + lib.optionalString (emmcPhyHsmmc != null) "-phy${toString emmcPhyHsmmc}"
+    + lib.optionalString splDrv ("-spldrv" + splDrvTag)
     + lib.optionalString hangTest "-hangtest";
 
   raw = pkgs.stdenv.mkDerivation {
@@ -1362,7 +1427,8 @@ let
       + lib.optionalString teeConsole teePostPatch
       + lib.optionalString probeMmc probePostPatch
       + lib.optionalString splDrv splDrvPostPatch
-      + lib.optionalString hangTest hangTestPostPatch;
+      + lib.optionalString hangTest hangTestPostPatch
+      + emmcTweakPostPatch;
 
     makeFlags = [
       "ARCH=arm"

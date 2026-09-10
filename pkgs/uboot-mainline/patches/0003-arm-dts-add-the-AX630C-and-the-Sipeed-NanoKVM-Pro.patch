@@ -174,7 +174,7 @@ new file mode 100644
 index 00000000..d6980dc6
 --- /dev/null
 +++ b/arch/arm/dts/ax630c.dtsi
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,222 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Axera AX630C (AX620E family).
@@ -297,7 +297,26 @@ index 00000000..d6980dc6
 +			 */
 +			mmc-hs400-1_8v;
 +			mmc-hs400-enhanced-strobe;
-+			max-frequency = <50000000>;
++			/*
++			 * 200 MHz, and it is HS400's strobe that makes it
++			 * mandatory rather than an optimisation. In HS400 the
++			 * host samples the data lines on a strobe the CARD
++			 * drives, against the fixed 18-tap delay below -- a
++			 * delay the vendor chose while running this part at
++			 * 200 MHz, which is what its first-stage loader does on
++			 * every boot. At 50 MHz that delay lands in the wrong
++			 * place and no read of more than one block ever frames:
++			 * the card streams, the host collects nothing, no CRC
++			 * error is raised because no block is ever assembled to
++			 * check, and the only failure is the driver's own
++			 * software timeout. That was #91, and it cost every
++			 * mainline boot between three and twenty-five minutes.
++			 * Linux is not a counter-example: it runs HS200, where
++			 * the host samples on its own clock. Measured on
++			 * hardware 2026-09-10 -- CMD18 fails at 50 MHz and
++			 * succeeds at 200 MHz with nothing else changed.
++			 */
++			max-frequency = <200000000>;
 +			cdns,phy-input-delay-sd-highspeed = <2>;
 +			cdns,phy-input-delay-legacy = <4>;
 +			cdns,phy-input-delay-sd-uhs-sdr12 = <1>;
@@ -308,8 +327,7 @@ index 00000000..d6980dc6
 +			cdns,phy-input-delay-mmc-ddr = <2>;
 +			cdns,phy-dll-delay-sdclk = <45>;
 +			cdns,phy-dll-delay-sdclk-hsmmc = <31>;
-+			/* Multi-block transfers do not start; see U-Boot patch 0017. */
-+			cdns,single-block-only;
++			/* The strobe delay max-frequency above has to match. */
 +			cdns,phy-dll-delay-strobe = <18>;
 +			status = "disabled";
 +		};
