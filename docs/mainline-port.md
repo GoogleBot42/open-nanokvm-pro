@@ -4950,3 +4950,99 @@ tool, and is a clean follow-up now that the layout is settled. And a rollback is
 still a *userspace* rollback: one `Image` in `/boot`, shared by both entries, so
 a kernel change has no automatic fallback — which is what `/boot/Image.prev`
 stands in for by hand.
+
+---
+
+### 11.11 #94: a flashed mainline image that did not come up
+
+A fresh AXDL flash of `.#nixos-firmware-image-mainline` was dark after ten
+minutes, and after a power cycle and ten more, where the same chain reached by
+in-place migration had booted 10/10. Every offline check on the bundle passed.
+It was never the image.
+
+#### The image carries the bytes the board has booted
+
+`.#migrate-layout` and `.#nixos-firmware-image-mainline` put down the same boot
+chain, and `.#checks.axp-migration-parity` (`pkgs/axp-migration-parity.nix`)
+asserts it at build time rather than leaving it to be re-derived:
+
+| region | `.axp` member | vs the migration kit |
+|---|---|---|
+| `spl` | `spl_mainline_…_signed.bin`, 262144 B | identical |
+| `gpt` | `gpt_primary.bin`, 17408 B | identical (+3072 B zero pad in the kit) |
+| `atf` | `atf_mainline_bl31_signed.bin`, 14592 B | identical (+1792 B) |
+| `uboot` | `u-boot_mainline_signed.bin`, 186952 B | identical (+1464 B) |
+| `env` | `uboot_env.bin`, 1 MiB | identical |
+| `boot` | `bootfs.ext4`, 272 MiB | identical |
+| `gptalt` | `gpt_alternate.bin`, 32768 B | identical |
+
+The kit's images are the same bytes rounded up to a 4 KiB multiple so the
+migration script can read each write back a block at a time and hash it — which
+is where #94's two "differing" md5s came from (`uboot.bin` is 188416 B because
+of that pad, not because the U-Boot build is nondeterministic). Every one of
+those regions was then written by the kit and **verified from the medium after
+`drop_caches`**, so the eMMC provably holds what the flasher would have put
+there.
+
+The only member the migration never writes is `rootfs`, and that one is sound
+on inspection: it mounts, `e2fsck -fn` is clean, its system profile points at
+the same toplevel the `/boot` payload expects, and `resize2fs` grows it to
+**7563835 blocks** — the number rung 4 measured on hardware.
+
+#### What "does not come up" actually measures
+
+Timed on the migrated board, whose boot chain is byte-for-byte the flashed
+image's. `bootcount` is read at the health gate, and it counts **U-Boot
+starts** since the last healthy boot, so `0xB001000N` = N attempts:
+
+| boot | time to SSH | U-Boot starts | register |
+|---|---|---|---|
+| after the migration (warm reboot) | 7 min 42 s | 2 | `0x30000018` |
+| cold cycle 1 | 2 min 49 s | 1 | `0x30000014` |
+| cold cycle 2 | 12 min 43 s | 3 | `0x30000014` |
+| cold cycle 3 | 17 min 35 s | **4** | `0x70000018` — bit 30: `altbootcmd` fired |
+| cold cycle 4 | 24 min 51 s | 3 | `0x30000014` |
+| cold cycle 5 | ~7 min 10 s | 2 | `0x30000018` |
+
+Kernel plus userspace is 19.6-19.7 s of every one of those, and the system came
+up `running` with nothing failed every time. All the rest is U-Boot failing to
+read the 51 MB `Image` through single-block transfers (#91), resetting, and
+trying again: `bootcmd` runs `bootone` four times before it resets, and a start
+that burns all four costs five to eleven minutes. Cold cycle 3 spent all three
+of its rollback attempts that way and booted the fallback config — harmless
+only because on a fresh install both configs name the same generation.
+
+**Three of those six boots took longer than the ten minutes #94 waited, and one
+took longer than twenty.** A mainline board that is dark at ten minutes has told
+you nothing; poll for thirty.
+
+#### What this does and does not settle
+
+Settled: the bundle's boot chain is byte-identical to what boots, the rootfs
+member is structurally sound, and the flasher writes members faithfully — 14 of
+the 16 regions of the freshly AXDL-flashed *vendor-layout* image hashed exactly
+to their `.axp` members straight off the medium, and the two that did not are
+explained (`ddrinit`, which FDL2 rewrites with the measured DDR-vref block, and
+`env`, which U-Boot itself writes at boot). The eMMC boot areas are blank and
+`is_emmc_switch_boot_part1()` is a no-op on this board's `EMMC_BOOT_UDA` strap,
+so nothing lands in `mmcblk0boot0/1`.
+
+Also settled, incidentally: the DDR-vref block FDL2 writes into `ddrinit` is
+**not load-bearing for `.#spl-minimal`**. The minimal layout's primary GPT sits
+at `0xC0000`, exactly on top of it, and has since rung 4.
+
+Not settled, and not settleable without another AXDL flash: whether FDL2 writes
+the three regions the vendor layout never asked it for — the primary GPT at LBA
+1536, the alternate GPT at LBA 61079488 (the only write past 4 GiB this board
+has ever been asked to do), and a sparse `rootfs` into a partition that no
+longer runs to the end of the device. A botched alternate GPT would not even be
+fatal: both U-Boot's `part_efi` and Linux's EFI parser accept a valid primary.
+
+#### The follow-up this hands to #91
+
+`bootlimit` counts the wrong event. A `bootcmd` that exhausts its four `bootone`
+tries never handed the kernel control, so it is a **load** failure, not a
+generation that failed to boot — and it spends one of the three rollback
+attempts anyway. Clearing the counter in `bootcmd`'s exhaust path would keep
+#91 out of the rollback budget without weakening it: a generation that boots and
+then wedges resets with the load having *succeeded*, so it still counts.

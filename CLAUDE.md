@@ -231,8 +231,14 @@ bits select nothing. **That SPL is blob-free (#90):** signed with an empty
 0xCC00/0x2CC00 at all — the BootROM accepts a header declaring `fw_size = 0`,
 proven across two warm reboots and a cold cycle. `.#spl-minimal-eip` rebuilds
 the vendor-shaped container if a unit ever needs it. A good boot reads
-`0x30000014` and takes 2-3.5 min to SSH (single-block eMMC reads, #91).
-`docs/mainline-port.md` §11.10 "Handoff" is the current device contract.
+`0x30000014`. **How long it takes to SSH says nothing about whether it is
+working**: measured 2:49, 7:10, 7:42, 12:43, 17:35 and 24:51 across six
+consecutive boots of a byte-verified chain, because #91 costs U-Boot whole
+attempts at the 51 MB `Image`, five to eleven minutes each. `bootcount` at the health gate
+(`journalctl -u nanokvm-mark-good`) says how many it needed. **Poll 30 minutes
+before calling a mainline board dark** — ten was what made #94 look like a bad
+flash. `docs/mainline-port.md` §11.10 "Handoff" is the current device contract;
+§11.11 is #94.
 
 **Rollback is live since rung 5 (#79 closed).** `bootcount` is
 `devmem 0x02390030 32` -- `0xB0010000` healthy, `0xB001000N` = N attempts
@@ -257,8 +263,8 @@ cycle.
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
 cycle clears the slot register and lands on slot A; SSH is back ~30 s after
-`on` for the 4.19 image; the mainline chain takes 2-3.5 min to SSH, cold or
-warm (six boots, 2026-09-09). **Leave it OFF for at least 15 s.** An 8-second
+`on` for the 4.19 image; the mainline chain takes 3 to 18 min, cold or warm
+(#91 — see above). **Leave it OFF for at least 15 s.** An 8-second
 cycle on 2026-09-09 came back into the same dark state the cycle was meant to
 clear; the 15-second one after it booted normally. **A flat ~3.3 W with no
 open port is the hang signature**; a healthy board draws the same at idle, so

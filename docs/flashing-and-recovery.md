@@ -102,10 +102,12 @@ slot by the partition it lands in and by `bootsystem`, nothing else.
 `pkgs/boot.nix`. `.#nixos-firmware-image-mainline` builds the same appliance
 with **mainline TF-A 2.15 and mainline U-Boot 2026.07** above the SPL, booting
 the kernel with `sysboot` from `/boot/extlinux/extlinux.conf` (#89). That chain
-has booted this board (rung 3), and it loses roughly two boots in three to #91,
-so it is not what `.#nixos-firmware-image` flashes. Rung 4 is where the
-vendor-derived U-Boot goes away for good;
-[mainline-port.md](mainline-port.md) §11.10 has the state of it.
+has booted this board (rung 3) but **takes anywhere from three to twenty-five
+minutes to reach SSH** because of #91, so it is not what
+`.#nixos-firmware-image` flashes. Rung 4 is where the vendor-derived U-Boot
+goes away for good; [mainline-port.md](mainline-port.md) §11.10 has the state
+of it, and §11.11 has the timing — a dark board ten minutes after a mainline
+flash is a normal boot, not a failed one (#94).
 
 ### Three differences from flashing the vendor bundle
 
@@ -151,6 +153,15 @@ Userspace derives the board's identity from the SoC UID exactly as the vendor
 
 Boot takes about 26 s. All of the above was proven on this board in #78, from a
 loop-image root: `docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`.
+
+Until 2026-09-09 that first boot also ended `degraded`, with
+`nanokvm-mark-good.service` failed: it clears the boot counter and then writes
+`/boot/extlinux/extlinux-fallback.conf`, and the vendor layout has no extlinux
+directory — its U-Boot loads the kernel from a signed partition by byte offset.
+The unit now skips the promotion when the directory is not there, which also
+closes the quieter half of the same bug: `/boot` is mounted `nofail`, so an
+unmounted `/boot` used to get a fallback written into the root filesystem and
+reported as promoted (#94).
 
 ### What is NOT there yet
 
