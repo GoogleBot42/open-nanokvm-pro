@@ -213,3 +213,92 @@ the fail-path snapshots, the 51 MiB timing and the register dumps.
   pstore archive **before** any power cycle — the cycle destroys all four.
   `~/.claude/skills/power-switch/switch.sh "nanokvm switch"`; leave it off ≥15 s.
 - `.#uboot-mainline-spldrv` is a diagnostic. It is never flashed.
+
+---
+
+# HARDWARE, 2026-09-09: three rounds, one stranded board, one real lesson
+
+The offline half above was written before any of this ran. What follows is what
+the board actually did. **The #91 experiment never executed** — the slot that
+was supposed to make it safe is what stopped it.
+
+## What was measured
+
+| # | round | result |
+|---|---|---|
+| 1 | production U-Boot + patch 0025 written to `uboot` (p2) | **PASS.** Hash `a35f1388f42507697dffa8cf86b7dad1` verified from `/dev/loop0p2` *and* from the raw eMMC at physical offset 2 883 584. Appliance back in 12m32s, `running`, milestones `0x30000014`, no CHLD record — the correct negative for "nothing staged" |
+| 2 | production `u-boot.bin` staged as the candidate | **NO CHAINLOAD.** `CHLD` = 0, file still staged, and `nanokvm-mark-good` reported `bootcount was 0xB0010003` |
+| 3 | gate widened to `bootcount <= 2`; `.#uboot-mainline-spldrv` staged | **BOARD STRANDED.** Dark for 48 min, then dark through two cold cycles (30 s off each). Needs AXDL |
+
+## Round 2: the gate never opened
+
+`bootchain` was gated on `bootcount == 1`. The board reported **three** U-Boot
+attempts for that one Linux boot (`journalctl --list-boots` shows a single
+Linux boot; the counter is incremented once per `main_loop`). Attempts 2 and 3
+skipped the gate by design, and attempt 1 either lost its `load` to a single
+flaky read — #91 itself — or never reached it.
+
+**A gate that only opens on attempt 1 is the wrong gate for this board.** Until
+#91 is fixed, `bootcmd` ending `mw.l ${ms_failed}; reset` makes multi-attempt
+boots routine, and attempt 1 is *also* the attempt most likely to lose a read,
+being the first transfer after an initialisation (#89 rung 2o). Cost: one
+13-minute round that measured nothing and reported it as "no chainload".
+
+## Round 3: the gate that stranded the board
+
+The fix applied was `bootcount <= 2` plus a `mmc rescan`, three load retries,
+and status words at `0x480EE008`/`0x480EE00C` so a round could say *why* it did
+nothing. That build was written to `uboot` (hash
+`e24741da1f7ac75fdcd3599e297622da`, verified both ways) and
+`.#uboot-mainline-spldrv` was staged in the same round.
+
+The board never came back. Two cold cycles, 30 s off, did not recover it.
+
+**`bootcount` lives in a register that clears on power loss.** So the cold
+cycle — the only recovery a console-less board has — resets the counter to
+zero, which re-opens the gate, which re-arms the candidate that just hung. If
+that candidate wedges anything WDT0 cannot reset (a measured hazard on this
+controller: #89 rung 2m, an AXI wedge that survives a WDT0 chip reset), there
+is no way out at all. Every power cycle walks straight back into it.
+
+Which of the two writes is at fault is not yet distinguishable: the `spldrv`
+candidate wedging in `splmmc`, or the second production U-Boot itself. Both fit
+"dark and not recovering", and the DRAM status words that would have separated
+them die with the power. The AXDL reflash will settle it — round 4 should
+re-flash the *first* production U-Boot (`a35f1388…`, already proven in round 1)
+and stage nothing, before anything else is tried.
+
+## The fix, and the general form
+
+**An arming condition for a dangerous test must not live in state that the
+recovery action clears.** Flash is the only storage on this board whose
+lifetime outlives a power cycle, so the arming token now lives in flash and is
+spent *before* the risk is taken:
+
+* One 512-byte block at the head of the unused `env` partition (p3, physical
+  LBA 9728 = `0x2600`) holds the magic `CHTK`.
+* `bootchain` reads it with `mmc read`, tests it with `itest.l`, and — if it is
+  there — **zeroes it with `mmc write` before it loads or jumps**.
+* So a candidate is tried exactly once, ever. A candidate that hangs at its
+  first instruction has already spent the thing that would arm the next
+  attempt, and no number of power cycles brings it back.
+* `bootcount` still bounds the damage as a second belt, but nothing depends
+  on it.
+
+`.#checks.uboot-mainline` section 6 now asserts the ordering, not just the
+presence: it extracts the `bootchain` string from the linked image and fails if
+`mmc write` does not appear before both the load and `chainload`.
+
+## What the next session should do
+
+1. AXDL-reflash `.#nixos-firmware-image-mainline`. Then, from the appliance,
+   write the **round-1** U-Boot to `uboot` and confirm a clean boot with
+   nothing staged.
+2. Write the token-gated U-Boot, confirm a clean boot with nothing staged and
+   `nanokvm-uboot-test status` reporting `armed: no`.
+3. Only then stage a candidate — and stage the *harmless* one first
+   (`.#uboot-mainline`, byte-identical to flash), because rounds 2 and 3 both
+   spent their evidence on the mechanism rather than on #91.
+4. `.#uboot-mainline-hangtest` is built and staged-ready for the negative half.
+5. The #91 experiment itself is unchanged and still worth the cycle: the four
+   source-level differences above are all still unmeasured.

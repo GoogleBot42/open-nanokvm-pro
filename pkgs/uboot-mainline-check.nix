@@ -142,7 +142,7 @@ pkgs.runCommand "uboot-mainline-check"
                 'bootone=mmc rescan' 'bootfallback=mmc rescan' \
                 'bootcmd=run bootchain; run bootone' \
                 'msreg_clr=0x0239002c' 'chainaddr=0x5c000400' \
-                'chainfile=/uboot-test.bin' 'bootchain=if test' \
+                'chainfile=/uboot-test.bin' 'bootchain=mmc dev' \
                 'ms_uboot=0x10000000' 'ms_extlinux=0x20000000' \
                 'ms_altboot=0x40000000' 'ms_failed=0x80000000'; do
       grep -qa "$want" "$ub/images/u-boot.bin" \
@@ -163,11 +163,40 @@ pkgs.runCommand "uboot-mainline-check"
     want_base=${lib.toLower uboot-mainline.passthru.textBase}
     grep -qa "chainaddr=$want_base" "$ub/images/u-boot.bin" \
       || { echo "ERROR: chainaddr is not CONFIG_TEXT_BASE ($want_base)" >&2; exit 1; }
-    # The gate is the whole safety property: without it a staged file is tried
-    # on every boot forever, including the recovery boot after a bad one.
-    grep -qa 'bootchain=if test "''${bootcount}" = "1"' "$ub/images/u-boot.bin" \
-      || { echo "ERROR: bootchain is not gated on bootcount == 1" >&2; exit 1; }
-    echo "chainload is a command, chainaddr = $want_base, and the slot is gated on bootcount == 1"
+    # THE ARMING TOKEN, AND THE ORDER IT IS SPENT IN, ARE THE SAFETY PROPERTY.
+    # A `bootcount` gate is not enough and both versions of it failed on
+    # hardware: `== 1` missed the test on a board that needs two or three
+    # U-Boot attempts per boot, and `<= 2` STRANDED the board, because
+    # `bootcount` clears on power loss and a cold cycle therefore re-arms the
+    # candidate that just hung. The token lives in flash, so a power cycle
+    # cannot bring it back -- and `bootchain` must ZERO IT BEFORE it jumps, or
+    # a candidate that hangs is still armed for the next attempt.
+    for w in 'tokmagic=0x4348544b' 'toklba=2600' 'chainstat=0x480ee008' \
+             'chaincnt=0x480ee00c'; do
+      grep -qa "$w" "$ub/images/u-boot.bin" \
+        || { echo "ERROR: \"$w\" missing from the built-in environment" >&2; exit 1; }
+    done
+    chain=$(tr '\0' '\n' < "$ub/images/u-boot.bin" | grep -a '^bootchain=' | head -1)
+    echo "bootchain: $chain"
+    case "$chain" in
+      *"itest.l "*tokaddr*tokmagic*) ;;
+      *) echo "ERROR: bootchain does not test the arming token" >&2; exit 1 ;;
+    esac
+    # Order: the `mmc write` that spends the token must appear BEFORE the load
+    # and before `chainload`. Comparing offsets in the one string is crude and
+    # exactly right -- it is the property that keeps a hung candidate from
+    # being retried forever.
+    pre=''${chain%%mmc write*}
+    case "$pre" in
+      *chainload1*|*"chainload \$"*)
+        echo "ERROR: bootchain loads or jumps before it spends the token" >&2; exit 1 ;;
+    esac
+    case "$chain" in
+      *"mmc write"*chainload1*) ;;
+      *) echo "ERROR: bootchain does not spend the token before loading" >&2; exit 1 ;;
+    esac
+    echo "the arming token is tested, and spent before the load and the jump"
+    echo "chainload is a command and chainaddr = $want_base"
 
     mkdir -p "$out"
     { echo "u-boot: ${uboot-mainline.version}, entry $entry"

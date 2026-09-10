@@ -210,7 +210,7 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
  	"ms_uboot=0x10000000\0"		/* 28: preboot reached */	\
  	"ms_extlinux=0x20000000\0"	/* 29: extlinux.conf read */	\
  	"ms_altboot=0x40000000\0"	/* 30: bootlimit hit */		\
-@@ -82,6 +84,58 @@
+@@ -82,6 +84,112 @@
  	AX630C_WDT_ENV
  
  /*
@@ -222,18 +222,45 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 + * `/uboot-test.bin` is on the boot filesystem, production U-Boot loads it to
 + * CONFIG_TEXT_BASE and hands over (see arch/arm/mach-axera/chainload.c).
 + *
-+ * THREE THINGS MAKE IT SAFE, and all three are needed:
++ * WHAT ARMS IT IS A TOKEN IN FLASH, AND THE ATTEMPT SPENDS IT BEFORE IT
++ * JUMPS. One 512-byte block at the head of the unused `env` partition holds
++ * the magic "CHTK"; `bootchain` reads it, and if it is there it ZEROES IT WITH
++ * `mmc write` and only then loads and jumps. So a candidate is tried exactly
++ * once, ever, whatever it does afterwards -- it cannot hang the board into a
++ * loop, because by the time it runs, the thing that would arm the next attempt
++ * is already gone.
 + *
-+ *  1. `bootcount` == 1. The counter lives in a register that survives a chip
-+ *     reset (patch 0024) and is cleared only by a boot that reached a healthy
-+ *     userspace. So attempt 1 is the only attempt that tries the candidate; a
-+ *     candidate that hangs is reset by WDT0 into attempt 2, which boots the
-+ *     production image on flash. Recovery is unattended and costs one cycle.
-+ *  2. The candidate increments the counter itself the moment it reaches
-+ *     main_loop, so even a candidate that works cannot chainload a third
-+ *     U-Boot, and a stale test file cannot loop the board.
-+ *  3. Nothing here writes flash. The candidate is a FILE; putting it there and
-+ *     taking it away is `nanokvm-uboot-test` on the appliance.
++ * IT WAS `bootcount`, TWICE, AND BOTH VERSIONS WERE WRONG (2026-09-09):
++ *
++ *   `== 1` missed the test entirely. Until #91 is fixed a boot on this board
++ *   routinely takes two or three U-Boot attempts -- `bootcmd` ends
++ *   `mw.l ${ms_failed}; reset` when the payload will not load, and each reset
++ *   is another `bootcount_inc()` -- and attempt 1 is also the attempt most
++ *   likely to lose a read, being the first transfer after an initialisation.
++ *   The proof round came back `bootcount was 0xB0010003`, file still staged,
++ *   no record: a 13-minute round that measured nothing.
++ *
++ *   `<= 2` STRANDED THE BOARD. `bootcount` lives in a register that clears on
++ *   POWER LOSS, so a cold cycle -- the one recovery available for a board with
++ *   no console -- resets the counter to zero and RE-ARMS the very candidate
++ *   that hung. A candidate that wedges something WDT0 cannot reset then has no
++ *   way out at all: every power cycle walks straight back into it. That is
++ *   what happened, and it cost a bench trip.
++ *
++ * The lesson generalises past this board: an arming condition for a dangerous
++ * test must not live in state that the recovery action clears. Flash is the
++ * only storage here whose lifetime is longer than a power cycle, so the token
++ * lives in flash and is spent before the risk is taken, not after it pays off.
++ *
++ * `bootcount` still bounds the damage as a second belt -- the candidate
++ * increments it on reaching main_loop, and `bootlimit` 3 still ends at
++ * `altbootcmd` -- but nothing depends on it any more.
++ *
++ * THE LOAD IS RETRIED for the same reason `bootone` is (patch 0019): one
++ * timed-out single-block read otherwise costs a whole 13-minute round.
++ *
++ * Nothing here writes flash except the token block. The candidate is a FILE;
++ * putting it there and taking it away is `nanokvm-uboot-test`.
 + *
 + * READING THE RESULT AFTERWARDS takes two words, and neither of them costs a
 + * milestone bit -- bits 12..27 of 0x02390024 are all spoken for (the #75
@@ -245,11 +272,23 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 + *                 page of the pstore window, which survives a chip reset; the
 + *                 appliance zeroes it once it has read it, so the record can
 + *                 only ever describe the boot that just happened.
-+ *   0x02390024  bit 28 clear             the candidate never reached its own
-+ *                 `preboot`
-+ *               bit 28 set               it did -- and since `bootchain`
-+ *                 clears the bit that production's own preboot had already
-+ *                 set, that is TWO U-Boot passes in one boot
++ *   0x480EE008  1  the gate opened and the load was tried
++ *               2  the gate opened and all three loads failed
++ *               3  the load succeeded and `chainload` was called
++ *   0x480EE00C  what U-Boot thought `bootcount` was
++ *
++ * The three status words are ordinary cached stores, so they only reach DRAM
++ * when something flushes -- `chainload` does, and so does `booti` on its way
++ * into the kernel. A boot that resets without doing either loses them, which
++ * is why the appliance zeroes all four before a round.
++ *
++ * MILESTONE BIT 28 IS NOT A POST-HOC ORACLE, and the first draft of this
++ * comment said it was. `bootchain` clears it before the jump and the
++ * candidate's own `preboot` sets it again -- but so does the `preboot` of the
++ * RECOVERY attempt after a hung candidate, so by the time anything can read
++ * the register it says the same thing either way. What separates "the
++ * candidate booted" from "it hung and the slot recovered" is `bootcount` at
++ * the health gate: `nanokvm-mark-good` prints it.
 + *
 + * `chainaddr` is CONFIG_TEXT_BASE. A U-Boot image is position-dependent
 + * before it relocates, and the SPL's load address is a compile-time constant,
@@ -258,11 +297,26 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 +#define AX630C_CHAINLOAD_ENV						\
 +	"chainaddr=0x5c000400\0"					\
 +	"chainfile=/uboot-test.bin\0"					\
-+	"bootchain=if test \"${bootcount}\" = \"1\"; then"		\
-+		" if load mmc ${bootdev}:${bootpart} ${chainaddr}"	\
-+		" ${chainfile}; then"					\
++	"chainstat=0x480ee008\0"					\
++	"chaincnt=0x480ee00c\0"						\
++	"chainload1=load mmc ${bootdev}:${bootpart} ${chainaddr}"	\
++		" ${chainfile}\0"					\
++	"tokaddr=0x49800000\0"						\
++	"tokzero=0x49810000\0"						\
++	"toklba=2600\0"			/* env partition, LBA 9728 */	\
++	"tokmagic=0x4348544b\0"		/* "CHTK" */			\
++	"bootchain=mmc dev ${bootdev};"					\
++		" if mmc read ${tokaddr} ${toklba} 1; then"		\
++		" if itest.l *${tokaddr} == ${tokmagic}; then"		\
++		" mw.l ${tokzero} 0 80;"				\
++		" mmc write ${tokzero} ${toklba} 1;"			\
++		" mw.l ${chainstat} 1; mw.l ${chaincnt} ${bootcount};"	\
++		" if run chainload1 || run chainload1"			\
++		" || run chainload1; then"				\
++		" mw.l ${chainstat} 3;"					\
 +		" mw.l ${msreg_clr} ${ms_uboot};"			\
 +		" chainload ${chainaddr};"				\
++		" else mw.l ${chainstat} 2; fi;"			\
 +		" fi; fi\0"
 +
 +/*

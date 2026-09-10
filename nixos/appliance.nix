@@ -340,6 +340,13 @@ let
       set -eu
 
       TESTFILE=/boot/uboot-test.bin
+      # The arming token, and the reason the slot is safe: one 512-byte block
+      # at the head of the unused `env` partition. U-Boot zeroes it BEFORE it
+      # jumps, so a candidate is tried exactly once, ever. It has to live in
+      # flash -- an earlier version armed on `bootcount`, which clears on power
+      # loss, so the cold cycle that recovers a hung board re-armed the
+      # candidate that hung it and the board could not be recovered at all.
+      TOKPART=/dev/loop0p3
       BOOTCOUNT_REG=0x02390030
       MSREG=0x02390024
       # The chainload record U-Boot leaves in the spare page of the pstore
@@ -404,7 +411,18 @@ let
         b=$(md5sum < "$TESTFILE" | cut -d' ' -f1)
         [ "$a" = "$b" ] || { echo "nanokvm-uboot-test: read-back mismatch $a != $b" >&2; exit 1; }
 
+        # Arm it, last: the token is what U-Boot acts on, so it must not be
+        # there before the file it names is.
+        [ -b "$TOKPART" ] || { echo "nanokvm-uboot-test: no $TOKPART" >&2; exit 1; }
+        { printf 'CHTK'; dd if=/dev/zero bs=508 count=1 2>/dev/null; } \
+          | dd of="$TOKPART" bs=512 count=1 conv=fsync 2>/dev/null
+        sync
+        echo 3 > /proc/sys/vm/drop_caches
+        [ "$(dd if="$TOKPART" bs=4 count=1 2>/dev/null)" = CHTK ] \
+          || { echo "nanokvm-uboot-test: token did not stick" >&2; exit 1; }
+
         echo "nanokvm-uboot-test: staged $size bytes, md5 $b"
+        echo "nanokvm-uboot-test: armed (token CHTK in $TOKPART, spent by the attempt)"
         echo "nanokvm-uboot-test: bootcount is $(devmem $BOOTCOUNT_REG 32) (0xB0010000 = healthy)"
         echo "nanokvm-uboot-test: reboot to try it, then \`nanokvm-uboot-test status\`:"
         echo "  chainload: no                       nothing was chainloaded"
@@ -413,14 +431,22 @@ let
         ;;
       clear)
         rm -f "$TESTFILE" "$TESTFILE.new"
+        if [ -b "$TOKPART" ]; then
+          dd if=/dev/zero of="$TOKPART" bs=512 count=1 conv=fsync 2>/dev/null
+        fi
         sync
-        echo "nanokvm-uboot-test: cleared"
+        echo "nanokvm-uboot-test: cleared (file and token)"
         ;;
       status)
         if [ -e "$TESTFILE" ]; then
           echo "staged: $(stat -c%s "$TESTFILE") bytes, md5 $(md5sum < "$TESTFILE" | cut -d' ' -f1)"
         else
           echo "staged: nothing"
+        fi
+        if [ -b "$TOKPART" ] && [ "$(dd if="$TOKPART" bs=4 count=1 2>/dev/null)" = CHTK ]; then
+          echo "armed: yes -- the next boot will chainload it, once"
+        else
+          echo "armed: no (token spent or never written)"
         fi
         echo "bootcount: $(devmem $BOOTCOUNT_REG 32)"
         ms=$(devmem $MSREG 32)
@@ -471,6 +497,13 @@ let
              "(milestones $(devmem 0x02390024 32))"
         devmem 0x480EE000 32 0
         devmem 0x480EE004 32 0
+      fi
+
+      # The token is U-Boot's to spend and it already has; zeroing it here is
+      # belt and braces for the case where the load failed and the attempt
+      # never happened. The FILE is this unit's to remove.
+      if [ -b /dev/loop0p3 ]; then
+        dd if=/dev/zero of=/dev/loop0p3 bs=512 count=1 conv=fsync 2>/dev/null || true
       fi
 
       mountpoint -q /boot || exit 0
