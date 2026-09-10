@@ -171,7 +171,12 @@ pkgs.runCommand "uboot-mainline-check"
     # candidate that just hung. The token lives in flash, so a power cycle
     # cannot bring it back -- and `bootchain` must ZERO IT BEFORE it jumps, or
     # a candidate that hangs is still armed for the next attempt.
-    for w in 'tokmagic=0x4348544b' 'toklba=2600' 'chainstat=0x480ee008' \
+    # `tokmagic` is the LITTLE-ENDIAN word of the four bytes the appliance
+    # writes ("CHTK" = 43 48 54 4B), because `itest.l *addr` is a native
+    # `*(u32 *)`. Spelling it the way it reads in a hexdump -- 0x4348544B --
+    # builds and boots and simply never opens the gate, which on hardware is
+    # indistinguishable from a load that failed. One round, 2026-09-10.
+    for w in 'tokmagic=0x4b544843' 'toklba=2600' 'chainstat=0x480ee008' \
              'chaincnt=0x480ee00c'; do
       grep -qa "$w" "$ub/images/u-boot.bin" \
         || { echo "ERROR: \"$w\" missing from the built-in environment" >&2; exit 1; }

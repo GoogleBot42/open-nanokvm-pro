@@ -210,7 +210,7 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
  	"ms_uboot=0x10000000\0"		/* 28: preboot reached */	\
  	"ms_extlinux=0x20000000\0"	/* 29: extlinux.conf read */	\
  	"ms_altboot=0x40000000\0"	/* 30: bootlimit hit */		\
-@@ -82,6 +84,112 @@
+@@ -82,6 +84,120 @@
  	AX630C_WDT_ENV
  
  /*
@@ -229,6 +229,14 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 + * once, ever, whatever it does afterwards -- it cannot hang the board into a
 + * loop, because by the time it runs, the thing that would arm the next attempt
 + * is already gone.
++ *
++ * `tokmagic` IS THE LITTLE-ENDIAN WORD, NOT THE ASCII READING. The appliance
++ * writes the four bytes 43 48 54 4B ("CHTK") and `itest.l *addr` does a native
++ * `*(u32 *)`, so the value to compare against is 0x4B544843. Written the way it
++ * reads in a hexdump -- 0x4348544B -- the gate never opens and the round looks
++ * exactly like a load that failed: token spent by the appliance's own clear
++ * unit on the next boot, no CHLD record, nothing to say why. That cost one
++ * hardware round on 2026-09-10.
 + *
 + * IT WAS `bootcount`, TWICE, AND BOTH VERSIONS WERE WRONG (2026-09-09):
 + *
@@ -304,7 +312,7 @@ Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
 +	"tokaddr=0x49800000\0"						\
 +	"tokzero=0x49810000\0"						\
 +	"toklba=2600\0"			/* env partition, LBA 9728 */	\
-+	"tokmagic=0x4348544b\0"		/* "CHTK" */			\
++	"tokmagic=0x4b544843\0"		/* "CHTK" read LE */		\
 +	"bootchain=mmc dev ${bootdev};"					\
 +		" if mmc read ${tokaddr} ${toklba} 1; then"		\
 +		" if itest.l *${tokaddr} == ${tokmagic}; then"		\
