@@ -384,8 +384,26 @@ let
       # booted; copying it would promote an untested system on the strength of
       # a different one's health. /run/booted-system is the only thing here
       # that says what actually came up.
+      #
+      # THE DIRECTORY HAS TO BE THERE, and checking is not paranoia (#94).
+      # /boot is mounted `nofail`, and on the VENDOR layout there is no
+      # extlinux boot method at all -- the vendor U-Boot loads the kernel from
+      # a signed partition by byte offset. In both cases this `sed` would
+      # otherwise write into the root filesystem's own /boot directory: on the
+      # vendor layout it fails outright and every first boot of
+      # `.#nixos-firmware-image` ends up `degraded`, and with /boot unmounted
+      # it would SUCCEED, reporting a promotion into a file U-Boot can never
+      # read. Skipping is right either way -- the counter is already cleared,
+      # which is the half that keeps the board off the rollback path.
       booted=$(readlink -f /run/booted-system)
-      fallback=/boot/extlinux/extlinux-fallback.conf
+      dir=/boot/extlinux
+      if [ ! -d "$dir" ]; then
+        echo "mark-good: no $dir -- not promoting a fallback."
+        echo "mark-good: that is expected on the vendor layout, whose U-Boot does"
+        echo "           not read extlinux; anywhere else it means /boot is not mounted."
+        exit 0
+      fi
+      fallback="$dir/extlinux-fallback.conf"
       sed "s|@INIT@|$booted/init|" ${extlinuxTemplate} > "$fallback.new"
       if cmp -s "$fallback.new" "$fallback"; then
         rm -f "$fallback.new"
