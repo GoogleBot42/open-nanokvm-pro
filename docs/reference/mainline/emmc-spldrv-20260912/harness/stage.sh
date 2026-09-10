@@ -26,7 +26,7 @@ got=$(od -An -tx8 -j8 -N8 "$img" | tr -d ' \n')
 [ "$got" = "000000005c000400" ] \
   || { echo "ERROR: _TEXT_BASE at offset 8 is $got, not 0x5C000400" >&2; exit 1; }
 
-"$repo/tools/kvmscp" "$img" :/root/uboot-test.bin
+"$repo/tools/kvmscp" "$img" /root/uboot-test.bin
 "$repo/tools/kvmssh" "nanokvm-uboot-test stage /root/uboot-test.bin"
 
 cat <<'EOF'
