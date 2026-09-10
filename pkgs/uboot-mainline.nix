@@ -5,6 +5,7 @@
 , traceBoot ? false
 , teeConsole ? false
 , probeMmc ? false
+, splDrv ? false
 , ... }:
 
 # ===========================================================================
@@ -89,6 +90,9 @@ let
     ./uboot-mainline/patches/0023-part-efi-read-the-gpt-from-a-configurable-base-lba.patch
     ./uboot-mainline/patches/0024-ax630c-count-boots-in-a-reset-surviving-register.patch
     ./uboot-mainline/patches/0025-ax630c-a-one-shot-chainload-slot-for-u-boot-candidat.patch
+    # Kconfig default n. Present in every build, compiled into none but
+    # `.#uboot-mainline-spldrv` (splDrv = true below).
+    ./uboot-mainline/patches/0026-mmc-axera-run-the-first-stage-loader-s-own-sd4hc-rea.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not
@@ -1192,18 +1196,58 @@ let
       || { echo "ERROR: could not install the probe preboot" >&2; exit 1; }
   '';
 
+  # -------------------------------------------------------------------------
+  # splDrv = true: the tee image plus the first-stage loader's own SD4HC read
+  # path, compiled in and run once from `preboot` (#91, patch 0026).
+  #
+  # It answers the question fourteen rungs of register-matching could not:
+  # whether the loader's SEQUENCE is what makes multi-block work on this
+  # silicon, or whether it is the SoC state the loader is handed. The probe is
+  # the #91 four-read matrix -- CMD17 and CMD18 at LBA 0 and 0x2600, back to
+  # back on a freshly identified card -- plus a 51 MiB read, timed, all through
+  # the ported path. Then `mmc rescan` hands the controller back to sdhci.c and
+  # the boot continues normally, so the appliance comes up and the pre-console
+  # buffer can be read from Linux.
+  #
+  # NEVER FLASHED. This is a chainload candidate: stage it with
+  # `nanokvm-uboot-test`, which puts it on the boot filesystem for exactly one
+  # attempt (patch 0025). The `uboot` partition is not written.
+  # -------------------------------------------------------------------------
+  splDrvPostPatch = ''
+    echo 'CONFIG_MMC_AXERA_SPL_SDHCI=y' >> configs/${defconfig}
+
+    # The probe's own console output is what carries the result, so it has to
+    # come before anything that would push it out of the 8 KiB ring.
+    sed -i 's|^CONFIG_PREBOOT=.*|CONFIG_PREBOOT="mw.l ''${msreg_set} ''${ms_uboot}; splmmc regs; splmmc init; splmmc probe 0x4a000000 0x4ae00; mmc rescan"|' configs/${defconfig}
+    grep -q 'splmmc probe' configs/${defconfig} \
+      || { echo "ERROR: could not install the splmmc preboot" >&2; exit 1; }
+
+    # `patch` truncates a hunk to its declared line count in silence, and this
+    # driver is 1460 lines of transcription whose tail is the command table.
+    # Assert the whole file arrived, not that the patch applied.
+    grep -q 'splmmc clk            - run the loader' drivers/mmc/axera_spl_sdhci.c \
+      || { echo "ERROR: axera_spl_sdhci.c is truncated -- its tail is missing" >&2; exit 1; }
+    test "$(wc -l < drivers/mmc/axera_spl_sdhci.c)" = 1460 \
+      || { echo "ERROR: axera_spl_sdhci.c is $(wc -l < drivers/mmc/axera_spl_sdhci.c) lines, expected 1460" >&2; exit 1; }
+  '';
+
   variant = assert lib.assertMsg (!dcacheOff || debugMilestones)
     "uboot-mainline: dcacheOff needs debugMilestones -- the enable_caches() it flips is in that patch";
     assert lib.assertMsg (!(consoleToBuffer && debugMilestones))
       "uboot-mainline: consoleToBuffer and debugMilestones are exclusive -- the debug patch already carries the console capture";
     assert lib.assertMsg (!(traceBoot && (consoleToBuffer || debugMilestones)))
       "uboot-mainline: traceBoot is the shipping image plus a console redirect; it does not combine with the rung-2 debug builds";
+    assert lib.assertMsg (!splDrv || teeConsole)
+      "uboot-mainline: splDrv needs teeConsole -- the probe's answer is console text, and this board's console is a DRAM ring";
+    assert lib.assertMsg (!(splDrv && probeMmc))
+      "uboot-mainline: splDrv and probeMmc both own `preboot` and both own the controller; run them in separate boots";
     lib.optionalString debugMilestones "-debug"
     + lib.optionalString dcacheOff "-nommu"
     + lib.optionalString consoleToBuffer "-console"
     + lib.optionalString traceBoot "-trace"
     + lib.optionalString teeConsole "-tee"
-    + lib.optionalString probeMmc "-probe";
+    + lib.optionalString probeMmc "-probe"
+    + lib.optionalString splDrv "-spldrv";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -1288,7 +1332,8 @@ let
       + lib.optionalString consoleToBuffer consolePostPatch
       + lib.optionalString traceBoot tracePostPatch
       + lib.optionalString teeConsole teePostPatch
-      + lib.optionalString probeMmc probePostPatch;
+      + lib.optionalString probeMmc probePostPatch
+      + lib.optionalString splDrv splDrvPostPatch;
 
     makeFlags = [
       "ARCH=arm"

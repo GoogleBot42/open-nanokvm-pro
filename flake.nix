@@ -722,6 +722,19 @@
           probeMmc = true;
         };
 
+        # The tee image plus the AX630C first-stage loader's own SD4HC read
+        # path (#91): its init ladder, its HS400ES-at-200 MHz clock, its PHY
+        # table and its single 32-bit SRS03 write, run from `preboot` against
+        # the #91 four-read matrix and a 51 MiB timed read, then `mmc rescan`
+        # and a normal boot so the answer can be read out of the pre-console
+        # buffer. A diagnostic, and a CHAINLOAD candidate -- stage it with
+        # `nanokvm-uboot-test`, never write it to the `uboot` partition.
+        uboot-mainline-spldrv = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          teeConsole = true;
+          splDrv = true;
+        };
+
         # The MMU is never switched on, so the boot walks straight past rung
         # 2's mmu_setup() hang and exercises what the rung is actually for --
         # sdhci-cadence, part_cmdline, the environment, extlinux, booti. Slow,
@@ -775,6 +788,7 @@
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
+            uboot-mainline-spldrv
             gpt-image spl-minimal spl-minimal-eip migrate-layout
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;

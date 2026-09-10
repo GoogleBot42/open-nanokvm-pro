@@ -1,0 +1,1566 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Fri, 12 Sep 2026 10:00:00 -0600
+Subject: [PATCH] mmc: axera: run the first-stage loader's own SD4HC read path
+
+#91's exclusion list is fourteen rungs long and every axis anyone could
+name has been matched against a working Linux, one at a time, with no
+change: mainline U-Boot cannot complete a multi-block read on this
+board's Cadence SD4HC. The card accepts CMD18, enters DATA and streams --
+DAT_LINE_ACTIVE and READ_TRANSFER_ACTIVE both set, CMD13 answers
+CURRENT_STATE 5 -- and the host raises no interrupt at all for ten
+seconds.
+
+The AX630C's own first-stage loader reads 18 MiB with real CMD18
+transfers on this exact silicon every time the board powers on, and its
+source is GPL and in the vendor SDK. So run its sequence, from inside
+U-Boot, and see which way it goes. If multi-block works, the bug is in
+sdhci.c's sequence and is bisectable one register at a time; if it fails
+the same way, the sequence is not what makes the loader work and the
+difference is in the SoC state around it.
+
+This transcribes the eMMC read and init path of bl1's sdhci_cdns.c,
+mmc.c and axera_mmc.c and exposes it as a `splmmc` command. It is not a
+uclass driver on purpose -- going through U-Boot's mmc core would put
+U-Boot's sequence back in, which is the thing under test. It takes the
+controller over for the length of the command and leaves it reset;
+`mmc rescan` hands it back.
+
+Nothing is improved. Two departures are marked DEVIATION in the file: a
+d-cache invalidate around the SDMA buffer, because the loader runs with
+the MMU off and U-Boot does not, and a watchdog kick between chunks of
+the 51 MiB read. Neither touches a controller register. Three OBSERVATION
+snapshots read PRESENT_STATE and INT_STATUS at the moment a transfer
+gives up, before the driver's own CMD/DAT reset -- the reset that
+returns the card to TRAN and made #91's first reading of this bug the
+exact opposite of the truth.
+
+Reading the loader's source turned up four differences in the sequence
+before a line of it ran, and this path carries the loader's side of all
+four:
+
+  * Card clock. The loader runs HS400ES at 200 MHz -- sel_clk = 0 for
+    every eMMC boot type, and flash_clk_array[0] is 200000000. U-Boot
+    runs HS400ES at 50 MHz because the device tree caps max-frequency
+    there. Linux runs HS200 at 50 MHz. Nobody but U-Boot has run HS400ES
+    at 50 MHz on this board.
+  * PHY output delay in HS200/HS400 mode (index 0x0c): the loader writes
+    23, the device tree says 31, Linux uses 31.
+  * PHY input delay in SD default mode (index 0x01): the loader writes
+    18, the device tree says 4, Linux uses 4.
+  * SRS03. The loader writes command and transfer mode as ONE 32-bit
+    store -- its comment is "for cadence special 4B align" -- where
+    sdhci.c writes 0x0c and 0x0e as two 16-bit stores.
+
+And one thing the loader does NOT do, which is worth as much: it never
+sets the eMMC card clock up at all. axera_sys_glb_clk_set(), the
+npll_400m select and divider and the "emmc_card_sw_rst for dll lock"
+pulse, is inside `#if 0` in axera_mmc.c AND commented out at its only
+call site in mmc.c. The loader inherits what the boot ROM left.
+`splmmc clk` performs it on demand so the axis is testable; nothing
+calls it, because the loader does not.
+
+Kconfig default n, and the help text says never to ship it. It is
+carried in the tree rather than generated so the transcription can be
+reviewed against the loader's source line by line.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+--- a/drivers/mmc/Kconfig
++++ b/drivers/mmc/Kconfig
+@@ -610,6 +610,22 @@
+ 
+ 	  If unsure, say N.
+ 
++config MMC_AXERA_SPL_SDHCI
++	bool "AX630C: the first-stage loader's own SD4HC read path, as a command"
++	depends on ARCH_AXERA
++	help
++	  A diagnostic, not a driver. It transcribes the eMMC init and read
++	  sequence of the AX630C first-stage loader -- which reads this board's
++	  eMMC with real CMD18 multi-block transfers on every boot -- and
++	  exposes it as a `splmmc` command, so the sequence can be run inside
++	  U-Boot and compared against sdhci.c's on the same silicon.
++
++	  It bypasses the MMC uclass entirely and takes the controller over for
++	  the duration of the command; `mmc rescan` afterwards hands it back.
++	  Never enable it in a shipping image.
++
++	  If unsure, say N.
++
+ config MMC_SDHCI_CV1800B
+ 	bool "SDHCI support for the CV1800B SD/SDIO/eMMC controller"
+ 	depends on MMC_SDHCI
+--- a/drivers/mmc/Makefile
++++ b/drivers/mmc/Makefile
+@@ -58,6 +58,7 @@
+ obj-$(CONFIG_MMC_SDHCI_ATMEL)		+= atmel_sdhci.o
+ obj-$(CONFIG_MMC_SDHCI_BCM2835)		+= bcm2835_sdhci.o
+ obj-$(CONFIG_MMC_SDHCI_BCMSTB)		+= bcmstb_sdhci.o
++obj-$(CONFIG_MMC_AXERA_SPL_SDHCI)	+= axera_spl_sdhci.o
+ obj-$(CONFIG_MMC_SDHCI_CADENCE)		+= sdhci-cadence.o
+ obj-$(CONFIG_MMC_SDHCI_CADENCE)		+= sdhci-cadence6.o
+ obj-$(CONFIG_MMC_SDHCI_CV1800B)		+= cv1800b_sdhci.o
+--- /dev/null
++++ b/drivers/mmc/axera_spl_sdhci.c
+@@ -0,0 +1,1460 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * THE FIRST-STAGE LOADER'S OWN Cadence SD4HC READ PATH, INSIDE U-BOOT.
++ *
++ * This is a diagnostic for issue #91: on this board mainline U-Boot's
++ * sdhci.c + sdhci-cadence.c cannot complete a multi-block eMMC read. The card
++ * accepts CMD18, enters the DATA state and streams -- PRESENT_STATE shows
++ * DAT_LINE_ACTIVE and READ_TRANSFER_ACTIVE set, CMD13 answers CURRENT_STATE 5
++ * -- and the host raises neither BUF_RD_READY nor DMA_INTERRUPT nor
++ * XFER_COMPLETE for ten seconds. Every register either driver writes has been
++ * matched against a working Linux, one axis at a time, over fourteen rungs.
++ *
++ * The AX630C's own first-stage loader reads 18 MiB with real CMD18 multi-block
++ * transfers on this exact silicon, every boot, and its source is GPL and in
++ * the vendor SDK. So the experiment that separates "U-Boot's sequence is
++ * wrong" from "the loader's ENVIRONMENT is what makes it work" is to run the
++ * loader's own sequence from inside U-Boot and see which way it goes.
++ *
++ * WHAT THIS IS. A transcription of the read and init path of
++ *   boot/bl1/driver/mmc/sdhci_cdns.c
++ *   boot/bl1/driver/mmc/mmc.c
++ *   boot/bl1/driver/mmc/axera_mmc.c
++ * from maix_ax620e_sdk 45ebcc32, restricted to the eMMC and to reading. It is
++ * NOT a uclass driver: going through U-Boot's mmc core would reintroduce
++ * U-Boot's sequence, which is the thing under test. It owns the controller for
++ * the duration of the `splmmc` command and leaves it reset; `mmc rescan`
++ * afterwards gives it back.
++ *
++ * IT IS NOT IMPROVED. Where the loader waits a fixed number of microseconds,
++ * so does this. Where it ignores a return value, so does this. Where it writes
++ * a register the databook says is read-only in that mode, so does this. The
++ * one place it departs is marked DEVIATION, and there are exactly two:
++ *
++ *   1. Cache maintenance around the SDMA buffer. The loader runs with the MMU
++ *      and both caches off; U-Boot runs with them on. Without an invalidate
++ *      the CPU would read stale lines over what the DMA engine wrote, and the
++ *      result would say nothing about the controller. This touches no
++ *      controller register and changes no ordering.
++ *   2. A watchdog kick between chunks of a long read. WDT0 is armed at
++ *      U-Boot's first instruction with a 300 s reload (patch 0016) and the
++ *      loader never runs long enough to care.
++ *
++ * WHAT IT MEASURES. `splmmc probe` is the four-read matrix from #91 -- CMD17
++ * and CMD18 at LBA 0 and at LBA 0x2600 -- plus a 51 MiB timed read, all
++ * through this path. If multi-block works here, the bug is in U-Boot's
++ * sequence and the difference is bisectable one register at a time. If it
++ * fails identically, the sequence is not what makes the loader work and the
++ * difference is in the SoC state around it.
++ *
++ * FOUR DIFFERENCES ARE ALREADY VISIBLE IN SOURCE, and this path carries the
++ * loader's side of each, which is why the whole ladder is worth one round:
++ *
++ *   * Card clock. The loader runs HS400ES at 200 MHz (flash_clk_array[0], and
++ *     sel_clk = 0 for every eMMC boot type). U-Boot runs HS400ES at 50 MHz,
++ *     because the device tree says max-frequency = 50000000. Linux runs HS200
++ *     at 50 MHz. Nobody but U-Boot has ever run HS400ES at 50 MHz on this
++ *     board.
++ *   * PHY output delay in HS200/HS400 mode (index 0x0c). The loader writes 23;
++ *     the device tree says 31, which is what Linux uses.
++ *   * PHY input delay in SD default mode (index 0x01). The loader writes 18;
++ *     the device tree says 4, which is what Linux uses.
++ *   * The command and transfer-mode registers. The loader writes SRS03 as ONE
++ *     32-bit store, with a comment saying the Cadence part wants it that way;
++ *     sdhci.c writes 0x0c and 0x0e as two 16-bit stores.
++ *
++ * AND ONE THING THE LOADER DOES NOT DO, which is worth as much as the four
++ * above: it never sets the eMMC card clock up. axera_sys_glb_clk_set() -- the
++ * npll_400m select, the divider, and the "emmc_card_sw_rst for dll lock" pulse
++ * -- is inside `#if 0` in axera_mmc.c AND commented out at its only call site
++ * in mmc.c. The loader inherits whatever the boot ROM left. `splmmc clk`
++ * performs it on demand so the axis can be tested; nothing calls it by
++ * default, because the loader does not.
++ */
++
++#include <command.h>
++#include <cpu_func.h>
++#include <stdio.h>
++#include <time.h>
++#include <vsprintf.h>
++#include <asm/cache.h>
++#include <asm/io.h>
++#include <linux/bitops.h>
++#include <linux/compiler.h>
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/string.h>
++#include <linux/types.h>
++
++/* ---------------------------------------------------------------------- */
++/* Addresses, from the loader's chip_reg.h and sdhci_cdns.h                */
++/* ---------------------------------------------------------------------- */
++
++#define SPL_EMMC_BASE			0x01b40000
++#define SPL_SRS_BASE_OFFSET		0x200
++#define SPL_HOST			(SPL_EMMC_BASE + SPL_SRS_BASE_OFFSET)
++#define SPL_HRS				SPL_EMMC_BASE
++
++#define SPL_GPIO2_BASE			0x06000000
++#define SPL_EMMC_RSTN_GPIO_OFFSET	0x60		/* gpio2_A23 */
++
++#define SPL_PIN_MUX_G11_BASE		0x02309000
++#define SPL_PIN_MUX_G11_VDET_RO0	(SPL_PIN_MUX_G11_BASE + 0xa0)
++
++#define SPL_CPU_SYS_GLB			0x01900000
++#define SPL_GLB_CLK_MUX0_SET		(SPL_CPU_SYS_GLB + 0x1000)
++#define SPL_GLB_CLK_MUX0_CLR		(SPL_CPU_SYS_GLB + 0x2000)
++#define SPL_GLB_CLK_EB0_SET		(SPL_CPU_SYS_GLB + 0x1004)
++#define SPL_GLB_CLK_EB0_CLR		(SPL_CPU_SYS_GLB + 0x2004)
++#define SPL_GLB_CLK_DIV0_SET		(SPL_CPU_SYS_GLB + 0x100c)
++#define SPL_GLB_CLK_DIV0_CLR		(SPL_CPU_SYS_GLB + 0x200c)
++#define SPL_GLB_SW_RST0_SET		(SPL_CPU_SYS_GLB + 0x1010)
++#define SPL_GLB_SW_RST0_CLR		(SPL_CPU_SYS_GLB + 0x2010)
++
++/* WDT0, for the kick between chunks (DEVIATION 2). */
++#define SPL_WDT0_CRR			0x04840030
++#define SPL_WDT0_KICK			0x61696370
++
++/* SRS, the standard SDHCI block at host + offset. */
++#define SRS_SDMASA			0x00	/* 32 */
++#define SRS_BLOCKSIZE			0x04	/* 16 */
++#define SRS_BLOCKCOUNT			0x06	/* 16 */
++#define SRS_ARGUMENT			0x08	/* 32 */
++#define SRS_XFER_MODE			0x0c	/* 16 */
++#define SRS_CMD				0x0e	/* 16 */
++#define SRS_RESP01			0x10	/* 32 */
++#define SRS_BUF_DATA			0x20	/* 32 */
++#define SRS_PSTATE			0x24	/* 32 */
++#define SRS_HOST_CTRL1			0x28	/* 8 */
++#define SRS_PWR_CTRL			0x29	/* 8 */
++#define SRS_CLK_CTRL			0x2c	/* 16 */
++#define SRS_TOUT_CTRL			0x2e	/* 8 */
++#define SRS_SW_RST			0x2f	/* 8 */
++#define SRS_NORMAL_INT_STAT		0x30	/* 16 */
++#define SRS_NORMAL_INT_STAT_EN		0x34	/* 32 */
++#define SRS_NORMAL_INT_SIGNAL_EN	0x38	/* 32 */
++#define SRS_HOST_CTRL2			0x3e	/* 16 */
++#define SRS_CAPS1			0x40	/* 32 */
++#define SRS_ADMA_SA_LOW			0x58	/* 32 */
++#define SRS_ADMA_SA_HIGH		0x5c	/* 32 */
++
++#define SDHCI_INT_ALL_MASK		0xffffffff
++
++#define BIT_PSTATE_BUF_RD_ENABLE	BIT(11)
++#define BIT_PSTATE_BUF_WR_ENABLE	BIT(10)
++#define SPL_CMD_INHIBIT			BIT(0)
++#define SPL_DATA_INHIBIT		BIT(1)
++
++#define BIT_NORMAL_INT_ERR_INTERRUPT	BIT(15)
++#define BIT_NORMAL_INT_BUF_RD_READY	BIT(5)
++#define BIT_NORMAL_INT_BUF_WR_READY	BIT(4)
++#define BIT_NORMAL_INT_DMA_INTERRUPT	BIT(3)
++#define BIT_NORMAL_INT_XFER_COMPLETE	BIT(1)
++#define BIT_NORMAL_INT_CMD_COMPLETE	BIT(0)
++
++#define BIT_SW_RST_DAT			BIT(2)
++#define BIT_SW_RST_CMD			BIT(1)
++#define BIT_RESET_ALL			BIT(0)
++
++#define BITS_BLOCKSIZE_SDMA_BUF_BDARY(x) (((x) & 0x7) << 12)
++#define BITS_BLOCKSIZE_XFER_BLOCK_SIZE(x) (((x) & 0xfff) << 0)
++#define DEFAULT_BOUNDARY_ARG		7
++#define DEFAULT_BOUNDARY_SIZE		(512 * 1024)
++
++#define BIT_XFER_MODE_MULTI_BLK_SEL	BIT(5)
++#define BIT_XFER_MODE_DATA_XFER_DIR	BIT(4)
++#define BIT_XFER_MODE_BLOCK_COUNT_ENABLE BIT(1)
++#define BIT_XFER_MODE_DMA_ENABLE	BIT(0)
++
++#define BITS_CMD_INDEX(x)		(((x) & 0x3f) << 8)
++#define BIT_CMD_DATA_PRESENT_SEL	BIT(5)
++#define BIT_CMD_INDEX_CHK_ENABLE	BIT(4)
++#define BIT_CMD_CRC_CHK_ENABLE		BIT(3)
++#define BITS_CMD_RESP_TYPE_SELECT(x)	(((x) & 0x3) << 0)
++#define CMD_RESP_TYPE_NO_RESP		0
++#define CMD_RESP_TYPE_RESP_LEN_136	1
++#define CMD_RESP_TYPE_RESP_LEN_48	2
++#define CMD_RESP_TYPE_RESP_LEN_48B	3
++
++#define BITS_HOST_CTRL1_DMA_SEL(x)	(((x) & 0x3) << 3)
++#define SPL_CTRL_4BITBUS		0x02
++#define SPL_CTRL_8BITBUS		0x20
++#define SPL_CTRL_HISPD			0x04
++#define SPL_CTRL_DMA_MASK		0x18
++
++#define SPL_POWER_ON			0x01
++#define SPL_POWER_180			0x0a
++#define SPL_POWER_330			0x0e
++
++#define BITS_TOUT_CTRL_TOUT_CNT(x)	(((x) & 0xf) << 0)
++
++#define BIT_HOST_CTRL2_HOST_VER4_ENABLE	BIT(12)
++
++#define SPL_MAX_DIV_SPEC_300		2046
++#define SPL_CLOCK_CARD_EN		BIT(2)
++#define SPL_CLOCK_INT_STABLE		BIT(1)
++#define SPL_CLOCK_INT_EN		BIT(0)
++#define SPL_DIV_MASK			0xff
++#define SPL_DIVIDER_SHIFT		8
++#define SPL_DIVIDER_HI_SHIFT		6
++#define SPL_DIV_HI_MASK			0x300
++#define SPL_DIV_MASK_LEN		8
++
++/* HRS, the Cadence block at the controller base. */
++#define HRS04				0x10		/* PHY access port */
++#define HRS04_ACK			BIT(26)
++#define HRS04_WR			BIT(24)
++#define HRS04_WDATA_SHIFT		8
++#define HRS04_WDATA			GENMASK(15, 8)
++#define HRS04_ADDR_SHIFT		0
++#define HRS04_ADDR			GENMASK(5, 0)
++
++#define HRS06				0x18		/* eMMC control */
++#define HRS06_MODE			GENMASK(2, 0)
++#define HRS06_MODE_SD			0x0
++#define HRS06_MODE_MMC_LEGACY		0x1
++
++#define PHY_DLY_SD_HS			0x00
++#define PHY_DLY_SD_DEFAULT		0x01
++#define PHY_DLY_EMMC_LEGACY		0x06
++#define PHY_DLY_EMMC_SDR		0x07
++#define PHY_DLY_SDCLK			0x0b
++#define PHY_DLY_HSMMC			0x0c
++#define PHY_DLY_STROBE			0x0d
++
++#define SPL_CTRL_UHS_MASK		0x0007
++#define MMC_TIMING_MMC_LEGACY		0x1
++#define MMC_TIMING_MMC_HS		0x2
++#define MMC_TIMING_MMC_HS200		0x4
++#define MMC_TIMING_MMC_HS400		0x5
++#define MMC_TIMING_MMC_HS400_ES		0x6
++
++/* Clocks and card constants. */
++#define CLK_200M			200000000
++#define HS_EMMC_CLK			50000000
++#define HS400_ES_EMMC_CLK		200000000
++#define MMC_MAX_BLOCK_LEN		512
++#define EXT_CSD_LEN			512
++#define DEFAULT_CMD6_TIMEOUT_MS		500
++
++#define MMC_CMD_GO_IDLE_STATE		0
++#define MMC_CMD_SEND_OP_COND		1
++#define MMC_CMD_ALL_SEND_CID		2
++#define MMC_CMD_SET_RELATIVE_ADDR	3
++#define MMC_CMD_SWITCH			6
++#define MMC_CMD_SELECT_CARD		7
++#define MMC_CMD_SEND_EXT_CSD		8
++#define MMC_CMD_SEND_CSD		9
++#define MMC_CMD_STOP_TRANSMISSION	12
++#define MMC_CMD_SEND_STATUS		13
++#define MMC_CMD_SET_BLOCKLEN		16
++#define MMC_CMD_READ_SINGLE_BLOCK	17
++#define MMC_CMD_READ_MULTIPLE_BLOCK	18
++
++#define SPL_RSP_PRESENT			BIT(0)
++#define SPL_RSP_136			BIT(1)
++#define SPL_RSP_CRC			BIT(2)
++#define SPL_RSP_BUSY			BIT(3)
++#define SPL_RSP_OPCODE			BIT(4)
++#define SPL_RSP_NONE			0
++#define SPL_RSP_R1			(SPL_RSP_PRESENT | SPL_RSP_CRC | SPL_RSP_OPCODE)
++#define SPL_RSP_R1B			(SPL_RSP_PRESENT | SPL_RSP_CRC | SPL_RSP_OPCODE | SPL_RSP_BUSY)
++#define SPL_RSP_R2			(SPL_RSP_PRESENT | SPL_RSP_136 | SPL_RSP_CRC)
++#define SPL_RSP_R3			(SPL_RSP_PRESENT)
++
++#define SPL_DATA_READ			1
++
++#define EMMC_IO_1V8			0x80
++#define EMMC_IO_3V3			0xff8000
++#define EMMC_HCS			0x40000000
++#define OCR_BUSY			0x80000000
++#define OCR_HCS				0x40000000
++
++#define EXT_CSD_CMD_SET_NORMAL		BIT(0)
++#define EXT_CSD_BUS_WIDTH		183
++#define EXT_CSD_HS_TIMING		185
++#define EXT_CSD_PART_CONF		179
++#define EXT_CSD_TIMING_LEGACY		0
++#define EXT_CSD_TIMING_HS		1
++#define EXT_CSD_TIMING_HS200		2
++#define EXT_CSD_TIMING_HS400		3
++#define EXT_CSD_BUS_WIDTH_8		2
++#define EXT_CSD_DDR_FLAG		BIT(2)
++#define EXT_CSD_BUS_WIDTH_STROBE	BIT(7)
++#define MMC_SWITCH_MODE_WRITE_BYTE	0x03
++#define MMC_STATUS_SWITCH_ERROR		BIT(7)
++#define MMC_STATUS_RDY_FOR_DATA		BIT(8)
++
++enum spl_bus_mode {
++	SPL_MMC_LEGACY,
++	SPL_MMC_HS,
++	SPL_MMC_HS_200,
++	SPL_MMC_HS_400,
++	SPL_MMC_HS_400_ES,
++};
++
++struct spl_mmc_cmd {
++	u16 cmdidx;
++	u32 resp_type;
++	u32 cmdarg;
++	u32 response[4];
++};
++
++struct spl_mmc_data {
++	char *dest;
++	u32 flags;
++	u32 blocks;
++	u32 blocksize;
++};
++
++/* The loader's file-scope state, same lifetime. */
++static u8 spl_high_capacity;
++static u16 spl_rca = 1;
++static int spl_initialised;
++
++/* ---------------------------------------------------------------------- */
++/* Register accessors                                                     */
++/* ---------------------------------------------------------------------- */
++
++#define MMIO(a)		((void *)(uintptr_t)(a))
++
++static void hw(u32 val, int reg)   { writew((u16)val, MMIO(SPL_HOST + reg)); }
++static void hb(u32 val, int reg)   { writeb((u8)val, MMIO(SPL_HOST + reg)); }
++static void hl(u32 val, int reg)   { writel(val, MMIO(SPL_HOST + reg)); }
++static u16 rw_(int reg)            { return readw(MMIO(SPL_HOST + reg)); }
++static u8 rb_(int reg)             { return readb(MMIO(SPL_HOST + reg)); }
++static u32 rl_(int reg)            { return readl(MMIO(SPL_HOST + reg)); }
++
++/*
++ * OBSERVATION, not sequence. Three snapshots taken at the moment a transfer
++ * gives up, before sdhci_send_cmd()'s own SDHCI_RESET_CMD/RESET_DATA touches
++ * anything -- which is the reset that returns the card to TRAN and made #91's
++ * first reading of this bug the opposite of the truth. Register reads only:
++ * no printf (one in a failure path hung this board dark in rung 2f), no delay,
++ * no write.
++ */
++static u32 spl_fail_pstate, spl_fail_stat, spl_fail_where;
++
++/* ---------------------------------------------------------------------- */
++/* sdhci_cdns.c                                                           */
++/* ---------------------------------------------------------------------- */
++
++static void sdhci_host_int_stat_config(void)
++{
++	/* int stat enable */
++	hl(0x27f003b, SRS_NORMAL_INT_STAT_EN);
++	/* not signal */
++	hl(0, SRS_NORMAL_INT_SIGNAL_EN);
++}
++
++static void spl_sdhci_reset(u8 mask)
++{
++	unsigned long timeout = 1000;	/* Wait max 100 ms */
++
++	hb(mask, SRS_SW_RST);
++
++	while (rb_(SRS_SW_RST) & mask) {
++		if (timeout == 0)
++			return;
++		timeout--;
++		udelay(10);
++	}
++}
++
++static int sdhci_host_init(void)
++{
++	spl_sdhci_reset(BIT_RESET_ALL);
++	sdhci_host_int_stat_config();
++	udelay(1000);
++	return 0;
++}
++
++static u16 sdhci_cmddata_set(struct spl_mmc_cmd *cmd, struct spl_mmc_data *data)
++{
++	u16 cmddata = BITS_CMD_INDEX(cmd->cmdidx);
++
++	if (!(cmd->resp_type & SPL_RSP_PRESENT))
++		cmddata |= BITS_CMD_RESP_TYPE_SELECT(CMD_RESP_TYPE_NO_RESP);
++	else if (cmd->resp_type & SPL_RSP_136)
++		cmddata |= BITS_CMD_RESP_TYPE_SELECT(CMD_RESP_TYPE_RESP_LEN_136);
++	else if (cmd->resp_type & SPL_RSP_BUSY)
++		cmddata |= BITS_CMD_RESP_TYPE_SELECT(CMD_RESP_TYPE_RESP_LEN_48B);
++	else
++		cmddata |= BITS_CMD_RESP_TYPE_SELECT(CMD_RESP_TYPE_RESP_LEN_48);
++
++	if (cmd->resp_type & SPL_RSP_CRC)
++		cmddata |= BIT_CMD_CRC_CHK_ENABLE;
++
++	if (cmd->resp_type & SPL_RSP_OPCODE)
++		cmddata |= BIT_CMD_INDEX_CHK_ENABLE;
++
++	if (data)
++		cmddata |= BIT_CMD_DATA_PRESENT_SEL;
++
++	return cmddata;
++}
++
++static void sdhci_transfer_pio(struct spl_mmc_data *data)
++{
++	u32 i;
++	char *offs;
++
++	for (i = 0; i < data->blocksize; i += 4) {
++		offs = data->dest + i;
++		if (data->flags == SPL_DATA_READ)
++			*(u32 *)offs = rl_(SRS_BUF_DATA);
++		else
++			hl(*(u32 *)offs, SRS_BUF_DATA);
++	}
++}
++
++static int sdhci_transfer_data(struct spl_mmc_data *data)
++{
++	unsigned int rdy, mask, block = 0;
++	int timeout;
++	int transfer_done = 0;
++	u16 stat;
++	long start_addr = (long)data->dest;
++	u32 temp_u32;
++
++	timeout = 1000000;
++	rdy = BIT_NORMAL_INT_BUF_RD_READY | BIT_NORMAL_INT_BUF_WR_READY;
++	mask = BIT_PSTATE_BUF_RD_ENABLE | BIT_PSTATE_BUF_WR_ENABLE;
++	do {
++		stat = rw_(SRS_NORMAL_INT_STAT);
++
++		if (stat & BIT_NORMAL_INT_ERR_INTERRUPT) {
++			spl_fail_where = 1;	/* OBSERVATION */
++			spl_fail_stat = rl_(SRS_NORMAL_INT_STAT);
++			spl_fail_pstate = rl_(SRS_PSTATE);
++			return -1;
++		}
++
++		if (!transfer_done && (stat & rdy)) {
++			if (!(rl_(SRS_PSTATE) & mask))
++				continue;
++			hw(rdy, SRS_NORMAL_INT_STAT);
++			sdhci_transfer_pio(data);
++			data->dest += data->blocksize;
++			if (++block >= data->blocks) {
++				transfer_done = 1;
++				continue;
++			}
++		}
++
++		if (stat & BIT_NORMAL_INT_DMA_INTERRUPT) {
++			hl(BIT_NORMAL_INT_DMA_INTERRUPT, SRS_NORMAL_INT_STAT);
++
++			start_addr &= ~(DEFAULT_BOUNDARY_SIZE - 1);
++			start_addr += DEFAULT_BOUNDARY_SIZE;
++
++			if (rw_(SRS_HOST_CTRL2) & BIT_HOST_CTRL2_HOST_VER4_ENABLE) {
++				temp_u32 = (u32)start_addr;
++				hl(temp_u32, SRS_ADMA_SA_LOW);
++				temp_u32 = (u32)((start_addr >> 16) >> 16);
++				hl(temp_u32, SRS_ADMA_SA_HIGH);
++			} else {
++				hl((u32)start_addr, SRS_SDMASA);
++			}
++		}
++
++		if (timeout-- > 0) {
++			udelay(10);
++		} else {
++			spl_fail_where = 2;	/* OBSERVATION */
++			spl_fail_stat = rl_(SRS_NORMAL_INT_STAT);
++			spl_fail_pstate = rl_(SRS_PSTATE);
++			return -2;
++		}
++	} while (!(stat & BIT_NORMAL_INT_XFER_COMPLETE));
++
++	return 0;
++}
++
++static void sdhci_prepare_sdma(struct spl_mmc_data *data)
++{
++	u8 ctrl;
++	long start_addr = (long)data->dest;
++
++	/* select SDMA:0 bit3-4 */
++	ctrl = rb_(SRS_HOST_CTRL1);
++	ctrl &= ~(BITS_HOST_CTRL1_DMA_SEL(3));
++	hb(ctrl, SRS_HOST_CTRL1);
++
++	/* set SDMA addr */
++	hl((u32)start_addr, SRS_SDMASA);
++}
++
++static void sdhci_cmd_done(struct spl_mmc_cmd *cmd)
++{
++	int i;
++
++	if (cmd->resp_type & SPL_RSP_136) {
++		for (i = 0; i < 4; i++) {
++			cmd->response[i] = rl_(SRS_RESP01 + (3 - i) * 4) << 8;
++			if (i != 3)
++				cmd->response[i] |= rb_(SRS_RESP01 + (3 - i) * 4 - 1);
++		}
++	} else {
++		cmd->response[0] = rl_(SRS_RESP01);
++	}
++}
++
++#define CMD_DEFAULT_TIMEOUT	100
++#define CMD_MAX_TIMEOUT		32000
++
++static int sdhci_send_cmd(struct spl_mmc_cmd *cmd, struct spl_mmc_data *data)
++{
++	u16 cmddata;
++	u16 temp_u16;
++	u16 trans_mode = 0;
++	int ret = 0;
++	u32 time = 0;
++	u32 mask, stat;
++
++	/* timeout unit ms */
++	static unsigned int cmd_timeout = CMD_DEFAULT_TIMEOUT;
++
++	mask = SPL_DATA_INHIBIT | SPL_CMD_INHIBIT;
++	if (cmd->cmdidx == MMC_CMD_STOP_TRANSMISSION)
++		mask &= ~SPL_DATA_INHIBIT;
++
++	/* check data/cmd ready */
++	while (rl_(SRS_PSTATE) & mask) {
++		if (time >= cmd_timeout) {
++			if (2 * cmd_timeout <= CMD_MAX_TIMEOUT)
++				cmd_timeout += cmd_timeout;
++			else
++				return -3;
++		}
++		time++;
++		udelay(100);
++	}
++
++	/* clear all normal and error interrupt status */
++	hl(SDHCI_INT_ALL_MASK, SRS_NORMAL_INT_STAT);
++
++	mask = BIT_NORMAL_INT_CMD_COMPLETE;
++	if ((cmd->resp_type & SPL_RSP_BUSY) && data)
++		mask |= BIT_NORMAL_INT_XFER_COMPLETE;
++
++	if (data) {
++		hb(BITS_TOUT_CTRL_TOUT_CNT(0xe), SRS_TOUT_CTRL);
++
++		trans_mode = BIT_XFER_MODE_BLOCK_COUNT_ENABLE;
++		if (data->blocks > 1)
++			trans_mode |= BIT_XFER_MODE_MULTI_BLK_SEL;
++
++		if (data->flags == SPL_DATA_READ)
++			trans_mode |= BIT_XFER_MODE_DATA_XFER_DIR;
++
++		trans_mode |= BIT_XFER_MODE_DMA_ENABLE;
++		sdhci_prepare_sdma(data);
++
++		temp_u16 = BITS_BLOCKSIZE_SDMA_BUF_BDARY(DEFAULT_BOUNDARY_ARG) |
++			   BITS_BLOCKSIZE_XFER_BLOCK_SIZE(data->blocksize);
++		hw(temp_u16, SRS_BLOCKSIZE);
++
++		if (data->blocks & 0xffff0000)
++			return -4;
++		hw((u16)data->blocks, SRS_BLOCKCOUNT);
++	} else if (cmd->resp_type & SPL_RSP_BUSY) {
++		hb(BITS_TOUT_CTRL_TOUT_CNT(0xe), SRS_TOUT_CTRL);
++	}
++
++	hl(cmd->cmdarg, SRS_ARGUMENT);
++
++	/*
++	 * SRS03 as ONE 32-bit store. The loader's comment is "set CMD_R &
++	 * transfer mode together for cadence special 4B align"; sdhci.c does
++	 * it as two 16-bit stores, and that is one of the four differences
++	 * this experiment exists to test.
++	 */
++	cmddata = sdhci_cmddata_set(cmd, data);
++	hl((u32)(trans_mode | (cmddata << 16)), SRS_XFER_MODE);
++
++	/* wait cmd complete status max 1sec */
++	time = 50000;
++	do {
++		stat = rw_(SRS_NORMAL_INT_STAT);
++		if (stat & BIT_NORMAL_INT_ERR_INTERRUPT)
++			break;
++
++		if (time == 0)
++			return -5;
++
++		udelay(20);
++		time--;
++	} while ((stat & mask) != mask);
++
++	if ((stat & (BIT_NORMAL_INT_ERR_INTERRUPT | mask)) == mask) {
++		sdhci_cmd_done(cmd);
++		hl(mask, SRS_NORMAL_INT_STAT);
++	} else {
++		spl_fail_where = 3;	/* OBSERVATION */
++		spl_fail_stat = rl_(SRS_NORMAL_INT_STAT);
++		spl_fail_pstate = rl_(SRS_PSTATE);
++		ret = -6;
++	}
++
++	if (!ret && data)
++		ret = sdhci_transfer_data(data);
++
++	/* clear all normal and error interrupt status */
++	hl(SDHCI_INT_ALL_MASK, SRS_NORMAL_INT_STAT);
++	if (!ret)
++		return 0;
++
++	spl_sdhci_reset(BIT_SW_RST_CMD);
++	spl_sdhci_reset(BIT_SW_RST_DAT);
++
++	return ret;
++}
++
++static int sdhci_set_clock(unsigned int clock, unsigned int base_clock)
++{
++	unsigned int div, clk = 0, timeout;
++
++	/* Wait max 20 ms */
++	timeout = 2000;
++	while (rl_(SRS_PSTATE) & (SPL_CMD_INHIBIT | SPL_DATA_INHIBIT)) {
++		if (timeout == 0)
++			return -1;
++		timeout--;
++		udelay(10);
++	}
++
++	hw(0, SRS_CLK_CTRL);
++
++	if (clock == 0)
++		return 0;
++
++	if (base_clock <= clock) {
++		div = 1;
++	} else {
++		for (div = 2; div < SPL_MAX_DIV_SPEC_300; div += 2)
++			if ((base_clock / div) <= clock)
++				break;
++	}
++
++	div >>= 1;
++
++	clk |= (div & SPL_DIV_MASK) << SPL_DIVIDER_SHIFT;
++	clk |= ((div & SPL_DIV_HI_MASK) >> SPL_DIV_MASK_LEN) << SPL_DIVIDER_HI_SHIFT;
++	clk |= SPL_CLOCK_INT_EN;
++	hw((u16)clk, SRS_CLK_CTRL);
++
++	/* Wait max 20 ms */
++	timeout = 2000;
++	while (!((clk = rw_(SRS_CLK_CTRL)) & SPL_CLOCK_INT_STABLE)) {
++		if (timeout == 0)
++			return -1;
++		timeout--;
++		udelay(10);
++	}
++
++	clk |= SPL_CLOCK_CARD_EN;
++	hw(clk, SRS_CLK_CTRL);
++	return 0;
++}
++
++static int sdhci_cdns_write_phy_reg(u8 addr, u8 data)
++{
++	void *reg = MMIO(SPL_HRS + HRS04);
++	u32 tmp;
++	int i;
++	int retry = 5;
++
++	tmp = ((data << HRS04_WDATA_SHIFT) & HRS04_WDATA) |
++	      ((addr << HRS04_ADDR_SHIFT) & HRS04_ADDR);
++	writel(tmp, reg);
++
++	tmp |= HRS04_WR;
++	writel(tmp, reg);
++
++	for (i = 0; i < retry; i++) {
++		tmp = readl(reg);
++		if (tmp & HRS04_ACK)
++			break;
++		udelay(10);
++	}
++
++	if (!(tmp & HRS04_ACK))
++		return -1;
++
++	tmp &= ~HRS04_WR;
++	writel(tmp, reg);
++
++	return 0;
++}
++
++static int sdhci_phy_init(void)
++{
++	int ret;
++
++	/* hs input delay */
++	ret = sdhci_cdns_write_phy_reg(PHY_DLY_SD_HS, 2);
++	/* ds input delay */
++	ret += sdhci_cdns_write_phy_reg(PHY_DLY_SD_DEFAULT, 18);
++	/* mmc legacy mode input delay */
++	ret += sdhci_cdns_write_phy_reg(PHY_DLY_EMMC_LEGACY, 10);
++	/* mmc sdr input delay */
++	ret += sdhci_cdns_write_phy_reg(PHY_DLY_EMMC_SDR, 2);
++
++	ret += sdhci_cdns_write_phy_reg(PHY_DLY_SDCLK, 45);
++	ret += sdhci_cdns_write_phy_reg(PHY_DLY_HSMMC, 23);
++	ret += sdhci_cdns_write_phy_reg(PHY_DLY_STROBE, 18);
++
++	return ret;
++}
++
++static void sdhci_set_bus_width(int width)
++{
++	u8 ctrl = rb_(SRS_HOST_CTRL1);
++
++	if (width == 8) {
++		ctrl &= ~SPL_CTRL_4BITBUS;
++		ctrl |= SPL_CTRL_8BITBUS;
++	} else {
++		ctrl &= ~SPL_CTRL_8BITBUS;
++		if (width == 4)
++			ctrl |= SPL_CTRL_4BITBUS;
++		else
++			ctrl &= ~SPL_CTRL_4BITBUS;
++	}
++
++	hb(ctrl, SRS_HOST_CTRL1);
++}
++
++static u32 get_emmc_voltage(void)
++{
++	u32 val = readl(MMIO(SPL_PIN_MUX_G11_VDET_RO0));
++
++	/* 0: 3.3V   1: 1.8V */
++	if ((val >> 12) & BIT(0))
++		return 0;
++	return 1;
++}
++
++static void sdhci_set_power(void)
++{
++	u8 pwr;
++
++	if (get_emmc_voltage())
++		pwr = SPL_POWER_180;
++	else
++		pwr = SPL_POWER_330;
++
++	pwr |= SPL_POWER_ON;
++
++	hb(pwr, SRS_PWR_CTRL);
++}
++
++static int sdhci_host_start(void)
++{
++	int ret = 0;
++	u8 ctrl;
++	u32 temp;
++	void *addr;
++
++	sdhci_set_power();
++
++	/* set initial state buswidth, legacy mode, SDMA */
++	sdhci_set_bus_width(1);
++	ctrl = rb_(SRS_HOST_CTRL1);
++	ctrl &= ~SPL_CTRL_HISPD;
++	ctrl &= ~SPL_CTRL_DMA_MASK;
++	hb(ctrl, SRS_HOST_CTRL1);
++
++	/* HRS06 MODE = EMMC legacy for identification */
++	addr = MMIO(SPL_HRS + HRS06);
++	temp = readl(addr);
++	temp &= ~HRS06_MODE;
++	temp |= HRS06_MODE_MMC_LEGACY;
++	writel(temp, addr);
++
++	/* phy init after controller reset before clock enable */
++	ret += sdhci_phy_init();
++
++	return ret;
++}
++
++static void mmc_select_mode(enum spl_bus_mode mode)
++{
++	u16 reg = readw(MMIO(SPL_HRS + HRS06));
++
++	reg &= ~SPL_CTRL_UHS_MASK;
++
++	switch (mode) {
++	case SPL_MMC_LEGACY:
++		reg |= MMC_TIMING_MMC_LEGACY;
++		break;
++	case SPL_MMC_HS:
++		reg |= MMC_TIMING_MMC_HS;
++		break;
++	case SPL_MMC_HS_200:
++		reg |= MMC_TIMING_MMC_HS200;
++		break;
++	case SPL_MMC_HS_400:
++		reg |= MMC_TIMING_MMC_HS400;
++		break;
++	case SPL_MMC_HS_400_ES:
++		reg |= MMC_TIMING_MMC_HS400_ES;
++		break;
++	default:
++		break;
++	}
++	writew(reg, MMIO(SPL_HRS + HRS06));
++}
++
++/* ---------------------------------------------------------------------- */
++/* axera_mmc.c                                                            */
++/* ---------------------------------------------------------------------- */
++
++static void emmc_reset(void)
++{
++	/*
++	 * JEDEC 84-B51: RST_n to command min 200 us, pulse width min 1 us.
++	 */
++	writel(0x2, MMIO(SPL_GPIO2_BASE + SPL_EMMC_RSTN_GPIO_OFFSET));
++	udelay(10);
++	writel(0x3, MMIO(SPL_GPIO2_BASE + SPL_EMMC_RSTN_GPIO_OFFSET));
++	udelay(300);
++}
++
++#define CLK_EMMC_CLK_CARD_SEL(x)	(((x) & 0x3) << 5)
++#define CLK_EMMC_CLK_CARD_DIV(x)	(((x) & 0x3f) << 0)
++#define EMMC_CLK_DIV_UPDATE		(0x1 << 6)
++
++/*
++ * The loader's own eMMC card-clock setup -- and it is dead code there, inside
++ * `#if 0` and commented out at its only call site. Nothing calls this by
++ * default here either; `splmmc clk` runs it so the axis can be tested.
++ */
++static void axera_sys_glb_clk_set(void)
++{
++	int clk_sel = 0x3;	/* source npll_400m */
++	int div = 0x1;		/* 200M supply card */
++
++	writel(BIT(2), MMIO(SPL_GLB_CLK_EB0_CLR));
++	udelay(1);
++	writel(CLK_EMMC_CLK_CARD_SEL(0x3), MMIO(SPL_GLB_CLK_MUX0_CLR));
++	writel(CLK_EMMC_CLK_CARD_SEL(clk_sel), MMIO(SPL_GLB_CLK_MUX0_SET));
++	writel(BIT(2), MMIO(SPL_GLB_CLK_EB0_SET));
++	writel(GENMASK(5, 0), MMIO(SPL_GLB_CLK_DIV0_CLR));
++	writel(CLK_EMMC_CLK_CARD_DIV(div), MMIO(SPL_GLB_CLK_DIV0_SET));
++	writel(EMMC_CLK_DIV_UPDATE, MMIO(SPL_GLB_CLK_DIV0_SET));
++	udelay(1);
++	writel(EMMC_CLK_DIV_UPDATE, MMIO(SPL_GLB_CLK_DIV0_CLR));
++
++	/* set emmc_card_sw_rst for dll lock */
++	writel(BIT(11), MMIO(SPL_GLB_SW_RST0_SET));
++	udelay(1);
++	writel(BIT(11), MMIO(SPL_GLB_SW_RST0_CLR));
++}
++
++/* ---------------------------------------------------------------------- */
++/* mmc.c                                                                  */
++/* ---------------------------------------------------------------------- */
++
++static void spl_memset(void *start, u8 value, int len)
++{
++	u8 *begin = start;
++
++	while (len--)
++		*begin++ = value;
++}
++
++static int mmc_set_blocklen(int len)
++{
++	struct spl_mmc_cmd cmd;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SET_BLOCKLEN;
++	cmd.resp_type = SPL_RSP_R1;
++	cmd.cmdarg = len;
++
++	if (sdhci_send_cmd(&cmd, NULL))
++		return -1;
++
++	return 0;
++}
++
++static int mmc_send_status(unsigned int *status)
++{
++	struct spl_mmc_cmd cmd;
++	int err, retries = 5;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SEND_STATUS;
++	cmd.resp_type = SPL_RSP_R1;
++	cmd.cmdarg = spl_rca << 16;
++
++	while (retries--) {
++		err = sdhci_send_cmd(&cmd, NULL);
++		if (!err) {
++			*status = cmd.response[0];
++			return 0;
++		}
++	}
++	return -1;
++}
++
++static int mmc_switch(u8 set, u8 index, u8 value)
++{
++	unsigned int status;
++	struct spl_mmc_cmd cmd;
++	int timeout_ms = DEFAULT_CMD6_TIMEOUT_MS;
++	int retries = 3;
++	int ret;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SWITCH;
++	cmd.resp_type = SPL_RSP_R1B;
++	cmd.cmdarg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
++		     (index << 16) |
++		     (value << 8);
++
++	do {
++		ret = sdhci_send_cmd(&cmd, NULL);
++	} while (ret && retries-- > 0);
++
++	if (ret)
++		return -1;
++
++	retries = timeout_ms * 1000 / 100;
++	do {
++		ret = mmc_send_status(&status);
++
++		if (!ret && (status & MMC_STATUS_SWITCH_ERROR))
++			return -1;
++		if (!ret && (status & MMC_STATUS_RDY_FOR_DATA))
++			return 0;
++
++		udelay(100);
++	} while (retries--);
++
++	return -1;
++}
++
++static int mmc_send_ext_csd(char *ext_csd)
++{
++	struct spl_mmc_cmd cmd;
++	struct spl_mmc_data data;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SEND_EXT_CSD;
++	cmd.resp_type = SPL_RSP_R1;
++	cmd.cmdarg = 0;
++
++	data.dest = ext_csd;
++	data.blocks = 1;
++	data.blocksize = MMC_MAX_BLOCK_LEN;
++	data.flags = SPL_DATA_READ;
++
++	/* DEVIATION 1: see the file header. */
++	invalidate_dcache_range((ulong)ext_csd, (ulong)ext_csd + EXT_CSD_LEN);
++	if (sdhci_send_cmd(&cmd, &data))
++		return -1;
++	invalidate_dcache_range((ulong)ext_csd, (ulong)ext_csd + EXT_CSD_LEN);
++
++	return 0;
++}
++
++static int mmc_set_card_speed(enum spl_bus_mode mode, int hsdowngrade)
++{
++	int ret;
++	int speed_bits;
++	static char ext_csd[EXT_CSD_LEN] __aligned(ARCH_DMA_MINALIGN);
++
++	switch (mode) {
++	case SPL_MMC_HS:
++		speed_bits = EXT_CSD_TIMING_HS;
++		break;
++	case SPL_MMC_HS_200:
++		speed_bits = EXT_CSD_TIMING_HS200;
++		break;
++	case SPL_MMC_HS_400:
++	case SPL_MMC_HS_400_ES:
++		speed_bits = EXT_CSD_TIMING_HS400;
++		break;
++	case SPL_MMC_LEGACY:
++		speed_bits = EXT_CSD_TIMING_LEGACY;
++		break;
++	default:
++		return -1;
++	}
++
++	ret = mmc_switch(EXT_CSD_CMD_SET_NORMAL, EXT_CSD_HS_TIMING, speed_bits);
++	if (ret) {
++		printf("splmmc: set EXT_CSD_HS_TIMING failed\n");
++		return ret;
++	}
++
++	if (hsdowngrade) {
++		mmc_select_mode(SPL_MMC_HS);
++		ret = sdhci_set_clock(HS_EMMC_CLK, CLK_200M);
++		if (ret) {
++			printf("splmmc: set clock %d failed\n", HS_EMMC_CLK);
++			return ret;
++		}
++	}
++
++	if (mode == SPL_MMC_HS) {
++		ret = mmc_send_ext_csd(ext_csd);
++		if (ret) {
++			printf("splmmc: mmc_send_ext_csd failed\n");
++			return ret;
++		}
++		if (!ext_csd[EXT_CSD_HS_TIMING])
++			return -1;
++	}
++
++	return 0;
++}
++
++static int mmc_select_hs400es(void)
++{
++	int ret;
++
++	ret = mmc_set_card_speed(SPL_MMC_HS, 1);
++	if (ret) {
++		printf("splmmc: mmc_set_card_speed MMC_HS failed\n");
++		return ret;
++	}
++
++	ret = mmc_switch(EXT_CSD_CMD_SET_NORMAL, EXT_CSD_BUS_WIDTH,
++			 EXT_CSD_BUS_WIDTH_8 | EXT_CSD_DDR_FLAG |
++			 EXT_CSD_BUS_WIDTH_STROBE);
++	if (ret) {
++		printf("splmmc: switch to hs400 bus width failed\n");
++		return ret;
++	}
++
++	ret = mmc_set_card_speed(SPL_MMC_HS_400_ES, 0);
++	if (ret) {
++		printf("splmmc: mmc_set_card_speed MMC_HS_400_ES failed\n");
++		return ret;
++	}
++
++	mmc_select_mode(SPL_MMC_HS_400_ES);
++	ret = sdhci_set_clock(HS400_ES_EMMC_CLK, CLK_200M);
++	if (ret) {
++		printf("splmmc: set clock %d failed\n", HS400_ES_EMMC_CLK);
++		return ret;
++	}
++
++	return 0;
++}
++
++static int emmc_select_bus_width(int w)
++{
++	u8 ext_bus_width;
++
++	if (w == 1)
++		ext_bus_width = 0;
++	else if (w == 4)
++		ext_bus_width = 1;
++	else if (w == 8)
++		ext_bus_width = 2;
++	else
++		return -1;
++
++	return mmc_switch(EXT_CSD_CMD_SET_NORMAL, EXT_CSD_BUS_WIDTH,
++			  ext_bus_width);
++}
++
++static int mmc_startup(void)
++{
++	int ret;
++	u8 mmc_version;
++	struct spl_mmc_cmd cmd;
++
++	/* Put the Card in Identify Mode */
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_ALL_SEND_CID;
++	cmd.resp_type = SPL_RSP_R2;
++	cmd.cmdarg = 0;
++	ret = sdhci_send_cmd(&cmd, NULL);
++	if (ret)
++		return -1;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SET_RELATIVE_ADDR;
++	cmd.cmdarg = spl_rca << 16;
++	cmd.resp_type = SPL_RSP_R1;
++	ret = sdhci_send_cmd(&cmd, NULL);
++	if (ret)
++		return -2;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SEND_CSD;
++	cmd.resp_type = SPL_RSP_R2;
++	cmd.cmdarg = spl_rca << 16;
++	ret = sdhci_send_cmd(&cmd, NULL);
++	if (ret)
++		return -3;
++
++	mmc_version = (cmd.response[0] >> 26) & 0xf;
++	if (mmc_version < 4)
++		return -4;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdidx = MMC_CMD_SELECT_CARD;
++	cmd.resp_type = SPL_RSP_R1;
++	cmd.cmdarg = spl_rca << 16;
++	ret = sdhci_send_cmd(&cmd, NULL);
++	if (ret)
++		return -5;
++
++	return 0;
++}
++
++static int emmc_init_card(void)
++{
++	int ret;
++	struct spl_mmc_cmd cmd;
++	int i = 100000;
++	u32 ocr = 0;
++
++	spl_high_capacity = 0;
++	spl_rca = 1;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdarg = 0x0;
++	cmd.cmdidx = MMC_CMD_GO_IDLE_STATE;
++	cmd.resp_type = SPL_RSP_NONE;
++	ret = sdhci_send_cmd(&cmd, NULL);
++	udelay(1000);
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	cmd.cmdarg = 0x0;
++	cmd.cmdidx = MMC_CMD_SEND_OP_COND;
++	cmd.resp_type = SPL_RSP_R3;
++	ret = sdhci_send_cmd(&cmd, NULL);
++	if (!ret)
++		ocr = cmd.response[0];
++	else
++		return -1;
++
++	(void)ocr;
++
++	while (i-- > 0) {
++		spl_memset(&cmd, 0, sizeof(cmd));
++		if (get_emmc_voltage())
++			cmd.cmdarg = EMMC_HCS | EMMC_IO_1V8;
++		else
++			cmd.cmdarg = EMMC_HCS | EMMC_IO_3V3;
++		cmd.cmdidx = MMC_CMD_SEND_OP_COND;
++		cmd.resp_type = SPL_RSP_R3;
++		ret = sdhci_send_cmd(&cmd, NULL);
++		if (cmd.response[0] & OCR_BUSY)
++			break;
++		udelay(10);
++	}
++	if (!(cmd.response[0] & OCR_BUSY))
++		return -2;
++
++	if (cmd.response[0] & OCR_HCS)
++		spl_high_capacity = 1;
++
++	return mmc_startup();
++}
++
++static u32 spl_freqs[] = { 400000, 300000, 200000, 100000 };
++
++/*
++ * emmc_init(), for the one case this board takes: FLASH_EMMC_BOOT_*, which
++ * means bus_width 8 and flash_clk_array[0] = 200 MHz, i.e. the HS400ES path.
++ */
++static int spl_emmc_init(u32 clk, u32 bus_width)
++{
++	int ret = -1;
++	unsigned int i;
++
++	for (i = 0; i < ARRAY_SIZE(spl_freqs); i++) {
++		ret = sdhci_host_init();
++		if (ret)
++			continue;
++
++		ret = sdhci_host_start();
++		if (ret) {
++			printf("splmmc: host start failed at %u Hz\n",
++			       spl_freqs[i]);
++			continue;
++		}
++
++		ret = sdhci_set_clock(spl_freqs[i], CLK_200M);
++		if (ret)
++			continue;
++
++		emmc_reset();
++
++		ret = emmc_init_card();
++		if (ret) {
++			printf("splmmc: card init %d at %u Hz\n", ret,
++			       spl_freqs[i]);
++			continue;
++		}
++
++		ret = mmc_set_blocklen(MMC_MAX_BLOCK_LEN);
++		if (ret)
++			continue;
++
++		break;
++	}
++
++	if (i >= ARRAY_SIZE(spl_freqs))
++		return -1;
++
++	printf("splmmc: identified at %u Hz, hc %d rca %u\n",
++	       spl_freqs[i], spl_high_capacity, spl_rca);
++
++	ret = emmc_select_bus_width(bus_width);
++	if (ret) {
++		printf("splmmc: card bus width %u failed\n", bus_width);
++		return ret;
++	}
++	sdhci_set_bus_width(bus_width);
++
++	if (clk == HS_EMMC_CLK) {
++		mmc_select_mode(SPL_MMC_HS);
++		ret = sdhci_set_clock(clk, CLK_200M);
++		if (ret)
++			return ret;
++	} else if (clk == HS400_ES_EMMC_CLK && bus_width == 8) {
++		ret = mmc_select_hs400es();
++		if (ret)
++			return ret;
++	} else {
++		ret = sdhci_set_clock(clk, CLK_200M);
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
++
++static int mmc_read_blocks(void *dst, u32 start, u32 blkcnt)
++{
++	struct spl_mmc_cmd cmd;
++	struct spl_mmc_data data;
++	ulong len = (ulong)blkcnt * MMC_MAX_BLOCK_LEN;
++	int ret;
++
++	spl_memset(&cmd, 0, sizeof(cmd));
++	if (blkcnt > 1)
++		cmd.cmdidx = MMC_CMD_READ_MULTIPLE_BLOCK;
++	else
++		cmd.cmdidx = MMC_CMD_READ_SINGLE_BLOCK;
++
++	if (spl_high_capacity)
++		cmd.cmdarg = start;
++	else
++		cmd.cmdarg = start * MMC_MAX_BLOCK_LEN;
++
++	cmd.resp_type = SPL_RSP_R1;
++
++	data.dest = dst;
++	data.blocks = blkcnt;
++	data.blocksize = MMC_MAX_BLOCK_LEN;
++	data.flags = SPL_DATA_READ;
++
++	/* DEVIATION 1: see the file header. */
++	invalidate_dcache_range((ulong)dst, (ulong)dst + len);
++	ret = sdhci_send_cmd(&cmd, &data);
++	invalidate_dcache_range((ulong)dst, (ulong)dst + len);
++	if (ret)
++		return ret;
++
++	if (blkcnt > 1) {
++		spl_memset(&cmd, 0, sizeof(cmd));
++		cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
++		cmd.cmdarg = 0;
++		cmd.resp_type = SPL_RSP_R1B;
++		if (sdhci_send_cmd(&cmd, NULL))
++			return -7;
++	}
++
++	return 0;
++}
++
++/* ---------------------------------------------------------------------- */
++/* The probe                                                              */
++/* ---------------------------------------------------------------------- */
++
++static void spl_dump_regs(const char *tag)
++{
++	printf("splmmc: %s srs 00=%08x 04=%08x 08=%08x 0c=%08x\n", tag,
++	       rl_(0x00), rl_(0x04), rl_(0x08), rl_(0x0c));
++	printf("splmmc: %s srs 10=%08x 24=%08x 28=%08x 2c=%08x\n", tag,
++	       rl_(0x10), rl_(0x24), rl_(0x28), rl_(0x2c));
++	printf("splmmc: %s srs 30=%08x 34=%08x 3c=%08x 40=%08x\n", tag,
++	       rl_(0x30), rl_(0x34), rl_(0x3c), rl_(0x40));
++	printf("splmmc: %s hrs 00=%08x 06=%08x glb 00=%08x 0c=%08x\n", tag,
++	       readl(MMIO(SPL_HRS + 0x00)), readl(MMIO(SPL_HRS + HRS06)),
++	       readl(MMIO(SPL_CPU_SYS_GLB + 0x00)), readl(MMIO(SPL_CPU_SYS_GLB + 0x0c)));
++}
++
++static void spl_wdt_kick(void)
++{
++	/* DEVIATION 2: see the file header. */
++	writel(SPL_WDT0_KICK, MMIO(SPL_WDT0_CRR));
++}
++
++static void spl_one_read(void *dst, u32 lba, u32 cnt)
++{
++	int ret;
++
++	spl_fail_where = 0;
++	spl_fail_stat = 0;
++	spl_fail_pstate = 0;
++
++	ret = mmc_read_blocks(dst, lba, cnt);
++
++	printf("splmmc: read lba %08x cnt %u -> %d cmd %08x resp %08x stat %08x present %08x\n",
++	       lba, cnt, ret, rl_(0x0c), rl_(SRS_RESP01), rl_(SRS_NORMAL_INT_STAT),
++	       rl_(SRS_PSTATE));
++	if (ret)
++		printf("splmmc:   at fail: where %u stat %08x present %08x\n",
++		       spl_fail_where, spl_fail_stat, spl_fail_pstate);
++}
++
++/*
++ * The #91 four-read matrix, through this path: CMD17 and CMD18 at two
++ * addresses, back to back on a freshly identified card. Then a 51 MiB read,
++ * timed, in 16 MiB chunks -- the 16-bit block-count register caps one command
++ * at 65535 blocks and the loader never asks for more either.
++ */
++#define PROBE_CHUNK_BLOCKS	32768
++#define PROBE_TOTAL_BLOCKS	99870		/* 51 133 440 B, the kernel */
++
++static int spl_probe(void *dst, u32 base_lba)
++{
++	ulong start, took;
++	u32 done = 0;
++	int ret = 0;
++
++	spl_dump_regs("pre");
++
++	spl_one_read(dst, 0x00000000, 1);
++	spl_one_read(dst, 0x00000000, 2);
++	spl_one_read(dst, 0x00002600, 1);
++	spl_one_read(dst, 0x00002600, 2);
++
++	spl_dump_regs("post4");
++
++	printf("splmmc: 51 MiB from lba %08x\n", base_lba);
++	start = get_timer(0);
++	while (done < PROBE_TOTAL_BLOCKS) {
++		u32 n = PROBE_TOTAL_BLOCKS - done;
++
++		if (n > PROBE_CHUNK_BLOCKS)
++			n = PROBE_CHUNK_BLOCKS;
++
++		ret = mmc_read_blocks((char *)dst + (ulong)done * MMC_MAX_BLOCK_LEN,
++				      base_lba + done, n);
++		spl_wdt_kick();
++		if (ret) {
++			printf("splmmc: bulk read failed at block %u: %d\n",
++			       done, ret);
++			break;
++		}
++		done += n;
++	}
++	took = get_timer(start);
++
++	printf("splmmc: %u blocks (%lu B) in %lu ms\n", done,
++	       (ulong)done * MMC_MAX_BLOCK_LEN, took);
++	if (took)
++		printf("splmmc: %lu KiB/s\n",
++		       ((ulong)done * MMC_MAX_BLOCK_LEN / 1024) * 1000 / took);
++
++	spl_dump_regs("postbulk");
++
++	return ret;
++}
++
++static int do_splmmc(struct cmd_tbl *cmdtp, int flag, int argc,
++		     char *const argv[])
++{
++	const char *sub;
++	void *dst;
++	u32 lba, cnt;
++	int ret;
++
++	if (argc < 2)
++		return CMD_RET_USAGE;
++
++	sub = argv[1];
++
++	if (!strcmp(sub, "clk")) {
++		printf("splmmc: glb before 00=%08x 04=%08x 0c=%08x\n",
++		       readl(MMIO(SPL_CPU_SYS_GLB + 0x00)),
++		       readl(MMIO(SPL_CPU_SYS_GLB + 0x04)),
++		       readl(MMIO(SPL_CPU_SYS_GLB + 0x0c)));
++		axera_sys_glb_clk_set();
++		printf("splmmc: glb after  00=%08x 04=%08x 0c=%08x\n",
++		       readl(MMIO(SPL_CPU_SYS_GLB + 0x00)),
++		       readl(MMIO(SPL_CPU_SYS_GLB + 0x04)),
++		       readl(MMIO(SPL_CPU_SYS_GLB + 0x0c)));
++		return CMD_RET_SUCCESS;
++	}
++
++	if (!strcmp(sub, "regs")) {
++		spl_dump_regs("now");
++		return CMD_RET_SUCCESS;
++	}
++
++	if (!strcmp(sub, "init")) {
++		u32 clk = HS400_ES_EMMC_CLK;
++		u32 bw = 8;
++
++		if (argc > 2)
++			clk = dectoul(argv[2], NULL);
++		if (argc > 3)
++			bw = dectoul(argv[3], NULL);
++
++		ret = spl_emmc_init(clk, bw);
++		printf("splmmc: init %u Hz %u-bit -> %d\n", clk, bw, ret);
++		spl_initialised = !ret;
++		spl_dump_regs("init");
++		return ret ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
++	}
++
++	if (!spl_initialised) {
++		printf("splmmc: run `splmmc init` first\n");
++		return CMD_RET_FAILURE;
++	}
++
++	if (!strcmp(sub, "read")) {
++		if (argc < 5)
++			return CMD_RET_USAGE;
++		dst = (void *)hextoul(argv[2], NULL);
++		lba = hextoul(argv[3], NULL);
++		cnt = hextoul(argv[4], NULL);
++		spl_one_read(dst, lba, cnt);
++		return CMD_RET_SUCCESS;
++	}
++
++	if (!strcmp(sub, "probe")) {
++		dst = (void *)hextoul(argc > 2 ? argv[2] : "4a000000", NULL);
++		lba = hextoul(argc > 3 ? argv[3] : "4ae00", NULL);
++		spl_probe(dst, lba);
++		return CMD_RET_SUCCESS;
++	}
++
++	return CMD_RET_USAGE;
++}
++
++U_BOOT_CMD(
++	splmmc, 5, 0, do_splmmc,
++	"the first-stage loader's own eMMC read path (#91 diagnostic)",
++	"init [clkhz [width]]  - the loader's init ladder (default 200000000, 8)\n"
++	"splmmc probe [addr [lba]] - the four-read matrix and a 51 MiB timed read\n"
++	"splmmc read <addr> <lba> <cnt> - one read, all hex\n"
++	"splmmc regs           - dump the controller\n"
++	"splmmc clk            - run the loader's dead axera_sys_glb_clk_set()"
++);

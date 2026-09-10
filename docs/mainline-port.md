@@ -4926,6 +4926,38 @@ entry immediately afterwards still took two (`bootcount was 0xB0010002`). Every
 one of those is ~2 minutes. Fixing multi-block would take most of the boot time
 out and most of the flakiness with it.
 
+**The #91 attack landed 2026-09-12, offline half:**
+[`docs/reference/mainline/emmc-spldrv-20260912/`](reference/mainline/emmc-spldrv-20260912/README.md).
+Two pieces. A **one-shot chainload test slot** (U-Boot patch `0025`), because
+the minimal layout has one `uboot` partition and no B twin, so trying a
+candidate by writing it is a bench trip: production `bootcmd` runs `bootchain`,
+which — only at `bootcount` == 1 — loads `/uboot-test.bin` to
+`CONFIG_TEXT_BASE` and `chainload`s it (`go` plus `cleanup_before_linux()` plus
+zeroed `x0..x3`, because `go` enters with the MMU and caches on and `start.S` is
+written against what the SPL leaves). A candidate that hangs is reset by WDT0
+into attempt 2, which boots the flash copy. And **`.#uboot-mainline-spldrv`**
+(patch `0026`), 1460 lines transcribing the first-stage loader's own SD4HC init
+and read path out of the GPL SDK snapshot and running the #91 four-read matrix
+plus a 51 MiB timed read through it.
+
+Reading the loader's source turned up four sequence differences and one
+correction before any of it ran. The loader runs **HS400ES at 200 MHz**
+(`read_img_header()` sets `sel_clk = 0`, `flash_clk_array[0]` = 200000000, and
+`bus_width` = 8 routes to `mmc_select_hs400es()`); mainline U-Boot runs HS400ES
+at **50 MHz** because the device tree says `max-frequency = <50000000>`; Linux
+runs HS200 at 50 MHz. **Nobody but U-Boot has run this part in HS400ES at
+50 MHz**, and HS400 is the one mode where the host samples on a card-generated
+strobe whose 18-tap delay was chosen at 200 MHz — which fits rung 3b's signature
+(card streams, no CRC error because no block is ever framed, only U-Boot's own
+10 s timeout) better than any of the fourteen excluded axes. The others: PHY
+0x0c (HS200/HS400 output delay) is 23 in the loader and 31 in the DT and Linux;
+PHY 0x01 is 18 versus 4; and the loader writes SRS03 as ONE 32-bit store —
+"for cadence special 4B align" — where `sdhci.c` writes `0x0c` and `0x0e` as two
+16-bit stores. **The correction:** the loader does NOT set the eMMC card clock
+up. `axera_sys_glb_clk_set()` is inside `#if 0` in `axera_mmc.c` and commented
+out at its only call site; it inherits the boot ROM's setting. `splmmc clk`
+performs it on demand so the axis stays testable.
+
 **Two healthy boots also hung this morning**, before any of rung 5 was on the
 board — one after `systemctl reboot`, one after a cold cycle. The journal of the
 first reaches `Starting File System Check on /dev/loop0p4` at t=16 s and then
