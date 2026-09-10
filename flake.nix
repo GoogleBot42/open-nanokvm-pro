@@ -819,6 +819,13 @@
           # flasher's parser requires, every member inside its partition, the
           # A/B pairs identical and the Axera signed headers intact (#78).
           nixos-axp-manifest = nixos-firmware-image.verify;
+          # The flashable minimal-layout .axp and the in-place migration kit
+          # must put the same boot chain on the eMMC (#94): the migration is
+          # what this hardware has actually booted, so any byte the flashed
+          # image would write differently is a byte nothing has ever proven.
+          axp-migration-parity = callPkg ./pkgs/axp-migration-parity.nix {
+            inherit nixos-firmware-image-mainline migrate-layout project;
+          };
           emmc-partition-map =
             let
               l = import ./nixos/lib/emmc-layout.nix { inherit (pkgs) lib; };
