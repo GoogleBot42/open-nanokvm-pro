@@ -6,6 +6,7 @@
 , teeConsole ? false
 , probeMmc ? false
 , splDrv ? false
+, hangTest ? false
 , ... }:
 
 # ===========================================================================
@@ -1213,6 +1214,32 @@ let
   # `nanokvm-uboot-test`, which puts it on the boot filesystem for exactly one
   # attempt (patch 0025). The `uboot` partition is not written.
   # -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # hangTest = true: the shipping image with ONE instruction changed. The
+  # branch out of save_boot_params becomes a branch to itself, so the image
+  # arms WDT0 -- the instruction before it, patch 0016 -- and then hangs
+  # forever, at the first instruction U-Boot runs.
+  #
+  # It exists to prove the other half of the chainload slot (#91, patch 0025):
+  # that a candidate which never comes back costs one unattended boot cycle
+  # rather than a bench trip. Expected: WDT0 resets the board ~300 s after the
+  # jump, `bootcount` reaches 2, `bootchain` skips the test file, and the
+  # production U-Boot still on flash boots the appliance.
+  #
+  # It cannot be flashed by accident: the only thing that ever runs it is the
+  # chainload slot, and a chainload candidate is a file on /boot.
+  # -------------------------------------------------------------------------
+  hangTestPostPatch = ''
+    substituteInPlace arch/arm/mach-axera/lowlevel.S --replace-fail \
+      '	b	save_boot_params_ret' \
+      '	/* #91 hangTest: hang here, deliberately, with the dog running. */
+    0:	b	0b'
+    grep -q '0:	b	0b' arch/arm/mach-axera/lowlevel.S \
+      || { echo "ERROR: could not install the deliberate hang" >&2; exit 1; }
+    ! grep -q 'b	save_boot_params_ret' arch/arm/mach-axera/lowlevel.S \
+      || { echo "ERROR: save_boot_params still returns; the hang is not its only exit" >&2; exit 1; }
+  '';
+
   splDrvPostPatch = ''
     echo 'CONFIG_MMC_AXERA_SPL_SDHCI=y' >> configs/${defconfig}
 
@@ -1247,7 +1274,8 @@ let
     + lib.optionalString traceBoot "-trace"
     + lib.optionalString teeConsole "-tee"
     + lib.optionalString probeMmc "-probe"
-    + lib.optionalString splDrv "-spldrv";
+    + lib.optionalString splDrv "-spldrv"
+    + lib.optionalString hangTest "-hangtest";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -1333,7 +1361,8 @@ let
       + lib.optionalString traceBoot tracePostPatch
       + lib.optionalString teeConsole teePostPatch
       + lib.optionalString probeMmc probePostPatch
-      + lib.optionalString splDrv splDrvPostPatch;
+      + lib.optionalString splDrv splDrvPostPatch
+      + lib.optionalString hangTest hangTestPostPatch;
 
     makeFlags = [
       "ARCH=arm"

@@ -735,6 +735,16 @@
           splDrv = true;
         };
 
+        # The shipping image with the branch out of save_boot_params turned
+        # into a branch to itself: it arms WDT0 and then hangs, at the first
+        # instruction U-Boot runs. The negative half of the #91 chainload
+        # proof -- a candidate that never comes back must cost one unattended
+        # boot cycle. Only ever staged in the test slot, never flashed.
+        uboot-mainline-hangtest = callPkg ./pkgs/uboot-mainline.nix {
+          inherit axSign;
+          hangTest = true;
+        };
+
         # The MMU is never switched on, so the boot walks straight past rung
         # 2's mmu_setup() hang and exercises what the rung is actually for --
         # sdhci-cadence, part_cmdline, the environment, extlinux, booti. Slow,
@@ -788,7 +798,7 @@
             uboot-env logo bootfs
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
-            uboot-mainline-spldrv
+            uboot-mainline-spldrv uboot-mainline-hangtest
             gpt-image spl-minimal spl-minimal-eip migrate-layout
             firmware-image nixos-firmware-image nixos-firmware-image-mainline sd-image
             edid axdl;
