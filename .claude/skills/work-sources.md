@@ -565,9 +565,25 @@ propose SG2002 work without flagging this gap up front.
   event: the first boot after the SPL write hung eight minutes and a power cycle
   fixed it; six boots since were clean. `SUPPPORT_GZIPD=FALSE` (retires
   `ax_gzip`, the last prebuilt x86-64 host tool) is a clean follow-up now.
-  Next: **#83**/**#84** are unblocked by #81 and can run device-serialized
-  behind #89's rungs; **#79** is superseded by #89 rung 5 (not yet built); **#85** (aic8800)
-  is an owner decision, `needs-human`.
+  **2026-09-14 status: #89 CLOSED, and so are #79, #90, #92, #93, #94 and
+  #91.** Rung 5 proved the unattended rollback (`bootcount` in
+  `TOP_CHIPMODE_GLB_BACKUP1`, health-gated `nanokvm-mark-good`, `altbootcmd`);
+  a fresh AXDL flash of `.#nixos-firmware-image-mainline` boots the whole chain;
+  #91's cause was the eMMC DT capping HS400ES at 50 MHz against a strobe delay
+  tuned for 200 MHz — boots are now 71 s, one U-Boot attempt, multi-block reads
+  work, patch 0017 is gone. Traps banked in CLAUDE.md on the way: the stage-1
+  panic token that never matched, an arming state a power cycle cleared, a
+  token magic spelled as a hexdump, `/sys/fs/pstore` empty on healthy boots,
+  the 30-minute poll. The board is agent-power-cyclable and U-Boot candidates go
+  through the one-shot chainload slot, never into the `uboot` partition.
+  Open: **#95** (SUPPPORT_GZIPD=FALSE, retire `ax_gzip`), and the epic's
+  functional children. Bookkeeping worth doing: close **#76**, **#81**, **#82**
+  (delivered; residuals in their comments) and re-title **#80** to its
+  CPUPLL/cpufreq residual.
+  Next: **#83** (video on mainline — the reason the appliance is not yet a KVM)
+  and **#86** (flake-based updates, unblocked by rung 5) can run in parallel,
+  device-serialized; then **#84**; **#85** (aic8800) is an owner decision,
+  `needs-human`; **#87** last.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing
