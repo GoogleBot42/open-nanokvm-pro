@@ -1,5 +1,18 @@
 # #91: the first-stage loader's own eMMC read path, and a way to try it
 
+> **SUPERSEDED 2026-09-10.** #91 is fixed, and not by this driver. The eMMC node
+> asked for HS400ES at 50 MHz; the strobe delay it samples against was chosen at
+> 200 MHz. `max-frequency = <200000000>` and CMD18 works — the first of the four
+> source-level differences listed below, tested against U-Boot's *own* driver.
+> [`../emmc-200mhz-20260910/`](../emmc-200mhz-20260910/README.md) has the
+> measurement, the negative control and the boot-time record.
+>
+> `.#uboot-mainline-spldrv` did run, once, on 2026-09-10: **it wedged the board
+> past WDT0** and the power cycle that recovered it destroyed the DRAM ring its
+> answer lives in, so it measured nothing. The chainload slot below, by
+> contrast, was proven in both directions in the same session and is the way to
+> try any U-Boot candidate on this board.
+
 2026-09-12, branch `issue-91-spldrv`. **Offline half only — nothing here has run
 on the board.**
 

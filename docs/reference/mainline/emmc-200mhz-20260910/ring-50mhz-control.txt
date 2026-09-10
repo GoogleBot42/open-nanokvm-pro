@@ -1,0 +1,126 @@
+
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  19 devices, 13 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from nowhere... OK
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+probe: cmd8 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+probe: cmd55 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+mmc: selected mode 12, 8-bit, 50000000 Hz, signal 2
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 602
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf
+Transfer data timeout
+probe: cmd18 failed int 00000000 present 016f02c6
+probe: cmd13 int 00108001 resp 00000b00 state 5
+mmc0: retrying read at 3a3ffdf

@@ -4877,7 +4877,7 @@ replaced:
 
 | what | where | md5 | note |
 |---|---|---|---|
-| mainline U-Boot + patch `0024` | `uboot`, `0x2C0000` | `6713c38d5158b37372a0defbb7530b05` over 188416 B | previous at `/root/rung5/uboot-prev.bin`, `a3191ad5366aacac36005b16031116ae` |
+| mainline U-Boot | `uboot`, `0x2C0000` | **`003eaffdc66b874dc182937641a3a603` over 187344 B** (2026-09-10, the #91 fix; `88b65081496b6f9f75e71a55a121b0a0` over the whole 2 MiB partition) | previous at `/root/uboot-prev-91.img`; rung 5's was `6713c38d5158b37372a0defbb7530b05` |
 | the generated environment | `env`, `0x4C0000` | `7d449d891ac140a9f7dc89a3d61795df`, 1 MiB | previous at `/root/rung5/env-prev.bin`, `fcf35dbf42c168b8a1af0d93b3a304b8` |
 | kernel `Image` with the armed deadman | `/boot/Image` | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
 
@@ -4918,13 +4918,38 @@ One boot, and it proves `bootcount_error()`, `altbootcmd`, milestone bit 30 and
 the fallback config all at once, with nothing to strand. Breaking a generation
 for real costs four boots and, if any deadman is missing, the plug.
 
-**#91 is now the loudest thing left, and rung 5 measured it.** U-Boot loading
-the 51 MB `Image` through single-block reads fails often enough that
-`bootcmd`'s four `bootone` tries are sometimes not enough: the drill's own
-rollback was triggered by three such runs in a row, and re-testing the same
-entry immediately afterwards still took two (`bootcount was 0xB0010002`). Every
-one of those is ~2 minutes. Fixing multi-block would take most of the boot time
-out and most of the flakiness with it.
+**#91 IS FIXED (2026-09-10), and the board now boots in 71 seconds.** The eMMC
+node said `max-frequency = <50000000>` and the board runs HS400ES — the one mode
+where the host samples on a strobe the *card* drives, against the fixed
+`cdns,phy-dll-delay-strobe = <18>` the vendor chose while running this part at
+200 MHz. At 50 MHz that delay lands in the wrong place and no read longer than
+one block ever frames: the card streams, the host collects nothing, no CRC error
+is raised because no block is ever assembled to check, and the only failure is
+the driver's own timeout. Linux was never a counter-example — it runs HS200,
+where the host samples on its own clock. `max-frequency = <200000000>` on the
+eMMC node (patch `0003`) and patch `0017`'s `cdns,single-block-only` deleted:
+CMD18 succeeds at 2 and at 64 blocks, three boots from flash took **1:11, 1:11,
+1:12 with `bootcount` = 1 every time**, against 2:49-24:51 and up to four U-Boot
+attempts before. Measurement, negative control, boot-time record and the
+chainload slot's two proofs:
+[`docs/reference/mainline/emmc-200mhz-20260910/`](reference/mainline/emmc-200mhz-20260910/README.md).
+Everything below about #91's cost is history now; keep it for the shape of the
+hunt, not for the state of the board.
+
+The follow-up #94 handed over — that `bootlimit` counts a *load* failure as a
+generation failure — is no longer urgent, because loads no longer fail. It is
+still the right thing to do.
+
+**Two things #91 leaves behind.** The one-shot chainload slot (patch `0025`)
+is proven in both directions: a good candidate boots the appliance, and one that
+hangs at its first instruction costs a single unattended cycle and cannot be
+re-armed. Its arming token is compared as a **little-endian word** — the
+appliance writes `CHTK` = `43 48 54 4B`, so `tokmagic` is `0x4B544843`; the
+hexdump spelling built, booted, and silently never matched, which cost the
+round that found it. And `.#uboot-mainline-spldrv` is a dead end for now: it
+wedged the board past WDT0, and the power cycle that recovers such a wedge
+destroys the DRAM ring its answer is written into. It needs a flash-backed
+evidence channel before it is worth another cycle.
 
 **The #91 attack landed 2026-09-12, offline half:**
 [`docs/reference/mainline/emmc-spldrv-20260912/`](reference/mainline/emmc-spldrv-20260912/README.md).

@@ -145,6 +145,13 @@ that is arbitration, not a bug.
   (patch 0025 v2), and the build check asserts that ordering. Ask "what clears
   this?" of every guard before trusting it; and never trust a safety net you
   have not watched fire (the stage-1 panic token, rung 5, was the same lesson).
+- **A magic compared as a WORD must be written as that word, not as it reads in
+  a hexdump.** The same slot's token is four ASCII bytes `43 48 54 4B` and
+  U-Boot's `itest.l *addr` is a native `*(u32 *)`, so the constant is
+  `0x4B544843`; spelled `0x4348544B` it builds, boots, and silently never
+  matches — and a gate that never opens looks exactly like a load that failed.
+  One hardware round, 2026-09-10. Same shape as the `writel(0x43484C44)` record
+  it sits next to, which is read back as a word and so is correct as written.
 - **`patch` silently truncates a hunk to its declared line count.** A hunk
   header saying `+1,78` over an 81-line body drops the last three lines with
   no error, and `nix build` reports success; on #89 that ate the `b` back
@@ -239,14 +246,28 @@ bits select nothing. **That SPL is blob-free (#90):** signed with an empty
 0xCC00/0x2CC00 at all — the BootROM accepts a header declaring `fw_size = 0`,
 proven across two warm reboots and a cold cycle. `.#spl-minimal-eip` rebuilds
 the vendor-shaped container if a unit ever needs it. A good boot reads
-`0x30000014`. **How long it takes to SSH says nothing about whether it is
-working**: measured 2:49, 7:10, 7:42, 12:43, 17:35 and 24:51 across six
-consecutive boots of a byte-verified chain, because #91 costs U-Boot whole
-attempts at the 51 MB `Image`, five to eleven minutes each. `bootcount` at the health gate
-(`journalctl -u nanokvm-mark-good`) says how many it needed. **Poll 30 minutes
-before calling a mainline board dark** — ten was what made #94 look like a bad
+`0x30000014`. **A mainline boot is 71 seconds to SSH since #91 was fixed
+(2026-09-10)** — one U-Boot attempt, `bootcount` = `0xB0010001` at the health
+gate. It used to be 2:49 to 24:51 with up to four attempts, because the eMMC
+node asked for HS400ES at 50 MHz and no multi-block read ever framed; the tree
+now says `max-frequency = <200000000>`. `bootcount`
+(`journalctl -u nanokvm-mark-good`) says how many attempts a boot needed, and
+anything above 1 is now worth investigating rather than shrugging at. **Still
+poll 30 minutes before calling a mainline board dark**: a candidate that hangs
+costs a 300 s watchdog cycle, and ten minutes was what made #94 look like a bad
 flash. `docs/mainline-port.md` §11.10 "Handoff" is the current device contract;
 §11.11 is #94.
+
+**Try a U-Boot candidate through the one-shot chainload slot, never by writing
+the `uboot` partition** — there is one copy and no B twin. `nanokvm-uboot-test
+stage <raw u-boot.bin>` puts it on `/boot` and arms a token in flash that
+`bootchain` **spends before it jumps**, so a candidate runs exactly once even if
+it hangs at its first instruction (WDT0 resets into the production copy;
+hardware-proven both ways 2026-09-10). Oracle: `CHLD` at `0x480EE000`,
+`chainstat` at `+8`, and `bootcount` at the health gate. Read those, and the
+pre-console ring at `0x480E8000`, BEFORE any power cycle — a chip reset keeps
+them, power loss does not, which is why `.#uboot-mainline-spldrv` (it wedges the
+board past WDT0) has never measured anything.
 
 **Rollback is live since rung 5 (#79 closed).** `bootcount` is
 `devmem 0x02390030 32` -- `0xB0010000` healthy, `0xB001000N` = N attempts
@@ -271,8 +292,8 @@ cycle.
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
 cycle clears the slot register and lands on slot A; SSH is back ~30 s after
-`on` for the 4.19 image; the mainline chain takes 3 to 18 min, cold or warm
-(#91 — see above). **Leave it OFF for at least 15 s.** An 8-second
+`on` for the 4.19 image, and ~90 s for the mainline chain since #91 was fixed
+(it was 3-18 min before). **Leave it OFF for at least 15 s.** An 8-second
 cycle on 2026-09-09 came back into the same dark state the cycle was meant to
 clear; the 15-second one after it booted normally. **A flat ~3.3 W with no
 open port is the hang signature**; a healthy board draws the same at idle, so

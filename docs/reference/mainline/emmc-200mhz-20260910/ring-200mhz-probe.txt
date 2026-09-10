@@ -1,0 +1,71 @@
+The DRAM pre-console ring (0x480E8000, 8 KiB) after the round that answered
+#91: `.#uboot-mainline-probe-mb` built with `emmcMaxFreq = 200000000`,
+chainloaded through the one-shot test slot, 2026-09-10 19:19-19:22 UTC.
+Read from Linux with
+
+    dd if=/dev/mem bs=4096 skip=295144 count=2 | tr -d '\000'
+
+MB-A-CMD18-2 and MB-B-CMD18-64 are open-ended multi-block reads with the
+`cdns,single-block-only` cap lifted by `bmax`. Both succeed. Every earlier
+round of #91, at 50 MHz, failed both.
+
+------------------------------------------------------------------------
+
+U-Boot 2026.07 (Jul 06 2026 - 23:50:43 +0000) nanokvm-pro
+
+Model: Sipeed NanoKVM-Pro
+Board: Sipeed NanoKVM-Pro (Axera AX630C)
+DRAM:  1 GiB
+Core:  19 devices, 13 uclasses, devicetree: separate
+MMC:   mmc@1b40000: 0, mmc@104e0000: 1
+Loading Environment from nowhere... OK
+In:    serial@4880000
+Out:   serial@4880000
+Err:   serial@4880000
+Net:   No ethernet found.
+probe: cmd8 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+probe: cmd55 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+mmc: selected mode 12, 8-bit, 200000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+MB-A-CMD18-2
+MMC read: dev # 0, block # 306688, count 2 ... 2 blocks read: OK
+MB-B-CMD18-64
+MMC read: dev # 0, block # 306688, count 64 ... 64 blocks read: OK
+MB-C-REINIT
+probe: cmd8 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000900 state 4
+probe: cmd55 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+mmc: selected mode 12, 8-bit, 200000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+MB-END
+Hit any key to stop autoboot: 1  0
+probe: cmd8 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000900 state 4
+probe: cmd55 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+mmc: selected mode 12, 8-bit, 200000000 Hz, signal 2
+switch to partitions #0, OK
+mmc0(part 0) is current device
+MMC read: dev # 0, block # 9728, count 1 ... 1 blocks read: OK
+probe: cmd8 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000900 state 4
+probe: cmd55 failed int 00018000 present 01ff00f1
+probe: cmd13 int 00000000 resp 00000000 state 0
+mmc: selected mode 12, 8-bit, 200000000 Hz, signal 2
+Retrieving file: /extlinux/extlinux.conf
+1:	nixos
+Retrieving file: /Image
+append: mem=512M console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x4880000 board_id=0x5,boot_reason=0x00,initcall_debug=0 loglevel=8 usbcore.autosuspend=-1 root=/dev/loop0p5 rootfstype=ext4 rw rootwait blkdevparts=mmcblk0:768K(spl),-(disk) logomode=vo0@dsi_dpi_video boot.panic_on_fail stage1panic=1 panic=10
+Retrieving file: /ax630c-nanokvm-pro.dtb
+## Flattened Device Tree blob at 49200000
+   Booting using the fdt blob at 0x49200000
+Working FDT set to 49200000
+   Loading Device Tree to 000000005eff8000, end 000000005efff078 ... OK
+Working FDT set to 5eff8000
+
+Starting kernel ...
