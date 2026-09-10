@@ -137,6 +137,14 @@ that is arbitration, not a bug.
   under mainline U-Boot (which programs nothing). The fourteen RGMII pads had
   no pinctrl group until #89 rung 2q; every peripheral needs its pins in a
   named group, checked against the pad table, not "it worked on slot A".
+- **An arming condition for a dangerous test must not live in state the
+  recovery action clears.** The first chainload slot (#91) gated on
+  `bootcount`, which a power cycle zeroes; the only console-less recovery
+  therefore re-armed the hung candidate every cycle, and the board needed an
+  AXDL flash. The slot now spends a one-shot token in flash BEFORE it jumps
+  (patch 0025 v2), and the build check asserts that ordering. Ask "what clears
+  this?" of every guard before trusting it; and never trust a safety net you
+  have not watched fire (the stage-1 panic token, rung 5, was the same lesson).
 - **`patch` silently truncates a hunk to its declared line count.** A hunk
   header saying `+1,78` over an 81-line body drops the last three lines with
   no error, and `nix build` reports success; on #89 that ate the `b` back
