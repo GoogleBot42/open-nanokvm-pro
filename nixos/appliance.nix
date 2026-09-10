@@ -324,6 +324,163 @@ let
     '';
   };
 
+  # ---- the U-Boot chainload test slot ------------------------------------
+  # The minimal layout has one `uboot` partition and no B twin, so trying a
+  # U-Boot candidate by writing it is a USB-recovery trip. U-Boot patch 0025
+  # gives the partition its A/B property back as a FILE: on the first boot
+  # attempt after a healthy one, `bootcmd` loads /boot/uboot-test.bin to
+  # CONFIG_TEXT_BASE and chainloads it. This is the appliance's half -- putting
+  # the file there, and taking it away again after the one attempt.
+  #
+  # NOTHING HERE WRITES FLASH. Staging is a copy; recovery is a reboot.
+  ubootTest = pkgs.writeShellApplication {
+    name = "nanokvm-uboot-test";
+    runtimeInputs = with pkgs; [ coreutils busybox gnugrep ];
+    text = ''
+      set -eu
+
+      TESTFILE=/boot/uboot-test.bin
+      BOOTCOUNT_REG=0x02390030
+      MSREG=0x02390024
+      # The chainload record U-Boot leaves in the spare page of the pstore
+      # window: 0x43484C44 ("CHLD") and the address it jumped to.
+      CHLD_REG=0x480EE000
+      CHLD_ADDR=0x480EE004
+
+      usage() {
+        cat >&2 <<'EOF'
+      usage: nanokvm-uboot-test stage <u-boot.bin> | clear | status
+
+        stage   put a RAW U-Boot image (images/u-boot.bin, device tree
+                appended -- NOT the signed container) in the test slot. The
+                next boot chainloads it, once. A candidate that hangs is reset
+                by the watchdog and the boot after it runs the production
+                U-Boot on flash, unattended.
+        clear   remove it.
+        status  say what is staged, and what the last boot did with it.
+      EOF
+        exit 2
+      }
+
+      [ $# -ge 1 ] || usage
+
+      case "$1" in
+      stage)
+        [ $# -eq 2 ] || usage
+        src="$2"
+        [ -f "$src" ] || { echo "nanokvm-uboot-test: no such file: $src" >&2; exit 1; }
+        [ -d /boot ] || { echo "nanokvm-uboot-test: /boot is not there" >&2; exit 1; }
+        mountpoint -q /boot \
+          || { echo "nanokvm-uboot-test: /boot is not mounted -- U-Boot would never see the file" >&2; exit 1; }
+
+        size=$(stat -c%s "$src")
+        if [ "$size" -lt 65536 ] || [ "$size" -gt 2097152 ]; then
+          echo "nanokvm-uboot-test: $src is $size bytes; a U-Boot image for this board is 64 KiB..2 MiB" >&2
+          exit 1
+        fi
+
+        # The image must be the RAW one, linked at 0x5C000400. arch/arm/cpu/
+        # armv8/start.S puts `_TEXT_BASE: .quad CONFIG_TEXT_BASE` at offset 8,
+        # so those eight bytes are a free, exact identity check -- and they are
+        # what separates a raw u-boot.bin from the axgzip'd signed container
+        # (which would be loaded and jumped into as if it were code), from a
+        # kernel Image, and from a U-Boot built for another board.
+        got=$(od -An -tx8 -j8 -N8 "$src" | tr -d ' \n')
+        if [ "$got" != "000000005c000400" ]; then
+          echo "nanokvm-uboot-test: $src does not carry _TEXT_BASE = 0x5C000400 at offset 8" >&2
+          echo "nanokvm-uboot-test: found $got -- this is not a raw u-boot.bin for this board." >&2
+          echo "nanokvm-uboot-test: stage images/u-boot.bin, NOT u-boot_mainline_signed.bin." >&2
+          exit 1
+        fi
+
+        cp "$src" "$TESTFILE.new"
+        sync "$TESTFILE.new"
+        mv "$TESTFILE.new" "$TESTFILE"
+        sync
+
+        # Verify from the medium, not the page cache.
+        echo 3 > /proc/sys/vm/drop_caches
+        a=$(md5sum < "$src" | cut -d' ' -f1)
+        b=$(md5sum < "$TESTFILE" | cut -d' ' -f1)
+        [ "$a" = "$b" ] || { echo "nanokvm-uboot-test: read-back mismatch $a != $b" >&2; exit 1; }
+
+        echo "nanokvm-uboot-test: staged $size bytes, md5 $b"
+        echo "nanokvm-uboot-test: bootcount is $(devmem $BOOTCOUNT_REG 32) (0xB0010000 = healthy)"
+        echo "nanokvm-uboot-test: reboot to try it, then \`nanokvm-uboot-test status\`:"
+        echo "  chainload: no                       nothing was chainloaded"
+        echo "  chainload: yes, ms_uboot clear      the candidate never reached its own preboot"
+        echo "  chainload: yes, ms_uboot set        two U-Boot passes in one boot"
+        ;;
+      clear)
+        rm -f "$TESTFILE" "$TESTFILE.new"
+        sync
+        echo "nanokvm-uboot-test: cleared"
+        ;;
+      status)
+        if [ -e "$TESTFILE" ]; then
+          echo "staged: $(stat -c%s "$TESTFILE") bytes, md5 $(md5sum < "$TESTFILE" | cut -d' ' -f1)"
+        else
+          echo "staged: nothing"
+        fi
+        echo "bootcount: $(devmem $BOOTCOUNT_REG 32)"
+        ms=$(devmem $MSREG 32)
+        echo "milestones: $ms"
+        # devmem prints 0x........; bit 28 is the top hex digit's bit 0.
+        if [ "$(( ms & 0x10000000 ))" -ne 0 ]; then
+          echo "  ms_uboot (28): set   -- a U-Boot reached preboot after the last write to this bit"
+        else
+          echo "  ms_uboot (28): CLEAR -- no U-Boot reached preboot since bootchain cleared it"
+        fi
+        chld=$(cat /run/nanokvm-uboot-test.chainload 2>/dev/null || devmem $CHLD_REG 32)
+        if [ "$(( chld ))" -eq "$(( 0x43484C44 ))" ]; then
+          echo "chainload: yes, to $(cat /run/nanokvm-uboot-test.addr 2>/dev/null || devmem $CHLD_ADDR 32)"
+        else
+          echo "chainload: no (record $chld)"
+        fi
+        ;;
+      *)
+        usage
+        ;;
+      esac
+    '';
+  };
+
+  # ONE ATTEMPT, and this is what makes it one. U-Boot only chainloads at
+  # `bootcount` == 1 and the candidate increments the counter itself, so a
+  # staged file cannot loop the board -- but it would be retried after every
+  # later healthy boot, which is a surprise nobody wants from a file they
+  # forgot about. Removing it on the boot after it was staged makes the slot
+  # strictly one-shot whichever way the attempt went.
+  ubootTestClear = pkgs.writeShellApplication {
+    name = "nanokvm-uboot-test-clear";
+    runtimeInputs = with pkgs; [ coreutils busybox ];
+    text = ''
+      set -eu
+      TESTFILE=/boot/uboot-test.bin
+
+      # Latch the chainload record before anything else can lose it, and zero
+      # it, so a record that is present always describes THIS boot. It lives
+      # in the spare page of the pstore window and survives a chip reset,
+      # which is exactly why it has to be consumed rather than left lying.
+      chld=$(devmem 0x480EE000 32)
+      addr=$(devmem 0x480EE004 32)
+      printf '%s\n' "$chld" > /run/nanokvm-uboot-test.chainload
+      printf '%s\n' "$addr" > /run/nanokvm-uboot-test.addr
+      if [ "$(( chld ))" -eq "$(( 0x43484C44 ))" ]; then
+        echo "uboot-test: this boot chainloaded a candidate at $addr" \
+             "(milestones $(devmem 0x02390024 32))"
+        devmem 0x480EE000 32 0
+        devmem 0x480EE004 32 0
+      fi
+
+      mountpoint -q /boot || exit 0
+      [ -e "$TESTFILE" ] || exit 0
+      echo "uboot-test: consuming the staged candidate"
+      rm -f "$TESTFILE"
+      sync
+    '';
+  };
+
   # ---- the health gate ---------------------------------------------------
   # What "healthy" means for a KVM, in the three things it is FOR: the system
   # finished starting, the web server answers, and the network works. A board
@@ -553,6 +710,16 @@ in
         How long the health check keeps polling before giving up and leaving
         the boot counter alone. Must stay well under the time three more boot
         attempts would take, or a board that is merely slow looks broken.
+      '';
+    };
+
+    ubootTest.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Ship `nanokvm-uboot-test` and the unit that consumes the chainload test
+        slot after one attempt. The slot itself lives in U-Boot (patch 0025);
+        this is only the half that stages and removes /boot/uboot-test.bin.
       '';
     };
 
@@ -1177,6 +1344,21 @@ in
       };
     };
 
+    # Consume the chainload test slot: one attempt, then the file goes.
+    # Ordered after /boot is mounted and before nothing -- it is not on any
+    # critical path, and if it never runs the only cost is that the candidate
+    # is tried again after the next healthy boot.
+    systemd.services.nanokvm-uboot-test-clear = lib.mkIf cfg.ubootTest.enable {
+      description = "Consume the one-shot U-Boot chainload test slot";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "boot.mount" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${ubootTestClear}/bin/nanokvm-uboot-test-clear";
+      };
+    };
+
     systemd.timers.nanokvm-mark-good = lib.mkIf cfg.markGood.enable {
       description = "Run the boot health gate once, after this boot has had time to finish";
       wantedBy = [ "timers.target" ];
@@ -1311,7 +1493,8 @@ in
       # for the deleted sysfs-export unit. On PATH so it can be driven by hand;
       # the server reaches it by store path, not through PATH.
       nanokvm.nanokvm-gpio
-    ] ++ (with pkgs; [
+    ] ++ lib.optional cfg.ubootTest.enable ubootTest
+    ++ (with pkgs; [
       busybox # devmem, udhcpd/udhcpc
       bash
       kmod

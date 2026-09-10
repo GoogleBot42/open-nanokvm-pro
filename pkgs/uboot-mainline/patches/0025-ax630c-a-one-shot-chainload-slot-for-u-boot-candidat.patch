@@ -1,0 +1,271 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Claude Fable 5.1" <noreply@anthropic.com>
+Date: Fri, 12 Sep 2026 09:00:00 -0600
+Subject: [PATCH] ax630c: a one-shot chainload slot for U-Boot candidates
+
+The minimal eMMC layout (#89 rung 4) has ONE `uboot` partition. The A/B
+twins the vendor layout carried are gone, so there is nowhere to try a
+U-Boot candidate any more: writing one to the only copy the SPL loads
+and having it hang means a USB recovery cable and somebody's hands on
+the board. This board also has no reachable console, so "just watch it"
+is not available either.
+
+Give the partition its A/B property back without a second copy of it.
+Production U-Boot, and only on the first boot attempt after a healthy
+one, looks for `/uboot-test.bin` on the boot filesystem; if it is there
+it loads it to CONFIG_TEXT_BASE and hands over. Nothing is written to
+flash at any point -- staging a candidate is copying a file, and
+`nanokvm-uboot-test` on the appliance removes it after the one attempt.
+
+Three things bound the blast radius, and all three are needed:
+
+  * `bootcount` == 1 gates it. The counter lives in a register that
+    survives a chip reset (patch 0024) and is cleared only by a boot
+    that reached a healthy userspace, so attempt 1 is the only attempt
+    that touches the candidate. A candidate that hangs is reset by WDT0
+    -- armed at U-Boot's first instruction, patch 0016, and re-armed by
+    the candidate's own copy of it -- into attempt 2, which boots the
+    production image still on flash. Unattended, one extra cycle.
+  * The candidate increments the counter itself the moment it reaches
+    main_loop, so it cannot chainload a third U-Boot and a stale test
+    file cannot loop the board.
+  * `chainload` is not `go`. `go` calls the entry point as a C function
+    with the MMU and both caches on; a U-Boot image's first instructions
+    run before any of that is valid and expect exactly what the SPL
+    leaves -- MMU off, caches off. `chainload` is `go` plus
+    cleanup_before_linux() plus zeroed argument registers, which is the
+    state booti already hands a kernel.
+
+Reading the result takes two words, and neither is a new milestone bit --
+12..24 belong to the #75 bring-up initramfs, 25..27 to
+nixos/loop-test.nix, 28..31 to the bootloader, and a bootloader bit that
+drifted into that range would forge somebody else's evidence rather than
+fail. So `chainload` writes 0x43484C44 ("CHLD") and the address it
+jumped to into the spare page of the pstore window at 0x480EE000, which
+nothing else touches and which survives a chip reset, and `bootchain`
+clears bit 28 -- the bit production's own `preboot` has already set --
+immediately before the jump. Afterwards: no CHLD record, nothing was
+chainloaded; CHLD with bit 28 clear, it jumped and the candidate never
+reached its own preboot; CHLD with bit 28 set, two U-Boot passes in one
+boot. The appliance consumes and zeroes the record on the boot that
+follows, so a record that is there always describes the boot that just
+happened.
+
+Signed-off-by: open-nanokvm-pro contributors <nanokvm@localhost>
+---
+--- a/arch/arm/mach-axera/Makefile
++++ b/arch/arm/mach-axera/Makefile
+@@ -4,3 +4,4 @@
+ 
+ obj-y += soc.o
+ obj-y += lowlevel.o
++obj-y += chainload.o
+--- /dev/null
++++ b/arch/arm/mach-axera/chainload.c
+@@ -0,0 +1,118 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (C) 2026 open-nanokvm-pro contributors
++ *
++ * `chainload <addr>` -- hand the CPU to a second U-Boot image already in DRAM,
++ * in the state the first-stage loader hands over in.
++ *
++ * The NanoKVM-Pro's minimal eMMC layout has ONE `uboot` partition. There is no
++ * B slot to try a candidate in any more, and the board has no reachable
++ * console, so writing an untested U-Boot to that partition is a bench trip
++ * with a USB recovery cable. Chainloading gives the partition back its A/B
++ * property without a second copy of it: production U-Boot loads the candidate
++ * to CONFIG_TEXT_BASE and jumps, and if the candidate never comes back the
++ * watchdog resets the board into the production image that is still on flash.
++ *
++ * WHY NOT `go`. `go` calls the entry point as a C function with the MMU and
++ * both caches ON, and with x0 = argc. A U-Boot image is not a C function: its
++ * first instructions run before any of the state `go` leaves behind is valid,
++ * and arch/arm/cpu/armv8/start.S expects exactly what the loader before it
++ * leaves -- MMU off, caches off, EL unchanged. cleanup_before_linux() is the
++ * function that produces that state, and this command is `go` plus that call
++ * plus zeroed argument registers.
++ *
++ * The candidate then behaves as it does from the SPL: save_boot_params (which
++ * on this SoC arms WDT0 -- see lowlevel.S), the vector table, board_init_f on
++ * the init stack, relocate_code() to the top of DRAM, board_init_r. It
++ * relocates over the running production copy, which is fine because nothing
++ * returns here.
++ *
++ * The candidate must be the RAW image (`u-boot.bin`, device tree appended),
++ * not the signed and axgzip'd container the SPL loads: the header and the
++ * compression are the loader's business, and there is no loader here.
++ */
++
++#include <command.h>
++#include <cpu_func.h>
++#include <stdio.h>
++#include <vsprintf.h>
++#include <asm/io.h>
++#include <linux/types.h>
++#include <asm/u-boot-arm.h>
++
++/*
++ * The evidence record. `printf` is dead as a channel here -- the console UART
++ * is on hidden pads and CONFIG_PRE_CONSOLE_BUFFER is a PRE-relocation channel,
++ * so nothing this command prints survives -- and the milestone register has no
++ * spare bit: 12..24 belong to the #75 bring-up initramfs, 25..27 to
++ * nixos/loop-test.nix, 28..31 to the bootloader.
++ *
++ * So the fact of the chainload goes in the spare page of the pstore window,
++ * which no other code writes and which survives a chip reset. Two words,
++ * written just before cleanup_before_linux() flushes the D-cache over them:
++ *
++ *   +0x0  0x43484C44 "CHLD"
++ *   +0x4  the address jumped to
++ *
++ * The appliance reads and zeroes it (nanokvm-uboot-test), so a record that is
++ * there describes the boot that just happened and nothing older.
++ */
++#define AX630C_CHAINLOAD_RECORD	0x480ee000
++#define AX630C_CHAINLOAD_MAGIC	0x43484c44
++
++static int do_chainload(struct cmd_tbl *cmdtp, int flag, int argc,
++			char *const argv[])
++{
++	ulong addr;
++
++	if (argc < 2)
++		return CMD_RET_USAGE;
++
++	addr = hextoul(argv[1], NULL);
++
++	printf("## Chainloading U-Boot at 0x%08lx\n", addr);
++
++	writel(AX630C_CHAINLOAD_MAGIC,
++	       (void *)(uintptr_t)AX630C_CHAINLOAD_RECORD);
++	writel((u32)addr,
++	       (void *)(uintptr_t)(AX630C_CHAINLOAD_RECORD + 4));
++
++	/*
++	 * Flush the console before the caches go: everything printed so far
++	 * has to reach the pre-console buffer in DRAM, which is the only
++	 * record this board keeps of a boot that does not come back.
++	 */
++	flush();
++
++	/*
++	 * MMU off, I-cache off and invalidated, D-cache flushed and off.
++	 * Exactly what booti/bootm do before entering a kernel, and exactly
++	 * the state arch/arm/cpu/armv8/start.S is written against.
++	 */
++	cleanup_before_linux();
++
++	/*
++	 * Enter with x0..x3 zeroed. The first-stage loader jumps to BL33 with
++	 * no arguments; save_boot_params() on this SoC ignores them, and _main
++	 * zeroes x0 before board_init_f(), but a candidate carrying a
++	 * different save_boot_params must not inherit this command's argv.
++	 */
++	asm volatile(
++		"mov	x0, #0\n"
++		"mov	x1, #0\n"
++		"mov	x2, #0\n"
++		"mov	x3, #0\n"
++		"br	%0\n"
++		: : "r" (addr) : "x0", "x1", "x2", "x3");
++
++	/* Not reached. */
++	return CMD_RET_FAILURE;
++}
++
++U_BOOT_CMD(
++	chainload, 2, 0, do_chainload,
++	"hand over to a second U-Boot image in DRAM",
++	"addr\n"
++	"    - tear down the MMU and caches, then jump to the raw U-Boot\n"
++	"      image at 'addr' as the first-stage loader would"
++);
+--- a/configs/ax630c_nanokvm_pro_defconfig
++++ b/configs/ax630c_nanokvm_pro_defconfig
+@@ -16,7 +16,7 @@
+ # CONFIG_EFI_LOADER is not set
+ CONFIG_BOOTSTD_DEFAULTS=y
+ CONFIG_BOOTDELAY=1
+-CONFIG_BOOTCOMMAND="run bootone || run bootone || run bootone || run bootone; mw.l ${msreg_set} ${ms_failed}; reset"
++CONFIG_BOOTCOMMAND="run bootchain; run bootone || run bootone || run bootone || run bootone; mw.l ${msreg_set} ${ms_failed}; reset"
+ CONFIG_USE_PREBOOT=y
+ CONFIG_PREBOOT="mw.l ${msreg_set} ${ms_uboot}"
+ CONFIG_SYS_PBSIZE=1074
+--- a/include/configs/ax630c.h
++++ b/include/configs/ax630c.h
+@@ -47,6 +47,7 @@
+ 	"bootfallback=mmc rescan;"					\
+ 		" sysboot mmc ${bootdev}:${bootpart} any"		\
+ 		" ${scriptaddr} ${extlinux_fallback}\0"			\
++	AX630C_CHAINLOAD_ENV						\
+ 	AX630C_MILESTONE_ENV
+ 
+ /*
+@@ -75,6 +76,7 @@
+  */
+ #define AX630C_MILESTONE_ENV						\
+ 	"msreg_set=0x02390028\0"					\
++	"msreg_clr=0x0239002c\0"					\
+ 	"ms_uboot=0x10000000\0"		/* 28: preboot reached */	\
+ 	"ms_extlinux=0x20000000\0"	/* 29: extlinux.conf read */	\
+ 	"ms_altboot=0x40000000\0"	/* 30: bootlimit hit */		\
+@@ -82,6 +84,58 @@
+ 	AX630C_WDT_ENV
+ 
+ /*
++ * THE ONE-SHOT CHAINLOAD TEST SLOT.
++ *
++ * The minimal eMMC layout has one `uboot` partition and no B twin, so a
++ * candidate U-Boot written to it that does not boot is a bench trip. This
++ * gives the partition its A/B property back without a second copy of it: if
++ * `/uboot-test.bin` is on the boot filesystem, production U-Boot loads it to
++ * CONFIG_TEXT_BASE and hands over (see arch/arm/mach-axera/chainload.c).
++ *
++ * THREE THINGS MAKE IT SAFE, and all three are needed:
++ *
++ *  1. `bootcount` == 1. The counter lives in a register that survives a chip
++ *     reset (patch 0024) and is cleared only by a boot that reached a healthy
++ *     userspace. So attempt 1 is the only attempt that tries the candidate; a
++ *     candidate that hangs is reset by WDT0 into attempt 2, which boots the
++ *     production image on flash. Recovery is unattended and costs one cycle.
++ *  2. The candidate increments the counter itself the moment it reaches
++ *     main_loop, so even a candidate that works cannot chainload a third
++ *     U-Boot, and a stale test file cannot loop the board.
++ *  3. Nothing here writes flash. The candidate is a FILE; putting it there and
++ *     taking it away is `nanokvm-uboot-test` on the appliance.
++ *
++ * READING THE RESULT AFTERWARDS takes two words, and neither of them costs a
++ * milestone bit -- bits 12..27 of 0x02390024 are all spoken for (the #75
++ * bring-up initramfs owns 12..24, nixos/loop-test.nix owns 25..27) and 28..31
++ * are the bootloader's four:
++ *
++ *   0x480EE000  == 0x43484C44 ("CHLD")   this boot chainloaded, and +4 is the
++ *                 address it jumped to. Written by `chainload` into the spare
++ *                 page of the pstore window, which survives a chip reset; the
++ *                 appliance zeroes it once it has read it, so the record can
++ *                 only ever describe the boot that just happened.
++ *   0x02390024  bit 28 clear             the candidate never reached its own
++ *                 `preboot`
++ *               bit 28 set               it did -- and since `bootchain`
++ *                 clears the bit that production's own preboot had already
++ *                 set, that is TWO U-Boot passes in one boot
++ *
++ * `chainaddr` is CONFIG_TEXT_BASE. A U-Boot image is position-dependent
++ * before it relocates, and the SPL's load address is a compile-time constant,
++ * so this is not a choice.
++ */
++#define AX630C_CHAINLOAD_ENV						\
++	"chainaddr=0x5c000400\0"					\
++	"chainfile=/uboot-test.bin\0"					\
++	"bootchain=if test \"${bootcount}\" = \"1\"; then"		\
++		" if load mmc ${bootdev}:${bootpart} ${chainaddr}"	\
++		" ${chainfile}; then"					\
++		" mw.l ${msreg_clr} ${ms_uboot};"			\
++		" chainload ${chainaddr};"				\
++		" fi; fi\0"
++
++/*
+  * Arm WDT0 before handing off, so a boot that hangs anywhere after `preboot`
+  * resets the board instead of stranding it. This SoC's console UART is on
+  * hidden pads; an unattended board that hangs is a board somebody has to walk

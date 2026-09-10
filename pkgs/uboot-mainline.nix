@@ -88,6 +88,7 @@ let
     ./uboot-mainline/patches/0022-mmc-retry-a-failed-block-read-before-giving-up.patch
     ./uboot-mainline/patches/0023-part-efi-read-the-gpt-from-a-configurable-base-lba.patch
     ./uboot-mainline/patches/0024-ax630c-count-boots-in-a-reset-surviving-register.patch
+    ./uboot-mainline/patches/0025-ax630c-a-one-shot-chainload-slot-for-u-boot-candidat.patch
   ];
 
   # The SPL enters BL33 here (docs/mainline-port.md 11.2). It is not

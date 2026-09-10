@@ -140,7 +140,9 @@ pkgs.runCommand "uboot-mainline-check"
     for want in 'bootpart=${lib.toLower (lib.toHexString layout.bootfs.number)}' 'bootlimit=3' \
                 'msreg_set=0x02390028' 'preboot=mw.l' 'altbootcmd=mw.l' \
                 'bootone=mmc rescan' 'bootfallback=mmc rescan' \
-                'bootcmd=run bootone' \
+                'bootcmd=run bootchain; run bootone' \
+                'msreg_clr=0x0239002c' 'chainaddr=0x5c000400' \
+                'chainfile=/uboot-test.bin' 'bootchain=if test' \
                 'ms_uboot=0x10000000' 'ms_extlinux=0x20000000' \
                 'ms_altboot=0x40000000' 'ms_failed=0x80000000'; do
       grep -qa "$want" "$ub/images/u-boot.bin" \
@@ -149,6 +151,23 @@ pkgs.runCommand "uboot-mainline-check"
     ! grep -qa 'ms_[a-z]*=0x0[0-9a-f]' "$ub/images/u-boot.bin" \
       || { echo "ERROR: a milestone bit below 28 is set; 12..27 belong to Linux" >&2; exit 1; }
     echo "bootpart, bootlimit, altbootcmd and the four milestone bits (28..31) are all built in"
+
+    # === 6. the chainload test slot (#91) ================================
+    # `chainload` must be a real command, not just an environment string that
+    # would fail at runtime on a board with no console to report it, and
+    # `chainaddr` must equal CONFIG_TEXT_BASE -- a U-Boot image loaded
+    # anywhere else runs its pre-relocation code from the wrong address.
+    echo "=== 6. chainload test slot ==="
+    grep -qa 'Chainloading U-Boot at' "$ub/images/u-boot.bin" \
+      || { echo "ERROR: the chainload command is not in the image" >&2; exit 1; }
+    want_base=${lib.toLower uboot-mainline.passthru.textBase}
+    grep -qa "chainaddr=$want_base" "$ub/images/u-boot.bin" \
+      || { echo "ERROR: chainaddr is not CONFIG_TEXT_BASE ($want_base)" >&2; exit 1; }
+    # The gate is the whole safety property: without it a staged file is tried
+    # on every boot forever, including the recovery boot after a bad one.
+    grep -qa 'bootchain=if test "''${bootcount}" = "1"' "$ub/images/u-boot.bin" \
+      || { echo "ERROR: bootchain is not gated on bootcount == 1" >&2; exit 1; }
+    echo "chainload is a command, chainaddr = $want_base, and the slot is gated on bootcount == 1"
 
     mkdir -p "$out"
     { echo "u-boot: ${uboot-mainline.version}, entry $entry"
