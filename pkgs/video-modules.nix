@@ -14,21 +14,24 @@
 # and a driver fix should be a file copy and an insmod rather than a reboot
 # into a kernel that has no automatic rollback.
 #
-# WHY A SEPARATE DERIVATION rather than referencing the kernel directly: the
-# kernel output carries a 51 MB Image and a 63 MB vmlinux, and a systemd unit
-# that named it would drag both into the system closure. This copies out the
-# ~280 KB that actually gets loaded, so the kernel is a BUILD-time dependency
-# of the appliance and not a runtime one.
+# WHY A SEPARATE DERIVATION rather than referencing the kernel directly: this
+# copies out the ~280 KB that actually gets loaded, so a systemd unit can name
+# it without pulling anything else along. (The kernel IS in the closure since
+# #99, as the generation's own `kernel` link -- but it is the Image alone; the
+# vmlinux and the resolved .config live in that derivation's `dev` output.)
 #
-# WHERE IT SITS, and the honest statement of the seam: the modules are in the
-# NixOS generation. The kernel they load into is not -- it is a /boot artefact
-# the boot chain reads (pkgs/boot-payload.nix), outside any generation. So a
-# generation and its kernel can in principle disagree, and nothing here can
-# catch it: the vermagic is the release string alone, which does not change
-# when a built-in driver does. The follow-up rung that moves the kernel, the
-# initrd and the dtb into the generation through NixOS' own extlinux builder
-# is what closes that, and this package is written to need no change when it
-# does.
+# WHERE IT SITS. The modules and the kernel they load into are now in the SAME
+# generation: `boot.kernelPackages` names the derivation this package is built
+# from. #83 had to write a caveat here -- the kernel was a /boot artefact
+# outside every generation, so the two could disagree and nothing could catch
+# it, because the vermagic is the release string alone and that does not change
+# when a built-in driver does. #99 closed it by construction, and this file
+# needed no change, which is what its author predicted.
+#
+# `nanokvm-video.service` still resolves the directory through `uname -r`
+# rather than a baked-in release, so a generation running on a kernel it was
+# not built for fails with a path that names the mismatch instead of at the
+# first insmod with a vermagic error.
 # ===========================================================================
 
 pkgs.runCommand "nanokvm-video-modules-${kernel.version}"
