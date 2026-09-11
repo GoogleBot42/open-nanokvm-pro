@@ -1620,7 +1620,7 @@ in
     # `Persistent` so a board that is off at the scheduled hour still checks
     # once it is back, rather than waiting a whole period.
     systemd.services.nanokvm-update = lib.mkIf cfg.update.enable {
-      description = "Fetch and install a NanoKVM system bundle (reboots when idle)";
+      description = "Install the NanoKVM release this channel offers (reboots when idle)";
       after = [ "network-online.target" "nanokvm-mark-good.service" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
@@ -1634,7 +1634,7 @@ in
     };
 
     systemd.timers.nanokvm-update = lib.mkIf cfg.update.enable {
-      description = "Periodic NanoKVM system-bundle update check";
+      description = "Periodic NanoKVM update check";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = cfg.update.schedule;
