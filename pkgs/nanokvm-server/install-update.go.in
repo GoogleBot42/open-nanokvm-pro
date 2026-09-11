@@ -1,0 +1,64 @@
+func install(dir string, version string) error {
+	// OPEN-KVM UPDATE INSTALLER (#100). On the NixOS appliance an update is not
+	// a file overlay and no longer a downloaded payload either: the release
+	// manifest names a store path, and the device substitutes that closure from
+	// our signed binary cache, makes it the system profile and runs
+	// switch-to-configuration boot.
+	//
+	// So there is nothing for the server to download, verify or unpack -- the
+	// steps update() used to take before calling this are patched out in
+	// pkgs/nanokvm-server.nix, and `dir` is empty. What is left is the handoff.
+	//
+	// ALL OF IT IS `nanokvm-update`, a NixOS-module shell application
+	// (nixos/lib/updater.nix). This function reimplements none of it: the same
+	// code has to run from the systemd timer, so it lives in one place and the
+	// web UI is one of its two callers. `install-now` is the caller-pressed-the-
+	// button entry point -- it fetches the manifest for the channel this device
+	// is on, installs what it names whatever the auto-updates checkbox says, and
+	// does NOT wait for an idle moment, because the person who pressed the
+	// button is the person the wait would be for.
+	//
+	// The path is resolved through /run/current-system, which is the running
+	// generation's own copy.
+	//
+	// This appended file REPLACES the vendor dpkg installer; nanokvm-server.nix
+	// truncates update.go at install()'s signature and appends it. It may add NO
+	// imports beyond update.go's own (fmt, os, os/exec, path/filepath, log).
+	_ = dir
+	_ = sendMessage("install", 5)
+
+	const updater = "/run/current-system/sw/bin/nanokvm-update"
+	if _, err := os.Stat(updater); err != nil {
+		log.Errorf("no %s on this system -- is this the NixOS appliance? %s", updater, err)
+		return fmt.Errorf("no updater on this system: %w", err)
+	}
+
+	_ = sendMessage("install", 20)
+
+	// Substitute the closure, set the profile, write the bootloader. Minutes,
+	// not seconds, on a first update: the progress the UI shows is coarse
+	// because `nix copy` reports its own progress to the journal, not to us.
+	cmd := exec.Command(updater, "install-now")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Errorf("nanokvm-update install-now failed: %s", string(out))
+		return err
+	}
+	log.Infof("nanokvm-update install-now:\n%s", string(out))
+
+	// The version stamp is part of the closure (the new /kvmapp/version), so there
+	// is nothing to write here -- and nothing this function could write, since
+	// /kvmapp is a read-only store symlink on this system.
+
+	_ = sendMessage("install", 100)
+
+	// A REBOOT, ALWAYS, and never a service restart. The generation was installed
+	// with `switch-to-configuration boot`, so nothing about it is live yet; and the
+	// reboot is what arms the rollback -- U-Boot counts the attempt, and
+	// nanokvm-mark-good only clears the counter once the new system is running,
+	// routed and serving. A `switch` would activate an untested userspace with no
+	// way back.
+	log.Infof("update %s installed; rebooting into it", version)
+	_ = exec.Command("systemctl", "--no-block", "reboot").Run()
+	return nil
+}

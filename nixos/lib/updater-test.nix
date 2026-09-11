@@ -4,232 +4,263 @@
 }:
 
 # ===========================================================================
-# THE OFFLINE UPDATER LOOP (#86) -- `nix flake check`'s `nanokvm-updater-loop`.
+# THE OFFLINE UPDATER LOOP (#100) -- `nix flake check`'s `nanokvm-updater-loop`.
 #
-# It runs the REAL `nanokvm-update`, the REAL `nanokvm-gc` and the REAL
-# `nanokvm-install-boot` against a fake root inside a build sandbox: apply a
-# bundle, check the profile advanced and the boot config names the new
-# generation AND its kernel, then collect and check the right things survived.
-# This is the whole of what can be proven about an update before it meets
-# hardware, and it is a lot: everything after this is "does the board boot the
-# thing the script installed".
+# It runs the REAL `nanokvm-update` against REAL nix stores inside a build
+# sandbox: a signed `file://` binary cache plays the release cache, a chroot
+# store plays the device's, and the whole update happens -- signature check,
+# substitution, profile generation, activation, collection. Nothing here is a
+# mock except the toplevels themselves (three tiny synthetic "systems", see
+# nixos/lib/update-fixture.nix) and switch-to-configuration, which is a stub
+# that records the action it was asked for.
 #
-# WHY THE SCRIPTS ARE INSTANTIATED AGAINST `pkgs` AND NOT THE APPLIANCE'S.
-# The appliance is aarch64; running its copies would need binfmt, which a
-# release runner does not have. The script TEXT is identical either way -- the
-# only difference is which coreutils is on PATH -- so this is a test of the
-# logic, which is what the logic needs.
+# WHAT THAT BUYS, and it is most of what can be known before hardware:
 #
-# WHAT IT CANNOT PROVE: `switch-to-configuration`, the `/nix/store` remount,
-# the eMMC, and whether U-Boot can read what was written. Those are the
-# hardware plan in docs/updates.md.
+#   1. an update INSTALLS       -- the closure substitutes, the profile
+#                                  advances, `switch-to-configuration boot` is
+#                                  called, and `switch` never is.
+#   2. an update is AUTHENTICATED -- a NAR signed by a key the device does not
+#                                  trust does not install, and NOTHING lands
+#                                  when it is refused. This is the property the
+#                                  tar bundle never had (#86 checked a hash out
+#                                  of its own manifest, which authenticates
+#                                  nobody), so it is checked first.
+#   3. an update is INCREMENTAL -- what the device already has is not fetched.
+#   4. collection is SAFE       -- the generation the ROLLBACK boot config
+#                                  names survives a `gc` that drops everything
+#                                  else, and the paths only it uses survive
+#                                  with it.
 #
-# The fixture is deliberately tiny and synthetic -- six "store paths" of a few
-# bytes each -- because the thing under test is the bookkeeping, not the size.
-# `nanokvm-system-bundle` (pkgs/system-bundle-check.nix) is where the REAL
-# artefact's shape is checked.
+# WHY THE SCRIPT IS INSTANTIATED AGAINST `pkgs` AND NOT THE APPLIANCE'S. The
+# appliance is aarch64; running its copies would need binfmt, which a release
+# runner does not have. The script TEXT is identical either way -- the only
+# difference is which coreutils and which nix are on PATH -- so this is a test
+# of the logic, which is what the logic needs.
+#
+# WHAT IT CANNOT PROVE: the real switch-to-configuration (it writes a
+# bootloader and wants /etc/NIXOS), the eMMC, and whether U-Boot can read what
+# was written. Those are the hardware plan in docs/updates.md.
 # ===========================================================================
 
 let
-  extlinuxTemplate = pkgs.writeText "extlinux.conf.in" (import ../../pkgs/extlinux.nix {
-    inherit pkgs lib;
-    init = "@INIT@";
-    kernelFile = "@KERNEL@";
-    dtbFile = "@FDT@";
-    bootId = "@KERNEL@,@FDT@";
-  });
-
-  installBoot = import ./install-boot.nix { inherit pkgs lib extlinuxTemplate; };
+  fixture = import ./update-fixture.nix { inherit pkgs lib; };
 
   tools = import ./updater.nix {
     inherit pkgs lib;
-    bootInstaller = installBoot;
     stableUrl = "https://example.invalid/latest";
     previewUrl = "https://example.invalid/preview";
-    keepGenerations = 3;
+    # The device's configured cache and keys are placeholders here: the check
+    # passes the real (throwaway) ones on the command line, the way a recovery
+    # or a bring-up run does.
+    cacheUrl = "https://example.invalid/cache";
+    trustedPublicKeys = [ "nobody:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" ];
+    keepGenerations = 2;
   };
-
-  # Store-path-shaped names, because closure.txt lines are `/nix/store/<base>`
-  # and everything downstream takes the basename.
-  oldSys = "00000000000000000000000000000001-nixos-system-old";
-  newSys = "00000000000000000000000000000002-nixos-system-new";
-  shared = "00000000000000000000000000000003-shared-lib";
-  oldOnly = "00000000000000000000000000000004-old-only";
-  newOnly = "00000000000000000000000000000005-new-only";
 in
 pkgs.runCommand "nanokvm-updater-loop"
 {
   nativeBuildInputs = [
-    tools.updater tools.gc installBoot
+    tools.updater pkgs.nix
     pkgs.coreutils pkgs.gnugrep pkgs.gnused pkgs.jq pkgs.findutils
   ];
+  # Deliberately NOT the fixture toplevels: a store path in this environment is
+  # a GC root inside the sandbox, and the collection assertions would then hold
+  # for the wrong reason. See update-fixture.nix.
+  inherit (fixture) releaseClosure deviceClosure paths;
   meta.description =
-    "Offline proof of the #86 update loop: apply a bundle to a fake root, then collect";
+    "Offline proof of the #100 update: substitute a signed closure into a real store, switch the profile, collect";
 } ''
   set -euo pipefail
-  R="$PWD/root"
-  B="$PWD/bundle"
+  ${fixture.shellLib}
 
   fail() { echo "FAIL: $*" >&2; exit 1; }
   ok()   { echo "  ok: $*"; }
 
-  # =====================================================================
-  # The fake root: one installed generation, a /boot with its kernel, and
-  # the closure record the image build would have written.
-  # =====================================================================
-  mkdir -p "$R/nix/store" "$R/nix/var/nix/profiles" "$R/boot/extlinux" \
-           "$R/var/lib/nanokvm/closures" "$R/run" "$R/etc"
+  nix_sandbox_setup
+  # Non-exported, so the collector cannot see them (see the header).
+  V1=$(sed -n 1p "$paths"); V2=$(sed -n 2p "$paths"); V3=$(sed -n 3p "$paths")
+  RELEASE=$releaseClosure; DEVICE=$deviceClosure
+  export -n releaseClosure deviceClosure paths
+  unset releaseClosure deviceClosure paths
 
-  for p in ${oldSys} ${shared} ${oldOnly}; do
-    mkdir -p "$R/nix/store/$p/bin"
-    echo "$p" > "$R/nix/store/$p/marker"
-  done
-  printf '#!/bin/sh\nexit 0\n' > "$R/nix/store/${oldSys}/bin/switch-to-configuration"
-  chmod +x "$R/nix/store/${oldSys}/bin/switch-to-configuration"
+  R="$PWD/root"      # the device
+  SRC="$PWD/release" # the build host
+  CACHE="$PWD/cache" # the binary cache between them
+  export STC_LOG="$PWD/stc.log"
 
-  # The profile link is RELATIVE so it resolves inside the fake root, the way
-  # an absolute one does on the device.
-  ln -s ../../../store/${oldSys} "$R/nix/var/nix/profiles/system-1-link"
+  # =====================================================================
+  # The release side: every generation, signed into a file:// cache.
+  # =====================================================================
+  nix key generate-secret --key-name nanokvm-test-1 > release.key
+  nix key convert-secret-to-public < release.key > release.pub
+  nix key generate-secret --key-name attacker-1 > attacker.key
+  nix key convert-secret-to-public < attacker.key > attacker.pub
+  make_store "$SRC" "$RELEASE"
+  sign_into_cache "$CACHE" "$SRC" "$V2" "$V3"
+  ok "release cache holds two generations, signed by $(cut -d: -f1 release.pub)"
+
+  # =====================================================================
+  # The device: one generation, a registered store, a boot config naming it.
+  # =====================================================================
+  make_store "$R" "$DEVICE"
+  mkdir -p "$R/boot/extlinux" "$R/run" "$R/etc/kvm" "$R/var/lib/nanokvm"
+  ln -s "$V1" "$R/nix/var/nix/profiles/system-1-link"
   ln -s system-1-link "$R/nix/var/nix/profiles/system"
-  ln -s "$R/nix/store/${oldSys}" "$R/run/booted-system"
-  ln -s "$R/nix/store/${oldSys}" "$R/run/current-system"
+  ln -s "$R$V1" "$R/run/booted-system"
+  ln -s "$R$V1" "$R/run/current-system"
+  bootcfg() { printf 'DEFAULT nixos\nLABEL nixos\n  LINUX /Image\n  APPEND init=%s/init loglevel=4\n' "$1"; }
+  bootcfg "$V1" > "$R/boot/extlinux/extlinux.conf"
+  bootcfg "$V1" > "$R/boot/extlinux/extlinux-fallback.conf"
 
-  printf '/nix/store/%s\n' ${oldSys} ${shared} ${oldOnly} \
-    | sort > "$R/var/lib/nanokvm/closures/${oldSys}.txt"
+  nix-store --store "local?root=$R" --verify --check-contents \
+    || fail "the fixture device store is not valid before we touch it"
+  ok "device store is valid, one generation, both boot configs name it"
 
-  echo "old kernel"  > "$R/boot/Image-old0000000000000"
-  echo "old dtb"     > "$R/boot/ax630c-nanokvm-pro-old0000000000000.dtb"
-  nanokvm-install-boot --root "$R" \
-    --kernel /Image-old0000000000000 \
-    --fdt /ax630c-nanokvm-pro-old0000000000000.dtb \
-    "/nix/store/${oldSys}"
-  cp "$R/boot/extlinux/extlinux.conf" "$R/boot/extlinux/extlinux-fallback.conf"
+  U() { nanokvm-update --root "$R" --cache "file://$CACHE" "$@"; }
 
   # =====================================================================
-  # The bundle: a new toplevel, one new path, one shared path it already has.
+  # 1. AUTHENTICITY -- a closure this device does not trust does not install.
   # =====================================================================
-  mkdir -p "$B/store" "$B/boot"
-  for p in ${newSys} ${newOnly}; do
-    mkdir -p "$B/store/$p/bin"
-    echo "$p" > "$B/store/$p/marker"
-  done
-  printf '#!/bin/sh\nexit 0\n' > "$B/store/${newSys}/bin/switch-to-configuration"
-  chmod +x "$B/store/${newSys}/bin/switch-to-configuration"
+  echo "=== an update signed by a key the device does not trust ==="
+  if U --trusted-key "$(cat attacker.pub)" install-toplevel "$V2" 9.9.9 \
+       > "$PWD/untrusted.log" 2>&1; then
+    cat "$PWD/untrusted.log" >&2
+    fail "a closure signed by an untrusted key installed"
+  fi
+  grep -q "lacks a signature by a trusted key" "$PWD/untrusted.log" \
+    || { cat "$PWD/untrusted.log" >&2; fail "the refusal was not a signature refusal"; }
+  [ ! -e "$R$V2" ] || fail "the untrusted closure landed in the store anyway"
+  [ "$(generation "$R")" = "system-1-link" ] \
+    || fail "the profile moved on a refused update"
+  [ ! -s "$STC_LOG" ] || fail "switch-to-configuration ran for a refused update"
+  ok "refused, nothing landed, the profile did not move"
 
-  printf '/nix/store/%s\n' ${newSys} ${newOnly} ${shared} \
-    | sort > "$B/closure.txt"
-
-  echo "new kernel" > "$B/boot/Image-new0000000000000"
-  echo "new dtb"    > "$B/boot/ax630c-nanokvm-pro-new0000000000000.dtb"
-  ksha=$(sha256sum "$B/boot/Image-new0000000000000" | cut -d' ' -f1)
-  fsha=$(sha256sum "$B/boot/ax630c-nanokvm-pro-new0000000000000.dtb" | cut -d' ' -f1)
-  jq -n --arg k "$ksha" --arg f "$fsha" \
-    '{ format: "nanokvm-system-bundle/1", version: "9.9.9", layout: "minimal",
-       toplevel: "/nix/store/${newSys}", closureCount: 3,
-       boot: { kernel: "Image-new0000000000000",
-               fdt: "ax630c-nanokvm-pro-new0000000000000.dtb",
-               kernelSha256: $k, fdtSha256: $f } }' > "$B/MANIFEST.json"
+  # The manifest cannot smuggle anything either: it names a path, and a path
+  # is all it can name.
+  echo '{"version":"9.9.9","toplevel":"/etc/passwd"}' > "$PWD/bad-manifest.json"
+  if U --trusted-key "$(cat release.pub)" install-manifest "$PWD/bad-manifest.json" \
+       > "$PWD/badpath.log" 2>&1; then
+    fail "a manifest naming a non-store path installed"
+  fi
+  grep -q "not a store path" "$PWD/badpath.log" \
+    || { cat "$PWD/badpath.log" >&2; fail "the refusal was for the wrong reason"; }
+  ok "a manifest that names something other than a store path is refused"
 
   # =====================================================================
-  # 1. APPLY
+  # 2. THE UPDATE -- from a manifest, the way the timer does it.
   # =====================================================================
-  echo "=== nanokvm-update install-staged ==="
-  nanokvm-update --root "$R" --no-activate install-staged "$B"
+  echo "=== nanokvm-update install-manifest (trusted key) ==="
+  jq -n --arg t "$V2" \
+    '{format:"nanokvm-nix-closure/1", version:"9.9.9", toplevel:$t, size:4096, closureCount:2}' \
+    > "$PWD/manifest.json"
+  U --trusted-key "$(cat release.pub)" install-manifest "$PWD/manifest.json"
 
-  echo "=== what the apply must have done ==="
-  [ -e "$R/nix/store/${newSys}/marker" ]  || fail "the new toplevel is not in the store"
-  [ -e "$R/nix/store/${newOnly}/marker" ] || fail "the new-only path is not in the store"
-  ok "both new store paths landed"
+  [ -e "$R$V2" ] || fail "the new toplevel is not in the store"
+  [ -e "$R$V1" ] || fail "the old generation was destroyed by an update"
+  ok "the new closure landed; the old one is untouched"
 
-  [ -e "$R/nix/store/${oldSys}/marker" ]  || fail "the old generation was destroyed by an update"
-  ok "the old generation is untouched"
+  nix-store --store "local?root=$R" --verify --check-contents \
+    || fail "the store is not valid after an update -- nix would refuse to collect"
+  ok "the store is still valid (db and contents agree)"
 
-  gen=$(readlink "$R/nix/var/nix/profiles/system")
-  [ "$gen" = "system-2-link" ] || fail "the profile is $gen, expected system-2-link"
-  [ "$(readlink -f "$R/nix/var/nix/profiles/system")" = "$R/nix/store/${newSys}" ] \
+  [ "$(generation "$R")" = "system-2-link" ] \
+    || fail "the profile is $(generation "$R"), expected system-2-link"
+  [ "$(system_path "$R")" = "$V2" ] \
     || fail "generation 2 does not resolve to the new toplevel"
   ok "the system profile is generation 2 -> the new toplevel"
 
-  [ -f "$R/var/lib/nanokvm/closures/${newSys}.txt" ] \
-    || fail "no closure record for the new generation -- gc could never run again"
-  ok "the new generation's closure list was recorded"
+  grep -q "$V2/bin/switch-to-configuration boot" "$STC_LOG" \
+    || { cat "$STC_LOG" >&2; fail "the NEW generation's switch-to-configuration was not run with 'boot'"; }
+  ! grep -qE ' switch$| test$| dry-activate$' "$STC_LOG" \
+    || { cat "$STC_LOG" >&2; fail "a generation was activated with something other than 'boot'"; }
+  ok "switch-to-configuration boot, and never switch"
 
-  [ -f "$R/boot/Image-new0000000000000" ] || fail "the new kernel is not in /boot"
-  ok "the new kernel is in /boot"
-  [ -f "$R/boot/Image-old0000000000000" ] || fail "the old kernel was removed by the update"
-  ok "the old kernel is still in /boot (mark-good collects it, not the updater)"
+  # The updater writes no boot files of its own (#99 owns /boot): the stub does
+  # nothing, so the configs must still name generation 1 afterwards.
+  grep -q "init=$V1/init" "$R/boot/extlinux/extlinux.conf" \
+    || fail "something other than the bootloader builder rewrote extlinux.conf"
+  ok "nothing in the updater touched /boot"
 
-  conf="$R/boot/extlinux/extlinux.conf"
-  fb="$R/boot/extlinux/extlinux-fallback.conf"
-  grep -q "init=/nix/store/${newSys}/init" "$conf" \
-    || fail "extlinux.conf does not name the new generation"
-  grep -q "LINUX /Image-new0000000000000" "$conf" \
-    || fail "extlinux.conf does not name the new kernel"
-  grep -q "nanokvmboot=/Image-new0000000000000," "$conf" \
-    || fail "extlinux.conf carries no nanokvmboot= token for the new kernel"
-  ok "extlinux.conf names the new generation AND the new kernel"
-
-  grep -q "init=/nix/store/${oldSys}/init" "$fb" \
-    || fail "the fallback moved -- only nanokvm-mark-good may promote it"
-  grep -q "LINUX /Image-old0000000000000" "$fb" \
-    || fail "the fallback's kernel moved"
-  ok "the fallback still names the OLD generation and the OLD kernel"
-
-  [ ! -e "$R/run/nanokvm-pending-boot" ] || fail "the pending-boot note was left behind"
-  ok "the pending-boot note was consumed"
+  [ -r "$R/var/lib/nanokvm/update-pending" ] || fail "no persistent note after an install"
+  [ "$(sed -n 's/^VERSION=//p' "$R/var/lib/nanokvm/update-pending")" = "9.9.9" ] \
+    || fail "the note does not name the installed version"
+  ok "the pending note names 9.9.9"
 
   # =====================================================================
-  # 2. COLLECT -- while the fallback still names generation 1
+  # 3. INCREMENTAL -- the second update fetches only what is missing.
   # =====================================================================
-  echo "=== nanokvm-gc --keep 1, with generation 1 named by the fallback ==="
-  nanokvm-gc --root "$R" --keep 1
-  [ -e "$R/nix/var/nix/profiles/system-1-link" ] \
-    || fail "gc dropped the generation the ROLLBACK config names"
-  [ -e "$R/nix/store/${oldOnly}/marker" ] \
-    || fail "gc deleted a path the fallback generation needs"
-  [ -e "$R/nix/store/${shared}/marker" ] || fail "gc deleted a shared path"
-  ok "the fallback generation and its exclusive paths survive --keep 1"
+  echo "=== a second update, with most of the closure already present ==="
+  before=$(find "$R/nix/store" -mindepth 1 -maxdepth 1 | wc -l)
+  jq -n --arg t "$V3" \
+    '{format:"nanokvm-nix-closure/1", version:"9.9.10", toplevel:$t, size:4096, closureCount:2}' \
+    > "$PWD/manifest3.json"
+  U --trusted-key "$(cat release.pub)" install-manifest "$PWD/manifest3.json" \
+    > "$PWD/second.log" 2>&1 || { cat "$PWD/second.log" >&2; fail "the second update failed"; }
+  after=$(find "$R/nix/store" -mindepth 1 -maxdepth 1 | wc -l)
+  [ "$after" = "$((before + 2))" ] \
+    || fail "the second update added $((after - before)) paths, expected exactly 2 (its toplevel and its dep)"
+  ok "only the two paths this generation adds were fetched"
+  [ "$(generation "$R")" = "system-3-link" ] || fail "the profile did not advance to generation 3"
+
+  # An update that is already installed is not installed twice.
+  U --trusted-key "$(cat release.pub)" install-manifest "$PWD/manifest3.json" \
+    > "$PWD/again.log" 2>&1
+  grep -q "already in the store" "$PWD/again.log" \
+    || { cat "$PWD/again.log" >&2; fail "a closure that was already present was fetched again"; }
+  ok "re-installing the same closure fetches nothing"
 
   # =====================================================================
-  # 3. COLLECT -- after the fallback has been promoted (what mark-good does)
+  # 4. COLLECTION -- while the fallback still names generation 1.
   # =====================================================================
-  echo "=== nanokvm-gc --keep 1, with the fallback promoted to generation 2 ==="
-  cp "$conf" "$fb"
+  # The device is now on generation 3 (v9.9.10) with 4 generations of profile
+  # link and a fallback config that still names the FIRST one. --keep 2 would
+  # drop it; the pin must not let that happen.
+  echo "=== nanokvm-update gc --keep 2, fallback naming generation 1 ==="
   rm -f "$R/run/booted-system" "$R/run/current-system"
-  ln -s "$R/nix/store/${newSys}" "$R/run/booted-system"
-  ln -s "$R/nix/store/${newSys}" "$R/run/current-system"
-  nanokvm-gc --root "$R" --keep 1
+  ln -s "$R$V3" "$R/run/booted-system"
+  ln -s "$R$V3" "$R/run/current-system"
+  bootcfg "$V3" > "$R/boot/extlinux/extlinux.conf"
+  # ...and the fallback is still the generation that last booted healthy.
+  bootcfg "$V1" > "$R/boot/extlinux/extlinux-fallback.conf"
 
-  [ ! -e "$R/nix/var/nix/profiles/system-1-link" ] \
-    || fail "gc kept generation 1 when nothing pins it any more"
-  [ ! -e "$R/nix/store/${oldSys}" ] || fail "gc kept the old toplevel"
-  [ ! -e "$R/nix/store/${oldOnly}" ] || fail "gc kept a path only the old generation used"
-  [ -e "$R/nix/store/${shared}/marker" ] \
-    || fail "gc deleted a path the SURVIVING generation still needs"
-  [ -e "$R/nix/store/${newSys}/marker" ] || fail "gc deleted the running system"
-  [ -e "$R/nix/store/${newOnly}/marker" ] || fail "gc deleted the running system's dependency"
-  ok "generation 1 and its exclusive paths collected; the live set is intact"
+  U --keep 2 gc > "$PWD/gc1.log" 2>&1 || { cat "$PWD/gc1.log" >&2; fail "gc failed"; }
+  cat "$PWD/gc1.log"
+  [ -e "$R$V1" ] || fail "gc deleted the generation the ROLLBACK config names"
+  [ -e "$R$V1/dep" ] || fail "gc deleted a path only the fallback generation uses"
+  [ -e "$R$V3" ] || fail "gc deleted the running system"
+  ok "the fallback generation and its dependencies survive --keep 2"
 
-  [ ! -e "$R/var/lib/nanokvm/closures/${oldSys}.txt" ] \
-    || fail "gc left the closure record of a generation it deleted"
-  ok "the stale closure record is gone"
+  # ...and it survived because it was PINNED, not because it was recent.
+  [ -L "$R/nix/var/nix/gcroots/nanokvm/pin-1" ] || fail "gc wrote no pins"
+  grep -q "gc: pinned $V1" "$PWD/gc1.log" \
+    || { cat "$PWD/gc1.log" >&2; fail "gc did not pin the fallback generation"; }
+  ok "the fallback was pinned by name before anything was deleted"
+
+  nix-store --store "local?root=$R" --verify --check-contents \
+    || fail "the store is not valid after a collection"
+  ok "the store is still valid after collecting"
 
   # =====================================================================
-  # 4. THE REFUSAL -- a kept generation with no closure record
+  # 5. COLLECTION -- after the fallback has been promoted (what mark-good does)
   # =====================================================================
-  # Without nix there is no way to recompute a closure, so an unknown live set
-  # must mean NO deletion at all. A gc that guessed here would be a bench trip.
-  echo "=== nanokvm-gc must refuse when a kept generation has no closure list ==="
-  mv "$R/var/lib/nanokvm/closures/${newSys}.txt" "$PWD/hidden.txt"
-  if nanokvm-gc --root "$R" --keep 1 2>"$PWD/gc-refusal.log"; then
-    fail "gc collected with an unknown live set"
-  fi
-  grep -q "refusing to collect anything" "$PWD/gc-refusal.log" \
-    || { cat "$PWD/gc-refusal.log" >&2; fail "gc failed for the wrong reason"; }
-  [ -e "$R/nix/store/${shared}/marker" ] || fail "gc deleted something before refusing"
-  ok "gc refuses, and deletes nothing, when a closure list is missing"
+  echo "=== nanokvm-update gc --keep 1, nothing pinning generation 1 ==="
+  bootcfg "$V3" > "$R/boot/extlinux/extlinux-fallback.conf"
+  U --keep 1 gc > "$PWD/gc2.log" 2>&1 || { cat "$PWD/gc2.log" >&2; fail "the second gc failed"; }
+  cat "$PWD/gc2.log"
+  [ ! -e "$R$V1" ] || fail "gc kept a generation nothing pins any more"
+  [ ! -e "$R$V2" ] || fail "gc kept the superseded middle generation"
+  [ -e "$R$V3" ] || fail "gc deleted the running system"
+  [ -e "$R$V3/dep" ] || fail "gc deleted a dependency of the running system"
+  ok "the unpinned generations and their exclusive paths are gone; the live one is intact"
+
+  [ "$(find "$R/nix/var/nix/profiles" -maxdepth 1 -name 'system-*-link' | wc -l)" = 1 ] \
+    || fail "old generation links survived --keep 1"
+  ok "one generation link left"
+
+  nix-store --store "local?root=$R" --verify --check-contents \
+    || fail "the store is not valid after the second collection"
 
   echo
-  echo "the #86 update loop holds offline."
+  echo "the #100 update holds offline: signed, incremental, and safe to collect."
   touch "$out"
 ''

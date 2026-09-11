@@ -1,12 +1,18 @@
 { pkgs
 , lib ? pkgs.lib
-, bootInstaller # nanokvm-install-boot, the boot.loader.external hook
-, stableUrl # release base URL: <base>/<manifestName>, <base>/<payload>
+, nix ? pkgs.nix # the nix the appliance runs; must be the same package
+, stableUrl # release base URL: <base>/<manifestName>
 , previewUrl # the rolling preview channel's base URL
 , manifestName ? "nanokvm_pro_sys_latest.json"
+, # The binary cache the release closure is substituted from (#96). Empty means
+  # this system cannot update itself and says so; nixos/appliance.nix warns at
+  # build time rather than shipping a device that finds out at 03:00.
+  cacheUrl ? ""
+, # The keys a NAR must be signed by. THE DEVICE'S OWN TRUST, not the
+  # manifest's: a release names a store path, never a key.
+  trustedPublicKeys ? [ ]
 , keepGenerations ? 3
 , stateDir ? "/var/lib/nanokvm"
-, cacheDir ? "/var/cache/nanokvm-update"
 , # The web UI's "Automatic updates" checkbox, as a flag file beside the
   # "preview updates" one. THE CHECKBOX IS THE STATE -- there is no NixOS
   # option behind it (see the header).
@@ -24,25 +30,39 @@
 }:
 
 # ===========================================================================
-# `nanokvm-update` and `nanokvm-gc` -- the appliance's whole update mechanism
-# (#86).
+# `nanokvm-update` -- the appliance's whole update mechanism (#100).
 #
-# WHAT AN UPDATE IS HERE. The appliance has no `nix` (nixos/appliance.nix,
-# `nix.enable = false`): the rootfs is a fixed closure the build host produced,
-# which is what keeps the image small and the device auditable. So an update is
-# not a `nixos-rebuild`; it is a SYSTEM BUNDLE -- the new toplevel's whole
-# closure, the kernel that closure's stage-1 initrd is baked into, and a list
-# saying which store paths belong to it -- unpacked into the store, made the
-# system profile, and booted into.
+# WHAT AN UPDATE IS HERE. This is a NixOS system and nix is on the device, so
+# an update is what an update is on any NixOS machine: put the new system's
+# closure in the store, make it the system profile, and run its
+# switch-to-configuration. The only thing that is ours is WHERE the closure
+# comes from and WHEN the reboot happens.
 #
-# THE REBOOT IS THE POINT, not an afterthought. The generation is installed
-# with `switch-to-configuration boot`, so nothing about it is live until the
-# board restarts; the restart is counted by U-Boot's `bootcount`, and
-# `nanokvm-mark-good` clears that counter only once the NEW system is running,
-# routed and serving. A generation that does not come up healthy is therefore
-# rolled back by `altbootcmd` on the fourth attempt with nobody watching --
-# which is the only rollback story a box with no console can have. `switch`
-# would activate an untested userspace with no way back, and is never used.
+#   1. the manifest    a tagged release publishes {version, toplevel} at a
+#                      fixed URL; the channel is the base URL.
+#   2. nix copy        substitutes that toplevel's closure from our binary
+#                      cache, verifying every NAR against the keys THIS SYSTEM
+#                      was built with. Whatever the device already has is not
+#                      downloaded -- which is the whole reason this replaced
+#                      the 460 MB tar bundle it used to be (#86).
+#   3. nix-env --set   the new toplevel becomes generation N+1 of
+#                      /nix/var/nix/profiles/system.
+#   4. switch-to-configuration boot
+#                      NixOS's own activation, in `boot` mode: the bootloader
+#                      is written, nothing running is touched.
+#
+# Every one of those four is an official tool doing the thing it is for. There
+# is no bundle format, no closure list, no hand-rolled collector and no
+# hand-rolled store surgery any more; docs/updates.md has the history.
+#
+# THE REBOOT IS THE POINT, not an afterthought. `boot`, never `switch`: nothing
+# about the new generation is live until the board restarts, the restart is
+# counted by U-Boot's `bootcount`, and `nanokvm-mark-good` clears that counter
+# only once the NEW system is running, routed and serving. A generation that
+# does not come up healthy is rolled back by `altbootcmd` on the fourth attempt
+# with nobody watching -- the only rollback story a box with no console can
+# have. `switch` would activate an untested userspace with no way back, and is
+# never used.
 #
 # BUT THE REBOOT WAITS FOR AN EMPTY ROOM. A KVM is the machine you are using to
 # fix the machine, so a reboot in the middle of someone's console session is
@@ -57,55 +77,81 @@
 # THE SWITCH IS A CHECKBOX, NOT AN OPTION. `update` does nothing at all unless
 # /etc/kvm/auto_updates exists -- the file the web UI's "Automatic updates"
 # toggle writes, beside the "preview updates" one it already wrote. There is no
-# `nanokvm.update.auto` any more: a NixOS default the UI can override has to be
-# stored tri-state and shipped into the server as well, and the flake would
-# still read `auto = false` on a device that had been updating itself for
-# months. One file, one truth, and the user owns it.
+# `nanokvm.update.auto`: a NixOS default the UI can override has to be stored
+# tri-state and shipped into the server as well, and the flake would still read
+# `auto = false` on a device that had been updating itself for months. One
+# file, one truth, and the user owns it.
+#
+# WHERE THE TRUST IS. `nix copy` runs with `require-sigs = true` and an
+# EXPLICIT `trusted-public-keys` -- the keys this system was built with, passed
+# on the command line, not read from /etc/nix/nix.conf. So the gate between the
+# network and this board's root filesystem is an ed25519 signature over each
+# NAR, made by the key that signed the release; a cache that is compromised,
+# mirrored, or simply wrong serves paths this device refuses. That is strictly
+# more than the tar bundle had (a SHA-512 out of our own manifest, i.e.
+# integrity only), and it is the whole of #31 for the appliance. The manifest
+# itself is still only TLS-authenticated -- but all it can say is "install
+# store path X", and a path nobody trusted signed does not install.
 #
 # TWO CALLERS, ONE IMPLEMENTATION. The web UI's "update" button reaches this
 # through the server's install() override (pkgs/nanokvm-server/
-# install-bundle.go.in), which hands over an already-downloaded, already
-# SHA-512-verified, already untarred bundle; the systemd timer runs the whole
-# cycle itself. Both end up in `install-staged`.
+# install-update.go.in), which runs `install-now`; the systemd timer runs
+# `update`. Both end up in `install_toplevel`.
 #
 # --root EXISTS FOR THE OFFLINE TEST. Every path this script touches is
-# prefixed, so `nix flake check`'s `nanokvm-updater-loop` can run a real bundle
-# into a real fake root inside a build sandbox -- no device, no loop mount, no
-# privileges. That check is the only reason any of this is provable before it
-# meets hardware.
+# prefixed and every nix invocation takes `--store local?root=...`, so
+# `nix flake check`'s `nanokvm-updater-loop` runs the REAL substitution, the
+# REAL signature check, the REAL profile switch and the REAL collector against
+# a chroot store inside a build sandbox. That check is the only reason any of
+# this is provable before it meets hardware.
 #
 # WHAT IS DELIBERATELY NOT HERE:
 #
-#   * No signature check. The bundle is gated by a SHA-512 that comes from our
-#     own manifest, so this is integrity, not authenticity, and TLS to the
-#     release host is the trust boundary -- exactly as the legacy OTA was.
-#     Signing is #31; it plugs in at `verify_payload`, between the hash check
-#     and the unpack, and nowhere else.
-#   * No delta bundles. See docs/updates.md ("Weighed and rejected").
+#   * No /boot writing. The kernel, initrd and dtb belong to the generation and
+#     reach /boot through NixOS's own bootloader builder, which
+#     `switch-to-configuration boot` runs (#99). Nothing in this file knows
+#     what a kernel is.
+#   * No closure bookkeeping. `nix-collect-garbage` knows what is reachable;
+#     the only thing we tell it is which generations must survive.
+#   * No delta transport. `nix copy` is already a delta: it asks the
+#     destination store what it is missing and copies exactly that.
 # ===========================================================================
 
 let
   # Everything the scripts shell out to. `busybox` last, so the real tools win
   # and only `devmem` comes from it.
   tools = with pkgs; [
-    coreutils gnused gnugrep gnutar gzip findutils curl openssl jq util-linux
-    systemd busybox
-  ];
+    coreutils gnused gnugrep findutils curl jq util-linux systemd busybox
+  ] ++ [ nix ];
+
+  keys = lib.concatStringsSep " " trustedPublicKeys;
 
   usageText = ''
-    usage: nanokvm-update [--root DIR] [--no-activate] [--no-reboot] <command>
+    usage: nanokvm-update [OPTIONS] <command>
 
       check                    what is installed, and what the channel offers
-      update                   check, download, install, reboot when idle
-                               (what the timer runs; a no-op unless the
-                               "Automatic updates" box is ticked in the web UI)
-      install <bundle.tar.gz>  verify + unpack + install a bundle from a file
-      install-staged <dir> [v] install an already-unpacked bundle (the web UI path)
+      update                   check, install, reboot when idle (what the timer
+                               runs; a no-op unless the "Automatic updates" box
+                               is ticked in the web UI)
+      install-now              install what the channel offers, right now,
+                               whatever the checkbox says (the web UI button)
+      install-manifest <file>  install the release named by a manifest on disk
+      install-toplevel <path> [version]
+                               install one store path as the next generation
       pending                  the installed-but-not-yet-booted update, if any
       reboot-if-idle           reboot into a pending update if nobody is using
                                the device (what nanokvm-update-reboot runs)
-      gc                       drop old generations and the store paths only they used
-      status                   generations, boot configs, /boot payload
+      gc                       delete old generations and collect the store
+      status                   generations, boot configs, store health
+
+    options:
+      --root DIR       operate on a fake root (the offline check)
+      --cache URL      substitute from this binary cache instead of the
+                       configured one
+      --trusted-key K  require this key instead of the configured ones
+      --keep N         generations to keep (gc)
+      --no-activate    do not run switch-to-configuration
+      --no-reboot      install, never reboot
 
     ONLY TAGGED RELEASES ARE EVER INSTALLED. Both channels are GitHub releases
     cut from a vX.Y.Z tag -- stable is releases/latest/download, which never
@@ -113,7 +159,8 @@ let
     only a tag-triggered run refreshes. Nothing publishes from a branch, so no
     device can be offered the tip of main.
 
-    A bundle is built by "nix build .#system-bundle"; see docs/updates.md.
+    The manifest a release publishes is built by "nix build .#system-manifest";
+    see docs/updates.md.
   '';
 
   # Shared preamble: option parsing and the path helpers, so the two scripts
@@ -123,7 +170,7 @@ let
     say() { printf 'nanokvm-update: %s\n' "$*"; }
     die() { printf 'nanokvm-update: %s\n' "$*" >&2; exit 1; }
 
-    # /nix/store is a read-only BIND mount on the appliance, and `remount,ro`
+    # /nix/store is a read-only BIND mount on some layouts, and `remount,ro`
     # alone silently does nothing on a bind -- it needs `remount,bind,ro`.
     # Under --root there is no mount at all, so both are no-ops.
     store_rw() {
@@ -137,6 +184,15 @@ let
       mount -o remount,bind,ro /nix/store
     }
     P() { printf '%s%s' "$ROOT" "$1"; }
+
+    # WHICH STORE EVERY NIX COMMAND TALKS TO. On the device: `auto`, which is
+    # the local store (this appliance runs nix single-user -- see
+    # nixos/appliance.nix). Under --root: a chroot store, which is a real
+    # store with its own db, so the offline check exercises the same code
+    # paths rather than a simulation of them.
+    store_uri() {
+      if [ -n "$ROOT" ]; then printf 'local?root=%s' "$ROOT"; else printf 'auto'; fi
+    }
   '';
 
   # ---- the idle gate and the pending marker ------------------------------
@@ -220,10 +276,10 @@ let
     # would be pure noise.
     #
     # Under --root the reboot is RECORDED, not taken: the offline check
-    # (nixos/lib/updater-test.nix) reads /run/nanokvm-reboot-requested back out
-    # of its fake root. A PATH stub could not do this -- writeShellApplication
-    # puts its own systemd first on PATH -- and a build sandbox is no place to
-    # find out.
+    # (nixos/lib/update-idle-test.nix) reads /run/nanokvm-reboot-requested back
+    # out of its fake root. A PATH stub could not do this --
+    # writeShellApplication puts its own systemd first on PATH -- and a build
+    # sandbox is no place to find out.
     do_reboot() {
       if [ -n "$ROOT" ]; then
         mkdir -p "$(P /run)"
@@ -268,7 +324,7 @@ let
 
   updater = pkgs.writeShellApplication {
     name = "nanokvm-update";
-    runtimeInputs = tools ++ [ bootInstaller ];
+    runtimeInputs = tools;
     text = ''
       set -eu
       ${common}
@@ -277,8 +333,9 @@ let
       STABLE_URL='${stableUrl}'
       PREVIEW_URL='${previewUrl}'
       MANIFEST='${manifestName}'
-      STATE='${stateDir}'
-      CACHE='${cacheDir}'
+      CACHE='${cacheUrl}'
+      KEYS='${keys}'
+      KEEP=${toString keepGenerations}
       ACTIVATE=1
       REBOOT=1
 
@@ -303,166 +360,130 @@ let
         curl -fsSL --retry 3 --retry-delay 3 -m 60 "$(base_url)/$MANIFEST"
       }
 
-      # ---- verification ---------------------------------------------------
-      # The one gate between the network and this board's root filesystem.
-      # A signature check (#31) belongs HERE, after this and before the unpack.
-      verify_payload() {
-        local file="$1" want="$2"
-        local got
-        got=$(openssl dgst -sha512 -binary "$file" | base64 -w0)
-        [ "$got" = "$want" ] || die "sha512 mismatch on $(basename "$file")"
-        say "sha512 verified"
+      # The two fields an update needs, and the refusal that keeps a malformed
+      # or hostile manifest from reaching `nix copy`: a toplevel is a store
+      # path, spelled exactly the way the store spells one.
+      manifest_toplevel() {
+        local top
+        top=$(printf '%s' "$1" | jq -r '.toplevel // empty')
+        [ -n "$top" ] || die "the manifest names no toplevel -- is this a $MANIFEST from a release?"
+        case "$top" in
+          /nix/store/*) ;;
+          *) die "the manifest's toplevel is not a store path: $top" ;;
+        esac
+        printf '%s' "$top"
       }
 
-      # ---- installing an unpacked bundle ----------------------------------
-      # THE SEAM (#100). Everything above this function is transport -- fetch a
-      # tarball, check a SHA-512, untar it -- and everything below `STAGED_*` is
-      # policy: the pending markers and the idle-gated reboot. When the device
-      # gets `nix` and the transport becomes `nix copy` from a binary cache,
-      # THIS function and the download above it are what is replaced; the
-      # markers, the checkbox and the reboot gate do not move. So it reports
-      # what it installed through two variables rather than writing the markers
-      # itself, and its callers decide what that means.
+      # ---- installing a generation ----------------------------------------
+      # THE SEAM. Everything above is transport (which URL, which version) and
+      # everything below `STAGED_*` is policy (the pending markers and the
+      # idle-gated reboot). This function is the whole of the install, and it
+      # is four official commands in a row.
       STAGED_VERSION=""
       STAGED_TOPLEVEL=""
 
-      install_staged() {
-        local dir="$1"
-        local mf="$dir/MANIFEST.json"
-        [ -r "$mf" ] || die "$dir is not a system bundle (no MANIFEST.json)"
+      install_toplevel() {
+        local top="$1" ver="''${2:-}"
+        local store; store=$(store_uri)
 
-        local fmt top kern fdt ksha fsha
-        fmt=$(jq -r '.format' "$mf")
-        [ "$fmt" = "nanokvm-system-bundle/1" ] \
-          || die "unknown bundle format '$fmt' -- this system installs nanokvm-system-bundle/1"
-        top=$(jq -r '.toplevel' "$mf")
-        kern=$(jq -r '.boot.kernel' "$mf")
-        fdt=$(jq -r '.boot.fdt' "$mf")
-        ksha=$(jq -r '.boot.kernelSha256' "$mf")
-        fsha=$(jq -r '.boot.fdtSha256' "$mf")
-        [ -r "$dir/closure.txt" ] || die "$dir has no closure.txt"
-        grep -qxF "$top" "$dir/closure.txt" \
-          || die "closure.txt does not contain the toplevel it claims ($top)"
+        case "$top" in
+          /nix/store/*) ;;
+          *) die "not a store path: $top" ;;
+        esac
 
-        say "bundle $(jq -r '.version' "$mf"): $top"
-
-        # --- 1. the store ------------------------------------------------
-        # Every path in the closure must be either already installed or in the
-        # bundle. Checked in full BEFORE anything is moved, because a closure
-        # with a hole in it is a generation that activates and then dies on a
-        # missing binary -- and this board has no console to say which.
-        local missing=""
-        local n_have=0 n_new=0 b
-        while read -r p; do
-          [ -n "$p" ] || continue
-          b=''${p#/nix/store/}
-          if [ -e "$(P /nix/store)/$b" ]; then
-            n_have=$((n_have + 1))
-          elif [ -e "$dir/store/$b" ]; then
-            n_new=$((n_new + 1))
-            missing="$missing $b"
-          else
-            die "closure path $p is neither installed nor carried by the bundle"
-          fi
-        done < "$dir/closure.txt"
-        say "closure: $n_have already here, $n_new to install"
-
-        store_rw
-        # shellcheck disable=SC2086
-        for b in $missing; do
-          if ! mv -T "$dir/store/$b" "$(P /nix/store)/$b" 2>/dev/null; then
-            # Different filesystem (a --root test, or a bundle unpacked
-            # elsewhere): copy to a sibling temp and rename into place, so a
-            # half-copied path is never visible under its real name.
-            cp -a "$dir/store/$b" "$(P /nix/store)/.nanokvm-tmp-$b"
-            mv -T "$(P /nix/store)/.nanokvm-tmp-$b" "$(P /nix/store)/$b"
-          fi
-        done
-        sync
-        store_ro
-        [ -e "$(P /nix/store)/''${top#/nix/store/}" ] || die "the toplevel is not in the store after unpacking"
-
-        # --- 2. the closure list ------------------------------------------
-        # WITHOUT THIS THERE IS NO GC. There is no nix on this board, so
-        # nothing can recompute which paths a generation needs; the bundle's
-        # own list is the only record, and it is kept per generation.
-        mkdir -p "$(P "$STATE")/closures"
-        install -m 0644 "$dir/closure.txt" "$(P "$STATE")/closures/''${top#/nix/store/}.txt"
-
-        # --- 3. /boot ------------------------------------------------------
-        # Content-addressed names, so a file that is already there is already
-        # the right bytes -- but verify the ones we write, because /boot is
-        # what U-Boot reads and a bad kernel here costs a rollback cycle.
-        local bootdir; bootdir="$(P /boot)"
-        [ -d "$bootdir/extlinux" ] || die "$bootdir/extlinux is missing -- is /boot mounted?"
-        install_boot_file "$dir/boot/$kern" "$bootdir/$kern" "$ksha"
-        install_boot_file "$dir/boot/$fdt"  "$bootdir/$fdt"  "$fsha"
-
-        # --- 4. the system profile ----------------------------------------
-        # AFTER /boot, and that ordering is the failure plan: everything that
-        # can fail on a full filesystem or a bad hash has already run, and if
-        # anything below this line dies, what boots is still decided by the
-        # extlinux.conf already on the partition -- which pins `init=`, so the
-        # profile the next boot follows does not matter.
-        #
-        # The one exception is a FRESHLY FLASHED board, whose baked config
-        # carries no `init=` at all and therefore follows the profile. A crash
-        # between here and step 5 would boot the new generation on the old
-        # kernel there. Both are this flake's and stage 1 mounts root by
-        # device, so it comes up; it is worth knowing, not worth a transaction.
-        local prof; prof="$(P /nix/var/nix/profiles)"
-        mkdir -p "$prof"
-        local next; next=$(next_generation "$prof")
-        ln -sfn "$(P "$top")" "$prof/system-$next-link"
-        ln -sfn "system-$next-link" "$prof/.system-new"
-        mv -Tf "$prof/.system-new" "$prof/system"
-        sync
-        say "generation $next is now the system profile"
-
-        # --- 5. the boot config -------------------------------------------
-        # The pending note is what makes `switch-to-configuration boot` -- which
-        # calls nanokvm-install-boot as boot.loader.external's hook, with no
-        # arguments of ours -- name THIS bundle's kernel rather than the running
-        # one.
-        printf 'KERNEL=/%s\nFDT=/%s\n' "$kern" "$fdt" > "$(P /run/nanokvm-pending-boot)"
-        if [ "$ACTIVATE" = 1 ] && [ -z "$ROOT" ]; then
-          "$top/bin/switch-to-configuration" boot
+        # --- 1. the closure ------------------------------------------------
+        # `nix copy` asks the destination what it is missing and fetches
+        # exactly that, so an update that changes one package downloads one
+        # package. require-sigs + an explicit key list is the gate: an
+        # unsigned or differently-signed NAR does not land, and nothing is
+        # half-installed when it is refused (nix stages each path and renames
+        # it into place).
+        # "Already here" means VALID IN THE DATABASE, not present on disk. A
+        # directory nix does not know about is not a store path: `nix-env
+        # --set` on one tries to download it, which on this device means
+        # substituting the system it is already running.
+        if nix path-info --extra-experimental-features nix-command \
+             --store "$store" "$top" >/dev/null 2>&1; then
+          say "$top is already in the store"
         else
-          say "not activating (--no-activate or --root); writing the boot config directly"
-          nanokvm-install-boot ''${ROOT:+--root "$ROOT"} --kernel "/$kern" --fdt "/$fdt" "$top"
+          [ -n "$CACHE" ] || die "no binary cache configured -- set nanokvm.update.cacheUrl"
+          [ -n "$KEYS" ] || die "no trusted public keys configured -- set nanokvm.update.trustedPublicKeys"
+          say "substituting $top from $CACHE"
+          store_rw
+          nix copy \
+            --extra-experimental-features nix-command \
+            --from "$CACHE" --to "$store" \
+            --option require-sigs true \
+            --option trusted-public-keys "$KEYS" \
+            "$top" || { store_ro; die "could not substitute $top from $CACHE"; }
+          store_ro
+          nix path-info --extra-experimental-features nix-command \
+            --store "$store" "$top" >/dev/null \
+            || die "$top is not valid in the store after nix copy"
         fi
-        rm -f "$(P /run/nanokvm-pending-boot)"
+
+        # --- 2. the system profile -----------------------------------------
+        # `nix-env --set` is what makes a generation: it creates
+        # system-<N>-link, points `system` at it, and leaves the old ones
+        # where the rollback can still find them.
+        say "making $top generation $(next_generation) of the system profile"
+        nix-env --store "$store" \
+          -p "$(P /nix/var/nix/profiles/system)" --set "$top" \
+          || die "nix-env could not set the system profile to $top"
         sync
 
-        STAGED_VERSION=$(jq -r '.version' "$mf")
+        # --- 3. activation, in `boot` mode ---------------------------------
+        # NixOS's own switch-to-configuration: it writes the bootloader (which
+        # on this board is the extlinux config, the kernel, the initrd and the
+        # dtb -- all of them part of the generation since #99) and touches
+        # nothing that is running. The reboot is what makes any of it live.
+        if [ "$ACTIVATE" = 1 ]; then
+          say "switch-to-configuration boot"
+          "$(P "$top")/bin/switch-to-configuration" boot \
+            || die "switch-to-configuration boot failed -- the profile points at $top but the bootloader does not"
+        else
+          say "not activating (--no-activate): the bootloader still names the old generation"
+        fi
+        sync
+
         STAGED_TOPLEVEL="$top"
+        STAGED_VERSION="$ver"
+        if [ -z "$STAGED_VERSION" ]; then
+          STAGED_VERSION=$(tr -d '[:space:]' < "$(P "$top")/etc/nanokvm-version" 2>/dev/null || echo "unknown")
+        fi
 
         say "installed. The reboot is what proves it: U-Boot counts the attempt"
         say "and nanokvm-mark-good clears the counter only once this system is"
         say "running, routed and serving. Three bad attempts roll it back."
       }
 
-      install_boot_file() {
-        local src="$1" dst="$2" want="$3" got
-        if [ -f "$dst" ]; then
-          got=$(sha256sum "$dst" | cut -d' ' -f1)
-          if [ "$got" = "$want" ]; then say "/boot/$(basename "$dst") already present"; return 0; fi
-          say "/boot/$(basename "$dst") differs from the bundle -- rewriting"
+      # Fetch the manifest of the selected channel and install what it names.
+      # `force` = install even if the version matches (the web UI's button,
+      # which a human pressed).
+      install_from_channel() {
+        local force="$1" mf av top cur
+        cur=$(current_version)
+        mf=$(fetch_manifest) || die "could not reach $(base_url)/$MANIFEST"
+        av=$(printf '%s' "$mf" | jq -r '.version')
+        top=$(manifest_toplevel "$mf")
+        if [ "$cur" = "$av" ] && [ "$force" != 1 ]; then
+          say "already on $cur"
+          return 1
         fi
-        [ -f "$src" ] || die "the bundle does not carry $(basename "$dst")"
-        got=$(sha256sum "$src" | cut -d' ' -f1)
-        [ "$got" = "$want" ] || die "$(basename "$src") does not match the hash in MANIFEST.json"
-        cp "$src" "$dst.new"
-        sync "$dst.new"
-        mv -f "$dst.new" "$dst"
-        sync
-        got=$(sha256sum "$dst" | cut -d' ' -f1)
-        [ "$got" = "$want" ] || die "read-back of /boot/$(basename "$dst") does not match"
-        say "/boot/$(basename "$dst") written and verified"
+        # A string compare, not semver: the appliance takes what the channel
+        # offers, because "the channel" is a release we cut. Downgrades are a
+        # deliberate operation (point the URL at an older release), and the
+        # rollback that catches a bad one is the boot counter, not a version
+        # test here.
+        say "updating $cur -> $av"
+        install_toplevel "$top" "$av"
+        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
+        return 0
       }
 
       next_generation() {
-        local prof="$1" max=0 n
+        local prof n max=0
+        prof="$(P /nix/var/nix/profiles)"
         for l in "$prof"/system-*-link; do
           [ -e "$l" ] || continue
           n=$(basename "$l"); n=''${n#system-}; n=''${n%-link}
@@ -472,12 +493,40 @@ let
         echo $((max + 1))
       }
 
+      # Every generation something other than the profile depends on. The
+      # FALLBACK is the one that matters: it is what gets used precisely when
+      # the default does not work, and it is named by a file in /boot rather
+      # than by a profile link, so nothing in nix knows about it unless we say
+      # so. Any `init=/nix/store/<x>/init` in ANY boot config counts -- which
+      # keeps working whether the fallback is a second file (today) or a
+      # second LABEL in one file (#99).
+      #
+      # LOGICAL store paths, always: a gc root must name /nix/store/<x> even
+      # when --root has the store somewhere else, because that is what the
+      # store it belongs to calls it.
+      pinned_toplevels() {
+        local f l t
+        for l in "$(P /run/booted-system)" "$(P /run/current-system)" \
+                 "$(P /nix/var/nix/profiles/system)"; do
+          [ -e "$l" ] || continue
+          t=$(readlink -f "$l")
+          printf '%s\n' "''${t#"$ROOT"}"
+        done
+        for f in "$(P /boot/extlinux)"/*.conf; do
+          [ -r "$f" ] || continue
+          sed -n 's|.*[[:space:]]init=\(/nix/store/[^[:space:]]*\)/init.*|\1|p' "$f"
+        done
+      }
+
       # ---- commands -------------------------------------------------------
       cmd=""
       args=""
       while [ $# -gt 0 ]; do
         case "$1" in
           --root)        ROOT="''${2%/}"; shift 2 ;;
+          --cache)       CACHE="$2"; shift 2 ;;
+          --trusted-key) KEYS="$2"; shift 2 ;;
+          --keep)        KEEP="$2"; shift 2 ;;
           --no-activate) ACTIVATE=0; shift ;;
           --no-reboot)   REBOOT=0; shift ;;
           -h|--help)     usage ;;
@@ -495,18 +544,19 @@ let
         mf=$(fetch_manifest) || die "could not reach $(base_url)/$MANIFEST"
         av=$(printf '%s' "$mf" | jq -r '.version')
         echo "installed: $cur"
-        echo "available: $av  ($(printf '%s' "$mf" | jq -r '.name'))"
+        echo "available: $av"
+        echo "toplevel:  $(printf '%s' "$mf" | jq -r '.toplevel // "(none)"')"
         echo "channel:   $(base_url)"
+        echo "cache:     ''${CACHE:-(none configured)}"
         [ "$cur" != "$av" ] || echo "up to date"
         ;;
 
       update)
-        # THE CHECKBOX IS THE SWITCH (#86). The timer runs whenever
-        # `nanokvm.update.enable` is set -- there is no unit-level gate any
-        # more -- so this file is what decides whether anything happens, and
-        # the web UI's "Automatic updates" toggle is what writes it. Exit 0,
-        # because a device whose owner has not asked for updates is not a
-        # failed update.
+        # THE CHECKBOX IS THE SWITCH. The timer runs whenever
+        # `nanokvm.update.enable` is set -- there is no unit-level gate -- so
+        # this file is what decides whether anything happens, and the web UI's
+        # "Automatic updates" toggle is what writes it. Exit 0, because a
+        # device whose owner has not asked for updates is not a failed update.
         if ! auto_updates_enabled; then
           say "automatic updates are off (no $AUTO_FLAG) -- nothing to do"
           exit 0
@@ -523,8 +573,8 @@ let
 
         # NEVER INSTALL OVER AN UNPROVEN BOOT. `bootcount` is only cleared once
         # nanokvm-mark-good has seen this system running, routed and serving;
-        # writing a new extlinux.conf before that would replace the very thing
-        # the counter is counting, and the rollback would then land on a
+        # writing a new bootloader config before that would replace the very
+        # thing the counter is counting, and the rollback would then land on a
         # generation nobody chose. TOP_CHIPMODE_GLB_BACKUP1, 0xB0010000 =
         # healthy. Absent devmem (a --root run, or QEMU) the check is skipped.
         if [ -z "$ROOT" ] && command -v devmem >/dev/null 2>&1; then
@@ -535,38 +585,42 @@ let
 Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
           esac
         fi
-        cur=$(current_version)
-        mf=$(fetch_manifest) || die "could not reach $(base_url)/$MANIFEST"
-        av=$(printf '%s' "$mf" | jq -r '.version')
-        name=$(printf '%s' "$mf" | jq -r '.name')
-        sha=$(printf '%s' "$mf" | jq -r '.sha512')
-        if [ "$cur" = "$av" ]; then say "already on $cur"; exit 0; fi
-        # A string compare, not semver: the appliance takes what the channel
-        # offers, because "the channel" is a release we cut. Downgrades are a
-        # deliberate operation (point the URL at an older release), and the
-        # rollback that catches a bad one is the boot counter, not a version
-        # test here.
-        say "updating $cur -> $av"
-        mkdir -p "$(P "$CACHE")"
-        tarball="$(P "$CACHE")/$name"
-        curl -fL --retry 3 --retry-delay 5 -o "$tarball.part" "$(base_url)/$name"
-        mv -f "$tarball.part" "$tarball"
-        verify_payload "$tarball" "$sha"
-        d="$(P "$CACHE")/unpacked"
-        rm -rf "$d"; mkdir -p "$d"
-        tar -C "$d" -xzf "$tarball"
-        top=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
-        install_staged "$top"
-        rm -rf "$d" "$tarball"
-        # From here down is policy, and survives the #100 transport swap.
-        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
+
+        install_from_channel 0 || exit 0
+        # From here down is policy, and it did not move when the transport did.
         [ "$REBOOT" = 1 ] || exit 0
         ${lib.optionalString (!rebootImmediately) ''
         say "a reboot window is configured, so this install does not reboot."
-        say "nanokvm-update-reboot takes $av inside the window, once idle."
+        say "nanokvm-update-reboot takes $STAGED_VERSION inside the window, once idle."
         exit 0
         ''}
-        reboot_if_idle "$av"
+        reboot_if_idle "$STAGED_VERSION"
+        ;;
+
+      # The web UI's path: a human pressed the button, so no checkbox and no
+      # idle gate -- but the markers are still written, because the note is
+      # what lets the page say what happened on the other side of the restart.
+      # The server reboots the device itself afterwards.
+      install-now)
+        install_from_channel 1 || exit 0
+        ;;
+
+      # A manifest from disk: the offline check's entry point, and the way to
+      # install a release by hand on a device whose channel is unreachable.
+      install-manifest)
+        mf=$(cat "''${1:?usage: nanokvm-update install-manifest <manifest.json>}")
+        cur=$(current_version)
+        av=$(printf '%s' "$mf" | jq -r '.version')
+        install_toplevel "$(manifest_toplevel "$mf")" "$av"
+        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
+        ;;
+
+      # The lowest level: one store path, straight in. Recovery, and the thing
+      # a developer reaches for after `nix copy --to ssh://` from a build host.
+      install-toplevel)
+        cur=$(current_version)
+        install_toplevel "''${1:?usage: nanokvm-update install-toplevel <store path> [version]}" "''${2:-}"
+        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
         ;;
 
       # What `nanokvm-update-reboot` runs every ten minutes (or, when
@@ -597,31 +651,70 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         echo "automatic updates : $(if auto_updates_enabled; then echo on; else echo off; fi)"
         ;;
 
-      install)
-        tarball="''${1:?usage: nanokvm-update install <bundle.tar.gz>}"
-        cur=$(current_version)
-        d="$(P "$CACHE")/unpacked"
-        rm -rf "$d"; mkdir -p "$d"
-        tar -C "$d" -xzf "$tarball"
-        top=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
-        install_staged "$top"
-        rm -rf "$d"
-        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
-        ;;
-
-      # The web UI's path: the server has already downloaded, verified and
-      # untarred the bundle (pkgs/nanokvm-server/install-bundle.go.in) and
-      # reboots itself afterwards -- an explicit human action, so no idle gate.
-      # The markers are still written, because the note is what lets the page
-      # say what happened on the other side of the restart.
-      install-staged)
-        cur=$(current_version)
-        install_staged "''${1:?usage: nanokvm-update install-staged <dir> [version]}"
-        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
-        ;;
-
+      # ---- the collector --------------------------------------------------
+      # `nix-collect-garbage` decides what is reachable; all we do is tell it
+      # what must stay reachable. TWO STEPS, AND THE ORDER IS THE SAFETY
+      # PROPERTY:
+      #
+      #   1. pin, as GC ROOTS, every generation a boot config names -- above
+      #      all the FALLBACK, which no profile link and no /run symlink
+      #      protects, and which is exactly what the board needs on the one
+      #      boot where the default generation does not work.
+      #   2. THEN delete the old generation links and collect.
+      #
+      # A pin that is written after the collection is a pin that was not there
+      # when it mattered. The roots live in /nix/var/nix/gcroots/nanokvm and
+      # are rewritten from scratch every run, so a generation that stops being
+      # named stops being pinned.
       gc)
-        nanokvm-gc ''${ROOT:+--root "$ROOT"} --keep ${toString keepGenerations}
+        prof="$(P /nix/var/nix/profiles)"
+        roots="$(P /nix/var/nix/gcroots/nanokvm)"
+        store=$(store_uri)
+        [ -d "$prof" ] || die "no $prof"
+
+        mkdir -p "$roots"
+        rm -f "$roots"/*
+        i=0
+        pinned="$(mktemp)"
+        trap 'rm -f "$pinned"' EXIT
+        pinned_toplevels | sort -u > "$pinned"
+        while read -r t; do
+          [ -n "$t" ] || continue
+          [ -e "$(P "$t")" ] || { say "pinned $t is not in the store -- skipping"; continue; }
+          i=$((i + 1))
+          ln -sfn "$t" "$roots/pin-$i"
+          echo "gc: pinned $t"
+        done < "$pinned"
+        say "$i generations pinned as gc roots"
+
+        # Which generation links may go: everything but the newest $KEEP, and
+        # never one whose toplevel is pinned (it would still survive as a
+        # store path, but a rollback is easier to reason about when the
+        # generation is still in the profile).
+        gens=$(find "$prof" -mindepth 1 -maxdepth 1 -name 'system-*-link' -printf '%f\n' 2>/dev/null \
+               | sed 's|^system-||; s|-link$||' | grep -E '^[0-9]+$' | sort -n || true)
+        [ -n "$gens" ] || die "no generations in $prof"
+        keepgens=$(printf '%s\n' "$gens" | tail -n "$KEEP")
+        doomed=""
+        for g in $gens; do
+          t=$(readlink -f "$prof/system-$g-link" 2>/dev/null || echo "")
+          if printf '%s\n' "$keepgens" | grep -qx "$g"; then continue; fi
+          if [ -n "$t" ] && grep -qxF "''${t#"$ROOT"}" "$pinned"; then
+            echo "gc: keeping generation $g -- a boot config names it"
+            continue
+          fi
+          doomed="$doomed $g"
+        done
+        if [ -n "$doomed" ]; then
+          echo "gc: deleting generations$doomed"
+          # shellcheck disable=SC2086
+          nix-env --store "$store" -p "$prof/system" --delete-generations $doomed
+        else
+          echo "gc: no generation is old enough to delete (keeping $KEEP)"
+        fi
+
+        nix-collect-garbage --store "$store"
+        echo "gc: done"
         ;;
 
       status)
@@ -630,137 +723,23 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         if [ -e "$(P "$PENDING")" ]; then
           echo "reboot pending    : $(note_field "$(P "$PENDING")" VERSION), waiting for an idle moment"
         fi
+        echo "channel           : $(base_url)"
+        echo "cache             : ''${CACHE:-(none configured)}"
         echo "booted system     : $(readlink -f "$(P /run/booted-system)" 2>/dev/null || echo '?')"
         echo "current system    : $(readlink -f "$(P /run/current-system)" 2>/dev/null || echo '?')"
         echo "profile           : $(readlink -f "$(P /nix/var/nix/profiles/system)" 2>/dev/null || echo '?')"
         echo "generations       : $(find "$(P /nix/var/nix/profiles)" -maxdepth 1 -name "system-*-link" 2>/dev/null | wc -l)"
-        for c in extlinux.conf extlinux-fallback.conf; do
-          f="$(P /boot/extlinux)/$c"
-          [ -r "$f" ] || { echo "$c: (absent)"; continue; }
-          echo "$c: $(sed -n 's|.*init=\([^ ]*\).*|\1|p' "$f" | head -1) on $(sed -n 's|^[[:space:]]*LINUX[[:space:]]\+||p' "$f" | head -1)"
+        echo "pinned by /boot   :"
+        pinned_toplevels | sort -u | sed 's/^/  /'
+        for c in "$(P /boot/extlinux)"/*.conf; do
+          [ -r "$c" ] || continue
+          echo "$(basename "$c"): $(sed -n 's|.*init=\([^ ]*\).*|\1|p' "$c" | head -1)"
         done
-        echo "boot payload      : $(find "$(P /boot)" -maxdepth 1 -name "Image-*" -printf "%f " 2>/dev/null)"
         ;;
 
       *) usage ;;
       esac
     '';
   };
-
-  gc = pkgs.writeShellApplication {
-    name = "nanokvm-gc";
-    runtimeInputs = tools;
-    text = ''
-      set -eu
-      ${common}
-
-      STATE='${stateDir}'
-      KEEP=${toString keepGenerations}
-      DRYRUN=0
-
-      while [ $# -gt 0 ]; do
-        case "$1" in
-          --root)    ROOT="''${2%/}"; shift 2 ;;
-          --keep)    KEEP="$2"; shift 2 ;;
-          -n|--dry-run) DRYRUN=1; shift ;;
-          *) echo "usage: nanokvm-gc [--root DIR] [--keep N] [-n]" >&2; exit 2 ;;
-        esac
-      done
-
-      prof="$(P /nix/var/nix/profiles)"
-      store="$(P /nix/store)"
-      closures="$(P "$STATE")/closures"
-      [ -d "$prof" ] || die "no $prof"
-
-      # ---- what must survive, whatever the numbers say --------------------
-      # Four things, and each of them is a board that does not come back if it
-      # is wrong: the profile the next boot follows, the system this boot is
-      # running, and the two generations the boot configs name. The FALLBACK is
-      # on that list for the same reason the whole rollback exists -- it is the
-      # thing that gets used precisely when the default does not work.
-      # A FILE, one path per line, so a store path can never match another by
-      # being a prefix of it.
-      pinned="$(mktemp)"
-      live=""; present=""; dead=""
-      trap 'rm -f "$pinned" "$live" "$present" "$dead"' EXIT
-      add_pin() { [ -n "$1" ] && [ -e "$1" ] && readlink -f "$1" >> "$pinned"; return 0; }
-      add_pin "$prof/system"
-      add_pin "$(P /run/booted-system)"
-      add_pin "$(P /run/current-system)"
-      for c in extlinux.conf extlinux-fallback.conf; do
-        f="$(P /boot/extlinux)/$c"
-        [ -r "$f" ] || continue
-        t=$(sed -n 's|.*[[:space:]]init=\([^[:space:]]*\)/init.*|\1|p' "$f" | head -1)
-        add_pin "$(P "$t")"
-      done
-
-      # ---- generations ----------------------------------------------------
-      gens=$(find "$prof" -mindepth 1 -maxdepth 1 -name 'system-*-link' -printf '%f\n' 2>/dev/null \
-             | sed 's|^system-||; s|-link$||' | grep -E '^[0-9]+$' | sort -n || true)
-      [ -n "$gens" ] || die "no generations in $prof"
-      total=$(printf '%s\n' "$gens" | wc -l)
-      keepgens=$(printf '%s\n' "$gens" | tail -n "$KEEP")
-
-      keeptops=""
-      droptops=""
-      for g in $gens; do
-        t=$(readlink -f "$prof/system-$g-link")
-        if printf '%s\n' "$keepgens" | grep -qx "$g" || grep -qxF "$t" "$pinned"; then
-          keeptops="$keeptops $t"
-        else
-          droptops="$droptops $t"
-          echo "gc: dropping generation $g ($t)"
-          [ "$DRYRUN" = 1 ] || rm -f "$prof/system-$g-link"
-        fi
-      done
-      echo "gc: $total generations, keeping $(printf '%s\n' "$keepgens" | tr '\n' ' ')plus pinned"
-
-      # ---- the live set ---------------------------------------------------
-      # THE REFUSAL IS THE SAFETY PROPERTY. Without nix there is no way to
-      # recompute a generation's closure, so a kept generation with no recorded
-      # closure means the live set is unknown -- and an unknown live set makes
-      # every deletion a guess. Do nothing at all in that case; a store that is
-      # too full is recoverable, a store missing one path is a bench trip.
-      live="$(mktemp)"
-      for t in $keeptops; do
-        f="$closures/$(basename "$t").txt"
-        [ -r "$f" ] || die "no closure list for kept generation $t ($f) -- refusing to collect anything"
-        cat "$f" >> "$live"
-      done
-      sort -u -o "$live" "$live"
-      echo "gc: live set is $(wc -l < "$live") store paths"
-
-      present="$(mktemp)"
-      find "$store" -mindepth 1 -maxdepth 1 ! -name '.*' -printf '/nix/store/%f\n' | sort > "$present"
-      dead="$(mktemp)"
-      comm -13 "$live" "$present" > "$dead"
-      n=$(wc -l < "$dead")
-      echo "gc: $(wc -l < "$present") present, $n collectable"
-
-      if [ "$n" -gt 0 ] && [ "$DRYRUN" = 0 ]; then
-        store_rw
-        while read -r p; do
-          [ -n "$p" ] || continue
-          d="$store/''${p#/nix/store/}"
-          chmod -R u+w "$d" 2>/dev/null || true
-          rm -rf "$d"
-        done < "$dead"
-        sync
-        store_ro
-      fi
-
-      # Closure records for generations that no longer exist.
-      if [ -d "$closures" ]; then
-        for f in "$closures"/*.txt; do
-          [ -e "$f" ] || continue
-          b=$(basename "$f" .txt)
-          [ -e "$store/$b" ] && continue
-          [ "$DRYRUN" = 1 ] || rm -f "$f"
-        done
-      fi
-
-      echo "gc: done"
-    '';
-  };
 in
-{ inherit updater gc; }
+{ inherit updater; }

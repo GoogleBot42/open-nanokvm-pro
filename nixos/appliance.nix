@@ -288,14 +288,19 @@ let
     inherit pkgs lib extlinuxTemplate;
   };
 
-  # ---- the updater and the collector (#86) --------------------------------
+  # ---- the updater (#86, nix-native since #100) ---------------------------
   # nixos/lib/updater.nix's header is the design; this is only the wiring.
   updateTools = import ./lib/updater.nix {
-    inherit pkgs lib bootInstaller;
+    inherit pkgs lib;
+    # The SAME nix the system runs, so the tool cannot disagree with the store
+    # it is writing into.
+    nix = config.nix.package;
     stableUrl = cfg.update.stableUrl;
     previewUrl = cfg.update.previewUrl;
     manifestName = cfg.update.manifestName;
     keepGenerations = cfg.update.keepGenerations;
+    cacheUrl = cfg.update.cacheUrl;
+    trustedPublicKeys = cfg.update.trustedPublicKeys;
     idleQuietSec = cfg.update.idleQuietSec;
     # No server = nothing that could be using the device, so the idle gate is
     # satisfied by construction rather than by a curl that can only fail.
@@ -792,19 +797,21 @@ in
       '';
     };
 
-    # ---- flake-based updates (#86) --------------------------------------
-    # The appliance has no `nix`, so an update is a SYSTEM BUNDLE -- a whole
-    # store closure plus the kernel it boots -- fetched from a release, not a
-    # `nixos-rebuild`. nixos/lib/updater.nix is the implementation and
-    # docs/updates.md is the design.
+    # ---- flake-based updates (#86, nix-native since #100) ---------------
+    # This is a NixOS system and nix is on it, so an update is the standard
+    # NixOS story: substitute the release's toplevel closure from our binary
+    # cache, `nix-env --set` it, `switch-to-configuration boot`. What is ours
+    # is the channel, the idle-gated reboot and the bootcount rollback.
+    # nixos/lib/updater.nix is the implementation and docs/updates.md is the
+    # design.
     update = {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = true;
         description = ''
-          Ship `nanokvm-update` and `nanokvm-gc`. The web UI's update button
-          goes through the same tool (the server's install() override), so
-          turning this off leaves a device that can only be updated by hand.
+          Ship `nanokvm-update` and its timers. The web UI's update button goes
+          through the same tool (the server's install() override), so turning
+          this off leaves a device that can only be updated by hand.
         '';
       };
 
@@ -857,6 +864,44 @@ in
         '';
       };
 
+      # ---- the binary cache (#96) --------------------------------------
+      # NEEDS-HUMAN, both of them: the attic server is Jeremy's to stand up and
+      # the signing key is his to hold. Until they are filled in, a device
+      # builds and boots but refuses to update, and the module says so at build
+      # time (see `warnings` below) rather than letting it fail at 03:00.
+      cacheUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        example = "https://attic.example.org/nanokvm-pro";
+        description = ''
+          The binary cache an update's closure is substituted from --
+          `nix copy --from`. Anything nix can read works (an attic or harmonia
+          endpoint, an S3 bucket, a plain `file://` directory, `ssh://` from a
+          build host). It is NOT a substituter for the whole system: only
+          `nanokvm-update` reads it, and only for the toplevel a release
+          manifest names.
+
+          Authenticity does not come from this URL. Every NAR must carry a
+          signature by one of `trustedPublicKeys`, so a cache that is
+          compromised, mirrored or simply wrong serves paths this device
+          refuses.
+        '';
+      };
+
+      trustedPublicKeys = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "nanokvm-pro:Ihqvn9…=" ];
+        description = ''
+          The keys an update's NARs must be signed by, in nix's
+          `<name>:<base64>` form. `nanokvm-update` passes exactly these to
+          `nix copy` as `trusted-public-keys` with `require-sigs = true` -- on
+          the command line, not from /etc/nix/nix.conf, so nothing an operator
+          adds to the machine's nix config can widen what an update will
+          install.
+        '';
+      };
+
       stableUrl = lib.mkOption {
         type = lib.types.str;
         default = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
@@ -896,10 +941,20 @@ in
         type = lib.types.int;
         default = 3;
         description = ''
-          How many generations `nanokvm-gc` keeps. The booted system, the
-          activated one and both generations the extlinux configs name are
-          always kept on top of this, so a small number cannot strand the
-          board.
+          How many generations `nanokvm-update gc` keeps. The booted system,
+          the activated one and every generation a boot config names --
+          above all the ROLLBACK one -- are pinned as nix gc roots on top of
+          this, so a small number cannot strand the board.
+        '';
+      };
+
+      gcSchedule = lib.mkOption {
+        type = lib.types.str;
+        default = "weekly";
+        description = ''
+          systemd OnCalendar expression for the collector. Weekly is plenty:
+          an update only leaves garbage behind when it lands, and the eMMC is
+          large enough that a stale generation for a few days costs nothing.
         '';
       };
     };
@@ -1203,14 +1258,13 @@ in
     environment.ldso = "${pkgs.glibc}/lib/ld-linux-aarch64.so.1";
 
     systemd.tmpfiles.rules = [
-      # The updater's state (#86). `closures/<toplevel basename>.txt` is the
-      # ONLY record of what a generation needs -- there is no nix here to
-      # recompute it -- so nanokvm-gc refuses to collect anything if a kept
-      # generation's file is missing. The image build writes the first one
-      # (nixos/lib/appliance-artifacts.nix); every update writes its own.
+      # The updater's state: one file, `update-pending`, which survives the
+      # reboot so the UI can say what happened on the other side of it. The
+      # per-generation closure lists that used to live here are gone -- nix
+      # knows what a generation needs (#100).
       "d /var/lib/nanokvm 0755 root root - -"
-      "d /var/lib/nanokvm/closures 0755 root root - -"
-      "d /var/cache/nanokvm-update 0755 root root 30d -"
+      # Where a release closure is pinned as a gc root while it is installed.
+      "d /nix/var/nix/gcroots/nanokvm 0755 root root - -"
       "d /opt 0755 root root - -"
       "L+ /opt/lib - - - - ${optLib}/lib"
       # Third entry of NanoKVM-Server's DT_RUNPATH; same directory.
@@ -1619,6 +1673,37 @@ in
       });
     };
 
+    # ---- the collector (#100) --------------------------------------------
+    # `nix-collect-garbage`, with the one thing nix cannot know pinned first:
+    # the generation the ROLLBACK boot config names, which no profile link and
+    # no /run symlink protects. `nanokvm-update gc` writes those pins as gc
+    # roots BEFORE it deletes anything -- see the command in
+    # nixos/lib/updater.nix.
+    #
+    # After `nanokvm-mark-good`, so a boot that is still on trial never
+    # collects; and `Persistent`, because a board that was off on the scheduled
+    # day should still tidy up once.
+    systemd.services.nanokvm-gc = lib.mkIf cfg.update.enable {
+      description = "Delete superseded NanoKVM generations and collect the store";
+      after = [ "nanokvm-mark-good.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${updateTools.updater}/bin/nanokvm-update gc";
+        Nice = 10;
+        IOSchedulingClass = "idle";
+      };
+    };
+
+    systemd.timers.nanokvm-gc = lib.mkIf cfg.update.enable {
+      description = "Periodic NanoKVM store collection";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.update.gcSchedule;
+        Persistent = true;
+        RandomizedDelaySec = "1h";
+      };
+    };
+
     systemd.timers.nanokvm-mark-good = lib.mkIf cfg.markGood.enable {
       description = "Run the boot health gate once, after this boot has had time to finish";
       wantedBy = [ "timers.target" ];
@@ -1754,7 +1839,7 @@ in
       # the server reaches it by store path, not through PATH.
       nanokvm.nanokvm-gpio
     ] ++ lib.optional cfg.ubootTest.enable ubootTest
-    ++ lib.optionals cfg.update.enable [ updateTools.updater updateTools.gc ]
+    ++ lib.optional cfg.update.enable updateTools.updater
     ++ (with pkgs; [
       busybox # devmem, udhcpd/udhcpc
       bash
@@ -1782,11 +1867,81 @@ in
       usbutils
     ]);
 
-    # No nix on the appliance: the rootfs is a fixed closure produced by the
-    # build host, which is also what keeps the image small. An update is a new
-    # closure, not a `nixos-rebuild` on the device (#86).
-    nix.enable = false;
+    # =====================================================================
+    # 7. Nix (#100)
+    # =====================================================================
+    # THIS IS A NixOS SYSTEM, SO NIX IS ON IT. The #78 appliance shipped
+    # `nix.enable = false` and a fixed closure, and every consequence of that
+    # had to be rebuilt by hand: a tar transport for the closure, a list of
+    # which paths belong to which generation, and a collector that refused to
+    # run whenever that list was missing. All three are gone. What the device
+    # gains is the only thing it actually needed -- a store it can add a signed
+    # closure to, and a collector that knows what is reachable.
+    #
+    # SINGLE-USER, NOT THE DAEMON. There is exactly one user here and it is
+    # root, and nothing on this board ever builds. The daemon exists to
+    # mediate between untrusted users and the store; with no untrusted users it
+    # is a socket, a unit, 32 `nixbld` accounts and a second process in the
+    # update path, for nothing. `store = auto` resolves to the local store
+    # whenever /nix/var/nix is writable and no daemon socket exists, which is
+    # the state this leaves the system in.
+    #
+    # AND IT IS THE STRICTER OF THE TWO. Signature checking on a direct
+    # LocalStore has no trusted-user bypass: `require-sigs` applies to root the
+    # same as to anyone, so `nix copy` cannot be talked into accepting an
+    # unsigned NAR the way a trusted client of a daemon can.
+    nix.enable = true;
+    systemd.sockets.nix-daemon.wantedBy = lib.mkForce [ ];
+    nix.nrBuildUsers = 0;
+    # No channels, no registry, no NIX_PATH: nothing on this box evaluates
+    # nixpkgs, and a channel is a second, mutable source of truth for a system
+    # whose whole point is that its generation came from a tagged release.
+    nix.channel.enable = false;
+    # nixos-rebuild / nixos-install / nixos-generate-config would all be lies
+    # here (there is no nixpkgs to evaluate, and a rebuild is a release), and
+    # they are not small.
+    system.disableInstallerTools = true;
+
+    nix.settings = {
+      # The release cache, so `nix copy --from` has a default and an operator
+      # debugging by hand gets the same source the updater uses. Not a
+      # substituter for cache.nixos.org's sake: this device builds nothing, so
+      # the only thing it ever fetches is a release closure.
+      substituters = lib.mkForce (lib.optional (cfg.update.cacheUrl != "") cfg.update.cacheUrl);
+      trusted-public-keys = lib.mkForce cfg.update.trustedPublicKeys;
+      require-sigs = true;
+      # THE BOARD NEVER BUILDS. An update is a closure someone else built; a
+      # derivation that somehow got realised here would take minutes per
+      # package on a 1.2 GHz A53 and wear the eMMC doing it.
+      max-jobs = 0;
+      sandbox = false;
+      # eMMC. Store optimisation rewrites every duplicate file as a hardlink,
+      # which is a full store walk and a lot of small writes to buy back space
+      # on a device whose store holds three generations of one closure.
+      auto-optimise-store = false;
+      experimental-features = [ "nix-command" ];
+      # Only root exists; spelling it out keeps a future user from inheriting
+      # the ability to add paths to the store.
+      allowed-users = [ "root" ];
+      trusted-users = [ "root" ];
+    };
+
     system.switch.enable = lib.mkDefault true;
+
+    warnings =
+      lib.optional (cfg.update.enable && cfg.update.cacheUrl == "")
+        ''
+          nanokvm.update.cacheUrl is empty: this system can be built and booted
+          but cannot update itself (#96 -- the attic endpoint is Jeremy's to
+          stand up). `nanokvm-update update` will refuse rather than install
+          anything unverified.
+        ''
+      ++ lib.optional (cfg.update.enable && cfg.update.cacheUrl != "" && cfg.update.trustedPublicKeys == [ ])
+        ''
+          nanokvm.update.cacheUrl is set but nanokvm.update.trustedPublicKeys is
+          empty. Nothing will install: every NAR must be signed by a key this
+          system trusts, and this system trusts none.
+        '';
 
     documentation.enable = false;
     documentation.nixos.enable = false;

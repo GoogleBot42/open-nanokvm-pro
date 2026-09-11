@@ -79,6 +79,66 @@ let
       cat "$src" ${devNodes} > "$out"
     '';
 
+  # ---- the shipped image's Nix DATABASE (#100) ----------------------------
+  # A directory of store paths is not a store. `nix copy`, `nix-env --set` and
+  # `nix-collect-garbage` all ask the database what is valid, and a path that
+  # is on disk but not in the db does not exist as far as nix is concerned --
+  # `nix-env --set` on such a path tries to DOWNLOAD it, which on a board whose
+  # only cache is our own release cache means an update that reinstalls the
+  # system it is already running.
+  #
+  # nixpkgs' image builders solve this at FIRST BOOT: make-ext4-fs drops
+  # `${closureInfo}/registration` at /nix-path-registration and a
+  # `register-nix-paths` unit runs `nix-store --load-db` before nix-daemon
+  # starts. We do it at BUILD time instead, because the boot that would run
+  # that unit is the one the bootcount rollback is judging: a first boot that
+  # has to build a database before it can be a NixOS system is a first boot
+  # with one more way to fail, on a board with no console. The image ships a
+  # finished db.sqlite and the appliance has nothing to register.
+  #
+  # `nix-store --load-db` does not need the files to exist (make-ext4-fs copies
+  # them in afterwards) and does not need a daemon -- NIX_STATE_DIR is the
+  # whole of the redirection.
+  mkStoreDb = toplevel:
+    let closureInfo = pkgs.closureInfo { rootPaths = [ toplevel ]; };
+    in
+    pkgs.runCommand "nanokvm-store-db"
+      {
+        nativeBuildInputs = [ pkgs.sqlite pkgs.nix ];
+        meta.description = "The Nix database the appliance image ships: exactly the system closure";
+      } ''
+      set -euo pipefail
+      export HOME=$PWD/home NIX_CONF_DIR=$PWD/conf
+      export NIX_STATE_DIR=$PWD/state NIX_LOG_DIR=$PWD/log
+      mkdir -p "$HOME" "$NIX_CONF_DIR" "$NIX_STATE_DIR" "$NIX_LOG_DIR"
+
+      nix-store --load-db < ${closureInfo}/registration
+
+      # Close the write-ahead log into the database itself: what gets packed
+      # into the ext4 is a copy, and a -wal left beside it is a recovery the
+      # first boot would have to perform.
+      sqlite3 "$NIX_STATE_DIR/db/db.sqlite" 'PRAGMA wal_checkpoint(TRUNCATE);' >/dev/null
+      rm -f "$NIX_STATE_DIR/db/db.sqlite-wal" "$NIX_STATE_DIR/db/db.sqlite-shm"
+
+      # THE ASSERTION. Every path of the closure, and not one path more: a db
+      # that claims a path the image does not carry is a store that fails
+      # `nix-store --verify`, and a path the db does not know is a path
+      # `nix-collect-garbage` would delete out from under the running system.
+      sqlite3 "$NIX_STATE_DIR/db/db.sqlite" \
+        'select path from ValidPaths order by path' > got.txt
+      sort ${closureInfo}/store-paths > want.txt
+      if ! diff -u want.txt got.txt; then
+        echo "ERROR: the shipped Nix database is not the system closure." >&2
+        echo "       left = closure, right = database." >&2
+        exit 1
+      fi
+      echo "the shipped database lists exactly $(wc -l < got.txt) paths -- the whole closure."
+
+      mkdir -p "$out"
+      cp -r "$NIX_STATE_DIR/db" "$out/db"
+      chmod -R u+w "$out/db"
+    '';
+
   mkRootImage = toplevel: import (nixpkgs + "/nixos/lib/make-ext4-fs.nix") {
     inherit pkgs lib;
     inherit (pkgs) e2fsprogs libfaketime perl fakeroot zstd;
@@ -91,11 +151,23 @@ let
       chmod 1777 ./files/tmp
       chmod 0700 ./files/root
 
-      # System profile -> the generation stage 2 boots.
+      # System profile -> the generation stage 2 boots. These two symlinks are
+      # byte for byte what `nix-env -p .../system --set ${toplevel}` produces:
+      # `system` relative, `system-1-link` absolute into the store. Every later
+      # generation IS made by nix-env, on the device.
       mkdir -p ./files/nix/var/nix/profiles ./files/nix/var/nix/gcroots
       ln -s ${toplevel}   ./files/nix/var/nix/profiles/system-1-link
       ln -s system-1-link ./files/nix/var/nix/profiles/system
       ln -s /nix/var/nix/profiles ./files/nix/var/nix/gcroots/profiles
+
+      # ...and the database that makes those paths real (#100). Without it the
+      # store is a directory tree: `nix-env --set` would try to download the
+      # system it is already running, and `nix-collect-garbage` would see an
+      # empty store with a live root.
+      cp -r ${mkStoreDb toplevel}/db ./files/nix/var/nix/db
+      chmod -R u+w ./files/nix/var/nix/db
+      chmod 0755 ./files/nix/var/nix/db
+      chmod 0644 ./files/nix/var/nix/db/*
 
       # THE switch_root TARGET. NixOS stage 1 execs $targetRoot/init unless the
       # command line carries init=, and this board's command line comes from the
@@ -107,21 +179,6 @@ let
 
       # Marks the root as NixOS-managed; switch-to-configuration refuses without it.
       touch ./files/etc/NIXOS
-
-      # THE FIRST GENERATION'S CLOSURE LIST (#86). There is no nix on the
-      # appliance, so nothing on the device can ever recompute which store
-      # paths a generation needs -- and `nanokvm-gc` refuses to delete anything
-      # while a kept generation has no list, which without this file would be
-      # true of the flashed one forever. Every update writes its own alongside.
-      #
-      # It lives in /var, NOT in the closure, and it has to: a file inside the
-      # closure that lists the closure would change the toplevel's hash, which
-      # would change the file. The image builder is the one place with both the
-      # toplevel and a writable /var.
-      mkdir -p ./files/var/lib/nanokvm/closures
-      cp ${pkgs.writeClosure [ toplevel ]} \
-         ./files/var/lib/nanokvm/closures/$(basename ${toplevel}).txt
-      chmod 0644 ./files/var/lib/nanokvm/closures/$(basename ${toplevel}).txt
     '';
   };
 
@@ -157,6 +214,16 @@ let
           || { echo "ERROR: no /nix/var/nix/profiles/system -- /init dangles" >&2; exit 1; }
         debugfs -R "stat ${toplevel}/init" rootfs.ext4 2>/dev/null | grep -q "Inode:" \
           || { echo "ERROR: stage-2 init missing from the image closure" >&2; exit 1; }
+
+        # THE STORE IS A STORE (#100), not a directory of store paths: the
+        # database has to be in the image, or the first update tries to
+        # download the system it is already running. Contents are asserted
+        # where they are built (mkStoreDb); this asserts they arrived.
+        debugfs -R "stat /nix/var/nix/db/db.sqlite" rootfs.ext4 2>/dev/null | grep -q "Inode:" \
+          || { echo "ERROR: no /nix/var/nix/db/db.sqlite -- the image ships an unregistered store" >&2; exit 1; }
+        debugfs -R "stat /nix/var/nix/db/schema" rootfs.ext4 2>/dev/null | grep -q "Inode:" \
+          || { echo "ERROR: the Nix database has no schema file" >&2; exit 1; }
+        echo "  /nix/var/nix/db: present."
 
         # ...and it must be the stage-2 SCRIPT, not an ELF. top-level.nix swaps
         # <system>/init for a copy of the systemd binary whenever
