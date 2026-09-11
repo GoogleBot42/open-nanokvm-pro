@@ -339,8 +339,9 @@ signature is always this.
 
 Both places that produce a `libkvm.so` therefore use `patchelf --force-rpath`:
 
-- `pkgs/kvm-encoder.nix` sets `/opt/lib:<axera-libs>/lib`, so the same artefact
-  also works in a vendor-encoder bench configuration.
+- `pkgs/kvm-encoder.nix` sets `/opt/lib:<axera-libs>/lib`. The second entry is a
+  leftover of the era when the same source built a vendor-backend variant; the
+  build links no `libax_*` any more, so nothing resolves through it.
 - `nixos/appliance.nix`'s `kvmapp` derivation **re-rpaths it** to
   `/opt/lib:<opus>/lib:<alsa>/lib:<jpeg>/lib`. That is not cosmetic: in a Nix
   closure the `axera-libs` store path is a *reference*, and leaving it would drag
