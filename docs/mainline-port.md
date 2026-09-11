@@ -2281,6 +2281,14 @@ The `0x00080620` is recomputed from the vendor board DT's own seventeen
 `s-sclk-sel = 1` bits 6:5), and the RX-channel fact is the vendor driver's own
 `if (rx0_sel == 3) { enable RER(1); break; }`.
 
+That syscon word sits in the peripheral clock controller's own window, and the
+regmap is genuinely SHARED rather than a second mapping of the same registers:
+`clk-ax630c.c` takes its regmap from `syscon_node_to_regmap()` and
+`syscon_regmap_lookup_by_phandle_args()` returns that same object, with the
+same lock. The clock half only ever touches `0x00`-`0x24`, so the two do not
+overlap either -- but they would be safe if they did, which is the property
+#80's "one node, one regmap" rule was written to preserve.
+
 **Five new clock rows, 287 clocks**, and every bit position is cited rather
 than derived from the header's enumeration alone: the vendor `spi-dw-mmio.c`
 writes `EB0` bit `(6 + spi_id)` and `EB3` bit `(2 + spi_id)` — bits 8 and 4 for
