@@ -238,7 +238,7 @@ that is arbitration, not a bug.
   release publishes `nanokvm_pro_sys_latest.json` yet, so the button answers
   `{"code":-2}` with a `404` in the server log on a board whose timer path updates
   perfectly. Do not debug the cache when the button fails; read
-  `/var/log/nanokvm/NanoKVM-Server.log` first. #100, 2026-09-11.
+  `/var/log/nanokvm/NanoKVM-Server.log` first. #101, filed 2026-09-11.
 - **`nanokvm-update gc` leaves BOTH extlinux menus naming generations it just
   deleted.** The collector rewrites no boot config, so a `LABEL` can point at an
   `init=` that is gone. Never unsafe — the `DEFAULT` entries are exactly what `gc`

@@ -760,7 +760,7 @@ the test.
   device installs come from two different places, and a manifest missing from the
   **GitHub** channel fails the button even when the device's own channel is
   serving one. Measured on hardware 2026-09-11: `404`, `{"code":-2}`, and the
-  timer path updating perfectly on the same board. Changing where you host means a
+  timer path updating perfectly on the same board (**#101**). Changing where you host means a
   rebuild — and for the server half, an update carrying the new binary or a
   reflash.
 - **A mounted virtual-media image blocks the reboot for as long as it is mounted.**
