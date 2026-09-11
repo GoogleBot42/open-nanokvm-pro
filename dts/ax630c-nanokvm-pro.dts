@@ -197,7 +197,101 @@
 		bringup-log@480e8000 {
 			reg = <0x0 0x480e8000 0x0 0x8000>;
 		};
+
+		/*
+		 * The video carveouts (#83), at the ADDRESSES THE 4.19 IMAGE
+		 * HAS BEEN DMAing TO SINCE #53 -- 0x73800000-0x7FFFFFFF, the
+		 * top 200 MiB of the GiB. On 4.19 a shell loader computed this
+		 * split from the board-id ADC read and passed it to three
+		 * modules as parameters; here it is three DT nodes, and
+		 * `compute_mem_map` has no counterpart at all.
+		 *
+		 * They are ABOVE what the kernel treats as RAM, and that is
+		 * deliberate rather than accidental. The command line carries
+		 * `mem=512M` (pkgs/extlinux.nix), so memblock ends at
+		 * 0x60000000 and none of this is System RAM; `no-map` regions
+		 * outside memory are explicitly supported
+		 * (drivers/of/of_reserved_mem.c: "don't worry if the region
+		 * isn't memory as it won't be mapped"), and the DMA pool code
+		 * memremaps them write-combining, which is exactly what
+		 * dma_declare_coherent_memory() did on 4.19. So this works
+		 * whatever `mem=` ends up being, and raising it later cannot
+		 * silently eat these regions.
+		 *
+		 * no-map on all three, not `reusable`: the WDMA and the encoder
+		 * consume bus addresses out of a register program, so the
+		 * region has to be at a fixed place, and the kernel must never
+		 * hand any of it to the page allocator.
+		 */
+
+		/*
+		 * Encoder frame buffers. NOT a dma pool -- the kernel never
+		 * maps this at all; the driver hands out bus addresses and
+		 * userspace mmaps them write-combining through the char
+		 * device. 136 MiB covers the 4K floorplan (91 MiB with the
+		 * prover input region, 59 MiB without; 1080p is 23 MiB).
+		 */
+		venc_framebuf: venc-framebuf@73800000 {
+			reg = <0x0 0x73800000 0x0 0x8800000>;
+			no-map;
+		};
+
+		/*
+		 * Capture buffers. 56 MiB fits three 4K YUYV frames
+		 * (3840*2160*2 = 15.8 MiB each), which is what the queue needs
+		 * to rotate without dropping.
+		 */
+		capture_pool: capture-pool@7c000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x0 0x7c000000 0x0 0x3800000>;
+			no-map;
+		};
+
+		/*
+		 * The VCMD engine's own three coherent pools (command, status,
+		 * register), 2 MiB each plus slack.
+		 */
+		venc_cmdbuf: venc-cmdbuf@7f800000 {
+			compatible = "shared-dma-pool";
+			reg = <0x0 0x7f800000 0x0 0x800000>;
+			no-map;
+		};
 	};
+};
+
+/*
+ * The video path (#83). Three nodes enabled and one graph edge closed: the
+ * LT6911UXC's MIPI output into the SoC's CSI-2 receiver.
+ *
+ * The lane map is the board's wiring and it lives here, in the endpoint, which
+ * is the only place a board fact belongs. `clock-lanes = <2>` and
+ * `data-lanes = <0 1 3 4>` are the PHYSICAL lane slots feeding the logical
+ * clock and the four logical data lanes -- device-confirmed 2026-09-01 from
+ * the vendor's own streaming state (the D-PHY swap mirror reads 0x0005c540;
+ * a naive 0..5 map reads 0x00053940 and produces a locked PHY that forwards
+ * short packets and no pixel data).
+ */
+&mipi_rx {
+	status = "okay";
+};
+
+&csi2_port0 {
+	csi2_in: endpoint {
+		remote-endpoint = <&lt6911_out>;
+		clock-lanes = <2>;
+		data-lanes = <0 1 3 4>;
+	};
+};
+
+&vin {
+	status = "okay";
+	memory-region = <&capture_pool>;
+};
+
+&venc {
+	status = "okay";
+	memory-region = <&venc_cmdbuf>, <&venc_framebuf>;
+	memory-region-names = "cmdbuf", "framebuf";
 };
 
 /*
@@ -341,6 +435,23 @@
 				<&gpio2 17 GPIO_ACTIVE_LOW>;
 		hdmi-rx-detect-gpios = <&gpio2 18 GPIO_ACTIVE_LOW>;
 		hdmi-tx-detect-gpios = <&gpio2 19 GPIO_ACTIVE_LOW>;
+
+		/*
+		 * The bridge's MIPI output (#83). drivers/misc/lt6911-manage.c
+		 * is not a V4L2 subdev -- the bridge needs no per-stream
+		 * programming and its /proc interface is the ABI userspace
+		 * reads -- so nothing binds to this endpoint. It exists
+		 * because the receiver reads its lane map from the far side of
+		 * it, and because a capture graph that stops at the SoC's own
+		 * pin is a graph that does not say where the video comes from.
+		 */
+		port {
+			lt6911_out: endpoint {
+				remote-endpoint = <&csi2_in>;
+				clock-lanes = <2>;
+				data-lanes = <0 1 3 4>;
+			};
+		};
 	};
 };
 

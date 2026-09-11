@@ -133,7 +133,14 @@
         # SIZE AND FILESYSTEM COME FROM THE LAYOUT (#89 rung 4): 128 MiB of
         # FAT32 under the vendor 17-partition map, 275 MiB of ext4 under the
         # minimal six. nixos/lib/emmc-layout.nix is the single definition.
-        mkBootfsFor = layoutName: kernelImage:
+        #
+        # Takes the KERNEL DERIVATION, not its Image path: since #83 the video
+        # stack's three modules (plus the videobuf2 pair they import) ride here
+        # too, in /boot/modules, because they belong to the same artefact as
+        # the Image and cannot live in the NixOS closure -- the appliance's
+        # initrd is inside the Image, so a system that referenced the kernel
+        # would be a cycle.
+        mkBootfsFor = layoutName: kernel:
           let l = import ./nixos/emmc-partitions.nix {
             inherit (pkgs) lib;
             layout = layoutName;
@@ -143,15 +150,18 @@
             inherit version;
             size = l.bootfs.size;
             fsType = if layoutName == "vendor" then "vfat" else "ext4";
-            payload = pkgs.lib.optionalAttrs (kernelImage != null) {
-              "Image" = kernelImage;
+            payload = pkgs.lib.optionalAttrs (kernel != null) {
+              "Image" = "${kernel}/Image";
               "ax630c-nanokvm-pro.dtb" = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
               "extlinux/extlinux.conf" = extlinuxConf;
               "extlinux/extlinux-fallback.conf" = extlinuxConf;
             };
+            payloadDirs = pkgs.lib.optionalAttrs (kernel != null) {
+              "modules" = "${kernel}/modules";
+            };
           };
         mkBootfs = mkBootfsFor "minimal";
-        bootfs = mkBootfs "${kernel-mainline-appliance}/Image";
+        bootfs = mkBootfs kernel-mainline-appliance;
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };

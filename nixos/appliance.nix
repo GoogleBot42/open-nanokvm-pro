@@ -37,8 +37,12 @@
 #     makes a generation switch take effect with no bootloader involved.
 #
 #   * NO NIXOS KERNEL. `boot.kernel.enable = false`: the running kernel lives
-#     in its own eMMC partition and every driver it needs is built in. There
-#     is no /lib/modules tree at all yet -- see the video-stack stub below.
+#     in its own eMMC partition and all but six of its drivers are built in.
+#     There is no /lib/modules tree in this closure and there cannot be one:
+#     the stage-1 initrd is embedded in the kernel Image, so a system that
+#     referenced the kernel derivation would be a dependency cycle. The video
+#     stack's modules therefore ship on /boot beside the Image (#83) and
+#     nanokvm-video.service insmods them from there.
 #
 #   * NO CLOSED CODE. The shipped video stack has been blob-free since #60,
 #     so unlike its predecessor this module stages no Axera libraries and no
@@ -681,12 +685,13 @@ in
 
     videoStack.enable = lib.mkOption {
       type = lib.types.bool;
-      default = false;
+      default = true;
       description = ''
-        Load the open capture/encode kernel modules at boot. OFF on mainline:
-        `open_vin_csi2`, `open_vin_capture` and `ax630c_venc_vcmd` are written
-        against the 4.19 V4L2/DMA APIs and are ported to current ones by #83.
-        Until then the server runs with no /dev/video0.
+        Load the open capture/encode kernel modules at boot: `open_vin_csi2`,
+        `open_vin_capture` and `ax630c_venc_vcmd`, plus the videobuf2 modules
+        the capture node imports. They ship on `/boot/modules` with the kernel
+        that loads them (#83); the load order is `/boot/modules/load-order`.
+        Turning this off gives a server that serves the UI but no stream.
       '';
     };
 
@@ -856,9 +861,10 @@ in
     # it twice and the Image grows.
     boot.initrd.compressor = "cat";
 
-    # There are no kernel modules at all -- every driver this board has is
-    # built into the Image, and `boot.kernel.enable = false` means there is no
-    # modules tree to draw a closure from.
+    # There are no kernel modules in the INITRD, and there cannot be: every
+    # driver stage 1 needs is built into the Image, and `boot.kernel.enable =
+    # false` means there is no modules tree to draw a closure from. The six
+    # the video stack loads (#83) live on /boot and are a stage-2 concern.
     #
     # mkForce, not `= [ ]`: option lists MERGE, and nixos/modules/tasks/
     # filesystems/ext.nix adds "ext2 ext4" to availableKernelModules for the
@@ -1096,30 +1102,66 @@ in
     # 5. Services
     # =====================================================================
 
-    # 5a. The video stack. On mainline there is nothing to load yet: the three
-    # open modules are 4.19 out-of-tree drivers and #83 ports them. The unit
-    # exists so the ordering edge nanokvm.service already declares stays real,
-    # and so a boot log says which issue owns the missing pipeline rather than
-    # leaving a silent black stream.
+    # 5a. The video stack (#83). Six modules off /boot, in the order the
+    # kernel build's own depmod resolved, then a check that the pipeline
+    # actually came up.
+    #
+    # THEY LIVE ON /boot, NOT IN THIS CLOSURE, and that is structural: the
+    # stage-1 initrd is embedded in the kernel Image, so a unit that named the
+    # kernel derivation would make the system depend on the kernel and the
+    # kernel depend on the system. They are installed with the Image and the
+    # dtb, by the same writer, and a mismatched pair fails here at insmod with
+    # a vermagic error instead of silently serving a black stream.
+    #
+    # insmod, not modprobe: there is no /lib/modules tree on this system to
+    # resolve against, the order is six lines long and written down next to
+    # the modules, and an explicit order is a mechanism a reader can check.
     systemd.services.nanokvm-video = {
       description = "NanoKVM-Pro open video stack (capture + encoder modules)";
       wantedBy = [ "multi-user.target" ];
       before = [ "nanokvm.service" ];
-      after = [ "systemd-modules-load.service" ];
+      after = [ "systemd-modules-load.service" "boot.mount" ];
+      requires = [ "boot.mount" ];
+      path = [ pkgs.kmod ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
       };
       script =
         if cfg.videoStack.enable then ''
-          echo "nanokvm-video: nanokvm.videoStack.enable is set but no module set"
-          echo "               is built for this kernel yet (#83)." >&2
-          exit 1
+          set -e
+          dir=/boot/modules
+          if [ ! -r "$dir/load-order" ]; then
+            echo "nanokvm-video: $dir/load-order is missing -- /boot does not" >&2
+            echo "               carry a module set for this kernel." >&2
+            exit 1
+          fi
+          while read -r ko; do
+            [ -n "$ko" ] || continue
+            if [ -d "/sys/module/$(basename "$ko" .ko | tr - _)" ]; then
+              echo "nanokvm-video: $ko already loaded"
+              continue
+            fi
+            echo "nanokvm-video: insmod $ko"
+            insmod "$dir/$ko"
+          done < "$dir/load-order"
+
+          # The oracle, not a formality: every module above can load cleanly
+          # and still leave no pipeline if a probe deferred or a carveout was
+          # rejected. /dev/video0 is what the server opens.
+          for _ in $(seq 1 20); do
+            [ -e /dev/video0 ] && break
+            sleep 0.25
+          done
+          if [ ! -e /dev/video0 ]; then
+            echo "nanokvm-video: modules loaded but /dev/video0 never appeared" >&2
+            exit 1
+          fi
+          echo "nanokvm-video: /dev/video0 up"
         '' else ''
-          echo "nanokvm-video: STUB. open_vin_csi2 / open_vin_capture /"
-          echo "               ax630c_venc_vcmd are not ported to this kernel yet"
-          echo "               (issue #83). No /dev/video0; the server will serve"
-          echo "               the UI but not a stream."
+          echo "nanokvm-video: DISABLED (nanokvm.videoStack.enable = false)."
+          echo "               No /dev/video0; the server will serve the UI"
+          echo "               but not a stream."
         '';
     };
 

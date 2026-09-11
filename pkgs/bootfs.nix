@@ -6,6 +6,10 @@
 , version ? "0.0.0-dev"
 , files ? { }
 , payload ? { }
+  # Whole directories copied in recursively, "path/under/boot" -> store dir.
+  # The video stack's kernel modules ride here (#83): they belong to the same
+  # artefact as the Image and the dtb, not to the NixOS closure.
+, payloadDirs ? { }
 , ...
 }:
 
@@ -78,6 +82,22 @@ let
       + "\n  install -m 0644 ${lib.escapeShellArg src} root/${name}")
     payload);
 
+  payloadDirsCopyFat = lib.concatStringsSep "\n" (lib.mapAttrsToList
+    (name: src: ''
+      mmd -i bootfs.fat32 "::/${name}" || true
+      for f in ${lib.escapeShellArg src}/*; do
+        mcopy -i bootfs.fat32 "$f" "::/${name}/$(basename "$f")"
+      done'')
+    payloadDirs);
+
+  payloadDirsCopyExt = lib.concatStringsSep "\n" (lib.mapAttrsToList
+    (name: src: ''
+      mkdir -p root/${name}
+      for f in ${lib.escapeShellArg src}/*; do
+        install -m 0644 "$f" "root/${name}/$(basename "$f")"
+      done'')
+    payloadDirs);
+
   fat = pkgs.runCommand "nanokvm-bootfs.fat32"
     {
       nativeBuildInputs = [ pkgs.dosfstools pkgs.mtools ];
@@ -91,6 +111,7 @@ let
     done
 
     ${payloadCopyFat}
+    ${payloadDirsCopyFat}
 
     echo "=== /boot contents ==="
     mdir -i bootfs.fat32 -/ ::
@@ -110,6 +131,7 @@ let
     done
 
     ${payloadCopyExt}
+    ${payloadDirsCopyExt}
 
     # -d stages the tree, -U pins the UUID, -m 0 keeps no reserved blocks (this
     # filesystem has no privileged writer to reserve them for), and
