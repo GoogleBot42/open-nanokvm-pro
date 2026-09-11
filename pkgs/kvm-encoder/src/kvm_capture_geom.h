@@ -37,7 +37,17 @@
  * YUV422 interleaved YUYV, 2 B/px (device-verified end-to-end, Stage 6). */
 #define KVM_GEOM_BPP 2
 
-/* Supported geometry envelope -- see kvm_geom_check() for the reasoning.
+/* THIS IS NOT THE SHIPPED ENVELOPE (#98). This file builds vendor-MPI ioctl
+ * payloads for a backend that was deleted with the 4.19 image (#97/#102);
+ * nothing links it but the frozen 1080p byte-identity proof
+ * (.#checks.open-capture-geometry), and raising the numbers below would only
+ * change what that proof asserts about payloads nothing sends. The envelope
+ * the product enforces is 4096x2400, stated by OVC_MAX_* in
+ * open_vin_capture.c, V4L2_MAX_* in kvm_capture_v4l2.c, the CSI-2 receiver's
+ * clamp and VCENC_GEOM_MAX_* -- and held together by
+ * .#checks.open-capture-envelope.
+ *
+ * Supported geometry envelope -- see kvm_geom_check() for the reasoning.
  * Ceiling raised to 4K (2026-08-31): the vendor MPI backend captures 3840x2160
  * at the SAME MIPI config we replay (4 lanes, nDataRate=600, LaneCombo MODE_0)
  * and the SAME sys nr45 scalar (0x016e3600) -- both hardware-confirmed via the
