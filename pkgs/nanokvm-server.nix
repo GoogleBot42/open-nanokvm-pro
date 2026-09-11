@@ -173,9 +173,9 @@ buildGoModule {
       --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/${manifestName}", baseURL'
     sed -i '/^[[:space:]]*"time"$/d' service/application/version.go
 
-    # 3. Replace the vendor dpkg-based install() with ours -- the overlay copy
-    #    (install-override.go.in) or the system-bundle handoff to `nanokvm-update`
-    #    (install-bundle.go.in), per `updateMode` above.
+    # 3. Replace the vendor dpkg-based install() with ours -- the system-bundle
+    #    handoff to `nanokvm-update` (install-bundle.go.in) or the refusal
+    #    (install-retired.go.in), per `updateMode` above.
     #    install() is the LAST function in update.go: truncate at its signature
     #    and append ours. appNames/getFileInfo become unused package-level decls,
     #    which Go permits (only unused imports / locals are errors).

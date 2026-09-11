@@ -15,7 +15,7 @@
 # (font_data.py) by gen_font.py. Nothing opaque ships; every byte of the
 # payload is derived from source in this build.
 #
-# Output layout (mirrors the on-device paths; rootfs.nix / update-package.nix
+# Output layout (mirrors the on-device paths; rootfs.nix
 # copy these subtrees into the image):
 #   opt/nanokvm-display/nanokvm_display.py   the daemon
 #   opt/nanokvm-display/font_data.py         generated fonts (plain python)
