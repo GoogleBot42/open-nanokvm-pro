@@ -272,6 +272,27 @@ pkgs.runCommand "nanokvm-updater-loop"
   nix-store --store "local?root=$R" --verify --check-contents \
     || fail "the store is not valid after the second collection"
 
+  # =====================================================================
+  # 6. THE REFUSAL -- a boot config we cannot read pins NOTHING, and an
+  #    empty keep-list must collect nothing rather than everything.
+  # =====================================================================
+  # The #86 collector shipped exactly this bug in a different file: a
+  # keep-list that came out empty read as "keep nothing". The failure is not
+  # theoretical either -- a `die` inside a function on the left of a pipe
+  # exits only the subshell.
+  echo "=== a fallback config whose DEFAULT names no LABEL in the file ==="
+  printf 'DEFAULT nixos-nonexistent\n\nLABEL nixos-3\n  APPEND init=%s/init\n' "$V3" \
+    > "$R/boot/extlinux/extlinux-fallback.conf"
+  before=$(find "$R/nix/store" -mindepth 1 -maxdepth 1 | wc -l)
+  if U --keep 1 gc > "$PWD/gc3.log" 2>&1; then
+    cat "$PWD/gc3.log" >&2; fail "gc collected with a boot config it could not read"
+  fi
+  grep -q "names no generation on its DEFAULT entry" "$PWD/gc3.log" \
+    || { cat "$PWD/gc3.log" >&2; fail "gc failed for the wrong reason"; }
+  [ "$(find "$R/nix/store" -mindepth 1 -maxdepth 1 | wc -l)" = "$before" ] \
+    || fail "gc deleted something before refusing"
+  ok "gc refuses, and deletes nothing, when a boot config resolves to no generation"
+
   echo
   echo "the #100 update holds offline: signed, incremental, and safe to collect."
   touch "$out"

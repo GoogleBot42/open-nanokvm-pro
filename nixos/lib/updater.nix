@@ -717,8 +717,15 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         rm -f "$roots"/*
         i=0
         pinned="$(mktemp)"
-        trap 'rm -f "$pinned"' EXIT
-        pinned_toplevels | sort -u > "$pinned"
+        trap 'rm -f "$pinned" "$pinned.raw"' EXIT
+        # NOT `pinned_toplevels | sort`: `die` inside a function that runs in a
+        # pipeline exits the SUBSHELL, and the pipeline's status is sort's. The
+        # refusal would print and the collection would carry on with a short
+        # keep-list -- the #86 collector's exact bug. A plain redirect runs the
+        # function in this shell, where `die` is fatal.
+        pinned_toplevels > "$pinned.raw"
+        sort -u "$pinned.raw" > "$pinned"
+        [ -s "$pinned" ] || die "nothing is pinned -- refusing to collect anything"
         while read -r t; do
           [ -n "$t" ] || continue
           [ -e "$(P "$t")" ] || { say "pinned $t is not in the store -- skipping"; continue; }
@@ -727,6 +734,7 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
           echo "gc: pinned $t"
         done < "$pinned"
         say "$i generations pinned as gc roots"
+        [ "$i" -gt 0 ] || die "no pinned generation is in the store -- refusing to collect anything"
 
         # Which generation links may go: everything but the newest $KEEP, and
         # never one whose toplevel is pinned (it would still survive as a
