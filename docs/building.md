@@ -156,7 +156,9 @@ nix build --rebuild "$(nix derivation show .#nanokvm-server \
 
 `--rebuild` re-runs the fetch and compares, so drift fails here instead of on the
 runner. Setting the field to `pkgs.lib.fakeHash` and rebuilding gets the same
-answer.
+answer. This is a step of [cutting a release](releasing.md), not an optional
+one: since #100 the release job pushes `.#appliance-toplevel`'s whole closure to
+the binary cache, and that closure contains the server this FOD builds.
 
 ---
 

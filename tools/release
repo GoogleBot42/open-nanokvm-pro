@@ -5,7 +5,7 @@
 # truth (git.neet.dev/zuckerberg/open-nanokvm-pro); the GitHub mirror
 # (github.com/GoogleBot42/open-nanokvm-pro) and its Actions do the rest.
 #
-# Flow (docs/updates.md, "Cutting a release"):
+# Flow (docs/releasing.md):
 #   1. bump VERSION, commit, push (by hand, before running this);
 #   2. tools/release — verifies VERSION/tree/tag state, then tags v<VERSION>
 #      on Gitea and pushes the tag;

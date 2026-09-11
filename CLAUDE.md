@@ -50,7 +50,7 @@ that is arbitration, not a bug.
   commit, or tag on GitHub. Releases: write the `CHANGELOG.md` section first
   (mandatory), then Gitea web UI → Actions → `cut-release`
   with a version input (`tools/release` is the local fallback); the mirror +
-  GitHub Actions do the rest — docs/updates.md.
+  GitHub Actions do the rest — docs/releasing.md.
 - **Commit as you work; push after committing.** Never let finished work sit
   uncommitted or unpushed. (Standing instruction from Jeremy; a Stop hook also checks.)
 - This repo pushes directly to `main` (Jeremy's explicit instruction, 2026-08-15) —
@@ -363,7 +363,8 @@ slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
 | Anything architectural (boot chain, pipeline, services) | `docs/architecture.md` |
 | Building components / hashes / vermagic | `docs/building.md` |
 | Flashing, backup, recovery, SD boot | `docs/flashing-and-recovery.md` |
-| OTA / releases / versioning | `docs/updates.md` |
+| How a device updates itself (channels, signing, rollback, GC) | `docs/updates.md` |
+| Cutting a release / the release workflow / versioning | `docs/releasing.md` |
 | Blob or network-endpoint questions | `docs/provenance.md` |
 | Mini-display | `docs/mini-display.md` |
 | Capture-pipeline internals / RE history | `docs/blob-replacement.md` |

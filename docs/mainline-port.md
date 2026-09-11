@@ -533,11 +533,13 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 5. clk/reset/pinctrl real drivers.
 6. USB HID (#82, done); video stack (**#83, done 2026-09-10 -- the board
    streams H.264 on mainline**); audio; display; WiFi.
-7. Rollback + flake-based updates replace the custom OTA. **Done (#86,
-   2026-09-10):** an update is a system bundle, the kernel is content-addressed
-   so the rollback covers it too, and the legacy OTA is deleted with no
-   migration path — a vendor-layout board is reflashed over AXDL.
-   [updates.md](updates.md).
+7. Rollback + flake-based updates replace the custom OTA. **Done (#86, #99,
+   #100, 2026-09-11):** an update is the tagged release's system closure,
+   substituted from a signed binary cache by the `nix` the appliance now
+   carries; the kernel is inside that closure, so the rollback covers it too,
+   and the legacy OTA is deleted with no migration path — a vendor-layout board
+   is reflashed over AXDL. [updates.md](updates.md),
+   [releasing.md](releasing.md).
 8. Upstreaming (bindings once the prefix settles; drivers).
 
 ---
