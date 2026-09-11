@@ -1,12 +1,6 @@
 { pkgs
 , lib ? pkgs.lib
 , kernelImage # the kernel Image (stage-1 initrd baked in)
-  # The video stack's kernel modules (#83), or null. They go in under the
-  # kernel's own content hash, for the same reason the kernel is hashed: /boot
-  # holds two kernels, and one unversioned module directory would hand the
-  # fallback kernel the other kernel's modules -- which would LOAD (same
-  # vermagic, no MODVERSIONS) and be silently wrong.
-, modules ? null
 , dtb # the device tree blob
 , dtbName ? "ax630c-nanokvm-pro.dtb"
 , label ? "NixOS appliance, mainline"
@@ -72,16 +66,6 @@ pkgs.runCommand "nanokvm-boot-payload"
   install -m 0644 ${kernelImage} "$out/boot/$kname"
   install -m 0644 ${dtb}         "$out/boot/$dname"
 
-  ${lib.optionalString (modules != null) ''
-    mname="modules-$kh"
-    mkdir -p "$out/boot/$mname"
-    install -m 0644 ${modules}/* "$out/boot/$mname/"
-    # nanokvm-video.service reads this, in this order; the kernel build wrote
-    # it from its own depmod run.
-    [ -r "$out/boot/$mname/load-order" ] \
-      || { echo "ERROR: the module set carries no load-order" >&2; exit 1; }
-  ''}
-
   sed -e "s|@KERNEL@|/$kname|g" -e "s|@FDT@|/$dname|g" \
     ${templateNoInit} > "$out/boot/extlinux/extlinux.conf"
   # The only known-good generation on a freshly flashed board is the one being
@@ -101,7 +85,6 @@ pkgs.runCommand "nanokvm-boot-payload"
     echo "FDT_SHA256=$(sha256sum ${dtb} | cut -d' ' -f1)"
     echo "KERNEL_BYTES=$(stat -Lc%s ${kernelImage})"
     echo "FDT_BYTES=$(stat -Lc%s ${dtb})"
-    ${lib.optionalString (modules != null) ''echo "MODULES=modules-$kh"''}
   } > "$out/NAMES"
 
   # --- contract checks ---------------------------------------------------

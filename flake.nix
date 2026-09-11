@@ -128,13 +128,8 @@
         # CONTENT-ADDRESSED (#86) so `extlinux.conf` and
         # `extlinux-fallback.conf` can name two different kernels and a kernel
         # update gets the same automatic rollback a generation switch has.
-        #
-        # Takes the KERNEL DERIVATION, not just its Image: since #83 the video
-        # stack's modules ride in the payload too, under the same content
-        # hash as the kernel that loads them.
-        mkBootPayload = kernel: callPkg ./pkgs/boot-payload.nix {
-          kernelImage = "${kernel}/Image";
-          modules = "${kernel}/modules";
+        mkBootPayload = kernelImage: callPkg ./pkgs/boot-payload.nix {
+          inherit kernelImage;
           dtb = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
         };
         # `null` = /boot with `ver` alone, which is what the vendor-derived
@@ -144,7 +139,7 @@
         # SIZE AND FILESYSTEM COME FROM THE LAYOUT (#89 rung 4): 128 MiB of
         # FAT32 under the vendor 17-partition map, 275 MiB of ext4 under the
         # minimal six. nixos/lib/emmc-layout.nix is the single definition.
-        mkBootfsFor = layoutName: kernel:
+        mkBootfsFor = layoutName: kernelImage:
           let l = import ./nixos/emmc-partitions.nix {
             inherit (pkgs) lib;
             layout = layoutName;
@@ -155,15 +150,15 @@
             size = l.bootfs.size;
             fsType = if layoutName == "vendor" then "vfat" else "ext4";
             payloadDir =
-              if kernel == null then null
-              else "${mkBootPayload kernel}/boot";
+              if kernelImage == null then null
+              else "${mkBootPayload kernelImage}/boot";
           };
         mkBootfs = mkBootfsFor "minimal";
-        bootfs = mkBootfs kernel-mainline-appliance;
+        bootfs = mkBootfs "${kernel-mainline-appliance}/Image";
         # The same payload as a first-class output: `.#system-bundle` ships it,
         # the checks read its NAMES file, and a hardware run can copy one file
         # onto /boot from it.
-        boot-payload = mkBootPayload kernel-mainline-appliance;
+        boot-payload = mkBootPayload "${kernel-mainline-appliance}/Image";
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
@@ -477,6 +472,9 @@
           # here. The shipped 4.19 image keeps the sysfs one, byte-identical.
           nanokvm-server = nanokvm-server-libgpiod;
           inherit nanokvm-gpio nanokvm-web nanokvm-display version;
+          # The open capture/encode modules (#83), built against the kernel
+          # the appliance boots and carried in the generation's closure.
+          inherit video-modules;
         };
         # The shipped variant also carries the .axp builder: nixos/image-axp.nix
         # defines `system.build.axpImage` from this configuration's own closure,
@@ -554,6 +552,19 @@
         # they are imaging, so they were never at risk.
         kernel-mainline-appliance =
           mkApplianceKernel nixos-appliance-mainline-chain.initrd "appliance";
+        # The video stack's modules, copied out of that kernel (#83). A build-
+        # time dependency on it, so the appliance's closure carries ~280 KB of
+        # .ko and not the 51 MB Image beside them.
+        #
+        # This reads the kernel that reads that configuration's INITRD, and
+        # the appliance's own closure then reads this -- which is only not a
+        # cycle because the initrd is a function of the stage-1 options alone.
+        # If a future change makes the initrd depend on the whole system
+        # closure, this is where it will show up, as an infinite recursion at
+        # eval time rather than anything subtle.
+        video-modules = callPkg ./pkgs/video-modules.nix {
+          kernel = kernel-mainline-appliance;
+        };
         kernel-mainline-appliance-loop =
           mkApplianceKernel nixos-appliance-loop.initrd "appliance-loop";
         kernel-mainline-appliance-qemu =
@@ -866,7 +877,7 @@
             kernel-mainline-appliance-slot-image
             kernel-mainline-appliance-loop-slot-image
             nixos-appliance-qemu nixos-appliance-qemu-run
-            open-vin-csi2 open-vin-capture
+            open-vin-csi2 open-vin-capture video-modules
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test

@@ -6,6 +6,7 @@
 , nanokvm-gpio
 , nanokvm-web
 , nanokvm-display
+, video-modules # pkgs/video-modules.nix: the open capture/encode .ko set
 , version ? "0.0.0-dev"
 , applianceModules ? [ ]
 , variant ? "emmc"
@@ -65,7 +66,7 @@ let
 
   nanokvm = {
     inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
-      version;
+      video-modules version;
     image = imageBuilder;
     # The three open libraries libkvm DT_NEEDEDs, taken from crossPkgs -- the
     # exact builds it was compiled and linked against (pkgs/kvm-encoder.nix),

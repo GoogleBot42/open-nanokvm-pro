@@ -5,7 +5,7 @@
 , boot # pkgs/boot.nix -- the whole from-source boot chain + the FDL agents
 , uboot-env # pkgs/uboot-env.nix
 , logo # pkgs/logo.nix
-, mkBootfsFor # layoutName -> kernel derivation -> pkgs/bootfs.nix (/boot + payload)
+, mkBootfsFor # layoutName -> kernel Image -> pkgs/bootfs.nix (/boot + payload)
 , atf-mainline # pkgs/atf-mainline.nix -- mainline TF-A BL31, signed
 , uboot-mainline # pkgs/uboot-mainline.nix -- mainline U-Boot BL33, signed
 , spl-minimal # pkgs/spl-minimal.nix -- the SPL rebuilt for the minimal layout
@@ -113,7 +113,7 @@ let
   # Image on p16 would be dead weight.
   bootfs =
     if mainlineChain
-    then mkBootfsFor layoutName kernel
+    then mkBootfsFor layoutName "${kernel}/Image"
     else mkBootfsFor layoutName null;
 
   # Member names say which chain is inside, so a bundle can be identified from

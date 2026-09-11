@@ -626,17 +626,6 @@ let
         echo "mark-good: /boot/$b is named by neither config -- removing"
         rm -f "$f"
       done
-      # And the video stack's module directories (#83), which are named after
-      # the kernel they belong to rather than by a config. A set survives
-      # exactly as long as its kernel does -- no extra policy, and no way for
-      # a kept kernel to lose the modules it needs.
-      for d in /boot/modules-*; do
-        [ -d "$d" ] || continue
-        h=''${d#/boot/modules-}
-        if printf '%s\n' "$keep" | grep -qxF "Image-$h"; then continue; fi
-        echo "mark-good: /boot/modules-$h belongs to no kept kernel -- removing"
-        rm -rf "$d"
-      done
       sync
     '';
   };
@@ -1224,26 +1213,27 @@ in
     # 5. Services
     # =====================================================================
 
-    # 5a. The video stack (#83). Six modules off /boot, in the order the
-    # kernel build's own depmod resolved, then a check that the pipeline
-    # actually came up.
+    # 5a. The video stack (#83). Six modules out of the generation's own
+    # closure, in the order the kernel build's depmod resolved, then a check
+    # that the pipeline actually came up.
     #
-    # THEY LIVE ON /boot, NOT IN THIS CLOSURE, and that is structural: the
-    # stage-1 initrd is embedded in the kernel Image, so a unit that named the
-    # kernel derivation would make the system depend on the kernel and the
-    # kernel depend on the system. They are installed with the Image and the
-    # dtb, by the same writer, and a mismatched pair fails here at insmod with
-    # a vermagic error instead of silently serving a black stream.
+    # THE MODULES ARE IN THE GENERATION; THE KERNEL IS NOT. pkgs/video-modules.nix
+    # copies the .ko set out of the kernel derivation the Image comes from, so
+    # a generation carries the drivers it was built with -- but the Image
+    # itself is still a /boot artefact outside any generation
+    # (pkgs/boot-payload.nix). The two can therefore disagree and nothing here
+    # can detect it: the vermagic is the release string alone and does not
+    # change when a built-in driver does. The follow-up rung that moves the
+    # kernel, the initrd and the dtb into the generation is what closes that.
     #
-    # insmod, not modprobe: there is no /lib/modules tree on this system to
-    # resolve against, the order is six lines long and written down next to
-    # the modules, and an explicit order is a mechanism a reader can check.
+    # insmod, not modprobe: the order is six lines long, it ships next to the
+    # modules, and an explicit order is a mechanism a reader can check. (The
+    # package also carries depmod output, so `modprobe -d` works by hand.)
     systemd.services.nanokvm-video = {
       description = "NanoKVM-Pro open video stack (capture + encoder modules)";
       wantedBy = [ "multi-user.target" ];
       before = [ "nanokvm.service" ];
-      after = [ "systemd-modules-load.service" "boot.mount" ];
-      requires = [ "boot.mount" ];
+      after = [ "systemd-modules-load.service" ];
       path = [ pkgs.kmod ];
       serviceConfig = {
         Type = "oneshot";
@@ -1252,30 +1242,17 @@ in
       script =
         if cfg.videoStack.enable then ''
           set -e
-          # WHICH MODULE SET BELONGS TO THIS KERNEL. pkgs/boot-payload.nix
-          # names it after the kernel's own content hash, so the answer is the
-          # `nanokvmboot=` token -- the same one nanokvm-mark-good trusts,
-          # and for the same reason: it is what U-Boot copied out of the
-          # config it actually chose.
-          #
-          # `/boot/modules` is the fallback, and it is not dead code: a board
-          # whose /boot predates the content-addressed payload has exactly
-          # that, and a kernel/module mismatch there fails at insmod rather
-          # than silently.
-          bootid=$(sed -n 's|.*[[:space:]]nanokvmboot=\([^[:space:]]*\).*|\1|p' /proc/cmdline)
-          dir=/boot/modules
-          if [ -n "$bootid" ]; then
-            k=''${bootid%%,*}
-            case "$k" in
-              /Image-*) dir="/boot/modules-''${k#/Image-}" ;;
-            esac
-          fi
+          # `uname -r` rather than a baked-in release string, so a generation
+          # running on a kernel it was not built for fails HERE, with a path
+          # that names the mismatch, instead of at the first insmod with a
+          # vermagic error -- or worse, not at all.
+          dir=${nanokvm.video-modules}/lib/modules/$(uname -r)
           if [ ! -r "$dir/load-order" ]; then
-            echo "nanokvm-video: $dir/load-order is missing -- /boot does not" >&2
-            echo "               carry a module set for this kernel." >&2
+            echo "nanokvm-video: $dir does not exist." >&2
+            echo "               This generation's modules were built for a" >&2
+            echo "               different kernel than the one /boot booted." >&2
             exit 1
           fi
-          echo "nanokvm-video: loading from $dir"
           while read -r ko; do
             [ -n "$ko" ] || continue
             if [ -d "/sys/module/$(basename "$ko" .ko | tr - _)" ]; then
