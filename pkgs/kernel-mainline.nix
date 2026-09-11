@@ -578,6 +578,75 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
     echo "${release}" > "$dev/kernelrelease"
     cp -rL include/dt-bindings "$dev/include/"
 
+    # --- a build tree for OUT-OF-TREE modules (#85) ----------------------
+    # `dev/lib/modules/<release>/build` is a KDIR: `make -C <kdir> M=<src>
+    # modules` against it produces a .ko with this kernel's exact vermagic.
+    # The aic8800 WiFi driver (pkgs/aic8800.nix) is the only consumer, and it
+    # has to be out-of-tree -- it is 150 kLOC of vendor source with its own
+    # Makefile, which is not something to graft into the kernel tree the way
+    # the six in-tree drivers above are.
+    #
+    # The recipe is nixpkgs' (pkgs/os-specific/linux/kernel/manual-config.nix,
+    # `postInstall`): copy the source, drop in .config and Module.symvers, run
+    # `modules_prepare`, then keep only headers, linker scripts, the root and
+    # arch Makefiles and all of scripts/. That prune is what keeps this at a
+    # couple of hundred megabytes instead of the whole tree -- and it costs the
+    # `dev` output only, which no generation and no image references.
+    ${lib.optionalString buildModules ''
+      kdir="$dev/lib/modules/${release}"
+      mkdir -p "$kdir/build" "$kdir/source"
+      # tools/testing is excluded, not pruned afterwards: the selftests are
+      # full of relative symlinks into arch/<other>/ and drivers/, both of
+      # which the prune below deletes, and 84 dangling links fail nixpkgs'
+      # noBrokenSymlinks fixup. Nothing out-of-tree compiles against them.
+      rsync --archive --prune-empty-dirs \
+        --exclude='/build/' --exclude='/tools/testing/' \
+        ./ "$kdir/source/"
+      cp build/.config build/Module.symvers "$kdir/build/"
+
+      ( cd "$kdir/source"
+        make O="$kdir/build" modules_prepare
+        # A leftover from a `try-run` cc1 invocation; removing it keeps the
+        # output reproducible.
+        rm -f "$kdir/build"/.[0-9]*.d
+
+        chmod -R u+w .
+        # Every arch but ours (arm64 keeps arm, as upstream's own build does).
+        for d in arch/*/; do
+          d=''${d%/}; d=''${d#arch/}
+          case "$d" in arm64|arm|Kconfig) continue ;; esac
+          rm -rf "arch/$d"
+        done
+        # 50 MB of it is headers for other people's hardware, and an
+        # out-of-tree module includes none of them.
+        rm -rf drivers
+
+        # Mark what survives read-only, then delete everything still writable.
+        find . -type f -name '*.h'   -print0 | xargs -0 -r chmod u-w
+        find . -type f -name '*.lds' -print0 | xargs -0 -r chmod u-w
+        chmod u-w Makefile arch/arm64/Makefile*
+        chmod -R u-w scripts
+        find . -type f -perm -u=w -print0 | xargs -0 -r rm
+
+        # `find -type f` never matches a symlink, so the prune above leaves
+        # every symlink in place while deleting plenty of targets -- the dtc
+        # include-prefixes into arch/<other>/boot/dts, perf's cross-referenced
+        # pmu-event json. Thirty-two of those fail nixpkgs' noBrokenSymlinks
+        # fixup. Delete the dangling ones generically rather than naming
+        # directories a kernel bump can rename.
+        find . -xtype l -delete
+        find . -empty -type d -delete
+      )
+
+      # The point of the whole thing, asserted: a KDIR that cannot answer
+      # `make M=` is a build failure three packages away from here.
+      for f in Makefile scripts/Makefile.build scripts/mod/modpost; do
+        [ -e "$kdir/source/$f" ] || [ -e "$kdir/build/$f" ] \
+          || { echo "ERROR: the out-of-tree KDIR is missing $f" >&2; exit 1; }
+      done
+      echo "KDIR: $(du -sh "$kdir" | cut -f1) at lib/modules/${release}"
+    ''}
+
     # 64 MiB is two limits that happen to coincide: the vendor layout's
     # `kernel` partition (the bring-up variant is flashed into it), and the gap
     # between `kernel_addr_r` (0x4a000000) and `ramdisk_addr_r` (0x4e000000) in
