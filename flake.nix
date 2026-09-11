@@ -124,8 +124,14 @@
         # in the signed `kernel`/`dtb` partitions the vendor chain loaded by
         # byte offset. `extlinux-fallback.conf` starts as a copy: the only
         # known-good generation is the one being installed.
-        extlinuxConf = pkgs.writeText "extlinux.conf"
-          (import ./pkgs/extlinux.nix { inherit pkgs; });
+        # The kernel + dtb + both extlinux configs, with the kernel and dtb
+        # CONTENT-ADDRESSED (#86) so `extlinux.conf` and
+        # `extlinux-fallback.conf` can name two different kernels and a kernel
+        # update gets the same automatic rollback a generation switch has.
+        mkBootPayload = kernelImage: callPkg ./pkgs/boot-payload.nix {
+          inherit kernelImage;
+          dtb = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
+        };
         # `null` = /boot with `ver` alone, which is what the vendor-derived
         # chain wants: it loads the kernel from the signed `kernel` partition
         # and never looks here.
@@ -143,15 +149,16 @@
             inherit version;
             size = l.bootfs.size;
             fsType = if layoutName == "vendor" then "vfat" else "ext4";
-            payload = pkgs.lib.optionalAttrs (kernelImage != null) {
-              "Image" = kernelImage;
-              "ax630c-nanokvm-pro.dtb" = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
-              "extlinux/extlinux.conf" = extlinuxConf;
-              "extlinux/extlinux-fallback.conf" = extlinuxConf;
-            };
+            payloadDir =
+              if kernelImage == null then null
+              else "${mkBootPayload kernelImage}/boot";
           };
         mkBootfs = mkBootfsFor "minimal";
         bootfs = mkBootfs "${kernel-mainline-appliance}/Image";
+        # The same payload as a first-class output: `.#system-bundle` ships it,
+        # the checks read its NAMES file, and a hardware run can copy one file
+        # onto /boot from it.
+        boot-payload = mkBootPayload "${kernel-mainline-appliance}/Image";
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
@@ -370,7 +377,15 @@
         # Host-side proof of the from-scratch rate controller (#46): vendor
         # trajectory replay + closed-loop simulation. See pkgs/vcenc-rc-test.nix.
         vcenc-rc-test = callPkg ./pkgs/vcenc-rc-test.nix { };
-        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix { inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl; };
+        # The 4.19 image's server. Its OTA is RETIRED (#86, 2026-09-10): no
+        # release publishes an overlay payload any more, so its update check
+        # finds nothing, and install() refuses rather than falling back to the
+        # vendor's dpkg installer. A vendor-layout device moves forward by an
+        # AXDL reflash of `.#nixos-firmware-image-mainline`.
+        nanokvm-server = callPkg ./pkgs/nanokvm-server.nix {
+          inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl;
+          updateMode = "retired";
+        };
 
         # ATX power/reset/LED tool for the mainline stack (#81): resolves a
         # line by its dts/ gpio-line-names entry over libgpiod v2, and the
@@ -382,9 +397,16 @@
         # /sys/class/gpio -- global GPIO numbers are not stable on mainline, so
         # the NixOS appliance gets this build and the shipped 4.19 image keeps
         # the sysfs one above (which stays byte-identical).
+        # The appliance also polls a DIFFERENT CHANNEL and applies a different
+        # payload (#86): `nanokvm_pro_sys_latest.json` and a system bundle,
+        # installed by `nanokvm-update`, instead of the 4.19 rootfs overlay.
+        # One release carries both, and the manifest filename is the whole of
+        # the separation -- a device is never offered a payload its installer
+        # cannot apply.
         nanokvm-server-libgpiod = callPkg ./pkgs/nanokvm-server.nix {
           inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl nanokvm-gpio;
           gpioBackend = "libgpiod";
+          updateMode = "bundle";
         };
 
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { inherit version; };
@@ -398,19 +420,12 @@
         # /opt/lib copy in the shipped rootfs and the OTA payload.
         libsns-dummy = callPkg ./pkgs/libsns-dummy.nix { inherit axera-libs; };
 
-        # Full-firmware OTA package (tarball + manifest) served from our
-        # Releases: rootfs overlay (app/web/libkvm/modules) + A/B partition
-        # images (kernel/dtb/boot chain). See docs/updates.md.
-        update-package = callPkg ./pkgs/update-package.nix {
-          # The SHIPPED video stack is fully open (#60, 2026-09-02): the V4L2
-          # libkvm (open capture drivers + open VCMD encoder, fixed-QP v1) and a
-          # loader with zero vendor kernel blobs. The server links the ABI
-          # header only, so it keeps the plain kvm-encoder.
-          kvm-encoder = kvm-encoder-v4l2;
-          inherit nanokvm-server nanokvm-web nanokvm-display vc8000-vcmd edid
-            open-vin-csi2 open-vin-capture
-            libsns-dummy version kernel boot dtb-slot-image kernel-slot-image;
-        };
+        # `update-package` -- the 4.19 rootfs-overlay OTA -- is GONE (#86,
+        # 2026-09-10). The product is the mainline NixOS appliance and its
+        # update is `.#system-bundle` (a whole store closure), which no Ubuntu
+        # rootfs can apply; keeping a second payload format alive for devices
+        # that do not exist was cost with no benefit. A vendor-layout board is
+        # reflashed over AXDL. docs/updates.md, "History".
 
         # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
         base-axp = callPkg ./pkgs/base-axp.nix { };
@@ -620,6 +635,18 @@
         };
         applianceAxpImage = mkApplianceAxpImage "vendor";
         applianceAxpImageMainline = mkApplianceAxpImage "mainline";
+
+        # ---- the appliance's OTA artefact (#86) ----------------------------
+        # The ONLY OTA artefact this project publishes.
+        # It is a function of the SAME two things `.#bootfs` is built from --
+        # the minimal-layout appliance closure and the kernel its initrd is
+        # inside -- so a release cannot publish a bundle that disagrees with the
+        # image flashed from the same commit.
+        system-bundle = callPkg ./pkgs/system-bundle.nix {
+          inherit version;
+          bootPayload = boot-payload;
+          toplevel = "${nixos-appliance-mainline-chain.eval.config.system.build.toplevel}";
+        };
 
         nixos-firmware-image =
           nixos-appliance.eval.config.system.build.axpImage;
@@ -841,10 +868,9 @@
             vcenc-geom-test vcenc-rc-test
             nanokvm-server nanokvm-server-libgpiod nanokvm-gpio
             nanokvm-web nanokvm-display libsns-dummy
-            update-package
             base-axp rootfs nixos-appliance nixos-appliance-mainline-chain
             nixos-appliance-loop nixos-appliance-loop-nofixes
-            uboot-env logo bootfs
+            uboot-env logo bootfs boot-payload system-bundle
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
             uboot-mainline-spldrv uboot-mainline-hangtest
@@ -899,6 +925,20 @@
           # image would write differently is a byte nothing has ever proven.
           axp-migration-parity = callPkg ./pkgs/axp-migration-parity.nix {
             inherit nixos-firmware-image-mainline migrate-layout project;
+          };
+          # The #86 update loop, run for real against a fake root: apply a
+          # bundle, check the profile advanced and the boot config names the
+          # new generation AND its kernel, then collect and check the right
+          # things survived -- including that gc REFUSES when it cannot know
+          # the live set. Everything an update does except meeting hardware.
+          nanokvm-updater-loop = callPkg ./nixos/lib/updater-test.nix { };
+          # The release artefact itself, read back: the manifest hash against
+          # the tarball, closure.txt against the toplevel's real closure, and
+          # the /boot payload against the kernel the bundle carries.
+          nanokvm-system-bundle = callPkg ./pkgs/system-bundle-check.nix {
+            inherit system-bundle version;
+            bootPayload = boot-payload;
+            toplevel = "${nixos-appliance-mainline-chain.eval.config.system.build.toplevel}";
           };
           emmc-partition-map =
             let

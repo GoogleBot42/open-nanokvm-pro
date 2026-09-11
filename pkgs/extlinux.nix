@@ -16,6 +16,15 @@
   # With the profile symlink in both, both entries would boot the same
   # userspace and `altbootcmd` would be a no-op.
   init ? ""
+, # WHICH KERNEL THIS ENTRY BOOTS, ON THE COMMAND LINE (#86). `sysboot` loads
+  # LINUX and FDT and then tells the kernel nothing about which files they were,
+  # so a running system cannot otherwise know whether U-Boot took
+  # extlinux.conf or extlinux-fallback.conf, nor which `/boot/Image-<hash>` it
+  # read. `nanokvm-mark-good` needs exactly that to promote the (generation,
+  # kernel) PAIR that booted healthy -- it reads this token out of /proc/cmdline.
+  # No dot in the name, so the kernel hands it to init as an environment
+  # variable instead of trying to resolve it as a module parameter.
+  bootId ? ""
 , extraAppend ? ""
 , ...
 }:
@@ -83,7 +92,8 @@ let
     "boot.panic_on_fail"
     "stage1panic=1"
     "panic=10"
-  ] ++ lib.optional (init != "") "init=${init}"
+  ] ++ lib.optional (bootId != "") "nanokvmboot=${bootId}"
+    ++ lib.optional (init != "") "init=${init}"
     ++ lib.optional (extraAppend != "") extraAppend);
 in
 ''

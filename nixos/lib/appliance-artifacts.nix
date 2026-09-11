@@ -107,6 +107,21 @@ let
 
       # Marks the root as NixOS-managed; switch-to-configuration refuses without it.
       touch ./files/etc/NIXOS
+
+      # THE FIRST GENERATION'S CLOSURE LIST (#86). There is no nix on the
+      # appliance, so nothing on the device can ever recompute which store
+      # paths a generation needs -- and `nanokvm-gc` refuses to delete anything
+      # while a kept generation has no list, which without this file would be
+      # true of the flashed one forever. Every update writes its own alongside.
+      #
+      # It lives in /var, NOT in the closure, and it has to: a file inside the
+      # closure that lists the closure would change the toplevel's hash, which
+      # would change the file. The image builder is the one place with both the
+      # toplevel and a writable /var.
+      mkdir -p ./files/var/lib/nanokvm/closures
+      cp ${pkgs.writeClosure [ toplevel ]} \
+         ./files/var/lib/nanokvm/closures/$(basename ${toplevel}).txt
+      chmod 0644 ./files/var/lib/nanokvm/closures/$(basename ${toplevel}).txt
     '';
   };
 

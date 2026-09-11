@@ -17,6 +17,21 @@
   # docs/updates.md.
   updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
 , previewUpdateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview"
+, # What the web UI's "update" button installs, and therefore WHICH MANIFEST this
+  # build polls (#86). One release carries both channels side by side; the
+  # manifest FILENAME is the whole of the separation, because a device must never
+  # be offered a payload its installer cannot apply.
+  #
+  #   "bundle"   nanokvm_pro_sys_latest.json -> a NixOS SYSTEM BUNDLE (a store
+  #              closure plus its kernel), applied by install-bundle.go.in
+  #              through `nanokvm-update`. The mainline appliance, and the only
+  #              update path this project publishes.
+  #   "retired"  nanokvm_pro_latest.json -> nothing. The 4.19 image's rootfs-
+  #              overlay OTA is gone (#86, 2026-09-10) and no release publishes
+  #              a payload for it; install() refuses rather than letting the
+  #              vendor's dpkg installer pull three .debs off Sipeed's CDN.
+  #              A vendor-layout device moves forward by an AXDL reflash.
+  updateMode ? "bundle"
 , ...
 }:
 
@@ -37,8 +52,22 @@
 
 assert builtins.elem gpioBackend [ "sysfs" "libgpiod" ];
 assert gpioBackend == "libgpiod" -> nanokvm-gpio != null;
+assert builtins.elem updateMode [ "bundle" "retired" ];
 
 let
+  # The manifest this build polls, and the installer that consumes what it names.
+  # They move together or a device downloads a payload it cannot apply.
+  manifestName =
+    if updateMode == "bundle" then "nanokvm_pro_sys_latest.json"
+    else "nanokvm_pro_latest.json";
+  installOverride =
+    if updateMode == "bundle" then ./nanokvm-server/install-bundle.go.in
+    else ./nanokvm-server/install-retired.go.in;
+  # `os/exec` is used ONLY by install() in this file, so the retired variant --
+  # which execs nothing -- would leave an unused import, and an unused import is
+  # a Go compile error.
+  dropExecImport = updateMode == "retired";
+
   # postPatch below is written at 4-space indentation, and Nix strips NOTHING
   # from it (it contains column-0 lines, so the common indent is zero). A step
   # spliced in from up here must therefore re-indent itself to 4, or the sysfs
@@ -141,11 +170,12 @@ buildGoModule {
     # 2. Drop the ?now= cache-buster. Release-asset URLs may redirect and a
     #    trailing query can interfere; a static manifest needs no cache-bust.
     substituteInPlace service/application/version.go \
-      --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/nanokvm_pro_latest.json", baseURL'
+      --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/${manifestName}", baseURL'
     sed -i '/^[[:space:]]*"time"$/d' service/application/version.go
 
-    # 3. Replace the vendor dpkg-based install() with our overlay-copy version
-    #    (see pkgs/nanokvm-server/install-override.go.in for the rationale).
+    # 3. Replace the vendor dpkg-based install() with ours -- the overlay copy
+    #    (install-override.go.in) or the system-bundle handoff to `nanokvm-update`
+    #    (install-bundle.go.in), per `updateMode` above.
     #    install() is the LAST function in update.go: truncate at its signature
     #    and append ours. appNames/getFileInfo become unused package-level decls,
     #    which Go permits (only unused imports / locals are errors).
@@ -157,7 +187,12 @@ buildGoModule {
     [ "$(sed -n '/^func install(dir string, version string) error {/,$p' service/application/update.go | grep -c '^func ')" = 1 ] \
       || { echo "ERROR: update.go has declarations after install() — the truncation would silently drop them" >&2; exit 1; }
     sed -i '/^func install(dir string, version string) error {/,$d' service/application/update.go
-    cat ${./nanokvm-server/install-override.go.in} >> service/application/update.go
+    cat ${installOverride} >> service/application/update.go
+    ${pkgs.lib.optionalString dropExecImport ''
+      sed -i '/^\t"os\/exec"$/d' service/application/update.go
+      ! grep -q 'exec\.' service/application/update.go \
+        || { echo "ERROR: update.go still uses os/exec after dropping its import" >&2; exit 1; }
+    ''}
 
     # 4. Strip the kvmadmin + assistant extension endpoints. Both fetch and run
     #    third-party closed code on user action: /kvmadmin/install pulls the
