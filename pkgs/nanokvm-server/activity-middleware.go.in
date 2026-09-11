@@ -16,9 +16,10 @@ package middleware
 //   * THE IDLE ROUTE ITSELF, from anywhere, for the same reason -- asking the
 //     question must not change the answer.
 //
-// Everything else counts, including the initial GET of a websocket upgrade:
-// that is a person opening the console, and the session itself is then counted
-// by the client registries.
+// Everything else counts, including the initial GET of a websocket upgrade
+// (that is a person opening the console, and the session itself is then counted
+// by the client registries) and /api/application/pending, which is the update
+// page loading: somebody reading the restart banner is somebody using the box.
 //
 // Installed as middleware/activity.go by pkgs/nanokvm-server.nix.
 
@@ -34,8 +35,7 @@ func RecordActivity() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		local := ip == "::1" || strings.HasPrefix(ip, "127.")
-		probe := strings.HasPrefix(c.Request.URL.Path, "/api/update/idle") ||
-			strings.HasPrefix(c.Request.URL.Path, "/api/application/pending")
+		probe := strings.HasPrefix(c.Request.URL.Path, "/api/update/idle")
 
 		if !local && !probe {
 			common.MarkAPIActivity()
