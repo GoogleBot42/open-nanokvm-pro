@@ -625,7 +625,10 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
         find . -type f -name '*.h'   -print0 | xargs -0 -r chmod u-w
         find . -type f -name '*.lds' -print0 | xargs -0 -r chmod u-w
         chmod u-w Makefile arch/arm64/Makefile*
-        chmod -R u-w scripts
+        # FILES only, not the directories: a read-only directory is one
+        # nothing can be deleted from, and the dangling-symlink sweep below
+        # has to be able to delete inside scripts/dtc/include-prefixes.
+        find scripts -type f -print0 | xargs -0 -r chmod u-w
         find . -type f -perm -u=w -print0 | xargs -0 -r rm
 
         # `find -type f` never matches a symlink, so the prune above leaves

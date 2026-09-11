@@ -162,6 +162,10 @@ pkgs.stdenv.mkDerivation {
     description = "AIC8800 SDIO WiFi kernel modules for the NanoKVM-Pro's mainline kernel (#85)";
     homepage = "https://github.com/radxa-pkg/aic8800";
     license = lib.licenses.gpl2Only;
-    platforms = [ "aarch64-linux" ];
+    # The BUILDER's platform, not the modules'. This derivation
+    # cross-compiles: it runs on x86_64 and emits aarch64 .ko, so pinning
+    # `aarch64-linux` here makes the appliance refuse to evaluate on the host
+    # that builds it.
+    platforms = lib.platforms.linux;
   };
 }
