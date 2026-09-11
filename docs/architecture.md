@@ -169,8 +169,10 @@ and the slot register only ever chose between two copies of one image.
 
 ## Generations and `/boot`
 
-`nixos/appliance.nix` is the system definition; `nixos/rootfs.nix` evaluates it
-into a closure and packs a rootless ext4; `nixos/axp-image.nix` assembles the
+The system definition is `nixosModules.nanokvm-pro` — nine composable modules
+under `nixos/modules/`, one per area ([modules.md](modules.md)) — plus
+`nixos/appliance.nix`, which is our policy and nothing else. `nixos/rootfs.nix`
+evaluates the two into a closure and packs a rootless ext4; `nixos/axp-image.nix` assembles the
 flashable `.axp` from the same closure, so `.#nixos-firmware-image-mainline` and
 the system it images cannot disagree.
 
@@ -344,7 +346,7 @@ Both places that produce a `libkvm.so` therefore use `patchelf --force-rpath`:
 - `pkgs/kvm-encoder.nix` sets `/opt/lib:<axera-libs>/lib`. The second entry is a
   leftover of the era when the same source built a vendor-backend variant; the
   build links no `libax_*` any more, so nothing resolves through it.
-- `nixos/appliance.nix`'s `kvmapp` derivation **re-rpaths it** to
+- `nixos/modules/server.nix`'s `kvmapp` derivation **re-rpaths it** to
   `/opt/lib:<opus>/lib:<alsa>/lib:<jpeg>/lib`. That is not cosmetic: in a Nix
   closure the `axera-libs` store path is a *reference*, and leaving it would drag
   the entire closed Axera library set into an image that is supposed to contain
@@ -360,8 +362,9 @@ three open libraries: `libopus.so.0`, `libasound.so.2`, `libjpeg.so.8`.
 
 ## Service model
 
-Everything is declared in `nixos/appliance.nix`. There is no vendor
-`kvmcomm.service` on this image and no vendor `nanokvm.sh` supervisor; the three
+Everything is declared in `nixos/modules/` ([modules.md](modules.md)). There is
+no vendor `kvmcomm.service` on this image and no vendor `nanokvm.sh`
+supervisor; the three
 things that script did — the tmpfs copy, the restart loop, the HTTPS cert — are
 three units.
 
@@ -378,7 +381,7 @@ three units.
 | `nanokvm-mark-good` | the rollback health gate (timer, `OnBootSec=60s`) — see [Rollback](#rollback) |
 | `nanokvm-uboot-test-clear` | consumes the one-shot U-Boot chainload slot |
 | `nanokvm-update`, `nanokvm-update-reboot`, `nanokvm-gc` | the update path, each with its own timer — see [Updates](#updates) |
-| `nanokvm-wifi` | loads the two aic8800 modules (`nixos/wifi.nix`, only with `nanokvm.wifi.enable`) |
+| `nanokvm-wifi` | loads the two aic8800 modules (`nixos/modules/wifi.nix`, only with `nanokvm.wifi.enable`) |
 | `nanokvm-usb` | **stub**. The dwc3 glue and the configfs function drivers are in the kernel, but `usbdev.sh` — the script that builds the gadget — is vendor-only and not captured yet: no HID, no mass storage |
 
 **There is no ATX GPIO unit**, and that is a result rather than a gap. Consumers
@@ -397,7 +400,7 @@ them, so they inherit it. Known-absent and documented: `chronyc` (we run
 timesyncd) and `dpkg`/`tailscale`.
 
 **WiFi** has three pieces, each somewhere a reader would not guess
-(`nixos/wifi.nix`): the modules are out-of-tree from `radxa-pkg/aic8800`, built
+(`nixos/modules/wifi.nix`): the modules are out-of-tree from `radxa-pkg/aic8800`, built
 against the appliance kernel and loaded by `nanokvm-wifi`; the firmware goes
 through `hardware.firmware` with `firmwareCompression` off, because the driver
 builds with `CONFIG_USE_FW_REQUEST=n` and `filp_open`s a literal compiled-in
@@ -431,7 +434,7 @@ detail — trust, GC, the manifest, local testing — is
 Everything on the image is built from source except the **aic8800 radio
 firmware**, which is the only closed content the blob policy permits and is only
 present with `nanokvm.wifi.enable`. Two build-time assertions keep it that way:
-`nixos/appliance.nix`'s `kvmapp` derivation fails if `libkvm.so` or the server
+`nixos/modules/server.nix`'s `kvmapp` derivation fails if `libkvm.so` or the server
 still references `axera-libs` after the re-rpath, and
 `nixos/lib/appliance-artifacts.nix` fails if any `axera-libs`, `ax-ko-blobs` or
 `libsns-dummy` path appears in the image closure at all.

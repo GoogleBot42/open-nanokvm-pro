@@ -62,7 +62,7 @@ that is arbitration, not a bug.
 - `libkvm.so` needs `patchelf --force-rpath` (DT_RPATH, not DT_RUNPATH); a binary that
   works from an SSH shell but crash-loops under systemd is this. See
   `docs/architecture.md` ("Load-bearing linker detail"), `pkgs/kvm-encoder.nix`
-  and the `kvmapp` derivation in `nixos/appliance.nix`, which re-rpaths it.
+  and the `kvmapp` derivation in `nixos/modules/server.nix`, which re-rpaths it.
 - A register-image "golden table" captured from `/dev/mem` must carry the vendor's
   **zero-valued** config words too, or the open driver silently keeps reset values
   (WDMA `0x142f8` = 4 at reset, vendor writes 0 → every pixel word came out `<<4`;
@@ -207,7 +207,7 @@ that is arbitration, not a bug.
   only reads it from the cmdline, which here comes from the U-Boot env) and carry
   a userspace deadman on `/proc/uptime` -- NOT `date +%s`, because timesyncd jumps
   the clock months forward the moment DHCP lands and a wall-clock deadline
-  expires instantly. `nixos/appliance.nix`; both halves hardware-proven in #78.
+  expires instantly. `nixos/modules/kernel.nix`; both halves hardware-proven in #78.
 - **`boot.panic_on_fail=1` ON THE COMMAND LINE DOES NOTHING.** Upstream's
   stage-1 parser is `case $o in boot.panic_on_fail|stage1panic=1)` and a shell
   `case` pattern must match the WHOLE word, so the `=1` makes it match neither
@@ -221,6 +221,17 @@ that is arbitration, not a bug.
   emit the bare `boot.panic_on_fail` plus `stage1panic=1`. (Until #99 the
   initrd was inside the kernel Image, so applying that fix meant writing `/boot`
   from a board that still boots; now it is an ordinary generation switch.)
+- **A COMMENT INSIDE A BUILD STRING IS A BUILD INPUT.** Renaming a file and
+  sweeping the tree for references to it looks free and is not: a `#` line
+  inside a `runCommand` script, a `writeShellApplication` `text`, a `preBuild`
+  or a NOTES heredoc is hashed into the derivation. In #87 five such lines --
+  in `pkgs/aic8800.nix`, `pkgs/nanokvm-server.nix`, `nixos/lib/updater.nix`,
+  `nixos/lib/appliance-artifacts.nix` and `nixos/axp-image.nix` -- rebuilt
+  `aic8800-modules`, `kvmapp` and `nanokvm-update`, which took `system-path`,
+  `dbus-1`, `etc` and the toplevel with them and broke an oracle that was
+  otherwise exact. They are deliberately left naming the pre-#87 paths. The
+  test that catches it is the one worth running after any refactor that is
+  supposed to change nothing: rebuild the toplevel and diff the store path.
 - **A removal is only done when the last consumer is gone, and a default can be
   the consumer.** #97 deleted the 4.19 image's `nanokvm-server` variant and left
   the appliance calling the package without `gpioBackend = "libgpiod"` -- whose
@@ -505,6 +516,7 @@ appliance, not AXDL.
 | Open-encoder driver bring-up / #49 resolution (HISTORICAL) | `docs/vcmd-cma-unblock.md` |
 | Testing a kernel or a whole system on the board: it is a generation switch | `docs/nixos-rootfs.md` §4b, kvm-device skill |
 | NixOS appliance / pure-Nix rootfs: boot contract, identity, gaps (#26, #78) | `docs/nixos-rootfs.md` |
+| Building an image that is not ours: the composable `nixosModules` (#87) | `docs/modules.md` |
 | Mainline port (#26): driver inventory, boot/rollback contract, child issues #74-#87, and how a serial-less first boot is made observable | `docs/mainline-port.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
 

@@ -3119,7 +3119,7 @@ Link/deploy contract: the openVenc build links `-ljpeg` against a
 = true; }`, exported as `kvm-encoder.passthru.libjpeg8`) so the DT_NEEDED is
 `libjpeg.so.8` — the soname (and `LIBJPEG_8.0` symbol versions, verified) the
 device's Ubuntu 22.04 multiarch path ships. The NixOS appliance stages the
-same build into /opt/lib (nixos/appliance.nix).
+same build into /opt/lib (nixos/modules/server.nix).
 
 **Hardware proof (2026-08-31, clean boot, vcmd loaded, ax_venc/ax_jenc
 removed):** `/api/stream/mjpeg` streamed 91 frames in ~10 s (**~9 fps** at

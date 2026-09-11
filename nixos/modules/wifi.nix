@@ -51,6 +51,14 @@
 # implemented (it is called on the way IN to every connect), `isAPMode()`
 # answers false because no hostapd runs, and the UI therefore shows the
 # ordinary station flow.
+#
+# THIS FILE MOVED in #87 (it was nixos/wifi.nix). A handful of comments still
+# name the old path -- two inside the generated `kvmcomm-wifi.sh` below, one
+# in pkgs/aic8800.nix's build script -- because a comment inside a build
+# string is a build input: changing it rehashes the script, the module set and
+# the whole appliance closure, and #87's contract was that the closure does
+# not change. They are corrected the next time those scripts change for a
+# reason.
 # ===========================================================================
 
 let
@@ -402,7 +410,7 @@ in
       config.nanokvm.dhcp.clientIdentifier;
 
     # --- the script the server execs ------------------------------------
-    systemd.tmpfiles.rules = [
+    systemd.tmpfiles.rules = lib.mkOrder 100 [
       "d /kvmcomm 0755 root root - -"
       "d /kvmcomm/scripts 0755 root root - -"
       "L+ /kvmcomm/scripts/wifi.sh - - - - ${wifiScript}/bin/kvmcomm-wifi.sh"
@@ -410,6 +418,6 @@ in
 
     # `iw` for the hardware plan's `iw dev wlan0 scan`, and for anyone
     # debugging a radio that associates but passes no traffic.
-    environment.systemPackages = [ pkgs.iw ];
+    environment.systemPackages = lib.mkOrder 100 [ pkgs.iw ];
   };
 }
