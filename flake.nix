@@ -472,6 +472,9 @@
           # here. The shipped 4.19 image keeps the sysfs one, byte-identical.
           nanokvm-server = nanokvm-server-libgpiod;
           inherit nanokvm-gpio nanokvm-web nanokvm-display version;
+          # The open capture/encode modules (#83), built against the kernel
+          # the appliance boots and carried in the generation's closure.
+          inherit video-modules;
         };
         # The shipped variant also carries the .axp builder: nixos/image-axp.nix
         # defines `system.build.axpImage` from this configuration's own closure,
@@ -549,6 +552,19 @@
         # they are imaging, so they were never at risk.
         kernel-mainline-appliance =
           mkApplianceKernel nixos-appliance-mainline-chain.initrd "appliance";
+        # The video stack's modules, copied out of that kernel (#83). A build-
+        # time dependency on it, so the appliance's closure carries ~280 KB of
+        # .ko and not the 51 MB Image beside them.
+        #
+        # This reads the kernel that reads that configuration's INITRD, and
+        # the appliance's own closure then reads this -- which is only not a
+        # cycle because the initrd is a function of the stage-1 options alone.
+        # If a future change makes the initrd depend on the whole system
+        # closure, this is where it will show up, as an infinite recursion at
+        # eval time rather than anything subtle.
+        video-modules = callPkg ./pkgs/video-modules.nix {
+          kernel = kernel-mainline-appliance;
+        };
         kernel-mainline-appliance-loop =
           mkApplianceKernel nixos-appliance-loop.initrd "appliance-loop";
         kernel-mainline-appliance-qemu =
@@ -861,7 +877,7 @@
             kernel-mainline-appliance-slot-image
             kernel-mainline-appliance-loop-slot-image
             nixos-appliance-qemu nixos-appliance-qemu-run
-            open-vin-csi2 open-vin-capture
+            open-vin-csi2 open-vin-capture video-modules
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test

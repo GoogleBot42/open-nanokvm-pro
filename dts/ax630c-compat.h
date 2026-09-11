@@ -82,4 +82,25 @@
  */
 #define AX630C_DWC3_COMPAT		"axera,ax630c-dwc3"
 
+/*
+ * Video (#83). Three of ours and one syscon.
+ *
+ * The vendor names -- "axera,mipi", "axera,proton" and "axera, venc-encoder"
+ * (the space in that last one is real) -- are deliberately NOT carried
+ * forward. They name vendor blobs, not hardware; these are the compatibles of
+ * the open drivers in drivers/media/platform/axera, so a kernel that binds
+ * them is a kernel with the open stack and nothing else.
+ *
+ * The ISP syscon at 0x2500000 is the ninth clock window the #80 model dropped
+ * for having no implementation anywhere. It carries the CSI receiver's clock
+ * gates, its soft resets and the deskew-lock status word, so the video
+ * drivers reach it as a plain syscon and write single-bit SET/CLR strobes --
+ * no CCF or reset-controller model exists for these bits, in the vendor
+ * kernel or ours.
+ */
+#define AX630C_ISP_SYSCON_COMPAT	"axera,ax630c-isp-syscon"
+#define AX630C_CSI2RX_COMPAT		"axera,ax630c-csi2-rx"
+#define AX630C_VIN_COMPAT		"axera,ax630c-vin"
+#define AX630C_VC8000E_COMPAT		"axera,ax630c-vc8000e"
+
 #endif /* _DTS_AX630C_COMPAT_H */

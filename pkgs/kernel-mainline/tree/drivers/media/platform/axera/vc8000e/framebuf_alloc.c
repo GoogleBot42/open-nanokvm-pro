@@ -1,24 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * THIS IS THE 4.19 COPY. The mainline port lives in the kernel tree, at
- * pkgs/kernel-mainline/tree/drivers/media/platform/axera/ (#83, device-proven
- * 2026-09-10). The TODO(mainline) comments below are DONE there; they are left
- * here because this file still builds the shipped 4.19 image's module and
- * nothing about it should move. Delete this copy when the 4.19 image retires.
- */
-/*
  * From-source frame-buffer allocator over a CMM carveout (#45).
  * See framebuf_alloc.h for the ABI and design notes.
  *
- * First-fit over a bus-address-sorted allocation list. The region is a formal
- * slice of the CMM pool (#53): the curated boot loader
- * (pkgs/rootfs/ax-load-drv.sh) computes the whole DMA map from the board's
- * pool geometry and passes framebuf_base/framebuf_size here, so this carveout
- * is EXCLUSIVE -- ax_cmm's ceiling is lowered to framebuf_base and never hands
- * it out. The defaults below are the 1G-board values that map computes
- * (0x73800000 + 136MB), kept so an unparameterized insmod still works there.
- * 136MB (the old ax_cmm slice folded in, #52) covers the 4K floorplan (91MB with
- * the prover input region, 59MB without; 1080p is 23MB). docs/vcmd-cma-unblock.md.
+ * First-fit over a bus-address-sorted allocation list. The region is a DT
+ * reserved-memory node (#83) whose base and size the platform glue hands over
+ * with vcmd_fb_set_region(); on 4.19 it was a pair of module parameters that a
+ * shell loader computed from the board id. 136MB covers the 4K floorplan
+ * (91MB with the prover input region, 59MB without; 1080p is 23MB).
+ * docs/vcmd-cma-unblock.md.
+ *
+ * The kernel never maps this memory: only the encoder DMAs it and userspace
+ * mmaps it (write-combining) through the char device, so the reserved-memory
+ * node is a plain `no-map` region rather than a dma pool, and this file is
+ * pure address-space bookkeeping.
  */
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -35,12 +30,14 @@
 
 #include "framebuf_alloc.h"
 
-static unsigned long framebuf_base = 0x73800000UL;
-static unsigned long framebuf_size = 0x08800000UL;   /* 136MB (#52; loader overrides) */
-module_param(framebuf_base, ulong, 0444);
-MODULE_PARM_DESC(framebuf_base, "phys base of the frame-buffer CMM carveout");
-module_param(framebuf_size, ulong, 0444);
-MODULE_PARM_DESC(framebuf_size, "size of the frame-buffer CMM carveout");
+static unsigned long framebuf_base;
+static unsigned long framebuf_size;
+
+void vcmd_fb_set_region(unsigned long base, unsigned long size)
+{
+	framebuf_base = base;
+	framebuf_size = size;
+}
 
 struct fb_alloc {
 	struct list_head node;   /* sorted by bus, ascending */
@@ -171,7 +168,7 @@ void vcmd_fb_set_dev(struct device *dev)
 
 static void imp_drop(struct fb_import *im)
 {
-	dma_buf_unmap_attachment(im->att, im->sgt, DMA_TO_DEVICE);
+	dma_buf_unmap_attachment_unlocked(im->att, im->sgt, DMA_TO_DEVICE);
 	dma_buf_detach(im->dbuf, im->att);
 	dma_buf_put(im->dbuf);
 	kfree(im);
@@ -205,7 +202,7 @@ int vcmd_dmabuf_import(struct file *filp, int fd, unsigned long *bus,
 		goto err_free;
 	}
 
-	sgt = dma_buf_map_attachment(att, DMA_TO_DEVICE);
+	sgt = dma_buf_map_attachment_unlocked(att, DMA_TO_DEVICE);
 	if (IS_ERR(sgt)) {
 		ret = PTR_ERR(sgt);
 		goto err_detach;
@@ -233,7 +230,7 @@ int vcmd_dmabuf_import(struct file *filp, int fd, unsigned long *bus,
 	return 0;
 
 err_unmap:
-	dma_buf_unmap_attachment(att, sgt, DMA_TO_DEVICE);
+	dma_buf_unmap_attachment_unlocked(att, sgt, DMA_TO_DEVICE);
 err_detach:
 	dma_buf_detach(dbuf, att);
 err_free:

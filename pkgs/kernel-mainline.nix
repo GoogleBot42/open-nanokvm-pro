@@ -58,6 +58,10 @@ let
   localversion = "-nanokvm";
   release = "${version}${localversion}";
 
+  # The video stack's modules (#83). Only the appliance variant can load
+  # them; see the buildPhase.
+  buildModules = variant != "bringup";
+
   crossCC = crossPkgs.buildPackages.gcc;
   crossBinutils = crossPkgs.buildPackages.binutils;
   crossPrefix = crossPkgs.stdenv.cc.targetPrefix;
@@ -85,6 +89,11 @@ pkgs.stdenv.mkDerivation {
   ] ++ (with pkgs; [
     gnumake bc bison flex openssl ncurses perl elfutils kmod cpio
     gzip lzop which gawk bash zstd rsync
+    # `make modules` builds every driver arm64 defconfig leaves modular,
+    # which is a thousand drivers for other people's hardware -- and some of
+    # them generate headers with a host tool. drivers/gpu/drm/msm wants
+    # python3 and fails with a bare `Error 127` without it.
+    python3
   ]);
 
   # Modifications to files that already exist upstream. Unlike treeGraft below
@@ -153,6 +162,23 @@ pkgs.stdenv.mkDerivation {
 
     graft_into clk     aspeed "$(printf '\t\t\t\t\t')"
     graft_into pinctrl aspeed "$(printf '\t\t\t\t')"
+
+    # --- graft the video stack (#83) -------------------------------------
+    # drivers/media/platform is a directory of per-vendor directories, so this
+    # is the same shape as clk/pinctrl above but with different anchors: the
+    # Kconfig sources each vendor's file by full path and the Makefile lists
+    # `obj-y += <vendor>/`. `axera` sorts between `atmel` and `broadcom` in
+    # both. Assert each insertion -- a missed hook builds a kernel with no
+    # capture and no encoder, which is a working appliance that serves a black
+    # stream.
+    sed -i 's|^source "drivers/media/platform/atmel/Kconfig"|&\nsource "drivers/media/platform/axera/Kconfig"|' \
+      drivers/media/platform/Kconfig
+    grep -q '^source "drivers/media/platform/axera/Kconfig"' drivers/media/platform/Kconfig \
+      || { echo "ERROR: could not hook drivers/media/platform/axera into Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-y += atmel/$|&\nobj-y += axera/|' drivers/media/platform/Makefile
+    grep -qF 'obj-y += axera/' drivers/media/platform/Makefile \
+      || { echo "ERROR: could not hook drivers/media/platform/axera into the Makefile" >&2; exit 1; }
 
     # --- graft the flat watchdog driver (#75) ----------------------------
     # Not a directory graft: drivers/watchdog is flat upstream, so this is one
@@ -379,12 +405,21 @@ pkgs.stdenv.mkDerivation {
 
   buildPhase = ''
     runHook preBuild
-    # Image only. `make dtbs` would build every arm64 vendor's dtbs; ours is
-    # compiled from dts/ by pkgs/dtb-mainline.nix, out of tree, on purpose.
-    # No modules are built: every driver this board has is built in, so the
-    # appliance ships no /lib/modules tree at all. The first thing that needs
-    # one is the video stack (#83).
-    make O=build -j$NIX_BUILD_CORES Image
+    # `make dtbs` would build every arm64 vendor's dtbs; ours is compiled from
+    # dts/ by pkgs/dtb-mainline.nix, out of tree, on purpose.
+    #
+    # `modules` for the appliance only. Six of them ship (#83): the video
+    # stack plus the videobuf2 modules it imports. Everything else this board
+    # has is built in, and that is deliberate -- these are modular so a
+    # capture or encoder fix is a file copy and an insmod on the running
+    # board rather than a /boot write and a reboot into a kernel with no
+    # automatic rollback.
+    #
+    # The bring-up variant skips it. Its userspace is a static /init in a cpio
+    # with no insmod path, so the .ko would be unloadable -- and
+    # pkgs/dtb-mainline.nix depends on that variant purely for its
+    # dt-bindings headers, which is not a reason to build a thousand modules.
+    make O=build -j$NIX_BUILD_CORES Image ${lib.optionalString buildModules "modules"}
     runHook postBuild
   '';
 
@@ -403,6 +438,40 @@ pkgs.stdenv.mkDerivation {
     cp build/System.map "$out/System.map"
     cp build/.config "$out/config"
     echo "${release}" > "$out/kernelrelease"
+
+    # --- the video stack's modules (#83) ---------------------------------
+    # `make modules` builds everything arm64 defconfig leaves modular, which
+    # is a thousand drivers for other people's SoCs. Exactly six of them are
+    # ours or are needed by ours, and only those are installed -- flat, in
+    # $out/modules, with a load order beside them.
+    #
+    # FLAT AND ON /boot, not a /lib/modules tree in the NixOS closure, and
+    # that is a dependency fact rather than a style choice: the appliance's
+    # initrd is EMBEDDED IN THIS IMAGE, so a systemd unit that referenced this
+    # derivation would make the system closure depend on the kernel and the
+    # kernel depend on the system closure. The modules belong to the same
+    # artefact as the Image and the dtb, they are installed with them
+    # (pkgs/bootfs.nix payloadDirs), and a mismatched pair fails loudly at
+    # insmod with a vermagic error rather than quietly.
+    #
+    # The order is depmod's, resolved at build time and asserted below:
+    # videobuf2-common <- memops, v4l2 <- open_vin_capture; the receiver and
+    # the encoder import nothing.
+    ${lib.optionalString buildModules ''
+      make O=build INSTALL_MOD_PATH="$TMPDIR/modstage" INSTALL_MOD_STRIP=1 \
+        DEPMOD=${pkgs.kmod}/bin/depmod modules_install
+
+      mkdir -p "$out/modules"
+      for ko in videobuf2-common videobuf2-memops videobuf2-v4l2 \
+                open_vin_csi2 open_vin_capture ax630c_venc_vcmd; do
+        src=$(find "$TMPDIR/modstage/lib/modules/${release}" -name "$ko.ko")
+        [ -n "$src" ] \
+          || { echo "ERROR: $ko.ko was not built as a module" >&2; exit 1; }
+        install -m 0644 "$src" "$out/modules/$ko.ko"
+        echo "$ko.ko" >> "$out/modules/load-order"
+      done
+      echo "video modules: $(tr '\n' ' ' < "$out/modules/load-order")"
+    ''}
 
     # dt-bindings headers, so pkgs/dtb-mainline.nix compiles dts/ against the
     # exact kernel it will boot on rather than unpacking the tarball twice.

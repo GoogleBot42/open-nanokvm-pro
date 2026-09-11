@@ -79,6 +79,8 @@ static const struct ax630c_reset_line ax630c_comm_reset_lines[] = {
 	[AX630C_RST_COMM_BT_DPI0_CM_DPU_NX] = { 0x54, 27 },
 	[AX630C_RST_COMM_BT_DPI1_CM_DPU_1X] = { 0x54, 28 },
 	[AX630C_RST_COMM_BT_DPI1_CM_DPU_NX] = { 0x54, 29 },
+	/* #83: the CSI-2 receiver's TLB reset. Same word, bit 7. */
+	[AX630C_RST_COMM_DPHYRX_TLB] = { 0x54, 7 },
 };
 
 static const struct ax630c_reset_desc ax630c_comm_resets = {

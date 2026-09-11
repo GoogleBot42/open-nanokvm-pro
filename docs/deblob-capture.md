@@ -18,6 +18,12 @@ citations; this doc carries the conclusions and the plan.
   stays; the aic8800 wireless firmware is the only closed content permitted —
   no closed userspace or `.ko`, ever.** Every driver written under this epic must be designed to
   port to — ideally live in — mainline (#26 is the sibling epic).
+  **Done for all three (#83, 2026-09-10):** they are in-tree at
+  `pkgs/kernel-mainline/tree/drivers/media/platform/axera/` and the board
+  streams H.264 on a mainline kernel. The module-parameter carveout maps
+  and `pkgs/rootfs/ax-load-drv.sh`'s `compute_mem_map` described below are
+  the 4.19 image's mechanism and have no mainline counterpart —
+  `reserved-memory` nodes do that job. `docs/mainline-port.md` section 8.
 
 ## What scoping changed
 
