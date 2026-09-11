@@ -67,13 +67,17 @@
     , ...
     }@inputs:
     let
-      # The firmware targets aarch64-linux and is built from an x86_64-linux
-      # dev box; the cross set below handles the aarch64 target. This used to
-      # be a HARD constraint -- the vendor's `ax_gzip` partition packer is an
-      # x86-64-only static ELF and every stage the SPL loads had to go through
-      # it -- and since #95 it is not: nothing in a default build runs a
-      # prebuilt binary, and `.#checks.<sys>.no-x86-blobs` asserts it. Adding
-      # aarch64-linux here is now a matter of building it.
+      # The firmware targets aarch64-linux but must be built from an
+      # x86_64-linux dev box: the vendor's ax_gzip partition packer is an
+      # x86-64-only static ELF, and the DEFAULT boot chain goes through it, so
+      # the flashable image is x86_64-only. The cross set below handles the
+      # aarch64 target.
+      #
+      # #95 builds the way out and does not take it yet: the `-raw` chain
+      # (`.#spl-minimal-raw` and friends) needs no prebuilt binary and
+      # `.#checks.<sys>.no-x86-blobs` asserts it, but it stays non-default
+      # until it has booted the board, because the default image is also the
+      # AXDL recovery. This list changes when that flips.
       supportedSystems = [ "x86_64-linux" ];
 
       # Release identity for the OTA / web-update system (docs/updates.md).
