@@ -569,6 +569,25 @@ in
       };
     };
 
+    panel.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Load the mini-display's panel modules at boot -- `fbtft` and
+        `fb_jd9853` (#84) -- so that /dev/fb0 exists and
+        `nanokvm-display.service` has something to draw on. They come out of
+        this generation's own closure (`pkgs/display-modules.nix`), built from
+        the same kernel derivation `boot.kernelPackages` names, exactly like
+        the video stack's.
+
+        Turning this off leaves a system with no /dev/fb0, which
+        `nanokvm-display` treats as "no panel on this board" and skips.
+        `nixos/qemu-test.nix` does that: there is no SPI panel on a QEMU virt
+        machine, so the load would succeed and the framebuffer would never
+        appear.
+      '';
+    };
+
     videoStack.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -1475,14 +1494,90 @@ in
       };
     };
 
-    # 5e. Mini-display status daemon. The display's fb_jd9853 / gpio_keys /
-    # rotary_encoder modules are 4.19-only for now, so the daemon has no
-    # framebuffer to draw on until #84; it fails cleanly rather than being
-    # silently absent.
+    # 5d2. The mini-display's panel (#84). Two modules out of the generation's
+    # own closure, then a check that /dev/fb0 actually appeared.
+    #
+    # Same shape as nanokvm-video above and a SEPARATE unit from it on purpose:
+    # the two sets have different oracles, and a panel that did not come up
+    # must not read as a capture failure (or stop the server from starting).
+    #
+    # Why these two are modules at all is argued in pkgs/display-modules.nix:
+    # loading fb_jd9853 runs the vendor's power-on sequence twice, ~560 ms of
+    # mdelay plus two resets over SPI, and a hang in there must cost a failed
+    # unit rather than a kernel that never reaches userspace. THE OTHER HALF OF
+    # THAT RULE IS NOT ENFORCEABLE HERE: never unload them. On the vendor 4.19
+    # driver that hard-hangs the board; the cause is structurally absent from
+    # our port, and it has never been tested. Test at boot.
+    systemd.services.nanokvm-panel = {
+      description = "NanoKVM-Pro mini-display panel (fbtft + JD9853)";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "nanokvm-display.service" ];
+      after = [ "systemd-modules-load.service" ];
+      path = [ pkgs.kmod ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script =
+        if cfg.panel.enable then ''
+          set -e
+          # `uname -r` rather than a baked-in release, for the same reason
+          # nanokvm-video does it: a generation running on a kernel it was not
+          # built for fails here, with a path that names the mismatch, rather
+          # than at the first insmod with a vermagic error.
+          dir=${nanokvm.display-modules}/lib/modules/$(uname -r)
+          if [ ! -r "$dir/load-order" ]; then
+            echo "nanokvm-panel: $dir does not exist." >&2
+            echo "               This generation's modules were built for a" >&2
+            echo "               different kernel than the one /boot booted." >&2
+            exit 1
+          fi
+          while read -r ko; do
+            [ -n "$ko" ] || continue
+            if [ -d "/sys/module/$(basename "$ko" .ko | tr - _)" ]; then
+              echo "nanokvm-panel: $ko already loaded"
+              continue
+            fi
+            echo "nanokvm-panel: insmod $ko"
+            insmod "$dir/$ko"
+          done < "$dir/load-order"
+
+          # The oracle. fb_jd9853 can load cleanly and still register no
+          # framebuffer -- a failed SPI transfer, a GPIO it could not claim, a
+          # panel that did not answer. /dev/fb0 is what the daemon opens.
+          for _ in $(seq 1 20); do
+            [ -e /dev/fb0 ] && break
+            sleep 0.25
+          done
+          if [ ! -e /dev/fb0 ]; then
+            echo "nanokvm-panel: modules loaded but /dev/fb0 never appeared" >&2
+            exit 1
+          fi
+          echo "nanokvm-panel: /dev/fb0 up"
+        '' else ''
+          echo "nanokvm-panel: DISABLED (nanokvm.panel.enable = false)."
+          echo "               No /dev/fb0; the status daemon will not start."
+        '';
+    };
+
+    # 5e. Mini-display status daemon. Draws the status screen on /dev/fb0 and
+    # reads the knob's two evdev devices; the panel itself is nanokvm-panel
+    # above, which is ordered before this.
+    #
+    # ConditionPathExists rather than a hard dependency: a board with no panel
+    # (or with nanokvm.panel.enable = false) should simply not run the daemon,
+    # not accumulate a failed unit.
+    #
+    # `path` carries nanokvm-gpio because that is how the daemon reads the
+    # target's power-LED sense on mainline -- there is no sysfs GPIO export any
+    # more and global line numbers are not stable, so the line is addressed by
+    # its device-tree name (#81, #84).
     systemd.services.nanokvm-display = {
       description = "NanoKVM-Pro mini-display status screen";
       wantedBy = [ "multi-user.target" ];
+      after = [ "nanokvm-panel.service" ];
       unitConfig.ConditionPathExists = "/dev/fb0";
+      path = [ nanokvm.nanokvm-gpio ];
       serviceConfig = {
         Type = "simple";
         ExecStart = "${pkgs.python3}/bin/python3 ${nanokvm.nanokvm-display}/opt/nanokvm-display/nanokvm_display.py";

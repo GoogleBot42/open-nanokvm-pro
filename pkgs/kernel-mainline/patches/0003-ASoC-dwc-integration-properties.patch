@@ -1,0 +1,187 @@
+From: open-nanokvm-pro <noreply@example.invalid>
+Subject: [PATCH] ASoC: dwc: let a device tree describe three integration facts
+
+Three things an SoC can do to this block that the driver currently has
+no way to be told about, each optional and each a no-op when the
+property is absent, so no existing device tree changes behaviour.
+
+1. "snps,rx-channel". The register file has four RX channels and the
+   driver assumes the capture stream is on channel 0 -- it programs
+   RCR/RFCR/RER(0), unmasks IMR(0), tests the ISR for channel 0 and
+   points the PIO FIFO registers at channel 0. An SoC with a crossbar in
+   front of the block can land the stream elsewhere; the Axera AX630C
+   routes HDMI audio to RX channel 1 and the vendor driver carries a
+   hardcoded special case for exactly that.
+
+2. "snps,syscon" = <phandle offset mask value>. One masked write into a
+   system controller that has to happen before the block is used. Same
+   shape as the existing StarFive JH7110 hook, but in the device tree
+   rather than in match data, because on the AX630C the value selects
+   which of six I2S instances owns the pads -- a board fact, not a SoC
+   one.
+
+3. Optional "apb" and "mclk" clocks. In slave mode this driver takes no
+   clock at all, having no bit-clock to program, so on an SoC with a
+   real clock tree the block's own APB gate is closed by
+   clk_disable_unused() and the register window disappears partway
+   through boot.
+
+diff -u -r a/sound/soc/dwc/dwc-i2s.c b/sound/soc/dwc/dwc-i2s.c
+--- a/sound/soc/dwc/dwc-i2s.c
++++ b/sound/soc/dwc/dwc-i2s.c
+@@ -18,6 +18,8 @@
+ #include <linux/reset.h>
+ #include <linux/slab.h>
+ #include <linux/pm_runtime.h>
++#include <linux/property.h>
++#include <linux/regmap.h>
+ #include <sound/designware_i2s.h>
+ #include <sound/pcm.h>
+ #include <sound/pcm_params.h>
+@@ -72,7 +74,7 @@
+ 			i2s_write_reg(dev->i2s_base, IMR(i), irq | 0x30);
+ 		}
+ 	} else {
+-		for (i = 0; i < (chan_nr / 2); i++) {
++		for (i = dev->rx_ch; i < dev->rx_ch + (chan_nr / 2); i++) {
+ 			irq = i2s_read_reg(dev->i2s_base, IMR(i));
+ 			i2s_write_reg(dev->i2s_base, IMR(i), irq | 0x03);
+ 		}
+@@ -90,7 +92,7 @@
+ 			i2s_write_reg(dev->i2s_base, IMR(i), irq & ~0x30);
+ 		}
+ 	} else {
+-		for (i = 0; i < (chan_nr / 2); i++) {
++		for (i = dev->rx_ch; i < dev->rx_ch + (chan_nr / 2); i++) {
+ 			irq = i2s_read_reg(dev->i2s_base, IMR(i));
+ 			i2s_write_reg(dev->i2s_base, IMR(i), irq & ~0x03);
+ 		}
+@@ -124,7 +126,7 @@
+ 		 * Data available. Retrieve samples from FIFO
+ 		 * NOTE: Only two channels supported
+ 		 */
+-		if ((isr[i] & ISR_RXDA) && (i == 0) && dev->use_pio) {
++		if ((isr[i] & ISR_RXDA) && (i == dev->rx_ch) && dev->use_pio) {
+ 			dw_pcm_pop_rx(dev);
+ 			irq_valid = true;
+ 		}
+@@ -257,11 +259,13 @@
+ 			i2s_write_reg(dev->i2s_base, TER(ch_reg), TER_TXCHEN |
+ 				      dev->tdm_mask << TER_TXSLOT_SHIFT);
+ 		} else {
+-			i2s_write_reg(dev->i2s_base, RCR(ch_reg),
++			u32 rx = ch_reg + dev->rx_ch;
++
++			i2s_write_reg(dev->i2s_base, RCR(rx),
+ 				      dev->xfer_resolution);
+-			i2s_write_reg(dev->i2s_base, RFCR(ch_reg),
++			i2s_write_reg(dev->i2s_base, RFCR(rx),
+ 				      dev->fifo_th - 1);
+-			i2s_write_reg(dev->i2s_base, RER(ch_reg), RER_RXCHEN |
++			i2s_write_reg(dev->i2s_base, RER(rx), RER_RXCHEN |
+ 				      dev->tdm_mask << RER_RXSLOT_SHIFT);
+ 		}
+ 
+@@ -936,6 +940,59 @@
+ 
+ 	dev->dev = &pdev->dev;
+ 	dev->is_jh7110 = false;
++
++	/*
++	 * Integration properties, all optional and all no-ops when absent, so
++	 * every existing device tree behaves exactly as before.
++	 *
++	 * "snps,rx-channel": some SoCs put a crossbar in front of this block
++	 * and land the capture stream on an RX channel other than 0. The
++	 * register file has four of them and the driver otherwise assumes the
++	 * first; an integration that does not can say so here.
++	 *
++	 * "snps,syscon": <phandle offset mask value> -- one masked write into
++	 * a system-controller register that has to happen before the block is
++	 * used. This is the same shape as the StarFive JH7110 hook below, but
++	 * expressed in the device tree rather than in match data, because the
++	 * value is a board fact rather than a SoC one.
++	 *
++	 * "apb" / "mclk": gates the block needs held that are not its
++	 * bit-clock input. In slave mode this driver otherwise takes no clock
++	 * at all, so on an SoC with a real clock tree the register window goes
++	 * away at clk_disable_unused().
++	 */
++	ret = device_property_read_u32(&pdev->dev, "snps,rx-channel", &dev->rx_ch);
++	if (!ret && dev->rx_ch > 3)
++		return dev_err_probe(&pdev->dev, -EINVAL,
++				     "snps,rx-channel must be 0..3\n");
++
++	if (device_property_present(&pdev->dev, "snps,syscon")) {
++		unsigned int args[3];
++		struct regmap *regmap;
++
++		regmap = syscon_regmap_lookup_by_phandle_args(pdev->dev.of_node,
++							      "snps,syscon",
++							      3, args);
++		if (IS_ERR(regmap))
++			return dev_err_probe(&pdev->dev, PTR_ERR(regmap),
++					     "getting the regmap failed\n");
++
++		ret = regmap_update_bits(regmap, args[0], args[1], args[2]);
++		if (ret)
++			return dev_err_probe(&pdev->dev, ret,
++					     "writing the syscon failed\n");
++	}
++
++	dev->apb_clk = devm_clk_get_optional_enabled(&pdev->dev, "apb");
++	if (IS_ERR(dev->apb_clk))
++		return dev_err_probe(&pdev->dev, PTR_ERR(dev->apb_clk),
++				     "cannot get the apb clock\n");
++
++	dev->mclk = devm_clk_get_optional_enabled(&pdev->dev, "mclk");
++	if (IS_ERR(dev->mclk))
++		return dev_err_probe(&pdev->dev, PTR_ERR(dev->mclk),
++				     "cannot get the mclk\n");
++
+ 	if (pdata) {
+ 		if (pdata->i2s_pd_init) {
+ 			ret = pdata->i2s_pd_init(dev);
+@@ -1011,8 +1068,14 @@
+ 		if (irq >= 0) {
+ 			ret = dw_pcm_register(pdev);
+ 			dev->use_pio = true;
+-			dev->l_reg = LRBR_LTHR(0);
+-			dev->r_reg = RRBR_RTHR(0);
++			/*
++			 * One pair of FIFO registers serves both directions,
++			 * so a non-zero rx-channel also moves the playback
++			 * THR. Every integration that needs it is capture
++			 * only, which is why this is not two fields.
++			 */
++			dev->l_reg = LRBR_LTHR(dev->rx_ch);
++			dev->r_reg = RRBR_RTHR(dev->rx_ch);
+ 		} else {
+ 			ret = devm_snd_dmaengine_pcm_register(&pdev->dev, NULL,
+ 					0);
+diff -u -r a/sound/soc/dwc/local.h b/sound/soc/dwc/local.h
+--- a/sound/soc/dwc/local.h
++++ b/sound/soc/dwc/local.h
+@@ -108,6 +108,9 @@
+ struct dw_i2s_dev {
+ 	void __iomem *i2s_base;
+ 	struct clk *clk;
++	/* Optional gates an integration needs held; see "apb"/"mclk". */
++	struct clk *apb_clk;
++	struct clk *mclk;
+ 	struct reset_control *reset;
+ 	int active;
+ 	unsigned int capability;
+@@ -120,6 +123,12 @@
+ 	u32 fifo_th;
+ 	u32 l_reg;
+ 	u32 r_reg;
++	/*
++	 * Which of the block's RX channels the capture stream arrives on.
++	 * Zero -- and therefore the historical behaviour -- unless an
++	 * integration routes it elsewhere; see "snps,rx-channel".
++	 */
++	unsigned int rx_ch;
+ 	bool is_jh7110; /* Flag for StarFive JH7110 SoC */
+ 
+ 	/* data related to DMA transfers b/w i2s and DMAC */

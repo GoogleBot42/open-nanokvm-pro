@@ -187,7 +187,7 @@ have / can be dropped).
 | UID / identity | `ax,ax_hwinfo` → `/proc/ax_proc/uid`, read by the initramfs for `device_key` → MAC + hostname | `drivers/soc/axera/ax_hwinfo/ax_hwinfo.c` 261 LOC | **not an efuse peripheral**: it `memcpy`s the `misc_info_t` the bootloader leaves in IRAM0 at `0x740` (`uid_l/uid_h` at `+0x48/+0x4c`; `include/linux/soc/axera/ax_boardinfo.h`) (V) | **DONE (#78), with no kernel driver at all.** IRAM0 is at physical 0 — the vendor probe ioremaps the bare `0x740` with no base added — so `nanokvm-identity.service` reads `uid_l`/`uid_h` at `0x788`/`0x78c` through `/dev/mem` and reproduces the vendor MAC arithmetic exactly. A tiny `nvmem` node over that window, or a U-Boot `ethaddr` fixup feeding `fdt_fixup_ethernet()`, remain the upstreamable forms | S | KVM (identity) |
 | RTC | `axera,axi-top-rtc` | `drivers/rtc/rtc-axera.c` 479 LOC ("DesignWare Real Time Clock Driver", password `0x61696370`) | DW-*named*, no mainline DW RTC exists (V) | new driver, or none (no battery is known on the board) | S | opt |
 | cpufreq | `AXERA_CPUFREQ=y`, `AX620E_opptable.dtsi` | `drivers/cpufreq/axera-cpufreq.c` | `cpufreq-dt` once the clk driver exists | DT + clk | S | opt |
-| DMA | `axera,axi-dma-1.01a` @`0x48b0000` (SPI 113); **`axera,dma-per` @`0x48a0000`** (SPI 112, 16 ch); `axera,dma` @`0x10460000` | `drivers/dma/axera-axi-dmac/` 1547 LOC (**not built**; Synopsys/Paltsev header verbatim); `drivers/dma/axera-dma-per/` 1317 LOC (`=y`, custom); `soc/axera/dma/dma.c` has no Makefile entry (dead node) | AXI DMAC = stock `dw-axi-dmac` (V, header); **`dma_per` is Axera-custom and is the engine behind every UART/SPI/I2S DMA channel — incl. `i2s_slv0` 16/17 = HDMI audio** | AXI DMAC: rename the compatible. **`dma_per`: new dmaengine driver** if I2S audio must use DMA (designware-i2s has a PIO mode; try that first) | S / M | opt (audio) |
+| DMA | `axera,axi-dma-1.01a` @`0x48b0000` (SPI 113); **`axera,dma-per` @`0x48a0000`** (SPI 112, 16 ch); `axera,dma` @`0x10460000` | `drivers/dma/axera-axi-dmac/` 1547 LOC (**not built**; Synopsys/Paltsev header verbatim); `drivers/dma/axera-dma-per/` 1317 LOC (`=y`, custom); `soc/axera/dma/dma.c` has no Makefile entry (dead node) | AXI DMAC = stock `dw-axi-dmac` (V, header); **`dma_per` is Axera-custom and is the engine behind every UART/SPI/I2S DMA channel — incl. `i2s_slv0` 16/17 = HDMI audio** | **NOT NEEDED SO FAR (#84).** Both the panel's SPI and the HDMI audio run PIO on mainline. `dma_per` becomes a rung of its own only if PIO capture shows `RX overrun` under a live encode — measure before writing it | S / M | opt (audio) |
 | ramoops | `ramoops` reserved-memory @`0x48000000` | pstore | standard | DT only | S | opt |
 | Vendor SoC glue never needed | `axera,cmm`, `axera,sys`, `axera,ax_sysmap`, `axera,logctl`, `axera,bw_limiter`, `axera,ddr_dfs`, `axera,perf_bm`, `axera,firewall`, `axera,ax_gzipd`, `axera,hwspinlock-r1p0`, `axera,mailbox` (RISC-V companion), `ax,hrtimer`, `axera,wake-timer`, `axera, deb-gpio-lp`, `axera_memory_dump`, `axera_ddr_retrain`, `axera,avs` | `drivers/soc/axera/*` (11.7 kLOC total) | — | **drop** (the KVM stack was device-proven with the ax base stack rmmod'd, #55 M3) | — | — |
 
@@ -210,12 +210,12 @@ have / can be dropped).
 | UART0/1/2 | `axera,ax-apb-uart` @`0x4880000/0x4881000/0x4882000`, `reg-shift = 2`, `reg-io-width = 4`, 208 MHz | `drivers/tty/serial/8250/8250_axera.c` 542 LOC (a `8250_dw.c` fork) | **Synopsys DW APB UART** (V; `earlycon=uart8250,mmio32` already works) | `snps,dw-apb-uart` + `8250_dw`, `clock-frequency = <208000000>` | S | boot (debug only — hidden pads) |
 | I2C0, I2C7 | `snps,designware-i2c` @`0x4850000`, `0x4857000` | mainline `i2c-designware` (unmodified compatible) | DW (V) | DT only. **i2c0 DONE (#81)**, carrying the LT6911UXC at `0x2b` as a DT child rather than the hard-coded bus and address of `lt6911_manage.h`; its APB gate is *named* `pclk` rather than marked critical, because a NULL `clk_get()` takes index 0 regardless of `clock-names`. i2c7 (hynitron touch) arrives with the touch panel | S | KVM |
 | HDMI-RX bridge | Lontium LT6911UXC — no DT node; `lt6911_manage.c` (2907 LOC, ours from source) opens I2C bus 0 @`0x2b` and raw GPIOs 60 (INT), 5 (PWR), 6, 82, 83, 21, 81; exposes `/proc/lt6911_info/*` | `drivers/misc/lt6911_manage.c` (`CONFIG_LT6911_MANAGE=m`) | mainline has `lt6911uxe` (6.14+) — a different chip, V4L2-subdev shaped | **DONE (#81)**: `drivers/misc/lt6911-manage.c`, ~2400 lines, an i2c driver on `lontium,lt6911uxc` as a child of `i2c0` with GPIO descriptors and the `/proc` ABI intact, scoped to the UXC. A V4L2-subdev rewrite is an upstreaming nicety, not a port need | S–M | KVM |
-| SPI2 + panel | `snps,dw-apb-ssi` @`0x6072000`; `jadard,jd9853` @cs1, 80 MHz, dc/reset/te GPIOs | `spi-dw-mmio` (mainline) + `drivers/staging/fbtft/fb_jd9853.c` (GPL, in the SDK tree) | DW SSI (V); fbtft has no JD9853 upstream | DT only for SPI; port `fb_jd9853` onto current staging fbtft (S) or write a `drm/tiny` panel (M) | S–M | opt (mini-display) |
-| Backlight | `pwm-backlight` ← `axera,ax620e-pwm` @`0x6060000` | `drivers/pwm/pwm-axera.c` 527 LOC | DW APB timer in PWM mode — offsets match mainline `pwm-dwc.h` (V per §1 research; `PWM_TIMERN_MODE 0x1E`) | `pwm-dwc-core` + platform/OF glue (mainline's `pwm-dwc` front-end is PCI; check whether the target kernel already has an OF variant) | S | opt |
-| Knob / button / LED | `rotary-encoder`, `gpio-keys`, `gpio-leds` (heartbeat GPIO0_A23) | mainline | standard | DT only (needs GPIO) | S | opt |
+| SPI2 + panel | `snps,dw-apb-ssi` @`0x6072000`; `jadard,jd9853` @cs1, 80 MHz, dc/reset/te GPIOs | `spi-dw-mmio` (mainline) + `drivers/staging/fbtft/fb_jd9853.c` (GPL, in the SDK tree) | DW SSI (V); fbtft has no JD9853 upstream | **DONE (#84)**: stock `spi-dw-mmio` (no `dmas` — the vendor master is a fork with a DMA endian swap the panel driver then undid in software), and a ~250-line `fb_jd9853.c` port. The tearing-effect pin is deliberately dropped; so is the private state behind it, which is what made the vendor module hang on unload. **`dc-gpios` flips to ACTIVE_HIGH** — 4.19 fbtft used the raw GPIO API, mainline uses the logical one | S–M | opt (mini-display) |
+| Backlight | `pwm-backlight` ← `axera,ax620e-pwm` @`0x6060000` | `drivers/pwm/pwm-axera.c` 527 LOC | DW APB timer in PWM mode — offsets match mainline `pwm-dwc.h` (V, confirmed against the vendor driver) | **DONE (#84)**: `drivers/pwm/pwm-dwc-of.c`, ~110 lines, matching upstream's own `snps,dw-apb-timers-pwm2` binding — which no driver in the tree matched. Plus one patch to `pwm-dwc-core.c`: it rejects `PWM_POLARITY_NORMAL`, so an active-high backlight cannot be expressed at all | S | opt |
+| Knob / button / LED | `rotary-encoder`, `gpio-keys`, `gpio-leds` (heartbeat GPIO0_A23) | mainline | standard | **DONE (#84)** for the knob (the LED arrived with #81). DT only, built in, no pin states — all three pads are GPIOs and the claim programs the mux. `label = "gpio_keys"` is an ABI: the daemon finds its wake sources by `EVIOCGNAME` | S | opt |
 | Touch | `hyn,8xxt` @I2C7 `0x15` | `drivers/input/touchscreen/hyn/` ~800 LOC | Hynitron; mainline `hynitron_cstxxx` is a different family (I) | not used by our display daemon → drop | — | — |
-| SPI1 / SPI4 | `snps,dw-apb-ssi` @`0x6071000` (spidev), `snps,dwc-ssi-1.03a` @`0x1A00000` (`spi-nand`, unpopulated) | `spi-dw-mmio` | DW (V) | drop / DT only | S | — |
-| Audio | `simple-audio-card` "Lontium Lt6911UXC" ← `i2s_slv0` `axera,dwc-i2s-slv` @`0x6051000` (`hdmi-i2s`) + `dummy-codec` | `sound/soc/axera/dwc-i2s.c` 993 LOC | Synopsys DW I2S — a fork of `sound/soc/dwc/dwc-i2s.c` (upstream author/path kept) (V); the 17 `i2s-*-sel` props pack into one 24-bit routing word written to reg[1] | `designware-i2s` + syscon glue for the routing word + mainline `snd-soc-dummy` instead of the Sipeed `dummy-codec` stub; **DMA needs the `dma_per` driver** (or PIO); libkvm's ALSA capture is unchanged | M | KVM (audio; optional) |
+| SPI1 / SPI4 | `snps,dw-apb-ssi` @`0x6071000` (spidev), `snps,dwc-ssi-1.03a` @`0x1A00000` (`spi-nand`, unpopulated) | `spi-dw-mmio` | DW (V) | **dropped (#84)**: spi1 is a bare `spidev` the board never uses and spi4's NAND is unpopulated. Only spi2 has a node | S | — |
+| Audio | `simple-audio-card` "Lontium Lt6911UXC" ← `i2s_slv0` `axera,dwc-i2s-slv` @`0x6051000` (`hdmi-i2s`) + `dummy-codec` | `sound/soc/axera/dwc-i2s.c` 993 LOC (~85 % upstream verbatim) | Synopsys DW I2S — a fork of `sound/soc/dwc/dwc-i2s.c` (V); the 17 `i2s-*-sel` props pack into one 24-bit routing word written to `0x0487003C` | **BUILT, UNPROVEN (#84)**: stock `snps,designware-i2s` in **PIO** (the driver picks PIO from the presence of `interrupts`), `linux,spdif-dir` as the dummy codec — mainline's `snd-soc-dummy` is a `faux_device` with no `of_device_id` and cannot be named by `sound-dai`. Three optional DT properties added to the driver: the syscon routing word, the RX channel the crossbar lands the stream on (**1**, not 0), and the APB gate a slave-mode port still needs held. `dma_per` is NOT started; PIO is 6-12 k IRQ/s at 48 kHz stereo and the first hardware round measures it | M | KVM (audio; optional) |
 | Extcon | `linux,extcon-usb-gpio` | mainline | standard | DT only | S | KVM (OTG) |
 
 ### Video path (ours)
@@ -643,12 +643,15 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
     NixOS generation's closure (`pkgs/video-modules.nix`), which leaves the
     kernel-outside-the-generation seam #99 closes. See "What exists now (#83)"
     below. Depends on: #80, #81.
-11. **#84 Mini-display + audio on mainline** — `spi-dw-mmio` + `fb_jd9853`
-    (staging fbtft port or `drm/tiny/panel-mipi-dbi` with an init blob),
-    `pwm-dwc` OF glue for the backlight, `gpio-keys`/`rotary-encoder` DT;
-    `designware-i2s` slave glue (routing word via syscon, `snd-soc-dummy`) for
-    the LT6911 audio card — PIO first, else a `dma_per` dmaengine driver.
-    Depends on: #80, #81.
+11. **#84 Mini-display + audio on mainline** — **offline half DONE,
+    2026-09-11; hardware outstanding.** `spi-dw-mmio` + a `fb_jd9853` port
+    onto current staging fbtft, `pwm-dwc-of.c` for the backlight (upstream's
+    own binding had no driver), `gpio-keys`/`rotary-encoder` DT, and stock
+    `snps,designware-i2s` in PIO with `linux,spdif-dir` as the dummy codec.
+    Two of the filed alternatives were considered and rejected with reasons
+    (drm/tiny + firmware blob; porting the vendor driver as-is), and
+    `dma_per` is deliberately not started. See "What exists now (#84)" at the
+    end of this section. Depends on: #80, #81.
 12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — **offline half
     DONE, 2026-09-11.** `radxa-pkg/aic8800` pinned and patched
     (`pkgs/aic8800-src.nix`), two modules built out of tree against the
@@ -2206,6 +2209,159 @@ is Jeremy at the web UI with his own network. Everything up to that point is
 agent-testable.
 
 ---
+---
+
+
+### What exists now (#84, 2026-09-11) — BUILT, NOT YET ON HARDWARE
+
+The mini-display and the HDMI audio path exist on the mainline kernel. Nothing
+here has run on the board: this entry is the offline half, and the hardware
+plan is the two rounds in [mini-display.md](mini-display.md) "Hardware
+verification (mainline)".
+
+**Display.** `drivers/staging/fbtft/fb_jd9853.c`, ~250 lines, ported from the
+SDK's GPL copy — register sequences verbatim (including the fact that the
+power-on sequence runs *twice*), everything else rewritten. What is gone is as
+important as what is kept:
+
+- **The tearing-effect pin, and with it the private state, the workqueue, the
+  5 s liveness timer and the second framebuffer.** TE is optional by the vendor
+  driver's own construction (a missing `te-gpios` is a `dev_warn` and it falls
+  through to the stock fbtft writer), and the SDK's sibling `fb_gc9307.c`
+  drives the same geometry without it. What it buys is tearing immunity on a
+  status screen that redraws every two seconds.
+- **And it is the mechanism behind the rmmod hard-hang.** The vendor's
+  `init_display()` does `dev_set_drvdata(&par->spi->dev, panel)`, overwriting
+  the `struct fb_info *` `fbtft_register_framebuffer()` had just stored;
+  `fbtft_driver_remove_spi()` then reads a ~120-byte private struct as a
+  `fb_info` and makes an indirect call through `info->par->fbtftops`. The SDK's
+  own `fb_jd9853_hkc_2_01.c` is the repaired copy and fixes exactly that. The
+  port keeps no private state, so the mechanism is structurally absent — and
+  the operational rule is unchanged anyway: **load at boot, never unload.**
+- **`memcpy_reverse32()`**, which cancels the vendor SPI master's 32-bit DMA
+  endian swap (`drivers/spi/spi-axera-dma.c` encodes a `dma_endian` into
+  `slave_id`) and would scramble every pixel against a stock master.
+
+`write_vmem` still sends whole frames, because `set_addr_win()` writes a fixed
+full-screen window (172 columns at offset 34 on a 240-column array) and a
+partial update would land the dirty rows at the top of the panel. That is the
+vendor's arrangement too. 110 KB at 52 MHz is ~17 ms, against consumers that
+write at 0.5 Hz (the daemon) and ~10 Hz (the live preview).
+
+**Two GPIO polarities are inverted relative to the vendor DT**, and both are
+silent when wrong. 4.19 fbtft drove `dc` and `reset` through
+`gpio_set_value()` — the RAW API, which ignores the active-low flag — and
+mainline uses `gpiod_set_value()`. So `dc-gpios` becomes `GPIO_ACTIVE_HIGH`
+(get it wrong and every command byte is sent as data: a blank panel, no error)
+while `reset-gpios` stays `GPIO_ACTIVE_LOW` (`fbtft_reset()` asserts then
+deasserts logically, which is the same pulse the raw writes produced).
+`pkgs/dtb-mainline.nix` asserts both flag cells with `fdtget`.
+
+**Backlight.** `drivers/pwm/pwm-dwc-of.c`, ~110 lines, matching
+`Documentation/devicetree/bindings/pwm/snps,dw-apb-timers-pwm2.yaml` — an
+upstream binding from SiFive that **no driver in the tree matches**; the only
+front end for `pwm-dwc-core` is PCI. Plus patch 0002, which is not optional
+here: the core rejects `PWM_POLARITY_NORMAL` outright, and the hardware simply
+holds the low period in `LD_CNT` and the high period in `LD_CNT2` and is
+symmetric between them. With inversed-only, a `pwm-backlight` driving an
+active-high load runs brightness backwards and there is no way to say so in DT.
+
+**Audio.** Stock `snps,designware-i2s` in **PIO** — mainline picks the PIO PCM
+from the presence of `interrupts` alone, and `dw_pcm_register()` is an
+`-EINVAL` stub without `CONFIG_SND_DESIGNWARE_PCM`, so a kernel missing that
+symbol fails the probe rather than falling back to DMA. The codec is
+`linux,spdif-dir`: mainline's `snd-soc-dummy` is a `faux_device` with no
+`of_device_id` and cannot be named by `sound-dai`, and the vendor's
+`dummy-codec` is itself a Sipeed addition. Patch 0003 adds three optional
+properties to the DW driver, each a no-op when absent:
+
+| property | what it is | what breaks without it |
+|---|---|---|
+| `snps,syscon = <&periph_clk 0x3c 0x00ffffff 0x00080620>` | the audio crossbar word, written masked before the block is used | the pads feed a different I2S instance |
+| `snps,rx-channel = <1>` | the crossbar lands the stream on RX channel **1** | the driver programs, unmasks and polls channel 0 and waits forever |
+| `clock-names = "apb", "mclk"` | gates a slave-mode port needs held | `clk_disable_unused()` takes the register window away mid-boot |
+
+The `0x00080620` is recomputed from the vendor board DT's own seventeen
+`i2s-*-sel` properties (`exter-codec-en` bit 19, `s-rx0-sel = 3` bits 10:9,
+`s-sclk-sel = 1` bits 6:5), and the RX-channel fact is the vendor driver's own
+`if (rx0_sel == 3) { enable RER(1); break; }`.
+
+That syscon word sits in the peripheral clock controller's own window, and the
+regmap is genuinely SHARED rather than a second mapping of the same registers:
+`clk-ax630c.c` takes its regmap from `syscon_node_to_regmap()` and
+`syscon_regmap_lookup_by_phandle_args()` returns that same object, with the
+same lock. The clock half only ever touches `0x00`-`0x24`, so the two do not
+overlap either -- but they would be safe if they did, which is the property
+#80's "one node, one regmap" rule was written to preserve.
+
+**Five new clock rows, 287 clocks**, and every bit position is cited rather
+than derived from the header's enumeration alone: the vendor `spi-dw-mmio.c`
+writes `EB0` bit `(6 + spi_id)` and `EB3` bit `(2 + spi_id)` — bits 8 and 4 for
+spi2 — and the vendor `pwm0` node spells its own offsets out in DT properties
+(`clk-eb-addr-offset = <0x8>`, `clk-eb-offset = <0x13 0x14 0x15 0x16>`,
+`clk-p-eb-addr-offset = <0xC>`, `clk-p-eb-offset = <0x1F>`). Two by-products of
+reading those: the PWM block's source mux and class gate are the **timer**
+ones, because it *is* the DesignWare APB timer block; and `CLK_SPI_M2_SEL`'s
+index 3 is cited rather than guessed — the running board reads `CLK_MUX0 =
+0x000FBF9A`, whose `[12:11]` is 3, on a system where the vendor driver's
+hardcoded `dws->max_freq = 208000000` is the frequency the bus ran at.
+
+**One pin state here is load-bearing rather than ownership.** Almost every
+`pinctrl` group in `dts/` reproduces what the boot chain's own pad table
+already writes; `pwm0_pins` does not. The table leaves `EMAC_PTP_PPS0` muxed to
+`GPIO1_A8` (`0x104F000C = 0x00060003`) and it is the vendor *kernel* that moves
+it to PWM at probe (measured `0x00020003` on the running vendor system).
+Nothing replays that on mainline, so without this group the backlight pad stays
+an unclaimed GPIO and the PWM reports itself working into nothing.
+
+**Rejected, with reasons** (all three were live options):
+
+- **`drm/tiny/panel-mipi-dbi` + a firmware init blob — zero lines of C.** The
+  JD9853's init sequence fits its `command, len, params…` format exactly, and
+  the 172-at-offset-34 geometry that makes this panel awkward is expressed
+  natively by `panel-timing`'s back porches. Rejected on three counts: it drags
+  the DRM/KMS stack into an Image with a 64 MiB ceiling, for one 172×320 status
+  screen; it needs a binary artifact through `request_firmware` on an image
+  whose blob policy is "aic8800 firmware and nothing else"; and DRM's fbdev
+  emulation is another layer between the daemon's byte-exact 172×320 /
+  stride-344 writes and the panel.
+- **A new `drm/tiny/jd9853.c`** (~400-500 lines, TE as a vblank source). This
+  is the **upstreamable** form — mainline's own fbtft `TODO` says the subsystem
+  takes no new drivers — and it belongs to #87, not here.
+- **Porting the vendor driver as-is**, ~70 changed lines. Smaller on paper, but
+  the thing being copied is the one that hangs on unload, plus a `blank()` that
+  issues `SET_DISPLAY_ON` for both values of its argument, a teardown that
+  cancels work before stopping the timer and the IRQ that queue it, and error
+  paths that `kfree()` the struct an armed timer points into.
+- **`dma_per` for audio.** Not started, deliberately. PIO first; the number
+  that decides it is `RX overrun` under a live encode.
+
+**What ships where.** Two modules — `fbtft` and `fb_jd9853` — in
+`pkgs/display-modules.nix`, a second `/lib/modules/<release>` tree beside the
+video stack's, loaded by `nanokvm-panel.service` with `/dev/fb0` as its oracle.
+Separate from `nanokvm-video` on purpose: different oracle, and a panel that
+did not come up must not read as a capture failure. Everything else — the SPI
+master, the PWM, `gpio-keys`, `rotary-encoder`, the sound card — is built in.
+
+They are modules for a safety reason rather than a convenience one: loading
+`fb_jd9853` runs ~560 ms of `mdelay`, two hardware resets and forty SPI writes,
+and built in a hang there is a kernel that never reaches userspace, which on
+this board costs a `bootcount` rollback.
+
+**Userspace.** `nanokvm-display` is unchanged except for two facts it could not
+have known: the power-LED sense has no sysfs export on mainline (it falls back
+to `nanokvm-gpio get atx-power-led`, whose value is already logical, cached for
+a second so the render path can call it per frame), and `gpio_keys`' input
+device is named from the DT, so both spellings are accepted.
+
+**Residuals — hardware only.** `I2S_COMP_PARAM_1/2` for this block (they decide
+the FIFO depth and therefore the interrupt rate, and `COMP1_MODE_EN` must read
+0 or `set_fmt` rejects `BC_FC` and the card never probes); whether the stream
+really is on RX channel 1; whether a pure slave needs `CLK_I2S_REF0_EB` at all;
+the SPI2 pads' live words (the `/dev/mem` dump in `device-reads-20260906/`
+stops at window-0 `0x5fc` and those pads are at `0x4024`/`0x4084`); and PIO's
+overrun behaviour under a live encode.
+
 ---
 
 ## 9. Device reads wanted

@@ -1,0 +1,4 @@
+config FB_TFT_JD9853
+	tristate "FB driver for the JD9853 LCD Controller"
+	help
+	  Generic Framebuffer support for JD9853

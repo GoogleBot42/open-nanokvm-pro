@@ -174,6 +174,15 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   # that moves the context breaks the build loudly, which is the point.
   patches = [
     ./kernel-mainline/patches/0001-mmc-sdhci-cadence-add-axera-ax630c.patch
+    # #84. The DesignWare PWM core models its two count registers as
+    # inversed-polarity only; the hardware is symmetric and a pwm-backlight
+    # with an active-high load cannot be expressed without this.
+    ./kernel-mainline/patches/0002-pwm-dwc-support-normal-polarity.patch
+    # #84. Three optional DT-described integration facts the DesignWare I2S
+    # driver has no way to be told about: which RX channel the crossbar lands
+    # the capture stream on, a syscon word that has to be written before the
+    # block is used, and the clock gates a slave-mode port still needs held.
+    ./kernel-mainline/patches/0003-ASoC-dwc-integration-properties.patch
   ];
 
   configFragment = ./kernel-mainline/ax630c.config;
@@ -203,6 +212,14 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
 
   # And for the DWC3 glue (#82). drivers/usb/dwc3 is flat too.
   dwc3Kconfig = ./kernel-mainline/dwc3.Kconfig;
+
+  # The mini-display's panel driver (#84): one .c in treeGraft under
+  # drivers/staging/fbtft plus this Kconfig block and a Makefile line.
+  fbtftKconfig = ./kernel-mainline/fbtft.Kconfig;
+
+  # And the OF front end for the DesignWare PWM core (#84), the backlight's
+  # controller. drivers/pwm is flat upstream too.
+  pwmKconfig = ./kernel-mainline/pwm.Kconfig;
 
   postPatch = ''
     patchShebangs scripts
@@ -367,6 +384,52 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
       drivers/usb/dwc3/Makefile
     grep -qF 'obj-$(CONFIG_USB_DWC3_AXERA)' drivers/usb/dwc3/Makefile \
       || { echo "ERROR: could not hook dwc3-axera.o into drivers/usb/dwc3/Makefile" >&2; exit 1; }
+
+    # --- graft the JD9853 panel driver (#84) -----------------------------
+    # fb_jd9853.c was copied above. drivers/staging/fbtft is a flat directory
+    # whose Kconfig entries and Makefile lines are both alphabetical;
+    # FB_TFT_JD9853 sorts between ILI9486 and PCD8544. A missed hook here is a
+    # kernel with no panel driver, which looks exactly like a panel that did
+    # not come up.
+    awk -v snippet="$fbtftKconfig" '
+      /^config FB_TFT_PCD8544$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/staging/fbtft/Kconfig > drivers/staging/fbtft/Kconfig.grafted
+    mv drivers/staging/fbtft/Kconfig.grafted drivers/staging/fbtft/Kconfig
+    grep -q '^config FB_TFT_JD9853$' drivers/staging/fbtft/Kconfig \
+      || { echo "ERROR: could not hook FB_TFT_JD9853 into drivers/staging/fbtft/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_FB_TFT_ILI9486)     += fb_ili9486.o$|&\nobj-$(CONFIG_FB_TFT_JD9853)      += fb_jd9853.o|' \
+      drivers/staging/fbtft/Makefile
+    grep -qF 'obj-$(CONFIG_FB_TFT_JD9853)' drivers/staging/fbtft/Makefile \
+      || { echo "ERROR: could not hook fb_jd9853.o into drivers/staging/fbtft/Makefile" >&2; exit 1; }
+
+    # --- graft the DesignWare PWM OF front end (#84) ---------------------
+    # pwm-dwc-of.c was copied above. It sits next to the PCI front end it
+    # shares a core with, so the anchors are that driver's own Kconfig block
+    # and Makefile line. Without it the backlight has no PWM provider and
+    # pwm-backlight defers forever -- silently, because a deferred probe is
+    # not an error.
+    awk -v snippet="$pwmKconfig" '
+      /^config PWM_EP93XX$/ && !inserted {
+        while ((getline line < snippet) > 0) print line
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' drivers/pwm/Kconfig > drivers/pwm/Kconfig.grafted
+    mv drivers/pwm/Kconfig.grafted drivers/pwm/Kconfig
+    grep -q '^config PWM_DWC_OF$' drivers/pwm/Kconfig \
+      || { echo "ERROR: could not hook PWM_DWC_OF into drivers/pwm/Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-$(CONFIG_PWM_DWC)\t\t+= pwm-dwc.o$|&\nobj-$(CONFIG_PWM_DWC_OF)\t+= pwm-dwc-of.o|' \
+      drivers/pwm/Makefile
+    grep -qF 'obj-$(CONFIG_PWM_DWC_OF)' drivers/pwm/Makefile \
+      || { echo "ERROR: could not hook pwm-dwc-of.o into drivers/pwm/Makefile" >&2; exit 1; }
   '';
 
   configurePhase = ''
@@ -564,6 +627,29 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
         echo "$ko.ko" >> "$out/modules/load-order"
       done
       echo "video modules: $(tr '\n' ' ' < "$out/modules/load-order")"
+
+      # --- the mini-display's panel modules (#84) ------------------------
+      # A SECOND set, in its own directory with its own load order, because
+      # they answer to a different service and a different oracle: the video
+      # set's is /dev/video0, this one's is /dev/fb0. Mixing them would make
+      # one unit's failure look like the other's.
+      #
+      # Modular rather than built in, and that is the safety property, not a
+      # convenience. Loading this driver runs ~560 ms of mdelay and two full
+      # panel resets over SPI; built in, a hang there is a kernel that never
+      # reaches userspace and costs a bootcount rollback. As a module the
+      # board is already up, the unit fails, and the next round can insmod it
+      # by hand. (The rule that it is never UNLOADED is unchanged --
+      # docs/mini-display.md.)
+      mkdir -p "$out/display-modules"
+      for ko in fbtft fb_jd9853; do
+        src=$(find "$TMPDIR/modstage/lib/modules/${release}" -name "$ko.ko")
+        [ -n "$src" ] \
+          || { echo "ERROR: $ko.ko was not built as a module" >&2; exit 1; }
+        install -m 0644 "$src" "$out/display-modules/$ko.ko"
+        echo "$ko.ko" >> "$out/display-modules/load-order"
+      done
+      echo "display modules: $(tr '\n' ' ' < "$out/display-modules/load-order")"
     ''}
 
     # `dev` is the diagnostics half, plus the dt-bindings headers

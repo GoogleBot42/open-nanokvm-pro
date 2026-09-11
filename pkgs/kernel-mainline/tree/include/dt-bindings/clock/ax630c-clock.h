@@ -299,6 +299,15 @@
 #define AX630C_CLK_WDT2_SEL			2
 #define AX630C_CLK_WDT0_SEL			3
 #define AX630C_CLK_TIMER_SEL			8
+/*
+ * The SPI masters' shared source mux and the SPI2 gates are #84's, and
+ * they are the same category again: declared by the vendor binding header,
+ * never registered by its CCF, and programmed by hand -- the vendor
+ * spi-dw-mmio.c pokes EB0 bit (6 + id) and EB3 bit (2 + id) through a
+ * second mapping of this window and then hard-codes 208 MHz as the SSI
+ * clock.
+ */
+#define AX630C_CLK_SPI_M2_SEL			9
 #define AX630C_CLK_I2S_REF0_SEL			12
 /*
  * The I2C and GPIO ids below are #81's. Like the WDT ones they are declared by
@@ -313,11 +322,20 @@
 #define AX630C_CLK_WDT2_EB			18
 #define AX630C_CLK_WDT0_EB			19
 #define AX630C_CLK_TIMER_EB			24
+#define AX630C_CLK_SPI_M2_EB			25
 #define AX630C_CLK_I2S_REF0_EB			29
 #define AX630C_CLK_I2S_AUDIO_REF_EB		30
 #define AX630C_CLK_I2C_EB			31
 #define AX630C_CLK_GPIO_EB			32
 #define AX630C_CLK_TIMER0_EB			34
+/*
+ * The backlight (#84). The PWM block IS the DesignWare APB timer block:
+ * its source mux is CLK_TIMER_SEL and its class gate is CLK_TIMER_EB --
+ * the vendor pwm node names both by register offset and bit
+ * (clk-sel-offset = <0xD> is MUX0 bit 13, clk-glb-eb-offset = <0x9> is
+ * EB0 bit 9). Only the per-channel gate and the APB gate are new.
+ */
+#define AX630C_CLK_PWM00_EB			46
 #define AX630C_CLK_LPC_PERI_EB			47
 #define AX630C_CLK_I2C_MST0_EB			57
 #define AX630C_CLK_GPIO3_EB			58
@@ -325,6 +343,7 @@
 #define AX630C_CLK_GPIO1_EB			60
 #define AX630C_CLK_GPIO0_EB			61
 #define AX630C_ACLK_AX_DMA_PER_EB		65
+#define AX630C_PCLK_PWM0_EB			66
 #define AX630C_PCLK_I2S_TDM_S_EB		67
 #define AX630C_PCLK_I2S_TDM_M_EB		68
 #define AX630C_PCLK_I2S_S_EB			69
@@ -338,6 +357,7 @@
 #define AX630C_PCLK_WDT2_EB			98
 #define AX630C_PCLK_WDT0_EB			99
 #define AX630C_PCLK_TIMER0_EB			113
+#define AX630C_PCLK_SPI_M2_EB			114
 #define AX630C_SCLK_I2S_TDM_DIVN		119
 #define AX630C_SCLK_I2S_M_DIVN			120
 #define AX630C_CLK_I2S_REF0_DIVN		121

@@ -168,6 +168,60 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q 'reset-gpios' ${board}.decompiled.dts \
       || fail "the ethernet PHY lost its reset-gpios"
 
+    # --- #84: the mini-display and HDMI audio ---------------------------
+    # Every check here is on a CELL VALUE rather than the presence of a
+    # property, because each of these is silent when wrong: a panel with the
+    # dc line inverted is blank with no error, a backlight with the polarity
+    # cell inverted is dark at brightness 100, and an I2S node that lost its
+    # rx-channel waits forever for an interrupt that is masked.
+    #
+    # fdtget, not grep, so a phandle renumbering cannot make a check pass for
+    # the wrong reason.
+    for n in /soc/spi@6072000 /soc/pwm@6060000 /soc/i2s@6051000 \
+             /soc/spi@6072000/panel@1 /backlight /gpio-keys /rotary-encoder \
+             /spdif-in /sound; do
+      fdtget -t s ${board}.dtb "$n" compatible >/dev/null 2>&1 \
+        || fail "$n is missing from the device tree"
+    done
+
+    # The panel's two GPIO polarities, which disagree with each other and with
+    # the vendor DT. 4.19 fbtft drove both lines with the RAW gpio API and
+    # mainline uses the logical one, so `dc` flips to ACTIVE_HIGH (0) while
+    # `reset` stays ACTIVE_LOW (1). Getting dc wrong sends every command byte
+    # as data.
+    dcflag=$(fdtget -t u ${board}.dtb /soc/spi@6072000/panel@1 dc-gpios | awk '{print $3}')
+    [ "$dcflag" = "0" ] \
+      || fail "the panel's dc-gpios is not ACTIVE_HIGH (flag=$dcflag); every command would be sent as data"
+    rstflag=$(fdtget -t u ${board}.dtb /soc/spi@6072000/panel@1 reset-gpios | awk '{print $3}')
+    [ "$rstflag" = "1" ] \
+      || fail "the panel's reset-gpios is not ACTIVE_LOW (flag=$rstflag)"
+
+    # The backlight's polarity cell. 0 = PWM_POLARITY_NORMAL, which is what
+    # makes a longer HIGH period brighter; the upstream dwc driver only
+    # accepted INVERSED until patch 0002, and inverted here would run
+    # brightness backwards.
+    blpol=$(fdtget -t u ${board}.dtb /backlight pwms | awk '{print $4}')
+    [ "$blpol" = "0" ] \
+      || fail "the backlight's pwm polarity cell is $blpol, not 0 (normal); brightness would run backwards"
+
+    # The audio crossbar. Both properties are ours (patch 0003) and both are
+    # invisible when missing: without the syscon write the pads feed a
+    # different I2S instance, and without rx-channel the driver listens on the
+    # wrong one of the block's four receivers.
+    fdtget -t u ${board}.dtb /soc/i2s@6051000 snps,syscon >/dev/null 2>&1 \
+      || fail "the i2s node lost snps,syscon (the audio crossbar would never be written)"
+    rxch=$(fdtget -t u ${board}.dtb /soc/i2s@6051000 snps,rx-channel)
+    [ "$rxch" = "1" ] \
+      || fail "the i2s node's snps,rx-channel is $rxch, not 1"
+    grep -q 'snps,designware-i2s' ${board}.decompiled.dts \
+      || fail "the i2s node is not the stock DesignWare compatible"
+
+    # The knob's button name is an ABI: nanokvm-display finds its wake sources
+    # by EVIOCGNAME, and gpio_keys takes the input device's name from `label`.
+    lbl=$(fdtget -t s ${board}.dtb /gpio-keys label)
+    [ "$lbl" = "gpio_keys" ] \
+      || fail "the gpio-keys node's label is '$lbl', not gpio_keys"
+
     mkdir -p "$out/dtb"
     cp ${board}.dtb "$out/dtb/"
     cp ${board}.decompiled.dts "$out/"
