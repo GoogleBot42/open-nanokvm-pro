@@ -34,10 +34,19 @@ mini-display stack, the EDID set (`pkgs/edid/mkedid.py` — no vendor bytes), th
 `aic8800_bsp`/`aic8800_fdrv` GPL drivers, and the `axdl` host flasher. The whole
 rootfs is nixpkgs.
 
-The closure is asserted blob-free at build time: `nixos/modules/server.nix` fails the
-build if `libkvm.so`, `libkvm.so.0` or `NanoKVM-Server` still carries an
-`axera-libs` store path, which is what would drag the closed Axera media
-libraries into an image that is supposed to contain none of them.
+The closure is asserted blob-free at build time: `pkgs/kvm-encoder.nix` fails if
+a libkvm source includes a vendor `ax_*.h` or the linked library asks for a
+`libax_*`, and `nixos/modules/server.nix` fails if `libkvm.so`, `libkvm.so.0` or
+`NanoKVM-Server` still carries an `axera-libs` store path or names a `libax_` —
+either of which would drag the closed Axera media libraries into an image that
+is supposed to contain none of them.
+
+**Since #102 the vendor SDK snapshot feeds only the boot chain.** `libkvm` used
+to compile against the SDK's `ax_*.h` for its frame and stream types; it has its
+own (`pkgs/kvm-encoder/src/kvm_types.h`), so the `maix_ax620e_sdk_msp` input and
+the `axera-libs` derivation are deleted, and what is left of the vendor tree is
+`maix_ax620e_sdk` — the SPL source, `imgsign`, `ax_gzip` and the two FDL
+download agents.
 
 ---
 
@@ -72,7 +81,6 @@ board has booted the raw one.
 | `ax_gzip` | `maix_ax620e_sdk` `tools/ax_gzip_tool/` — an Axera **x86-64 static ELF** | `-9` compresses each signed boot payload into the "axgzip" LZ77 the SPL's gzipd hardware decompresses. Driven by `pkgs/ax-sign.nix` and `pkgs/atf-mainline.nix` for the DEFAULT boot chain. | **The only closed binary left in the build, and its retirement is built but not yet proven (#95).** `pkgs/boot.nix` no longer runs it at all: the FDL agents are built with `SUPPPORT_GZIPD=FALSE`, and the tool is deleted from that build tree. The `-raw` package variants (`.#spl-minimal-raw`, `.#atf-mainline-raw`, `.#uboot-mainline-raw`, `.#nixos-firmware-image-mainline-raw`) drop it from the boot chain too — `.#checks.<sys>.no-x86-blobs` asserts they carry no x86-64 ELF — but they are **not the default**, because `.#nixos-firmware-image-mainline` is the AXDL recovery image and the raw chain has not booted a board. **Pending #95 hardware: when the raw chain boots, the defaults flip, the gzip variants go, and this row goes with them.** |
 | `imgsign` + its keys | `maix_ax620e_sdk` `build/tools/imgsign/`, `tools/imgsign/{public,private}.pem`, `aes-256.key` | Wraps each payload in the 1 KiB container the SPL loads: magic `0x55543322`, header and payload checksums, a capability word, an RSA-2048 key/signature pair. `pkgs/ax-sign.nix` drives it for anything built outside the vendor makefiles. | Python, not a binary. The keys are the SDK's **committed dev/test keys** (the public modulus is a visible repeating pattern; `aes-256.key` is ASCII zeros). Enforcement is a runtime decision the SPL makes from the `SECURE_BOOT_EN` efuse, which is unburned on retail units — so the signature satisfies a check that never runs. |
 | bl1/SPL C source | `maix_ax620e_sdk` `boot/bl1/` | `.#spl-minimal` recompiles it for our eMMC layout's byte offsets (#89 rung 4). | Source, built here. **Blob-free since #90** — see below. |
-| Axera `ax_*.h` headers | `maix_ax620e_sdk_msp` | Our blob-free `libkvm.so` compiles against them for the SDK's frame and stream types. | Headers only. **No library out of this tree is linked or shipped**, and the image closure is asserted to contain none of it. |
 | FDL1 / FDL2 download agents | built from SDK source by `pkgs/boot.nix` | The AXDL flasher pushes them into BootROM RAM (`0x3000000` and `0x5C000000`) to get a programmer running. FDL2 **is** a U-Boot build. | Compiled here, from source. **Never stored on the eMMC.** Nothing out of `pkgs/boot.nix` ever boots on the board; the `atf-mainline` check additionally reads the vendor `atf_bl31_signed.bin` out of that derivation only to compare header fields. |
 | `@esbuild/linux-x64`, `@rollup/rollup-linux-x64-gnu` (+ siblings) | `nanokvm-web` `pnpmDeps` FOD, hash-pinned | Vite bundler/minifier | Standard JS build tooling. The shipped `dist/` is static JS/CSS/HTML — no native code enters the bundle. |
 

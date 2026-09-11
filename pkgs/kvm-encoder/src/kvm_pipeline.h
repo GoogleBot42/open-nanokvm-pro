@@ -1,71 +1,56 @@
 /*
- * kvm_pipeline.h -- reusable NanoKVM-Pro (AX630C) capture+encode pipeline.
+ * kvm_pipeline.h -- the NanoKVM-Pro (AX630C) capture+encode pipeline, as
+ * libkvm.c drives it.
  *
- * Extracted from the proven capture_venc.c PoC so it can back BOTH:
- *   - the standalone streaming daemon (stream_daemon.c), and
- *   - the drop-in libkvm.so (libkvm.c, kvm_vision.h ABI).
- *
- * Capture path (documented Axera MPI only, zero Sipeed code):
- *   LT6911UXC HDMI->CSI-2  =>  MIPI_RX(DPHY 4-lane MODE_0 600Mbps map[0,1,3,4]/clk[2,5])
- *      =>  VIN dev (MIPI_RAW/RAW16/BGGR, CSI DT 0x1E)
- *      =>  VIN pipe (ISP_BYPASS_MODE, dummy sensor)
- *      =>  VIN chn (frames emerge as YUV422 interleaved YUYV, fmt 0xD)
- *      =>  AX_VENC (H.264 chn7 / MJPEG chn6)
+ * Capture path, all open (#60/#83):
+ *   LT6911UXC HDMI->CSI-2  =>  open_vin_csi2 (D-PHY receiver)
+ *      =>  open_vin_capture => /dev/videoN, YUYV 4:2:2 frames over V4L2
+ *      =>  the open VC8000E encoder (kvm_venc_open.c) over /dev/es_venc
+ * Two implementations sit behind it: kvm_capture_v4l2.c (capture) and
+ * kvm_venc_open.c (encode); this header is the only thing between them and
+ * libkvm.c. The source-geometry poll lives in kvm_pipeline.c.
  */
 #ifndef KVM_PIPELINE_H_
 #define KVM_PIPELINE_H_
 
-#include "ax_base_type.h"
-#include "ax_global_type.h"
-#include "ax_venc_comm.h"
-#include "ax_vin_api.h"   /* AX_IMG_INFO_T */
+#include "kvm_types.h"
 
-/* ---- capture config (resolved on live hardware, authoritative) ---- */
-#define KVM_VIN_DEV   0
-#define KVM_VIN_PIPE  0
-#define KVM_RX_DEV    0
-#define KVM_MIPI_RATE 600   /* Mbps/lane */
-#define KVM_MIPI_LANES 4
-#define KVM_PIPE_MODE 12    /* AX_VIN_PIPE_ISP_BYPASS_MODE */
-
-/* Spare VENC channels (Sipeed uses others on-demand). */
+/* Channel ids. These are libkvm's own handles -- one codec at a time is
+ * live, and the number only distinguishes which. */
 #define KVM_VENC_H264_CHN 7
-#define KVM_VENC_H265_CHN 8   /* H.265/HEVC (#64, open encoder only) */
+#define KVM_VENC_H265_CHN 8   /* H.265/HEVC (#64) */
 #define KVM_VENC_MJPEG_CHN 6
 
-/* Opaque-ish capture context; all teardown flags live here for safe cleanup. */
+/* Capture context. Owned by libkvm.c, filled by the capture backend; the
+ * flags exist so a failed bring-up tears down exactly what came up. */
 typedef struct {
-    int w, h, fps;
-    void *snsLib;
-    AX_BOOL sysInit, poolInit;
-    AX_BOOL mipiInit, vinInit, mipiStarted;
-    AX_BOOL devCreated, pipeCreated, snsReg, ispCreated, ispOpened;
-    AX_BOOL chnEnabled, pipeStarted, ispStarted, devEnabled, streamOn;
-    AX_U32  nv12Sz;
+    int w, h, fps;      /* negotiated geometry and the source's frame rate */
+    int sysInit;        /* the capture device is open and the format set */
+    int streamOn;       /* VIDIOC_STREAMON succeeded; buffers are queued */
 } kvm_cap_ctx;
 
-/* SYS + common VB pool. Call once. */
+/* Open the capture node and negotiate WxH. Call once per pipeline. */
 int  kvm_sys_init(kvm_cap_ctx *c, int w, int h);
 void kvm_sys_deinit(kvm_cap_ctx *c);
 
-/* Bring up MIPI->VIN->ISP-bypass so VIN chn delivers YUYV frames. */
+/* Allocate/map/export the buffers and start streaming. */
 int  kvm_cap_start(kvm_cap_ctx *c, int w, int h, int fps);
 void kvm_cap_stop(kvm_cap_ctx *c);
 
-/* Grab / release one captured YUYV frame. */
-int  kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms);
-void kvm_cap_release(AX_IMG_INFO_T *img);
+/* Grab / release one captured YUYV frame. A frame is valid until released. */
+int  kvm_cap_get(kvm_frame *f, int timeout_ms);
+void kvm_cap_release(kvm_frame *f);
 
-/* VENC channel helpers. type = PT_H264 or PT_MJPEG.
- * qlty: H264 -> bitrate kbps; MJPEG -> ~[50,100] quality (mapped to QP). */
-int  kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
+/* VENC channel helpers.
+ * qlty: H.264/H.265 -> bitrate kbps; MJPEG -> ~[50,100] quality. */
+int  kvm_venc_create(int chn, kvm_codec codec, int w, int h,
                      int fps, int gop, int qlty, int rc_mode /*0=CBR,1=VBR*/);
 void kvm_venc_destroy(int chn);
 void kvm_venc_module_deinit(void);
-int  kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame);
-int  kvm_venc_get(int chn, AX_VENC_STREAM_T *st, int timeout_ms);
-void kvm_venc_release(int chn, AX_VENC_STREAM_T *st);
-int  kvm_venc_set_fps(int chn, AX_PAYLOAD_TYPE_E type, int fps);
+int  kvm_venc_send(int chn, const kvm_frame *f);
+int  kvm_venc_get(int chn, kvm_pack *pk, int timeout_ms);
+void kvm_venc_release(int chn, kvm_pack *pk);
+int  kvm_venc_set_fps(int chn, kvm_codec codec, int fps);
 int  kvm_venc_set_gop(int chn, int gop);
 /* Retarget a running H.264/H.265 channel to a new bitrate (kbps) without
  * rebuilding it. Returns 0 when the backend applied it (the open encoder's
@@ -73,8 +58,8 @@ int  kvm_venc_set_gop(int chn, int gop);
  * fall back to destroy + create. */
 int  kvm_venc_set_bitrate(int chn, int kbps);
 
-/* Poll /proc/lt6911_info. Returns 0 on success, fills w/h/fps and
- * whether the HDMI RX is locked ("access"). status buf optional. */
+/* Poll /proc/lt6911_info (drivers/misc/lt6911-manage.c). Returns 0 on
+ * success, fills w/h/fps and whether the HDMI RX is locked ("access"). */
 int  kvm_read_source(int *w, int *h, int *fps, int *locked);
 
 #endif /* KVM_PIPELINE_H_ */

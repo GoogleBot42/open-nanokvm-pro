@@ -299,9 +299,11 @@ Everything that built, flashed, updated or documented the vendor-derived Ubuntu
 22.04 / Linux 4.19.125 image is **deleted** -- `firmware-image`, the rootfs
 overlay, `base-axp`, the 4.19 kernel/dtb/initramfs, the vendor boot chain, the
 A/B `*-slot-image` packaging, `sd-image`, `migrate-layout`, `ax-ko-blobs`,
-`axera-libs`' library half, `libsns-dummy`, `ax-stub`, the closed-backend
+`axera-libs`, `libsns-dummy`, `ax-stub`, the closed-backend
 `kvm-encoder` variants, the `deploy-iterate` / `mainline-boot-test` /
-`sd-flash-remote` skills. Git history has all of it.
+`sd-flash-remote` skills. Git history has all of it. (#102 finished `axera-libs`
+off: libkvm compiled against its `ax_*.h` until then, and has its own
+`kvm_types.h` now.)
 
 The traps that only bit on that stack are gone from the list above, and are
 recorded where they happened: the vendor `ax_*.ko` vermagic-and-struct-layout
@@ -525,10 +527,10 @@ appliance, not AXDL.
 - **Blob policy (2026-09-04):** the aic8800 wireless *firmware* is the only closed
   content on the image, and the only closed content allowed on it. No closed
   userspace, no closed `.ko`, ever. What the vendor SDK snapshot is still read
-  for -- the SPL C source, the `imgsign` tool, the `ax_gzip` packer, the two FDL
-  download agents and the Axera `ax_*.h` headers our blob-free libkvm compiles
-  against -- is build-time only and ships nothing; `docs/provenance.md` is the
-  audit.
+  for -- the SPL C source, the `imgsign` tool, the `ax_gzip` packer and the two
+  FDL download agents -- is build-time only and ships nothing, and since #102 it
+  is the boot chain only: libkvm has its own headers (`kvm_types.h`) and the
+  `maix_ax620e_sdk_msp` input is gone. `docs/provenance.md` is the audit.
 - **Mainline everything (2026-09-07):** kernel, U-Boot, and TF-A where a port is
   tractable. Patches are fine, but against upstream, never a vendor fork; the
   SDK's U-Boot 2020.04 / TF-A 2.7 forks are a stopgap. Partition layout: the

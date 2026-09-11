@@ -283,7 +283,13 @@ construction.
 our open reimplementation of Sipeed's withheld glue, implementing the
 `kvm_vision.h` ABI the Go server links against (`kvmv_init` / `kvmv_read_img` /
 `kvmv_read_audio` / `kvmv_set_fps` / `kvmv_hdmi_control` / …). There is **one
-build** and it links no vendor library at all — only `-ljpeg -lopus -lasound`.
+build**; it links no vendor library at all — only `-ljpeg -lopus -lasound` — and
+since #102 it compiles against no vendor header either. Its own
+`kvm_types.h` defines the frame and packet types its modules exchange (the
+capture backend fills a `kvm_frame`, the encoder returns a `kvm_pack`), written
+from what the open drivers deliver rather than borrowed from the SDK; the only
+layouts that are ABI are V4L2's and the VCMD driver's, and
+`kvm_capture_v4l2.c` `_Static_assert`s our fields against theirs.
 Capture is plain V4L2 (`S_FMT` YUYV → `REQBUFS` mmap → `EXPBUF` → `STREAMON` →
 `poll`/`DQBUF`); each buffer's dma-buf is imported once through the VCMD driver's
 `HANTRO_IOCH_IMPORT_DMABUF` ioctl, which resolves it to the bus address the
@@ -343,16 +349,17 @@ signature is always this.
 
 Both places that produce a `libkvm.so` therefore use `patchelf --force-rpath`:
 
-- `pkgs/kvm-encoder.nix` sets `/opt/lib:<axera-libs>/lib`. The second entry is a
-  leftover of the era when the same source built a vendor-backend variant; the
-  build links no `libax_*` any more, so nothing resolves through it.
+- `pkgs/kvm-encoder.nix` sets `/opt/lib`, and only that (#102). It used to carry
+  a second `<axera-libs>/lib` entry from the era when the same source built a
+  vendor-backend variant; that entry resolved nothing, and in a Nix closure a
+  store path in an RPATH is a *reference* — it would have dragged the closed
+  Axera library set into an image that is supposed to contain none of it.
 - `nixos/modules/server.nix`'s `kvmapp` derivation **re-rpaths it** to
-  `/opt/lib:<opus>/lib:<alsa>/lib:<jpeg>/lib`. That is not cosmetic: in a Nix
-  closure the `axera-libs` store path is a *reference*, and leaving it would drag
-  the entire closed Axera library set into an image that is supposed to contain
-  none of it. Both `libkvm.so` and `libkvm.so.0` are patched — they are two real
-  files, not a symlink pair — and the derivation greps both, plus the server
-  binary, for `axera-libs` and fails the build if any survives.
+  `/opt/lib:<opus>/lib:<alsa>/lib:<jpeg>/lib`, naming the three open libraries
+  by store path. Both `libkvm.so` and `libkvm.so.0` are patched — they are two
+  real files, not a symlink pair — and the derivation greps both, plus the
+  server binary, for `axera-libs` and for any `libax_`, failing the build on
+  either.
 
 `/opt/lib` exists on the appliance because `NanoKVM-Server`'s own `DT_RUNPATH` is
 the bare, store-free `$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib`. It holds exactly
@@ -433,13 +440,15 @@ detail — trust, GC, the manifest, local testing — is
 
 Everything on the image is built from source except the **aic8800 radio
 firmware**, which is the only closed content the blob policy permits and is only
-present with `nanokvm.wifi.enable`. Two build-time assertions keep it that way:
-`nixos/modules/server.nix`'s `kvmapp` derivation fails if `libkvm.so` or the server
-still references `axera-libs` after the re-rpath, and
+present with `nanokvm.wifi.enable`. Three build-time assertions keep it that
+way: `pkgs/kvm-encoder.nix` fails if any libkvm source includes a vendor
+`ax_*.h` or if the linked `libkvm.so` `DT_NEEDED`s a `libax_*`,
+`nixos/modules/server.nix`'s `kvmapp` derivation fails if `libkvm.so` or the
+server still references `axera-libs` or a `libax_` after the re-rpath, and
 `nixos/lib/appliance-artifacts.nix` fails if any `axera-libs`, `ax-ko-blobs` or
 `libsns-dummy` path appears in the image closure at all.
 
-Three vendor-derived *inputs* are still read at build time, and these are all of
+Two vendor-derived *inputs* are still read at build time, and these are both of
 them:
 
 - **`maix_ax620e_sdk`** — for the bl1/SPL source `.#spl-minimal` recompiles, the
@@ -447,9 +456,6 @@ them:
   agents the AXDL flasher pushes into BootROM RAM (`pkgs/boot.nix` builds both
   from SDK sources). Nothing out of this tree boots, and only the FDLs ride in
   the `.axp` — flash-time only, never stored on the eMMC.
-- **`maix_ax620e_sdk_msp`** — for the Axera `ax_*.h` **headers** the blob-free
-  `libkvm` compiles against, for the SDK's frame and stream types. No library
-  from it is linked or shipped.
 - **`nanokvm-pro-src`** — upstream Sipeed's Go server (GPL-3.0). Source, patched
   at nix time.
 

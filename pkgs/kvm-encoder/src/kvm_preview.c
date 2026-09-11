@@ -23,9 +23,6 @@
 #include <sys/mman.h>
 #include <time.h>
 
-#include "ax_base_type.h"
-#include "ax_global_type.h"
-#include "ax_sys_api.h"
 #include "kvm_preview.h"
 
 #define PV_PATH      "/dev/shm/nanokvm-preview"
@@ -62,10 +59,10 @@ static uint32_t s_tab[PV_PIXELS];
 static uint32_t s_tab_w = 0, s_tab_h = 0, s_tab_stride = 0;
 static int      s_tab_ok = 0;
 
-/* phys->virt cache for the (few) pool blocks frames arrive in. devmem is the
- * fallback if AX_SYS_Mmap declines (both routes are proven on this pool:
- * AX_SYS_Mmap is the documented API, /dev/mem is the Stage-6 route). */
-static struct { uint64_t phys; uint32_t size; void *virt; int devmem; size_t maplen; } s_map[8];
+/* bus->virt cache for the (few) capture buffers frames arrive in. Only used
+ * when a frame arrives without a CPU view: the V4L2 backend always mmaps its
+ * buffers, so in the shipped pipeline this is the never-taken path. */
+static struct { uint64_t phys; uint32_t size; void *virt; size_t maplen; } s_map[8];
 static int s_devmem_fd = -1;
 
 static int64_t mono_us(void)
@@ -86,21 +83,13 @@ static void *map_phys(uint64_t phys, uint32_t size)
         if (!s_map[slot].virt) break;
     if (slot == sizeof(s_map)/sizeof(s_map[0])) return NULL;  /* reset() clears */
 
-#ifndef KVM_OPEN_VENC   /* fully-open build links no libax_sys: devmem only */
-    void *v = AX_SYS_Mmap(phys, size);
-    if (v) {
-        s_map[slot] = (typeof(s_map[0])){ phys, size, v, 0, 0 };
-        return v;
-    }
-#endif
-
     if (s_devmem_fd < 0) s_devmem_fd = open("/dev/mem", O_RDONLY | O_SYNC);
     if (s_devmem_fd < 0) return NULL;
     uint64_t pa = phys & ~4095ULL;
     size_t   off = (size_t)(phys - pa), len = (size_t)size + off;
     void *m = mmap(NULL, len, PROT_READ, MAP_SHARED, s_devmem_fd, (off_t)pa);
     if (m == MAP_FAILED) return NULL;
-    s_map[slot] = (typeof(s_map[0])){ phys, size, (uint8_t *)m + off, 1, len };
+    s_map[slot] = (typeof(s_map[0])){ phys, size, (uint8_t *)m + off, len };
     return s_map[slot].virt;
 }
 
@@ -113,12 +102,7 @@ void kvm_preview_reset(void)
 {
     for (unsigned i = 0; i < sizeof(s_map)/sizeof(s_map[0]); i++) {
         if (!s_map[i].virt) continue;
-        if (s_map[i].devmem)
-            munmap((void *)((uintptr_t)s_map[i].virt & ~4095UL), s_map[i].maplen);
-#ifndef KVM_OPEN_VENC
-        else
-            AX_SYS_Munmap(s_map[i].virt, s_map[i].size);
-#endif
+        munmap((void *)((uintptr_t)s_map[i].virt & ~4095UL), s_map[i].maplen);
         s_map[i].virt = NULL;
     }
     s_tab_ok = 0;
@@ -169,19 +153,19 @@ static void build_tab(uint32_t sw, uint32_t sh, uint32_t stride_px, uint32_t fsz
     s_tab_ok = 1;
 }
 
-void kvm_preview_publish(const AX_VIDEO_FRAME_T *vf)
+void kvm_preview_publish(const kvm_frame *f)
 {
     int64_t now = mono_us();
     if (now - s_last_pub_us < PV_MIN_US) return;
 
-    uint32_t sw = vf->u32Width, sh = vf->u32Height;
-    uint32_t stride_px = vf->u32PicStride[0] ? vf->u32PicStride[0] : sw;
+    uint32_t sw = f->width, sh = f->height;
+    uint32_t stride_px = f->stride_px ? f->stride_px : sw;
     if (!sw || !sh) return;
     if (stride_px & 1) stride_px = sw;    /* YUYV macropixels need even stride */
-    uint32_t fsz = vf->u32FrameSize ? vf->u32FrameSize : stride_px * 2 * sh;
+    uint32_t fsz = f->size ? f->size : stride_px * 2 * sh;
 
-    const uint8_t *src = (const uint8_t *)(uintptr_t)vf->u64VirAddr[0];
-    if (!src) src = map_phys(vf->u64PhyAddr[0], fsz);
+    const uint8_t *src = (const uint8_t *)f->cpu;
+    if (!src) src = map_phys(f->bus, fsz);
     if (!src) return;
 
     if (!s_tab_ok || s_tab_w != sw || s_tab_h != sh || s_tab_stride != stride_px)

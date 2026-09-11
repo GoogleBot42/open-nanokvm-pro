@@ -12,6 +12,12 @@
 > ship as `.#video-modules`, and `libkvm.so` (`.#kvm-encoder`) is the one
 > blob-free build. Read this for the evidence and the reasoning behind those;
 > read `docs/architecture.md` for what the pipeline is today.
+>
+> **#102 (2026-09-11) finished it:** libkvm's last tie to the vendor userspace
+> was that it compiled against the SDK's `ax_*.h` for its frame and stream
+> types. It has its own `kvm_types.h` now, the vendor-ioctl capture backend
+> (`kvm_capture_open.c`) and the vendor-MPI halves of `kvm_pipeline.c` that this
+> document describes are deleted, and `axera-libs` with them.
 
 
 Status: **DONE — a real 1080p YUV frame was captured with ZERO vendor libraries
