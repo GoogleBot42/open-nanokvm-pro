@@ -2,28 +2,30 @@
   description = "Self-built open firmware for the Sipeed NanoKVM-Pro (Axera AX630C): boot chain, kernel, and app layer from source; Axera's redistributable media libraries and ax_*.ko modules pinned as binary inputs";
 
   # ---- the release binary cache (#96) ------------------------------------
-  # Nobody should have to build a cross toolchain, a kernel, U-Boot and an
-  # appliance closure to get an image -- and the appliance itself substitutes
-  # its updates from this same cache (#100), signed by this same key. Accepting
-  # this flake's config (nix asks once per flake, per user) is the whole of the
-  # setup.
+  # NOT WIRED UP HERE YET, ON PURPOSE. Nobody should have to build a cross
+  # toolchain, a kernel, U-Boot and an appliance closure to get an image -- and
+  # the appliance substitutes its updates from the same cache (#100), signed by
+  # the same key. The flake half of that is four lines:
   #
-  # BOTH VALUES ARE PLACEHOLDERS. The attic endpoint is Jeremy's to stand up and
-  # the signing key is his to hold (#96 is the needs-human half). `.invalid` is
-  # a reserved TLD, so until it is filled in the substituter fails DNS
-  # immediately and nix moves on to cache.nixos.org -- a warning per build, not
-  # a hang. The key is syntactically valid and signs nothing.
+  #   nixConfig = {
+  #     extra-substituters = [ "https://<attic host>/nanokvm-pro" ];
+  #     extra-trusted-public-keys = [ "nanokvm-pro:<base64>" ];
+  #   };
   #
-  # When the real ones land they must be changed in THREE places, which the
-  # release checklist in docs/updates.md spells out: here, the release
-  # workflow's secrets, and `nanokvm.update.{cacheUrl,trustedPublicKeys}` in
-  # nixos/appliance.nix (the device's own trust -- it does not read this).
-  nixConfig = {
-    extra-substituters = [ "https://attic.invalid/nanokvm-pro" ];
-    extra-trusted-public-keys = [
-      "nanokvm-pro:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    ];
-  };
+  # A PLACEHOLDER URL HERE IS NOT FREE, which is why there is not one. A
+  # substituter in `nixConfig` is contacted for every path every build on every
+  # host is missing, the release runner's included; an unreachable one buys a
+  # warning or a connect timeout per path, for nothing, on everybody. An
+  # unreachable substituter is worse than no substituter, so this stays a
+  # comment until the endpoint and the key exist.
+  #
+  # When they do, they land in THREE places (docs/releasing.md): here, the
+  # release workflow's `ATTIC_*` secrets, and
+  # `nanokvm.update.{cacheUrl,trustedPublicKeys}` in nixos/appliance.nix -- the
+  # device's own trust, which does not read this file. The appliance-side
+  # defaults stay empty in the meantime and the module warns at build time,
+  # because there the placeholder's cost is a device that quietly cannot update
+  # rather than a slower build for everyone.
 
   inputs = {
     # ONE nixpkgs pin. There used to be a second, older one (nixos-24.11) for

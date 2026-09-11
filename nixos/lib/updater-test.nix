@@ -293,6 +293,35 @@ pkgs.runCommand "nanokvm-updater-loop"
     || fail "gc deleted something before refusing"
   ok "gc refuses, and deletes nothing, when a boot config resolves to no generation"
 
+  # =====================================================================
+  # 7. THE OTHER REFUSAL -- a fallback generation that is on disk but is NOT
+  #    VALID IN THE DATABASE.
+  # =====================================================================
+  # This is the bootstrap hazard, and it is the board's real state: the
+  # generations a pre-nix board was given by tar are directories nix knows
+  # nothing about. A gc root pointing at one PROTECTS NOTHING -- measured: nix
+  # collects an unregistered path with a gcroot naming it -- so if the fallback
+  # config still names one, a collection deletes the generation the rollback
+  # boots. The only safe answer is to refuse and say how to fix it.
+  echo "=== a fallback generation that is on disk but unregistered ==="
+  UNREG="$R/nix/store/00000000000000000000000000000009-nixos-system-nanokvm-untarred"
+  mkdir -p "$UNREG/bin"
+  echo "8.8.8" > "$UNREG/etc-version"
+  bootcfg "/nix/store/00000000000000000000000000000009-nixos-system-nanokvm-untarred" 9 "$V3" \
+    > "$R/boot/extlinux/extlinux-fallback.conf"
+  before=$(find "$R/nix/store" -mindepth 1 -maxdepth 1 | wc -l)
+  if U --keep 1 gc > "$PWD/gc4.log" 2>&1; then
+    cat "$PWD/gc4.log" >&2; fail "gc collected while the fallback generation was unregistered"
+  fi
+  grep -q "NOT VALID in the store database" "$PWD/gc4.log" \
+    || { cat "$PWD/gc4.log" >&2; fail "gc failed for the wrong reason"; }
+  grep -q "nix-store --load-db" "$PWD/gc4.log" \
+    || { cat "$PWD/gc4.log" >&2; fail "the refusal does not say how to fix it"; }
+  [ "$(find "$R/nix/store" -mindepth 1 -maxdepth 1 | wc -l)" = "$before" ] \
+    || fail "gc deleted something before refusing"
+  [ -e "$UNREG/etc-version" ] || fail "gc deleted the unregistered fallback generation"
+  ok "gc refuses, deletes nothing, and names the registration fix"
+
   echo
   echo "the #100 update holds offline: signed, incremental, and safe to collect."
   touch "$out"

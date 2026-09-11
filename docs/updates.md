@@ -471,24 +471,57 @@ Three board rounds, each ending in a state the plug recovers from — a cold cyc
 clears `bootcount`, and a candidate that does not come up is on the fallback config by
 the fourth attempt. **None has been run: the board has no nix.**
 
-**Round 1 — bootstrap.** A board with no nix cannot substitute a closure, and
-`nix copy --to ssh://` needs nix on both ends, so the first nix-carrying generation
-goes over **by hand**: the one-time tar + `nix-store --dump-db` recipe in
-`.claude/skills/kvm-device/SKILL.md` ("Bootstrapping a board that has no nix yet") —
-ship the missing store paths as a plain tar, set the profile links the way
-`nix-env --set` would, `switch-to-configuration boot`, reboot, **then**
-`nix-store --load-db < registration`. That last step is not optional: a path the
-database does not know is not a store path. Leaving `extlinux-fallback.conf` alone is
-the whole safety of this round — it still names the old generation, so three failed
-attempts land back exactly where the board started. **Oracles**, after the reboot:
+**Round 1 — bootstrap, and it is the round with the sharp edge.** A board with no nix
+cannot substitute a closure, and `nix copy --to ssh://` needs nix on both ends, so the
+first nix-carrying generation goes over **by hand**: the one-time recipe in
+`.claude/skills/kvm-device/SKILL.md` ("Bootstrapping a board that has no nix yet").
+
+**The board's existing generations are unregistered, and that is a trap with teeth.**
+Generations 1-4 were unpacked by `tar` when the appliance had no nix, so they are
+directories no database knows about. Once the new system's database is loaded from the
+image's registration, only *its* closure is valid — and the fallback config's `DEFAULT`
+names an *older* generation. Measured, not assumed: `nix-env --set` on an unregistered
+path **fails** ("no substituter that can build it") and writes no generation;
+`nix-collect-garbage` **deletes** an unregistered path even with a gc root naming it.
+So a collection at that moment would delete the closure the rollback boots.
+
+The fix is to register **every generation either boot config names**, not just the new
+one. Read them off the board (`grep -h init= /boot/extlinux/*.conf`), and produce one
+registration on the build host — it has all of them, because it built them:
 
 ```sh
-nix-store --verify --check-contents
-nix path-info -r /run/current-system | wc -l        # the closure count
-nix-env -p /nix/var/nix/profiles/system --list-generations
-nanokvm-update status
-devmem 0x02390030 32                               # 0xB0010000
+nix-store --dump-db $(nix-store -qR "$NEW" "$OLD_DEFAULT" "$OLD_FALLBACK") > registration
 ```
+
+then, on the board after the reboot, `nix-store --load-db < registration` **before any
+collection**. `nanokvm-update gc` refuses while a boot config names an unregistered
+generation — the backstop, not the plan. Leaving `extlinux-fallback.conf` alone is the
+rest of this round's safety: it still names the old generation, so three failed
+attempts land back exactly where the board started.
+
+**Oracles**, after the reboot:
+
+```sh
+nix-store --verify --check-contents                 # THE one: registration + contents
+nix path-info -r /run/current-system | wc -l         # the closure count
+nix path-info $(grep -ho 'init=/nix/store/[^/]*' /boot/extlinux/*.conf | cut -d= -f2)
+nix-env -p /nix/var/nix/profiles/system --list-generations
+nanokvm-update status                               # what /boot pins
+devmem 0x02390030 32                                # 0xB0010000
+```
+
+Then, once `nanokvm-mark-good` has promoted the fallback to a registered generation,
+`nix-env -p /nix/var/nix/profiles/system --delete-generations 1 2 3` retires the
+pre-nix ones and `nanokvm-update gc` collects what they held.
+
+**What needs the database and what does not,** measured on this branch:
+
+| | Needs a valid db? |
+|---|---|
+| `switch-to-configuration boot` | **No.** A program on disk; NixOS's extlinux builder only `readlink`s and `cp`s. |
+| the profile symlinks, written by hand | **No.** They are symlinks. |
+| `nix-env --set` | **Yes**, and it fails outright without one. |
+| `nix-collect-garbage` | **Yes**, and it deletes what is not in it. |
 
 **Round 2 — a real update from a real cache.** Cut an alpha, let the release job push
 the closure, run `nanokvm-update check` then `update` on the board — then the same
@@ -592,13 +625,14 @@ the test.
 
 ## Caveats
 
-- **The cache and the keys are placeholders (#96).** `nanokvm.update.cacheUrl` and
-  `nanokvm.update.trustedPublicKeys` are empty, `flake.nix`'s `nixConfig` carries
-  `https://attic.invalid/nanokvm-pro` and a dummy key, and the release job's three
-  attic secrets do not exist. The module emits a **build-time warning** when the cache
-  URL is empty, and a second when a cache is set with no keys; `nanokvm-update` refuses
-  rather than installing anything unverified. Standing up the attic server and holding
-  the signing key are Jeremy's.
+- **The cache does not exist yet (#96).** `nanokvm.update.cacheUrl` and
+  `nanokvm.update.trustedPublicKeys` are empty, `flake.nix` carries the intended
+  `nixConfig` as a comment rather than a placeholder URL (an unreachable substituter
+  is contacted for every missing path on every host, which is worse than none), and
+  the release job's three attic secrets do not exist. The module emits a **build-time
+  warning** when the cache URL is empty, and a second when a cache is set with no
+  keys; `nanokvm-update` refuses rather than installing anything unverified. Standing
+  up the attic server and holding the signing key are Jeremy's.
 - **`/boot` has to be mounted for an install to mean anything.** The bootloader builder
   writes into whatever `/boot` is, and an unmounted one is a directory in the rootfs
   U-Boot never reads. The install still succeeds, the profile still moves, and the

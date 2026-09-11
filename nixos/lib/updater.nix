@@ -735,9 +735,31 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         pinned_toplevels > "$pinned.raw"
         sort -u "$pinned.raw" > "$pinned"
         [ -s "$pinned" ] || die "nothing is pinned -- refusing to collect anything"
+        # A PIN THAT IS NOT A VALID STORE PATH PROTECTS NOTHING, and the gc
+        # root that names it is not a root -- it is a dangling symlink nix
+        # ignores while it deletes the very closure the rollback needs.
+        # Measured: a directory present on disk but absent from the database is
+        # collected even with a gcroot pointing at it.
+        #
+        # That is not a hypothetical on this board. Generations 1-4 were
+        # unpacked by tar before the appliance had nix (the bootstrap recipe in
+        # the kvm-device skill), so they are on disk and unregistered until
+        # someone loads their registration. If `extlinux-fallback.conf` still
+        # names one of those, the correct action is to REFUSE -- loudly, naming
+        # the path and the fix -- and delete nothing at all.
         while read -r t; do
           [ -n "$t" ] || continue
-          [ -e "$(P "$t")" ] || { say "pinned $t is not in the store -- skipping"; continue; }
+          [ -e "$(P "$t")" ] \
+            || die "$t is named by a boot config and is not in the store at all -- refusing to collect anything"
+          nix path-info --extra-experimental-features nix-command \
+            --store "$store" "$t" >/dev/null 2>&1 \
+            || die "$t is named by a boot config but is NOT VALID in the store database.
+A gc root cannot protect it and nix would collect it, taking the generation the
+rollback boots. Register it first -- on the build host:
+  nix-store --dump-db \$(nix-store -qR $t) > reg
+and on the device:
+  nix-store --load-db < reg && nix-store --verify --check-contents
+Refusing to collect anything."
           i=$((i + 1))
           ln -sfn "$t" "$roots/pin-$i"
           echo "gc: pinned $t"

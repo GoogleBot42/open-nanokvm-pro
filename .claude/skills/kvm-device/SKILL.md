@@ -253,6 +253,16 @@ the eMMC today): there is nothing on the far end for `nix copy` to talk to, so
 the first nix-carrying generation goes over by hand. This is a ONE-TIME recipe
 — once it has booted, everything above works.
 
+**Register every generation the boot configs name, not just the new one.** A
+pre-#100 board's generations were unpacked by `tar`, so they are directories no
+database knows about — and an unregistered path is not a store path: `nix-env
+--set` on one **fails** ("no substituter that can build it") and
+`nix-collect-garbage` **deletes** it, gc root or no gc root (both measured). The
+one that matters is whatever `extlinux-fallback.conf` names, because that is the
+generation the rollback boots. `nanokvm-update gc` refuses to run at all while a
+boot config names an unregistered generation, which is the backstop, not the
+plan.
+
 ```sh
 # 1. Which store paths are missing on the board?
 NEW=$(nix build .#appliance-toplevel --no-link --print-out-paths)
@@ -260,33 +270,56 @@ nix-store -qR "$NEW" > /tmp/req.txt
 cat /tmp/req.txt | tools/kvmssh 'cat > /root/req.txt;
   while read -r p; do [ -e "$p" ] || echo "$p"; done < /root/req.txt'
 
-# 2. Ship them as a plain tar, plus the registration the new nix will need.
-#    (/nix/store may be a READ-ONLY BIND: `remount,bind,ro` to put it back --
-#    plain `remount,ro` silently does nothing on a bind mount.)
+# 2. Ship them as a plain tar, plus the registration for EVERY generation the
+#    two boot configs name. Read those off the board first:
+#      tools/kvmssh 'grep -h "init=" /boot/extlinux/*.conf'
+#    then, for the new toplevel AND each one still named (they are all paths
+#    this build host has, because it built them):
 cd /nix/store && tar -czf /tmp/newsys.tar.gz <the missing basenames>
-nix-store --dump-db "$NEW" > /tmp/registration     # or closureInfo's `registration`
+nix-store --dump-db $(nix-store -qR "$NEW" "$OLD_DEFAULT" "$OLD_FALLBACK") \
+  > /tmp/registration
 tools/kvmscp /tmp/newsys.tar.gz /tmp/registration /root/
 tools/kvmssh 'mount -o remount,rw /nix/store 2>/dev/null || true
               tar -C /nix/store -xzf /root/newsys.tar.gz'
 
 # 3. Set the profile the way `nix-env --set` would, then activate.
-#    `boot`, not `switch`: on this board the reboot is what arms the rollback,
-#    and it is also what makes a new kernel take effect.
-tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-2-link
-              ln -sfn system-2-link /nix/var/nix/profiles/system
+#    BY HAND, because `nix-env --set` cannot do it yet: there is no nix on this
+#    board, and after the reboot the path would still be unregistered.
+#    `boot`, not `switch`: the reboot is what arms the rollback, and it is also
+#    what makes a new kernel take effect. switch-to-configuration itself needs
+#    no database — it is a program on disk, and NixOS's extlinux builder only
+#    does readlink/cp.
+tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-5-link
+              ln -sfn system-5-link /nix/var/nix/profiles/system
               $NEW/bin/switch-to-configuration boot && reboot"
 
-# 4. AFTER the reboot, register what the old board could not: the new system
-#    has nix, and its store must know about the paths that were tarred in.
+# 4. AFTER the reboot, register everything — the new system has nix now, and
+#    this is what makes the tarred-in paths real. NOT OPTIONAL, and it must
+#    come before any collection.
 tools/kvmssh 'nix-store --load-db < /root/registration
-              nix-store --verify --check-contents
-              nix path-info -r /run/current-system | wc -l'
+              nix-store --verify --check-contents          # THE oracle
+              nix path-info -r /run/current-system | wc -l
+              nanokvm-update status'                        # what /boot pins
+
+# 5. Once nanokvm-mark-good has promoted the fallback to a REGISTERED
+#    generation (journalctl -u nanokvm-mark-good), retire the pre-nix ones:
+tools/kvmssh 'nix-env -p /nix/var/nix/profiles/system --list-generations
+              nix-env -p /nix/var/nix/profiles/system --delete-generations 1 2 3
+              nanokvm-update gc'
 ```
 
-Step 4 is not optional. A path on disk that the database does not know is not a
-store path: `nix-env --set` on one tries to *download* it, and
-`nix-collect-garbage` would happily delete it. A flashed image does not need
-this — `nixos/lib/appliance-artifacts.nix` builds the database into the image.
+Step 4 is not optional, and step 5 must not run before the fallback names a
+generation the database knows. A flashed image needs neither —
+`nixos/lib/appliance-artifacts.nix` builds the database into the image.
+
+**What needs the database and what does not** (measured, not assumed):
+
+| | Needs a valid db? |
+|---|---|
+| `switch-to-configuration boot` | **No.** A program on disk; the extlinux builder only `readlink`s and `cp`s. |
+| the profile symlinks, written by hand | **No.** They are symlinks. |
+| `nix-env --set` | **Yes.** It `ensurePath`s and fails: "no substituter that can build it" — and writes no generation. |
+| `nix-collect-garbage` | **Yes**, and this is the dangerous one: it deletes unregistered paths, gc root or not. |
 
 **`switch-to-configuration` WRITES `/boot` NOW (#99).** It runs NixOS's
 `generic-extlinux-compatible` builder, which copies this generation's kernel,

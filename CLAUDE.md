@@ -340,7 +340,16 @@ preview flag — there is no `nanokvm.update.auto`), they install on the timer a
 **reboot only when the server's loopback `/api/update/idle` route says nobody is
 connected**, and both channels are tagged releases only. The cache URL and its
 key are **placeholders until #96** (`nanokvm.update.{cacheUrl,trustedPublicKeys}`,
-`flake.nix` `nixConfig`, and the `ATTIC_*` Actions secrets). `docs/updates.md`.
+and the `ATTIC_*` Actions secrets; `flake.nix` carries the intended `nixConfig`
+as a **comment**, because a substituter listed there is contacted for every
+missing path on every host and an unreachable one is worse than none).
+**An unregistered store path is not a store path**: the generations a pre-#100
+board was given by `tar` are invisible to nix, `nix-env --set` on one fails and
+`nix-collect-garbage` DELETES it *with a gcroot naming it* (both measured) — so
+the bootstrap registers every generation the boot configs name
+(`nix-store --dump-db $(nix-store -qR …)` on the build host, `--load-db` on the
+board) and `nanokvm-update gc` refuses while one is unregistered.
+`docs/updates.md`.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

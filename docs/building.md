@@ -216,3 +216,14 @@ only by path from `/soc/ko`, with the required parameters.
   inner-loop targets when iterating on the app/encoder layer.
 - riscv64 is irrelevant here (that's the other, SG2002 project); this target is
   plain aarch64 and builds with the standard nixpkgs cross set.
+
+**There is no binary cache yet, and that is #96.** Every build above is from
+source on your machine. The flake carries the intended
+`nixConfig.extra-substituters` / `extra-trusted-public-keys` as a **comment**
+next to the `description`, not as a value: a substituter listed there is
+contacted for every path any build on any host is missing, so a placeholder URL
+would cost every developer and the release runner a warning or a connect
+timeout per path and buy nothing. #96 fills those two lines in, and the same
+cache is what the appliance substitutes its updates from
+([updates.md](updates.md)); until then, `nanokvm.update.cacheUrl` stays empty
+and a built image says at evaluation time that it cannot update itself.
