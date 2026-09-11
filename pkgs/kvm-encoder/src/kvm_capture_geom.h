@@ -1,11 +1,11 @@
 /*
- * kvm_capture_geom.h -- parametric geometry for the BLOB-FREE capture backend.
- *
- * The open capture backend (kvm_capture_open.c) drives the /dev/ax_* char
+ * kvm_capture_geom.h -- parametric geometry for the vendor-ioctl capture
+ * backend (issue #17). HISTORICAL: that backend drove the /dev/ax_* char
  * devices with byte-replayed selector payloads captured off the vendor path
- * (docs/blob-replacement.md, Stages 5-6). Five of those payloads carry the
- * frame geometry; this module owns them, so a non-1080p HDMI source can be
- * driven without editing captured byte arrays by hand (issue #17).
+ * (docs/blob-replacement.md, Stages 5-6) and is gone -- capture is plain V4L2
+ * on our own driver now. Five of those payloads carried the frame geometry;
+ * this module owns them and the laws derived from them, and its identity
+ * check is still run on every build.
  *
  * NOTHING ELSE about the payloads is derived or invented: the templates are the
  * captured 1080p bytes verbatim, and only the geometry words identified below

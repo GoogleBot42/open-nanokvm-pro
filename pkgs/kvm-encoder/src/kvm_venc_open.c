@@ -1,11 +1,11 @@
 /*
  * kvm_venc_open.c -- BLOB-FREE H.264 encode backend for the AX630C (#25).
  *
- * Drop-in replacement for the VENC half of kvm_pipeline.c (kvm_venc_create /
- * kvm_venc_destroy / kvm_venc_module_deinit / kvm_venc_send / kvm_venc_get /
- * kvm_venc_release / kvm_venc_set_fps / kvm_venc_set_gop). Compiled ONLY when
- * KVM_OPEN_VENC is defined; otherwise kvm_pipeline.c provides the vendor
- * AX_VENC versions. The public kvm_vision.h ABI and libkvm.c are unchanged.
+ * The encode half of the pipeline (kvm_venc_create / kvm_venc_destroy /
+ * kvm_venc_module_deinit / kvm_venc_send / kvm_venc_get / kvm_venc_release /
+ * kvm_venc_set_fps / kvm_venc_set_gop, declared in kvm_pipeline.h). It
+ * replaced a vendor AX_VENC twin; the public kvm_vision.h ABI and libkvm.c
+ * never changed for it.
  *
  * HOW IT WORKS. This is the device-proven open VC8000E path (#44 driver +
  * #45 EWL + the #25 IPPP session work, docs/blob-replacement.md) folded into
@@ -54,11 +54,9 @@
  *      OPENKVM_VENC_RC_LOG=1      one stderr line per frame (type, QP, bytes,
  *                                 running kbps) for bench validation
  *
- * The vendor AX_VENC_STREAM_T/NALU structs are used purely as the internal
- * hand-off shape libkvm.c already speaks (SDK headers, no vendor code).
+ * A finished access unit leaves here as a kvm_pack (kvm_types.h): our own
+ * hand-off shape since #102, when the vendor SDK headers went.
  */
-#ifdef KVM_OPEN_VENC
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,9 +70,6 @@
 
 #include <jpeglib.h>
 
-#include "ax_base_type.h"
-#include "ax_global_type.h"
-#include "ax_venc_comm.h"
 #include "kvm_pipeline.h"
 #include "kvm_preview.h"   /* kvm_frame_map: CPU view of a captured frame */
 
@@ -114,8 +109,8 @@ static struct {
     uint8_t  *pack;              /* SPS+PPS+slice (IDR) or slice (P) */
     uint32_t pack_len;
     int      pack_ready;
-    AX_VENC_PICTURE_CODING_TYPE_E pack_coding;
-    AX_VENC_NALU_INFO_T nalu[4]; /* VPS+SPS+PPS+slice at an HEVC IDR */
+    int      pack_keyframe;      /* the pack is an IDR */
+    kvm_nalu nalu[4];            /* VPS+SPS+PPS+slice at an HEVC IDR */
     uint32_t nalu_num;
 } V = { .fd = -1, .chn = -1 };
 
@@ -204,17 +199,16 @@ fail:
     return -1;
 }
 
-static int mj_send(AX_VIDEO_FRAME_INFO_T *frame)
+static int mj_send(const kvm_frame *f)
 {
-    AX_VIDEO_FRAME_T *vf = &frame->stVFrame;
-    if (!vf->u64PhyAddr[0] && !vf->u64VirAddr[0]) return -1;
-    uint32_t stride = vf->u32PicStride[0] ? vf->u32PicStride[0] : M.w;
-    if (stride & 1) stride = M.w;       /* YUYV macropixels need even stride */
-    uint32_t fsz = vf->u32FrameSize ? vf->u32FrameSize : stride * 2 * M.h;
+    if (!f->bus && !f->cpu) return -1;
+    uint32_t stride = f->stride_px ? f->stride_px : (uint32_t)M.w;
+    if (stride & 1) stride = (uint32_t)M.w;  /* YUYV macropixels need even stride */
+    uint32_t fsz = f->size ? f->size : stride * 2 * (uint32_t)M.h;
     /* CPU view: the capture backend's own mapping when it has one (V4L2
-     * mmap), else a /dev/mem window over the frame's physical address. */
-    const uint8_t *src = (const uint8_t *)(uintptr_t)vf->u64VirAddr[0];
-    if (!src) src = kvm_frame_map(vf->u64PhyAddr[0], fsz);
+     * mmap), else a /dev/mem window over the frame's bus address. */
+    const uint8_t *src = (const uint8_t *)f->cpu;
+    if (!src) src = kvm_frame_map(f->bus, fsz);
     if (!src) return -1;
 
     unsigned char *old = M.jout;        /* set before setjmp, never changed */
@@ -273,17 +267,17 @@ static void venc_open_down(void)
     V.pack_ready = 0; V.chn = -1;
 }
 
-int kvm_venc_create(int chn, AX_PAYLOAD_TYPE_E type, int w, int h,
+int kvm_venc_create(int chn, kvm_codec codec, int w, int h,
                     int fps, int gop, int qlty, int rc_mode)
 {
     if (V.fd >= 0) venc_open_down();
     if (M.active)  mj_down();
-    if (type == PT_MJPEG) return mj_create(chn, w, h, qlty);
-    if (type != PT_H264 && type != PT_H265) {
-        fprintf(stderr, "[openvenc][FAIL] payload type %d unsupported\n", (int)type);
+    if (codec == KVM_CODEC_MJPEG) return mj_create(chn, w, h, qlty);
+    if (codec != KVM_CODEC_H264 && codec != KVM_CODEC_H265) {
+        fprintf(stderr, "[openvenc][FAIL] codec %d unsupported\n", (int)codec);
         return -1;
     }
-    V.codec = (type == PT_H265) ? ENC_CODEC_HEVC : ENC_CODEC_H264;
+    V.codec = (codec == KVM_CODEC_H265) ? ENC_CODEC_HEVC : ENC_CODEC_H264;
     {
         const char *why;
         if (vcenc_geom_check(w, h, &why) || vcenc_geom_build_ex(&V.g, w, h, 0)) {
@@ -399,18 +393,17 @@ void kvm_venc_destroy(int chn)
 
 void kvm_venc_module_deinit(void) { venc_open_down(); mj_down(); }
 
-int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
+int kvm_venc_send(int chn, const kvm_frame *f)
 {
-    if (M.active) return (chn == M.chn) ? mj_send(frame) : -1;
+    if (M.active) return (chn == M.chn) ? mj_send(f) : -1;
     if (V.fd < 0 || chn != V.chn) return -1;
-    AX_VIDEO_FRAME_T *vf = &frame->stVFrame;
-    if (!vf->u64PhyAddr[0]) return -1;
-    if (vf->u32PicStride[0] && vf->u32PicStride[0] != V.g.stride && !V.stride_warned) {
+    if (!f->bus) return -1;
+    if (f->stride_px && f->stride_px != V.g.stride && !V.stride_warned) {
         /* the register program's input stride is align16(w) px == the open
          * capture stride; a mismatched frame would encode sheared -- refuse
          * loudly, once per session */
         fprintf(stderr, "[openvenc][FAIL] frame stride %u != %u\n",
-                vf->u32PicStride[0], V.g.stride);
+                f->stride_px, V.g.stride);
         V.stride_warned = 1;
         return -1;
     }
@@ -438,7 +431,7 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
         .pic_init_qp = V.ctrl != CTRL_NONE ? V.qp : 0,
         .rc_mode     = V.rc_mode,
         .codec       = V.codec,
-        .input_phys  = (uint32_t)vf->u64PhyAddr[0],
+        .input_phys  = (uint32_t)f->bus,
     };
     uint32_t *slot = V.cmd_pool + (uint32_t)id * (V.mem.cmd_unit_size / 4);
     ex.cmdbuf_size = vcenc_build_encode_cmdbuf(slot, (uint32_t)V.fb_bus, &V.g,
@@ -471,18 +464,15 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
     V.nalu_num = 0;
     if (is_idr && V.codec == ENC_CODEC_HEVC) {
         /* VPS+SPS+PPS from vcenc_hevc_header.h (byte-identical to the
-         * vendor's at 1080p); typed with the H265E NAL enums so libkvm can
-         * map them onto IMG_H265_TYPE_{SPS,PPS}. */
+         * vendor's at 1080p); tagged so libkvm can map them onto
+         * IMG_H265_TYPE_{SPS,PPS}. */
         uint32_t lvl = vcenc_hevc_level_idc(V.g.w, V.g.h);
         uint32_t vps = vcenc_write_vps(V.pack, lvl);
         uint32_t sps = vcenc_write_hevc_sps(V.pack + vps, V.g.w, V.g.h, lvl);
         uint32_t pps = vcenc_write_hevc_pps(V.pack + vps + sps, V.qp);
-        V.nalu[0] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = 0, .u32NaluLength = vps };
-        V.nalu[0].unNaluType.enH265EType = AX_H265E_NALU_VPS;
-        V.nalu[1] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = vps, .u32NaluLength = sps };
-        V.nalu[1].unNaluType.enH265EType = AX_H265E_NALU_SPS;
-        V.nalu[2] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = vps + sps, .u32NaluLength = pps };
-        V.nalu[2].unNaluType.enH265EType = AX_H265E_NALU_PPS;
+        V.nalu[0] = (kvm_nalu){ .offset = 0,         .length = vps, .kind = KVM_NAL_VPS };
+        V.nalu[1] = (kvm_nalu){ .offset = vps,       .length = sps, .kind = KVM_NAL_SPS };
+        V.nalu[2] = (kvm_nalu){ .offset = vps + sps, .length = pps, .kind = KVM_NAL_PPS };
         off = vps + sps + pps;
         V.nalu_num = 3;
     } else if (is_idr) {
@@ -490,27 +480,19 @@ int kvm_venc_send(int chn, AX_VIDEO_FRAME_INFO_T *frame)
         /* slice_qp_delta is 0 in the HW's slice header, so the PPS
          * pic_init_qp MUST equal the register program's frame QP. */
         uint32_t pps = vcenc_write_pps(V.pack + sps, V.qp);
-        V.nalu[0] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = 0, .u32NaluLength = sps };
-        V.nalu[0].unNaluType.enH264EType = AX_H264E_NALU_SPS;
-        V.nalu[1] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = sps, .u32NaluLength = pps };
-        V.nalu[1].unNaluType.enH264EType = AX_H264E_NALU_PPS;
+        V.nalu[0] = (kvm_nalu){ .offset = 0,   .length = sps, .kind = KVM_NAL_SPS };
+        V.nalu[1] = (kvm_nalu){ .offset = sps, .length = pps, .kind = KVM_NAL_PPS };
         off = sps + pps;
         V.nalu_num = 2;
     }
     volatile uint8_t *sb = (volatile uint8_t *)V.fb_map + V.g.off_out
                          + ENC_STREAM_SUBOFF;
     for (uint32_t i = 0; i < bytes; i++) V.pack[off + i] = sb[i];
-    V.nalu[V.nalu_num] = (AX_VENC_NALU_INFO_T){ .u32NaluOffset = off,
-                                                .u32NaluLength = bytes };
-    if (V.codec == ENC_CODEC_HEVC)
-        V.nalu[V.nalu_num].unNaluType.enH265EType =
-            is_idr ? AX_H265E_NALU_IDRSLICE : AX_H265E_NALU_PSLICE;
-    else
-        V.nalu[V.nalu_num].unNaluType.enH264EType =
-            is_idr ? AX_H264E_NALU_IDRSLICE : AX_H264E_NALU_PSLICE;
+    V.nalu[V.nalu_num] = (kvm_nalu){ .offset = off, .length = bytes,
+                                     .kind = is_idr ? KVM_NAL_IDR : KVM_NAL_P };
     V.nalu_num++;
     V.pack_len = off + bytes;
-    V.pack_coding = is_idr ? AX_VENC_INTRA_FRAME : AX_VENC_PREDICTED_FRAME;
+    V.pack_keyframe = is_idr;
     V.pack_ready = 1;
     if (V.ctrl != CTRL_NONE) {
         vcenc_rc_update(&V.rc, 8.0 * V.pack_len, qp);   /* wire bytes */
@@ -526,37 +508,37 @@ out:
     return rc;
 }
 
-int kvm_venc_get(int chn, AX_VENC_STREAM_T *st, int timeout_ms)
+int kvm_venc_get(int chn, kvm_pack *pk, int timeout_ms)
 {
     (void)timeout_ms;   /* encode is synchronous in kvm_venc_send */
     if (M.active) {     /* MJPEG: the whole JPEG is one pack, no NALs */
         if (chn != M.chn || !M.ready) return -1;
-        memset(st, 0, sizeof *st);
-        st->stPack.pu8Addr      = M.jout;
-        st->stPack.u32Len       = M.jout_len;
-        st->stPack.enCodingType = AX_VENC_INTRA_FRAME;
+        memset(pk, 0, sizeof *pk);
+        pk->data     = M.jout;
+        pk->len      = M.jout_len;
+        pk->keyframe = 1;
         M.ready = 0;
         return 0;
     }
     if (V.fd < 0 || chn != V.chn || !V.pack_ready) return -1;
-    memset(st, 0, sizeof *st);
-    st->stPack.pu8Addr      = V.pack;
-    st->stPack.u32Len       = V.pack_len;
-    st->stPack.enCodingType = V.pack_coding;
-    st->stPack.u32NaluNum   = V.nalu_num;
-    memcpy(st->stPack.stNaluInfo, V.nalu, V.nalu_num * sizeof(V.nalu[0]));
+    memset(pk, 0, sizeof *pk);
+    pk->data     = V.pack;
+    pk->len      = V.pack_len;
+    pk->keyframe = V.pack_keyframe;
+    pk->nalu_num = V.nalu_num;
+    memcpy(pk->nalu, V.nalu, V.nalu_num * sizeof(V.nalu[0]));
     V.pack_ready = 0;
     return 0;
 }
 
-void kvm_venc_release(int chn, AX_VENC_STREAM_T *st)
+void kvm_venc_release(int chn, kvm_pack *pk)
 {
-    (void)chn; (void)st;   /* pack buffer is session-owned */
+    (void)chn; (void)pk;   /* pack buffer is session-owned */
 }
 
-int kvm_venc_set_fps(int chn, AX_PAYLOAD_TYPE_E type, int fps)
+int kvm_venc_set_fps(int chn, kvm_codec codec, int fps)
 {
-    (void)type;
+    (void)codec;
     if (V.fd < 0 || chn != V.chn) return -1;
     if (fps <= 0 || fps > 240) return -1;
     V.fps = (uint32_t)fps;
@@ -585,4 +567,3 @@ int kvm_venc_set_gop(int chn, int gop)
     return 0;
 }
 
-#endif /* KVM_OPEN_VENC */

@@ -15,20 +15,21 @@
 
 #include <stdint.h>
 
-#include "ax_global_type.h"
+#include "kvm_types.h"
 
 /* Convert + publish one frame. Internally rate-limited (a call more often
  * than ~12 fps is a cheap no-op), so callers may invoke it per frame. */
-void kvm_preview_publish(const AX_VIDEO_FRAME_T *vf);
+void kvm_preview_publish(const kvm_frame *f);
 
 /* Drop cached phys->virt mappings and the scaler table. Must be called when
  * the capture pipeline is torn down (pool phys addresses change across a
  * suspend/resume cycle). */
 void kvm_preview_reset(void);
 
-/* CPU view of a captured frame's phys block (read-only). Same cached
- * AX_SYS_Mmap-or-/dev/mem route the preview scaler uses; the cache lives as
- * long as the capture pipeline (kvm_preview_reset drops it). NULL on failure. */
+/* CPU view of a captured frame's memory (read-only), for a frame that
+ * arrived without one: the same cached /dev/mem route the preview scaler
+ * falls back to. The cache lives as long as the capture pipeline
+ * (kvm_preview_reset drops it). NULL on failure. */
 const void *kvm_frame_map(uint64_t phys, uint32_t size);
 
 #endif /* KVM_PREVIEW_H_ */

@@ -1,5 +1,5 @@
 {
-  description = "Self-built open firmware for the Sipeed NanoKVM-Pro (Axera AX630C): boot chain, kernel, and app layer from source; Axera's redistributable media libraries and ax_*.ko modules pinned as binary inputs";
+  description = "Self-built open firmware for the Sipeed NanoKVM-Pro (Axera AX630C): boot chain, kernel, drivers and app layer from source; the aic8800 radio firmware is the only closed content";
 
   # ---- the release binary cache (#96) ------------------------------------
   # NOT WIRED UP HERE YET, ON PURPOSE. Nobody should have to build a cross
@@ -49,15 +49,6 @@
     # flasher pushes into BootROM RAM (pkgs/boot.nix).
     maix_ax620e_sdk = {
       url = "github:sipeed/maix_ax620e_sdk/45ebcc32dfcfade1f8cfd1d8f70da67b86ea2902";
-      flake = false;
-    };
-
-    # The V3.0.0 Axera media HEADERS (ax_base_type.h, ax_venc_comm.h, ...).
-    # Our blob-free libkvm still compiles against them for the SDK's frame and
-    # stream types; NO library out of this tree is linked or shipped, and
-    # nixos/appliance.nix asserts the closure carries none of it.
-    maix_ax620e_sdk_msp = {
-      url = "github:sipeed/maix_ax620e_sdk_msp/1bd333bc5ec074b868107102889044e79209771d";
       flake = false;
     };
 
@@ -113,7 +104,6 @@
           inherit pkgs crossPkgs inputs;
           inherit (inputs)
             maix_ax620e_sdk
-            maix_ax620e_sdk_msp
             nanokvm-pro-src;
         };
 
@@ -127,12 +117,6 @@
           pkgs.lib.makeOverridable (import path) (callArgs // extra);
 
         toolchain = callPkg ./pkgs/toolchain.nix { };
-
-        # The Axera media HEADERS (see the input). The last thing this project
-        # takes from the vendor userspace: our blob-free libkvm compiles
-        # against the SDK's frame/stream types. No library out of it is linked
-        # into the appliance and none reaches the image.
-        axera-libs = callPkg ./pkgs/axera-libs.nix { };
 
         # The vendor boot chain, built from source. Nothing BOOTS from it any
         # more (#97): the appliance runs mainline TF-A and mainline U-Boot off
@@ -278,11 +262,9 @@
         # libkvm.so -- THE ONE BUILD, and it is blob-free (#60): the open V4L2
         # capture driver feeding the open VC8000E encoder, linking no vendor
         # library at all. The closed-backend variants that selected the vendor
-        # MPI capture path or AX_VENC are gone with the 4.19 image (#97); their
-        # record is docs/blob-replacement.md.
-        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix {
-          inherit axera-libs; openCapture = true; openVenc = true; v4l2Capture = true;
-        };
+        # MPI capture path or AX_VENC went with the 4.19 image (#97), and their
+        # SDK headers with #102; the record is docs/blob-replacement.md.
+        kvm-encoder = callPkg ./pkgs/kvm-encoder.nix { };
         # Host-side 1080p byte-identity proof for the open backend's parametric
         # geometry (#17). See pkgs/kvm-encoder-geom-test.nix.
         kvm-encoder-geom-test = callPkg ./pkgs/kvm-encoder-geom-test.nix { };
@@ -603,7 +585,7 @@
       {
         packages = {
           inherit
-            toolchain axera-libs boot
+            toolchain boot
             atf-mainline atf-mainline-debug
             initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-appliance

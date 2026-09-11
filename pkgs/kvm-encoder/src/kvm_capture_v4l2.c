@@ -3,8 +3,8 @@
  * (pkgs/open-vin-capture -> /dev/videoN, driver "open_vin_capture").
  * Epic #55 / issue #60 (M3).
  *
- * Replaces the raw-ioctl replay of the vendor ax_proton path
- * (kvm_capture_open.c) with plain V4L2:
+ * Replaced the raw-ioctl replay of the vendor ax_proton path with plain
+ * V4L2:
  *
  *   S_FMT(YUYV, WxH) -> REQBUFS(MMAP) -> QUERYBUF+mmap -> EXPBUF
  *   -> QBUF all -> STREAMON -> poll+DQBUF ... QBUF (release)
@@ -19,11 +19,10 @@
  * /dev/mem window is needed either.
  *
  * Nothing vendor-specific is involved: no vendor module, library, ioctl or
- * payload. The only shared vocabulary is the AX_IMG_INFO_T seam type that
- * libkvm.c / kvm_venc_open.c / kvm_preview.c already exchange frames in.
+ * payload -- and since #102 no vendor header either. Frames leave here as
+ * our own kvm_frame (kvm_types.h), which is what libkvm.c, kvm_venc_open.c
+ * and kvm_preview.c exchange.
  */
-#ifdef KVM_V4L2_CAPTURE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +37,26 @@
 
 #include "kvm_pipeline.h"
 #include "vcmd_abi.h"       /* VCMD_DEV_NODE + HANTRO_IOCH_IMPORT_DMABUF */
+
+/* THE TWO REAL ABIs THIS FILE SPEAKS, asserted against kvm_frame (#102).
+ * kvm_frame's layout is ours and crosses no boundary, but every field here
+ * carries a UAPI value out of this translation unit and must not truncate
+ * it: v4l2_pix_format's geometry/bytesperline/sizeimage and
+ * v4l2_buffer.sequence are __u32, and the open VC8000E driver's dma-buf
+ * import (drivers/media/platform/axera/vc8000e/framebuf_alloc.h, mirrored in
+ * vcmd_abi.h) hands back an `unsigned long` bus address. */
+_Static_assert(sizeof(((struct v4l2_pix_format *)0)->width)
+               <= sizeof(((kvm_frame *)0)->width), "kvm_frame.width narrower than V4L2's");
+_Static_assert(sizeof(((struct v4l2_pix_format *)0)->height)
+               <= sizeof(((kvm_frame *)0)->height), "kvm_frame.height narrower than V4L2's");
+_Static_assert(sizeof(((struct v4l2_pix_format *)0)->bytesperline)
+               <= sizeof(((kvm_frame *)0)->stride_px), "kvm_frame.stride_px narrower than V4L2's");
+_Static_assert(sizeof(((struct v4l2_pix_format *)0)->sizeimage)
+               <= sizeof(((kvm_frame *)0)->size), "kvm_frame.size narrower than V4L2's");
+_Static_assert(sizeof(((struct v4l2_buffer *)0)->sequence)
+               <= sizeof(((kvm_frame *)0)->seq), "kvm_frame.seq narrower than V4L2's");
+_Static_assert(sizeof(((struct dmabuf_import_parameter *)0)->bus_addr)
+               <= sizeof(((kvm_frame *)0)->bus), "kvm_frame.bus narrower than the VCMD driver's");
 
 #define V4L2_DRIVER_NAME "open_vin_capture"
 #define V4L2_NBUF        4         /* 3 in flight + the one being encoded */
@@ -155,7 +174,7 @@ int kvm_sys_init(kvm_cap_ctx *c, int w, int h)
     S.stride_px = f.fmt.pix.bytesperline ? f.fmt.pix.bytesperline / 2 : (uint32_t)w;
     S.sizeimage = f.fmt.pix.sizeimage ? f.fmt.pix.sizeimage : (uint32_t)w * 2u * (uint32_t)h;
     c->w = w; c->h = h;
-    c->sysInit = AX_TRUE;
+    c->sysInit = 1;
     return 0;
 }
 
@@ -251,7 +270,7 @@ int kvm_cap_start(kvm_cap_ctx *c, int w, int h, int fps)
         goto fail;
     }
     S.streaming = 1;
-    c->streamOn = AX_TRUE;
+    c->streamOn = 1;
     if (!S.logged) {
         S.logged = 1;
         fprintf(stderr, "[openkvm-v4l2] capture up %dx%d YUYV stride=%u px via %s, %u buffers, "
@@ -288,12 +307,12 @@ void kvm_cap_stop(kvm_cap_ctx *c)
     rb.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     rb.memory = V4L2_MEMORY_MMAP;
     ioctl(S.vfd, VIDIOC_REQBUFS, &rb);
-    if (c) c->streamOn = AX_FALSE;
+    if (c) c->streamOn = 0;
 }
 
-int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
+int kvm_cap_get(kvm_frame *f, int timeout_ms)
 {
-    memset(img, 0, sizeof(*img));
+    memset(f, 0, sizeof(*f));
     if (!S.streaming) return -1;
 
     /* libkvm releases before it gets again; tolerate a caller that does not */
@@ -317,23 +336,21 @@ int kvm_cap_get(AX_IMG_INFO_T *img, int timeout_ms)
     if (b.index >= S.nbuf) { return -1; }
     S.dq = (int)b.index;
 
-    AX_VIDEO_FRAME_T *f = &img->tFrameInfo.stVFrame;
-    f->u32Width        = (AX_U32)S.w;
-    f->u32Height       = (AX_U32)S.h;
-    f->enImgFormat     = AX_FORMAT_YUV422_INTERLEAVED_YUYV;
-    f->u32PicStride[0] = S.stride_px;                 /* pixels */
-    f->u64PhyAddr[0]   = S.b[b.index].bus;            /* encoder input */
-    f->u64VirAddr[0]   = (AX_U64)(uintptr_t)S.b[b.index].map;  /* CPU view */
-    f->u32BlkId[0]     = b.index;
-    f->u32FrameSize    = S.sizeimage;
-    f->u64SeqNum       = b.sequence;
-    img->tFrameInfo.enModId = AX_ID_VIN;
+    f->width     = (uint32_t)S.w;
+    f->height    = (uint32_t)S.h;
+    f->fmt       = KVM_PIX_YUYV;
+    f->stride_px = S.stride_px;               /* pixels */
+    f->bus       = S.b[b.index].bus;          /* encoder input */
+    f->cpu       = S.b[b.index].map;          /* CPU view */
+    f->index     = b.index;
+    f->size      = S.sizeimage;
+    f->seq       = b.sequence;
     return 0;
 }
 
-void kvm_cap_release(AX_IMG_INFO_T *img)
+void kvm_cap_release(kvm_frame *f)
 {
-    (void)img;
+    (void)f;
     if (S.dq < 0 || !S.streaming) { S.dq = -1; return; }
     struct v4l2_buffer b;
     memset(&b, 0, sizeof b);
@@ -345,4 +362,3 @@ void kvm_cap_release(AX_IMG_INFO_T *img)
     S.dq = -1;
 }
 
-#endif /* KVM_V4L2_CAPTURE */

@@ -1,10 +1,11 @@
 /*
  * libkvm.c -- open reimplementation of Sipeed's closed libkvm.so for the
  * NanoKVM-Pro (AX630C), exposing exactly the kvm_vision.h ABI the NanoKVM Go
- * server calls. Backed by our documented-Axera-MPI pipeline (kvm_pipeline.*).
+ * server calls. Backed by our open capture+encode pipeline (kvm_pipeline.*).
  *
- * Model: the AX_VENC encoder returns ONE NAL/pack per AX_VENC_GetStream call,
- * whose NALU type we translate to the kvmv return codes (SPS/PPS/I/P). Each
+ * Model: the encoder hands back one finished access unit (kvm_pack) per
+ * kvm_venc_get, whose NALs we translate to the kvmv return codes
+ * (SPS/PPS/I/P) one per read_img. Each
  * read_img returns one encoded unit in a LIBRARY-OWNED buffer, valid until
  * the next video call: the Go server copies via C.GoBytes and NEVER calls
  * kvmv_free_data (verified against the pinned server source), so a malloc
@@ -37,9 +38,6 @@
 #include <opus/opus.h>
 #include <alsa/asoundlib.h>
 
-#include "ax_base_type.h"
-#include "ax_global_type.h"
-#include "ax_venc_comm.h"
 #include "kvm_pipeline.h"
 #include "kvm_preview.h"
 #include "kvm_vision.h"
@@ -74,12 +72,12 @@ static int64_t kvm_mono_us(void)
 static uint8_t *s_sps = NULL; static uint32_t s_sps_len = 0;
 static uint8_t *s_pps = NULL; static uint32_t s_pps_len = 0;
 
-/* One AX_VENC pack may carry several NALs (SPS+PPS+IDR). The kvm_vision ABI
+/* One encoder pack may carry several NALs (SPS+PPS+IDR). The kvm_vision ABI
  * returns one NAL per read_img, so we buffer a whole pack and serve its NALs
  * across successive calls. */
 static uint8_t *s_pend = NULL; static uint32_t s_pend_cap = 0, s_pend_len = 0;
-static AX_VENC_NALU_INFO_T s_nalu[AX_MAX_VENC_NALU_NUM];
-static AX_VENC_PICTURE_CODING_TYPE_E s_pend_coding;
+static kvm_nalu s_nalu[KVM_MAX_NALU];
+static int      s_pend_keyframe;
 static uint32_t s_pend_num = 0, s_pend_idx = 0;
 
 static void cache_nal(uint8_t **dst, uint32_t *dlen, const uint8_t *src, uint32_t len)
@@ -108,9 +106,9 @@ void kvmv_init(uint8_t _debug_info_en)
 {
     s_debug = _debug_info_en;
     /* Distinctive marker so we can PROVE, from the server's own log, that OUR
-     * open libkvm (documented Axera MPI, self-capturing, no Sipeed native code,
-     * no kvm_vin/vin_sock) is the library serving video -- not the stock blob. */
-    fprintf(stderr, "OPEN-KVM libkvm active (open Axera-MPI capture+encode, debug=%u)\n",
+     * libkvm (open V4L2 capture + open VC8000E encode, no vendor library and
+     * no Sipeed native code) is the library serving video. */
+    fprintf(stderr, "OPEN-KVM libkvm active (open V4L2 capture + VC8000E encode, debug=%u)\n",
             (unsigned)_debug_info_en);
     fflush(stderr);
 }
@@ -118,17 +116,16 @@ void kvmv_init(uint8_t _debug_info_en)
 static void teardown_locked(void)
 {
     if (s_cur_chn >= 0) { kvm_venc_destroy(s_cur_chn); s_cur_chn = -1; s_cur_type = -1; }
-    /* Release the preview's frame mappings BEFORE the SYS layer goes away:
-     * kvm_preview_reset() calls AX_SYS_Munmap(), which is only valid while
-     * libax_sys is initialized. Reset is idempotent, and pool phys addrs
-     * change across teardown/re-init anyway, so it must run every teardown. */
+    /* Release the preview's frame mappings BEFORE the capture buffers they
+     * point into are freed. Reset is idempotent, and buffer addresses change
+     * across teardown/re-init anyway, so it must run every teardown. */
     kvm_preview_reset();
     if (s_inited) { kvm_cap_stop(&s_cap); kvm_venc_module_deinit(); kvm_sys_deinit(&s_cap); s_inited = 0; }
 }
 
 /* Resolve the frame rate a VENC channel is actually built with. The web UI
- * legitimately sends fps=0 ("auto") on every page load; the VC8000E rejects a
- * zero frame rate (AX_VENC_CreateChn -> AX_ERR_VENC_ILLEGAL_PARAM), so 0 is a
+ * legitimately sends fps=0 ("auto") on every page load; a zero frame rate is
+ * not a rate the encoder can be built for, so 0 is a
  * SENTINEL here, never a value: resolve it from the live LT6911 source at each
  * channel (re)build, falling back to 60. */
 static int effective_fps_locked(void)
@@ -164,11 +161,11 @@ static int ensure_chn_locked(int want_type, int w, int h, int qlty)
      * after the switch would hand e.g. an H.264 SPS+IDR back as a "JPEG". */
     s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0;
     s_qlty = qlty;
-    AX_PAYLOAD_TYPE_E pt = (want_type == 0) ? PT_MJPEG
-                         : (want_type == 2) ? PT_H265 : PT_H264;
-    if (kvm_venc_create(chn, pt, w, h, effective_fps_locked(), s_gop, qlty, s_rc) != 0) {
-        /* CreateChn can succeed and a later step fail: destroy the half-created
-         * channel or every future create gets AX_ERR_VENC_EXIST forever. */
+    kvm_codec codec = (want_type == 0) ? KVM_CODEC_MJPEG
+                    : (want_type == 2) ? KVM_CODEC_H265 : KVM_CODEC_H264;
+    if (kvm_venc_create(chn, codec, w, h, effective_fps_locked(), s_gop, qlty, s_rc) != 0) {
+        /* A create can succeed partway and a later step fail: destroy the
+         * half-created channel rather than leaving the backend holding it. */
         kvm_venc_destroy(chn);
         s_chn_fail_until = kvm_mono_us() + 500000;
         return -1;
@@ -197,8 +194,8 @@ static int init_pipeline_locked(int w, int h)
     }
     if (w <= 0 || h <= 0) {
         /* HDMI unlocked and the caller passed 0x0 (screen.go forwards the raw
-         * /proc values): a 0-byte VB pool and a 0x0 VIN dev "succeed" partway
-         * and then loop on AX_ERR_VIN_ILLEGAL_PARAM. Refuse bring-up instead. */
+         * /proc values): bringing the capture up at 0x0 gets partway and then
+         * fails once per read. Refuse bring-up instead. */
         fprintf(stderr, "OPEN-KVM: no source geometry (%dx%d, HDMI unlocked?); refusing bring-up\n", w, h);
         return -1;
     }
@@ -213,20 +210,20 @@ static int init_pipeline_locked(int w, int h)
  * On allocation failure the pack is dropped (pending state cleared) and the
  * caller's next_from_pending returns IMG_NOT_EXIST -- a skipped frame, not a
  * crash. */
-static void stash_pack(AX_VENC_STREAM_T *st)
+static void stash_pack(const kvm_pack *pk)
 {
-    uint32_t len = st->stPack.u32Len;
+    uint32_t len = pk->len;
     if (len > s_pend_cap) {
         uint8_t *n = realloc(s_pend, len);
         if (!n) { s_pend_len = 0; s_pend_num = 0; s_pend_idx = 0; return; }
         s_pend = n; s_pend_cap = len;
     }
-    memcpy(s_pend, st->stPack.pu8Addr, len);
+    memcpy(s_pend, pk->data, len);
     s_pend_len = len;
-    s_pend_coding = st->stPack.enCodingType;
-    s_pend_num = st->stPack.u32NaluNum;
-    if (s_pend_num > AX_MAX_VENC_NALU_NUM) s_pend_num = AX_MAX_VENC_NALU_NUM;
-    memcpy(s_nalu, st->stPack.stNaluInfo, s_pend_num * sizeof(s_nalu[0]));
+    s_pend_keyframe = pk->keyframe;
+    s_pend_num = pk->nalu_num;
+    if (s_pend_num > KVM_MAX_NALU) s_pend_num = KVM_MAX_NALU;
+    memcpy(s_nalu, pk->nalu, s_pend_num * sizeof(s_nalu[0]));
     s_pend_idx = 0;
 }
 
@@ -260,13 +257,13 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
         memcpy(b, s_pend, s_pend_len);
         *out = b; *olen = s_pend_len; s_pend_len = 0;
         if (type == 2)
-            return (s_pend_coding == AX_VENC_INTRA_FRAME) ? IMG_H265_TYPE_IF : IMG_H265_TYPE_PF;
-        return (s_pend_coding == AX_VENC_INTRA_FRAME) ? IMG_H264_TYPE_IF : IMG_H264_TYPE_PF;
+            return s_pend_keyframe ? IMG_H265_TYPE_IF : IMG_H265_TYPE_PF;
+        return s_pend_keyframe ? IMG_H264_TYPE_IF : IMG_H264_TYPE_PF;
     }
     if (s_pend_idx >= s_pend_num) { s_pend_len = 0; return IMG_NOT_EXIST; }
 
-    AX_VENC_NALU_INFO_T *ni = &s_nalu[s_pend_idx];
-    uint32_t off = ni->u32NaluOffset, len = ni->u32NaluLength;
+    const kvm_nalu *ni = &s_nalu[s_pend_idx];
+    uint32_t off = ni->offset, len = ni->length;
     if (off + len > s_pend_len) { len = (off < s_pend_len) ? s_pend_len - off : 0; }
     uint8_t *b = serve_buf(len ? len : 1);
     if (!b) return IMG_NOT_EXIST;       /* cursor not advanced; NAL retried */
@@ -276,22 +273,19 @@ static int next_from_pending(int type, uint8_t **out, uint32_t *olen)
     if (s_pend_idx >= s_pend_num) s_pend_len = 0;   /* consumed */
 
     if (type == 2) {   /* H.265 (#64): VPS rides the SPS slot (VPS+SPS cached together) */
-        switch (ni->unNaluType.enH265EType) {
-            case AX_H265E_NALU_VPS: cache_nal(&s_sps, &s_sps_len, b, len); return IMG_H265_TYPE_SPS;
-            case AX_H265E_NALU_SPS: cache_append(&s_sps, &s_sps_len, b, len); return IMG_H265_TYPE_SPS;
-            case AX_H265E_NALU_PPS: cache_nal(&s_pps, &s_pps_len, b, len); return IMG_H265_TYPE_PPS;
-            case AX_H265E_NALU_ISLICE:
-            case AX_H265E_NALU_IDRSLICE: return IMG_H265_TYPE_IF;
-            default:                     return IMG_H265_TYPE_PF;
+        switch (ni->kind) {
+            case KVM_NAL_VPS: cache_nal(&s_sps, &s_sps_len, b, len);    return IMG_H265_TYPE_SPS;
+            case KVM_NAL_SPS: cache_append(&s_sps, &s_sps_len, b, len); return IMG_H265_TYPE_SPS;
+            case KVM_NAL_PPS: cache_nal(&s_pps, &s_pps_len, b, len);    return IMG_H265_TYPE_PPS;
+            case KVM_NAL_IDR: return IMG_H265_TYPE_IF;
+            default:          return IMG_H265_TYPE_PF;
         }
     }
-    switch (ni->unNaluType.enH264EType) {
-        case AX_H264E_NALU_SPS: cache_nal(&s_sps, &s_sps_len, b, len); return IMG_H264_TYPE_SPS;
-        case AX_H264E_NALU_PPS: cache_nal(&s_pps, &s_pps_len, b, len); return IMG_H264_TYPE_PPS;
-        case AX_H264E_NALU_ISLICE:
-        case AX_H264E_NALU_IDRSLICE: return IMG_H264_TYPE_IF;
-        case AX_H264E_NALU_PSLICE:   return IMG_H264_TYPE_PF;
-        default:                     return IMG_H264_TYPE_PF;
+    switch (ni->kind) {
+        case KVM_NAL_SPS: cache_nal(&s_sps, &s_sps_len, b, len); return IMG_H264_TYPE_SPS;
+        case KVM_NAL_PPS: cache_nal(&s_pps, &s_pps_len, b, len); return IMG_H264_TYPE_PPS;
+        case KVM_NAL_IDR: return IMG_H264_TYPE_IF;
+        default:          return IMG_H264_TYPE_PF;
     }
 }
 
@@ -339,18 +333,18 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
     }
 
     /* 1) grab an already-encoded pack if the encoder has one ready */
-    AX_VENC_STREAM_T st;
-    if (kvm_venc_get(s_cur_chn, &st, 5) == 0) {
-        stash_pack(&st);
-        kvm_venc_release(s_cur_chn, &st);
+    kvm_pack pk;
+    if (kvm_venc_get(s_cur_chn, &pk, 5) == 0) {
+        stash_pack(&pk);
+        kvm_venc_release(s_cur_chn, &pk);
         rc = next_from_pending(want_type, _pp_kvm_data, _p_kvmv_data_size);
         pthread_mutex_unlock(&s_lock);
         return rc;
     }
 
     /* 2) otherwise capture+encode a fresh frame */
-    AX_IMG_INFO_T img;
-    if (kvm_cap_get(&img, 1000) != 0) {
+    kvm_frame frame;
+    if (kvm_cap_get(&frame, 1000) != 0) {
         /* Frame-starvation self-heal. A capture that STREAMON'd fine can stop
          * delivering frames after an HPD/link glitch (host sleep/wake, a cable
          * event, an EDID/HPD cycle) even at the SAME resolution: the CSI-2
@@ -377,12 +371,12 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
     s_last_enc_cap_us = kvm_mono_us();
     s_last_frame_us = s_last_enc_cap_us;
     if (s_last_enc_cap_us < s_prev_lease_us)          /* preview page open: tap */
-        kvm_preview_publish(&img.tFrameInfo.stVFrame);
-    kvm_venc_send(s_cur_chn, &img.tFrameInfo);
-    kvm_cap_release(&img);
-    if (kvm_venc_get(s_cur_chn, &st, 2000) == 0) {
-        stash_pack(&st);
-        kvm_venc_release(s_cur_chn, &st);
+        kvm_preview_publish(&frame);
+    kvm_venc_send(s_cur_chn, &frame);
+    kvm_cap_release(&frame);
+    if (kvm_venc_get(s_cur_chn, &pk, 2000) == 0) {
+        stash_pack(&pk);
+        kvm_venc_release(s_cur_chn, &pk);
         rc = next_from_pending(want_type, _pp_kvm_data, _p_kvmv_data_size);
     }
     pthread_mutex_unlock(&s_lock);
@@ -435,8 +429,8 @@ int kvmv_set_fps(uint8_t _fps)
     pthread_mutex_lock(&s_lock);
     s_fps = _fps;   /* 0 = "auto": resolved per rebuild by effective_fps_locked */
     if (s_cur_chn >= 0)
-        kvm_venc_set_fps(s_cur_chn, (s_cur_type == 0) ? PT_MJPEG
-                                    : (s_cur_type == 2) ? PT_H265 : PT_H264,
+        kvm_venc_set_fps(s_cur_chn, (s_cur_type == 0) ? KVM_CODEC_MJPEG
+                                    : (s_cur_type == 2) ? KVM_CODEC_H265 : KVM_CODEC_H264,
                          effective_fps_locked());
     pthread_mutex_unlock(&s_lock);
     return 0;
@@ -641,9 +635,9 @@ int kvmv_read_audio(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 /* ---- idle power management (our ABI extension; see kvm_vision.h) ----------
  *
  * Suspend depth: FULL SoC-side teardown -- the same proven sequence as
- * kvmv_deinit (VENC chn destroy + AX_VENC_Deinit, ISP/VIN/MIPI_RX stop and
- * destroy, AX_POOL_Exit releasing the ~16 MB CMM pool, AX_SYS_Deinit) plus the
- * ALSA/Opus audio capture. Resume is the unmodified lazy auto-init path
+ * kvmv_deinit (destroy the encode channel and release the encoder, STREAMOFF
+ * and free the capture buffers, close the capture node) plus the ALSA/Opus
+ * audio capture. Resume is the unmodified lazy auto-init path
  * (init_pipeline_locked + ensure_chn_locked), which re-reads the LIVE source
  * geometry from /proc/lt6911_info -- so an HDMI mode change during the nap is
  * absorbed exactly like a fresh server start.
@@ -698,12 +692,12 @@ int kvmv_preview_tick(void)
         pthread_mutex_unlock(&s_lock);
         return -1;
     }
-    AX_IMG_INFO_T img;
-    if (kvm_cap_get(&img, 200) != 0) {
+    kvm_frame frame;
+    if (kvm_cap_get(&frame, 200) != 0) {
         rc = -1;
     } else {
-        kvm_preview_publish(&img.tFrameInfo.stVFrame);
-        kvm_cap_release(&img);
+        kvm_preview_publish(&frame);
+        kvm_cap_release(&frame);
     }
     pthread_mutex_unlock(&s_lock);
     return rc;
