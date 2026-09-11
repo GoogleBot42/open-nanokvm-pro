@@ -224,6 +224,27 @@ that is arbitration, not a bug.
   re-deriving the fallback — but `systemctl start nanokvm-mark-good` is a
   **no-op** after a boot (`Type=oneshot`, `RemainAfterExit=yes`, still
   `active`), so it must be `restart`. Both seen in #99 round 4, 2026-09-11.
+- **`/nix/store` on the appliance is a READ-ONLY BIND MOUNT** (`boot.readOnlyNixStore`,
+  NixOS's default), and `docs/updates.md` used to claim the remount was a no-op
+  here. It is not: a hand `tar -C /nix/store` fails with **exit 2 and nothing
+  useful on stderr**, and `mount -o remount,ro` alone is a silent no-op on a bind
+  — it needs `remount,bind,ro`. `nanokvm-update` flips it both ways around its
+  `nix copy`; anything writing the store by hand has to do the same. `nix` itself
+  needs no help (as root it unshares a mount namespace). #100, 2026-09-11.
+- **Two different URLs decide one press of the web UI's update button.** The
+  server's `getLatest()` runs BEFORE it hands off to `nanokvm-update install-now`
+  and fetches the manifest from `updateBaseUrl` — **compiled into the Go binary**,
+  the GitHub release — while the closure comes from `nanokvm.update.stableUrl`. No
+  release publishes `nanokvm_pro_sys_latest.json` yet, so the button answers
+  `{"code":-2}` with a `404` in the server log on a board whose timer path updates
+  perfectly. Do not debug the cache when the button fails; read
+  `/var/log/nanokvm/NanoKVM-Server.log` first. #100, 2026-09-11.
+- **`nanokvm-update gc` leaves BOTH extlinux menus naming generations it just
+  deleted.** The collector rewrites no boot config, so a `LABEL` can point at an
+  `init=` that is gone. Never unsafe — the `DEFAULT` entries are exactly what `gc`
+  pins — but repair it: the next `switch-to-configuration boot` fixes
+  `extlinux.conf`, and `systemctl restart nanokvm-mark-good` (**restart**, not
+  `start`) fixes `extlinux-fallback.conf`. #100, 2026-09-11.
 - **`CONFIG_LOCALVERSION` lives in two files and the build checks both.**
   `pkgs/kernel-mainline/ax630c.config` sets it; `pkgs/kernel-mainline.nix`
   asserts the built `include/config/kernel.release` equals the string it
@@ -376,11 +397,25 @@ as a **comment**, because a substituter listed there is contacted for every
 missing path on every host and an unreachable one is worse than none).
 **An unregistered store path is not a store path**: the generations a pre-#100
 board was given by `tar` are invisible to nix, `nix-env --set` on one fails and
-`nix-collect-garbage` DELETES it *with a gcroot naming it* (both measured) — so
-the bootstrap registers every generation the boot configs name
+`nix-collect-garbage` DELETES it *with a gcroot naming it* (both measured, and
+the collection was watched doing it on hardware) — so the bootstrap registers
+every generation the boot configs name
 (`nix-store --dump-db $(nix-store -qR …)` on the build host, `--load-db` on the
 board) and `nanokvm-update gc` refuses while one is unregistered.
 `docs/updates.md`.
+
+**HARDWARE-PROVEN 2026-09-11 (#100), and the bootstrap is DONE on this board.**
+Nix 2.34.8 is on it, 748 registered paths, `nix-store --verify --check-contents`
+clean. **A switch is now `nix copy --to ssh://root@<board>` + `nanokvm-update
+install-toplevel <path>`** (key auth — nix drives `ssh` itself, so a password is
+not an option), and an update from a cache, the idle gate, the unattended reboot
+and a `bootcount` rollback onto the previous generation all ran end to end
+against a throwaway signed `file://` cache tunnelled in over SSH
+(`.#appliance-toplevel-cachetest` is that harness; it is inert under pure
+evaluation). Eight boots, 51-58 s each, one U-Boot attempt every time. Still
+unproven: a real cache (#96), an update that changes the KERNEL, a generation
+that genuinely fails to boot, and the store db that `mkStoreDb` builds into a
+flashed image. `docs/mainline-port.md` "What exists now (#100)".
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

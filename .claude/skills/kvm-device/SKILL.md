@@ -223,7 +223,16 @@ unreachable and the board *should* be up, confirm with
 
 The appliance has `nix` since #100, so a configuration switch is what it is on
 any NixOS machine: copy the closure over SSH and activate it. Three commands,
-and none of them is ours.
+and none of them is ours. **Hardware-proven 2026-09-11** — 7 paths in 4.5 s,
+valid in the board's database on arrival — and **this board is already
+bootstrapped**, so the recipe below it is history unless you are looking at a
+freshly flashed pre-#100 image.
+
+`nix copy` drives `ssh` itself, so it needs **key** auth: `tools/kvmssh`'s
+password does not reach it. Put a public key in `/root/.ssh/authorized_keys`
+(the file does not exist by default; `/root/.ssh` is writable, and
+`PasswordAuthentication yes` stays on) and point `NIX_SSHOPTS` at the private
+half. Remove the key when you are done.
 
 ```sh
 NEW=$(nix build .#appliance-toplevel --no-link --print-out-paths)
@@ -279,8 +288,12 @@ cd /nix/store && tar -czf /tmp/newsys.tar.gz <the missing basenames>
 nix-store --dump-db $(nix-store -qR "$NEW" "$OLD_DEFAULT" "$OLD_FALLBACK") \
   > /tmp/registration
 tools/kvmscp /tmp/newsys.tar.gz /tmp/registration /root/
-tools/kvmssh 'mount -o remount,rw /nix/store 2>/dev/null || true
-              tar -C /nix/store -xzf /root/newsys.tar.gz'
+# /nix/store IS a read-only bind mount (boot.readOnlyNixStore). Without the
+# flip, tar exits 2 with nothing useful on stderr; `remount,ro` alone would be
+# a silent no-op on a bind, hence `remount,bind,ro` to put it back.
+tools/kvmssh 'mount -o remount,rw /nix/store
+              tar -C /nix/store -xzf /root/newsys.tar.gz
+              mount -o remount,bind,ro /nix/store'
 
 # 3. Set the profile the way `nix-env --set` would, then activate.
 #    BY HAND, because `nix-env --set` cannot do it yet: there is no nix on this
