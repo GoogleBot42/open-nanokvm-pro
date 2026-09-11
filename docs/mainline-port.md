@@ -233,12 +233,12 @@ have / can be dropped).
 | UART0/1/2 | `axera,ax-apb-uart` @`0x4880000/0x4881000/0x4882000`, `reg-shift = 2`, `reg-io-width = 4`, 208 MHz | `drivers/tty/serial/8250/8250_axera.c` 542 LOC (a `8250_dw.c` fork) | **Synopsys DW APB UART** (V; `earlycon=uart8250,mmio32` already works) | `snps,dw-apb-uart` + `8250_dw`, `clock-frequency = <208000000>` | S | boot (debug only — hidden pads) |
 | I2C0, I2C7 | `snps,designware-i2c` @`0x4850000`, `0x4857000` | mainline `i2c-designware` (unmodified compatible) | DW (V) | DT only. **i2c0 DONE (#81)**, carrying the LT6911UXC at `0x2b` as a DT child rather than the hard-coded bus and address of `lt6911_manage.h`; its APB gate is *named* `pclk` rather than marked critical, because a NULL `clk_get()` takes index 0 regardless of `clock-names`. i2c7 (hynitron touch) arrives with the touch panel | S | KVM |
 | HDMI-RX bridge | Lontium LT6911UXC — no DT node; `lt6911_manage.c` (2907 LOC, ours from source) opens I2C bus 0 @`0x2b` and raw GPIOs 60 (INT), 5 (PWR), 6, 82, 83, 21, 81; exposes `/proc/lt6911_info/*` | `drivers/misc/lt6911_manage.c` (`CONFIG_LT6911_MANAGE=m`) | mainline has `lt6911uxe` (6.14+) — a different chip, V4L2-subdev shaped | **DONE (#81)**: `drivers/misc/lt6911-manage.c`, ~2400 lines, an i2c driver on `lontium,lt6911uxc` as a child of `i2c0` with GPIO descriptors and the `/proc` ABI intact, scoped to the UXC. A V4L2-subdev rewrite is an upstreaming nicety, not a port need | S–M | KVM |
-| SPI2 + panel | `snps,dw-apb-ssi` @`0x6072000`; `jadard,jd9853` @cs1, 80 MHz, dc/reset/te GPIOs | `spi-dw-mmio` (mainline) + `drivers/staging/fbtft/fb_jd9853.c` (GPL, in the SDK tree) | DW SSI (V); fbtft has no JD9853 upstream | **DONE (#84)**: stock `spi-dw-mmio` (no `dmas` — the vendor master is a fork with a DMA endian swap the panel driver then undid in software), and a ~250-line `fb_jd9853.c` port. The tearing-effect pin is deliberately dropped; so is the private state behind it, which is what made the vendor module hang on unload. **`dc-gpios` flips to ACTIVE_HIGH** — 4.19 fbtft used the raw GPIO API, mainline uses the logical one | S–M | opt (mini-display) |
-| Backlight | `pwm-backlight` ← `axera,ax620e-pwm` @`0x6060000` | `drivers/pwm/pwm-axera.c` 527 LOC | DW APB timer in PWM mode — offsets match mainline `pwm-dwc.h` (V, confirmed against the vendor driver) | **DONE (#84)**: `drivers/pwm/pwm-dwc-of.c`, ~110 lines, matching upstream's own `snps,dw-apb-timers-pwm2` binding — which no driver in the tree matched. Plus one patch to `pwm-dwc-core.c`: it rejects `PWM_POLARITY_NORMAL`, so an active-high backlight cannot be expressed at all | S | opt |
-| Knob / button / LED | `rotary-encoder`, `gpio-keys`, `gpio-leds` (heartbeat GPIO0_A23) | mainline | standard | **DONE (#84)** for the knob (the LED arrived with #81). DT only, built in, no pin states — all three pads are GPIOs and the claim programs the mux. `label = "gpio_keys"` is an ABI: the daemon finds its wake sources by `EVIOCGNAME` | S | opt |
+| SPI2 + panel | `snps,dw-apb-ssi` @`0x6072000`; `jadard,jd9853` @cs1, 80 MHz, dc/reset/te GPIOs | `spi-dw-mmio` (mainline) + `drivers/staging/fbtft/fb_jd9853.c` (GPL, in the SDK tree) | DW SSI (V); fbtft has no JD9853 upstream | **DONE (#84), HARDWARE-PROVEN 2026-09-11** (`/dev/fb0`, `fb_jd9853 spi0.1`, the daemon drawing): stock `spi-dw-mmio` (no `dmas` — the vendor master is a fork with a DMA endian swap the panel driver then undid in software), and a ~250-line `fb_jd9853.c` port. The tearing-effect pin is deliberately dropped; so is the private state behind it, which is what made the vendor module hang on unload. **`dc-gpios` flips to ACTIVE_HIGH** — 4.19 fbtft used the raw GPIO API, mainline uses the logical one | S–M | opt (mini-display) |
+| Backlight | `pwm-backlight` ← `axera,ax620e-pwm` @`0x6060000` | `drivers/pwm/pwm-axera.c` 527 LOC | DW APB timer in PWM mode — offsets match mainline `pwm-dwc.h` (V, confirmed against the vendor driver) | **DONE (#84), HARDWARE-PROVEN 2026-09-11** (duty read out of the PWM registers across a brightness sweep, 0.98 % to 79.2 %, monotonic): `drivers/pwm/pwm-dwc-of.c`, ~110 lines, matching upstream's own `snps,dw-apb-timers-pwm2` binding — which no driver in the tree matched. Plus one patch to `pwm-dwc-core.c`: it rejects `PWM_POLARITY_NORMAL`, so an active-high backlight cannot be expressed at all | S | opt |
+| Knob / button / LED | `rotary-encoder`, `gpio-keys`, `gpio-leds` (heartbeat GPIO0_A23) | mainline | standard | **DONE (#84)** for the knob (both evdev nodes present on hardware with the right capability bits; a physical turn is untested) (the LED arrived with #81). DT only, built in, no pin states — all three pads are GPIOs and the claim programs the mux. `label = "gpio_keys"` is an ABI: the daemon finds its wake sources by `EVIOCGNAME` | S | opt |
 | Touch | `hyn,8xxt` @I2C7 `0x15` | `drivers/input/touchscreen/hyn/` ~800 LOC | Hynitron; mainline `hynitron_cstxxx` is a different family (I) | not used by our display daemon → drop | — | — |
 | SPI1 / SPI4 | `snps,dw-apb-ssi` @`0x6071000` (spidev), `snps,dwc-ssi-1.03a` @`0x1A00000` (`spi-nand`, unpopulated) | `spi-dw-mmio` | DW (V) | **dropped (#84)**: spi1 is a bare `spidev` the board never uses and spi4's NAND is unpopulated. Only spi2 has a node | S | — |
-| Audio | `simple-audio-card` "Lontium Lt6911UXC" ← `i2s_slv0` `axera,dwc-i2s-slv` @`0x6051000` (`hdmi-i2s`) + `dummy-codec` | `sound/soc/axera/dwc-i2s.c` 993 LOC (~85 % upstream verbatim) | Synopsys DW I2S — a fork of `sound/soc/dwc/dwc-i2s.c` (V); the 17 `i2s-*-sel` props pack into one 24-bit routing word written to `0x0487003C` | **BUILT, UNPROVEN (#84)**: stock `snps,designware-i2s` in **PIO** (the driver picks PIO from the presence of `interrupts`), `linux,spdif-dir` as the dummy codec — mainline's `snd-soc-dummy` is a `faux_device` with no `of_device_id` and cannot be named by `sound-dai`. Three optional DT properties added to the driver: the syscon routing word, the RX channel the crossbar lands the stream on (**1**, not 0), and the APB gate a slave-mode port still needs held. `dma_per` is NOT started; PIO is 6-12 k IRQ/s at 48 kHz stereo and the first hardware round measures it | M | KVM (audio; optional) |
+| Audio | `simple-audio-card` "Lontium Lt6911UXC" ← `i2s_slv0` `axera,dwc-i2s-slv` @`0x6051000` (`hdmi-i2s`) + `dummy-codec` | `sound/soc/axera/dwc-i2s.c` 993 LOC (~85 % upstream verbatim) | Synopsys DW I2S — a fork of `sound/soc/dwc/dwc-i2s.c` (V); the 17 `i2s-*-sel` props pack into one 24-bit routing word written to `0x0487003C` | **THE CARD PROBES ON HARDWARE (#84, 2026-09-11); CAPTURE UNPROVEN** — `arecord -l` lists it, `COMP1_MODE_EN` = 0, FIFO 16 deep (6 000 IRQ/s), crossbar word `0x00080620` read back; but the attached source sends no audio (`asr: 0`) so there is no bit clock, the IRQ count is 0 and `arecord` EIOs. Stock `snps,designware-i2s` in **PIO** (the driver picks PIO from the presence of `interrupts`), `linux,spdif-dir` as the dummy codec — mainline's `snd-soc-dummy` is a `faux_device` with no `of_device_id` and cannot be named by `sound-dai`. Three optional DT properties added to the driver: the syscon routing word, the RX channel the crossbar lands the stream on (**1**, not 0), and the APB gate a slave-mode port still needs held. `dma_per` is NOT started; PIO is 6-12 k IRQ/s at 48 kHz stereo and the first hardware round measures it | M | KVM (audio; optional) |
 | Extcon | `linux,extcon-usb-gpio` | mainline | standard | DT only | S | KVM (OTG) |
 
 ### Video path (ours)
@@ -676,8 +676,11 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
     NixOS generation's closure (`pkgs/video-modules.nix`), which leaves the
     kernel-outside-the-generation seam #99 closes. See "What exists now (#83)"
     below. Depends on: #80, #81.
-11. **#84 Mini-display + audio on mainline** — **offline half DONE,
-    2026-09-11; hardware outstanding.** `spi-dw-mmio` + a `fb_jd9853` port
+11. **#84 Mini-display + audio on mainline** — **THE PANEL DRAWS ON HARDWARE
+    (2026-09-11); audio needs a source that sends some.** The round's find was
+    five clock IDs the binding header declared and the clock table never
+    registered, which is why neither the SPI master nor the PWM could probe.
+    `spi-dw-mmio` + a `fb_jd9853` port
     onto current staging fbtft, `pwm-dwc-of.c` for the backlight (upstream's
     own binding had no driver), `gpio-keys`/`rotary-encoder` DT, and stock
     `snps,designware-i2s` in PIO with `linux,spdif-dir` as the dummy codec.
@@ -2376,20 +2379,22 @@ precisely so that fixer still works.
 
 #### Not #85's, but found by it
 
-`nanokvm-panel.service` (#84) fails on every boot — "modules loaded but
-/dev/fb0 never appeared" — and it holds `bootcount` exactly the way WiFi used
-to: `is-system-running` stays `degraded`, `nanokvm-mark-good` gives up after
-240 s, and four boots in a row would roll the board back. It wants the same
-treatment this section's fault 2 describes. The counter was cleared by hand at
-the end of this round so the board is not sitting one attempt from a rollback.
+`nanokvm-panel.service` (#84) failed on every boot — "modules loaded but
+/dev/fb0 never appeared" — and it held `bootcount` exactly the way WiFi used
+to: `is-system-running` stayed `degraded`, `nanokvm-mark-good` gave up after
+240 s, and four boots in a row would have rolled the board back. The counter
+was cleared by hand at the end of this round. **Fixed the same day by #84's
+hardware round**, which gave the unit fault 2's treatment, added
+`nanokvm.markGood.tolerateFailed` as a second line of defence, and then found
+the missing framebuffer itself — see the next entry.
 
 ---
 
-### What exists now (#84, 2026-09-11) — BUILT, NOT YET ON HARDWARE
+### What exists now (#84, 2026-09-11) — BUILT (the offline half)
 
-The mini-display and the HDMI audio path exist on the mainline kernel. Nothing
-here has run on the board: this entry is the offline half, and the hardware
-plan is the two rounds in [mini-display.md](mini-display.md) "Hardware
+The mini-display and the HDMI audio path exist on the mainline kernel. This
+entry is what was built; the entry after it is what the board then said, and
+the oracle table is in [mini-display.md](mini-display.md) "Hardware
 verification (mainline)".
 
 **Display.** `drivers/staging/fbtft/fb_jd9853.c`, ~250 lines, ported from the
@@ -2533,7 +2538,132 @@ the FIFO depth and therefore the interrupt rate, and `COMP1_MODE_EN` must read
 really is on RX channel 1; whether a pure slave needs `CLK_I2S_REF0_EB` at all;
 the SPI2 pads' live words (the `/dev/mem` dump in `device-reads-20260906/`
 stops at window-0 `0x5fc` and those pads are at `0x4024`/`0x4084`); and PIO's
-overrun behaviour under a live encode.
+overrun behaviour under a live encode. The first and the fourth are measured
+below; the rest need a host that sends audio.
+
+---
+
+### What exists now (#84, 2026-09-11) — ON HARDWARE: THE PANEL DRAWS
+
+**`/dev/fb0` is up on the mainline appliance, `nanokvm-display` is drawing the
+real status screen, and the backlight's duty cycle tracks `brightness` in the
+right direction.** Two generations, 54 s and 53 s to SSH, one U-Boot attempt
+each (`bootcount` `0xB0010001` → cleared). The full oracle table is in
+[mini-display.md](mini-display.md) "Hardware verification (mainline)"; this is
+what the round found.
+
+#### The root cause: five clock IDs that were declared and never registered
+
+The first boot had no framebuffer, and the two lines that said why were not
+about the panel at all:
+
+```
+dw_spi_mmio 6072000.spi: probe with driver dw_spi_mmio failed with error -2
+dwc-pwm-of 6060000.pwm: error -ENOENT: cannot get the bus clock
+platform backlight: deferred probe pending: supplier 6060000.pwm not ready
+```
+
+`ax630c-clock.h` declared `AX630C_CLK_SPI_M2_{SEL,EB}`, `PCLK_SPI_M2_EB`,
+`CLK_PWM00_EB` and `PCLK_PWM0_EB` — the five this section's offline half says
+"five new clock rows carry them" — and `ax630c_periph_clks[]` carried **none**
+of them. `ax630c_clk_probe()` fills every id up to `max_id` with
+`ERR_PTR(-ENOENT)` and only then overwrites the ones the table names, so a
+missing row is not a missing name in `clk_summary`: it is `clk_get()` returning
+`-ENOENT` and a consumer that cannot probe. With no SPI master there was no
+`spi0.1` for `fb_jd9853` to bind to, and the backlight sat in permanent
+deferred probe behind the PWM.
+
+**In the vendor driver a missing row was harmless** — 101 of the periph
+controller's 122 ids are unregistered there, and its own drivers poked the
+syscon by hand (§7). That is exactly why the ids exist in the header at all,
+and it is the trap this port keeps re-meeting: #75 needed six rows for the
+watchdog, #81 fourteen for I2C and GPIO, #76 thirteen for the MMC hosts, and
+#84 five for SPI2 and PWM0. **Anything that calls `clk_get()` on a block the
+vendor drove by hand needs the row first.**
+
+Every bit is cited — clk-model §5's "SPI master (periph 0x04 bits 6-8 clk /
+0x10 bits 2-4 pclk, V)" and the vendor `pwm0` node's own four register offsets
+— and then read back off the running board:
+
+```
+periph MUX0 0x000FBF98   EB0 0x00007DF2   EB1 0x7FFBFEF8
+       EB2  0x97FDE7FF   EB3 0x000FFFDF
+```
+
+That read is a better corroboration than it looks. **Every gate this table
+already registers and nothing consumes reads 0**, because
+`clk_disable_unused()` turned it off — `clk_timer_eb` (EB0 b9),
+`clk_timer0_eb` (EB1 b31), `clk_lpc_peri_eb` (EB1 b18), `pclk_timer0_eb` (EB3
+b5) — while all four new gates read **1**, left on by the boot chain and owned
+by nobody. They bracket the new bits on both sides. `MUX0 [12:11]` reads 3,
+which is the 208 MHz the vendor `spi-dw-mmio` hard-codes as its SSI clock.
+
+One judgement call inside that: `clk_pwm00_eb` is parented on the **class**
+gate `clk_timer_eb`, not on `clk_timer_sel` the way `clk_timer0_eb` is. The
+PWM block *is* the DesignWare APB timer block, and the vendor node names all
+four words — mux, class gate, channel gate, APB gate. Parent it on the mux and
+`clk_disable_unused()` leaves EB0 b9 off forever, because nothing would ever
+consume it. `clk_summary` after the fix shows `clk_timer_eb` enabled with
+`clk_pwm00_eb` under it, which is the shape that says it worked.
+
+#### What the hardware settled
+
+- **The three pads** read `0x00010083` (`I2C1_SCL`), `0x00010083`
+  (`UART3_TXD`) and `0x00020003` (`EMAC_PTP_PPS0`) — all three as predicted,
+  and the third is the one the boot chain does *not* write, so `pwm0_pins` is
+  demonstrably doing it. §5's "a pad no DT node names is a pad the port does
+  not own", the other way round.
+- **The panel binds as `spi0.1`, not `spi2.1`.** One SPI master is registered,
+  so the bus number is 0. Nothing depends on it, but every grep that expects
+  the vendor's name will miss.
+- **Backlight polarity was proven without eyes**, by reading the PWM's own
+  low/high period registers (`0x06060000` / `0x060600b0`, 11021 ticks total ≈
+  462963 ns at 24 MHz) across a brightness sweep: 1 → 0.98 % high, 10 → 9.9 %,
+  50 → 49.5 %, 80 → 79.2 %. Patch 0002's `PWM_POLARITY_NORMAL` is doing what
+  it was written to do.
+- **The 3-minute blank and the wake both work**: `bl_power` 1 with an
+  all-zero framebuffer, then a synthetic `KEY_ENTER` into the `gpio_keys`
+  evdev node brings `bl_power` back to 0 with a redrawn screen. Both input
+  devices exist with the right capability bits (`REL_X`; `KEY_ENTER`).
+- **The status daemon needed `iproute2` in its unit `PATH`.** NixOS gives a
+  unit `coreutils`, `findutils`, `gnugrep`, `gnused` and `systemd` and nothing
+  else, so `ip -j -4 addr` was an `ENOENT` the daemon caught and turned into an
+  empty address list — a panel reading "no network" in amber on a board that
+  was routed, serving and reachable over SSH. The 4.19 image ran the same
+  daemon with an Ubuntu `PATH`. **A NixOS unit's `PATH` is not the system's**,
+  and a daemon that treats a missing tool as "no data" hides it.
+
+#### Audio: the card probes, the capture cannot be run
+
+`arecord -l` lists `card 0: Lt6911UXC [Lontium Lt6911UXC], device 0:
+6051000.i2s-dir-hifi`, so the DW I2S, the `linux,spdif-dir` codec and
+`simple-audio-card` all came up. `I2S_COMP_PARAM_1` = `0x024C00EE`:
+`COMP1_MODE_EN` = **0** (the one value that had to be right, or `set_fmt`
+would reject `BC_FC`), FIFO depth **16** → `fifo_th` 8 → **6 000 IRQ/s** at
+48 kHz stereo, and `RX_CHANNELS` = 1, i.e. two RX channels — so the channel
+`snps,rx-channel = <1>` names exists. `0x0487003C` reads `0x00080620`, the
+crossbar word verbatim.
+
+**But `/proc/lt6911_info/asr` reads 0: the attached source sends no audio.**
+No bit clock, no frames — `/proc/interrupts` line 19 (`GIC 177`,
+`6051000.i2s`) stands at 0 on both CPUs and `arecord` returns `read error:
+Input/output error` immediately, for `S16_LE` and `S32_LE` alike. That is
+correct behaviour for a slave port with no clock, and it leaves three things
+open that no amount of SSH can close: whether the stream really lands on RX
+channel 1, whether a pure slave needs `CLK_I2S_REF0_EB`, and PIO's overrun
+count under a live encode. `dma_per` stays unstarted; there is no number yet
+to justify it.
+
+#### Left open
+
+- **A host that plays audio over HDMI** — `needs-human`, and it unblocks the
+  whole of round 2.
+- **Hands on the knob and eyes on the panel.** Everything up to the evdev node
+  and the PWM register is proven; the wiring and the glass are physical.
+- **The ATX power-LED sense** reads 0 (`host off` on the panel) while the HDMI
+  input is live at 4096x2160. Either the harness is not connected or the sense
+  line does not read — #81's question, not the display's, and it needs someone
+  who can see what is plugged in.
 
 ---
 
@@ -5931,13 +6061,28 @@ and the `nanokvmboot=` token are gone too, superseded before they ever ran on
 hardware.
 
 **Generations, and nix (#100).** `/nix/var/nix/profiles/system` →
-`system-9-link` → `/nix/store/2bgklq4d…`, which is `.#appliance-toplevel` built
-from `main`; generation 5 is the same store path and is the only other one left.
-`extlinux.conf` says `DEFAULT nixos-default` and `extlinux-fallback.conf` says
-`DEFAULT nixos-9-default`; the two files are otherwise identical, which is the
-shape #99 gave them. The `tar`-era generations 1-4 were collected in #100. A
-toplevel with no kernel gets no `LABEL` at all, so the rollback's reach is the
-generations in the menu, not every profile link.
+`system-21-link` → `/nix/store/537w4j9v…`, which is `.#appliance-toplevel` built
+from `main` merged with #84's hardware branch; 17 through 21 exist and the menu
+holds the last three. `extlinux.conf` says `DEFAULT nixos-default` and
+`extlinux-fallback.conf` says `DEFAULT nixos-21-default`; the two files are
+otherwise identical, which is the shape #99 gave them. The `tar`-era
+generations 1-4 were collected in #100. A toplevel with no kernel gets no
+`LABEL` at all, so the rollback's reach is the generations in the menu, not
+every profile link. `/boot` is 103 MB of 245 MB at three generations.
+
+**The mini-display works (#84, 2026-09-11).** `/dev/fb0` exists,
+`nanokvm-panel` and `nanokvm-display` are both active, and the panel draws the
+status screen — hostname, IP, host power, stream state, HDMI mode, firmware,
+uptime — blanking after 180 idle seconds and waking on a knob press. To see it
+without eyes on the board, dump the framebuffer and render it off-device
+(172x320 RGB565, `phys(x,y) = fb[319-x][y]`; the recipe is in the `kvm-device`
+skill and the dump contains the board's IP, so never commit one). The three
+peripheral units — `nanokvm-wifi`, `nanokvm-panel`, `nanokvm-display` — cannot
+fail any more, and `nanokvm.markGood.tolerateFailed` would let the boot count
+as healthy even if they did. **HDMI audio is the open half**: the card probes
+(`arecord -l` lists `Lontium Lt6911UXC`) but the attached source sends no audio
+(`/proc/lt6911_info/asr` = 0), so nothing can be captured until a host that
+does is plugged in.
 
 **The board has nix, and its store is registered** (#100, 2026-09-11): 748
 paths, `nix (Nix) 2.34.8`, single-user, `nix-store --verify --check-contents`

@@ -114,9 +114,31 @@ that is arbitration, not a bug.
   `systemctl is-system-running` report `degraded`, which makes
   `nanokvm-mark-good` poll 240 s and give up, which leaves `bootcount`
   uncleared — so **every reboot counts as a failed boot attempt and the fourth
-  rolls the board onto the fallback generation**. #85's WiFi unit did this;
-  `nanokvm-panel.service` (#84) still does. Optional hardware gets a journal
-  line and `exit 0`.
+  rolls the board onto the fallback generation**. #85's WiFi unit did this and
+  #84's panel unit did it the same week; both now log and `exit 0`, and
+  `nanokvm.markGood.tolerateFailed` (wifi, panel, display) is the second line
+  of defence. Optional hardware gets a journal line, never a failed unit.
+- **A clock ID the binding header declares is not a clock the table
+  registers**, and the difference is silent until something calls `clk_get()`.
+  `ax630c_clk_probe()` fills every id up to `max_id` with `ERR_PTR(-ENOENT)`,
+  so a missing row is `-ENOENT` at `clk_get` and a consumer that cannot probe —
+  `dw_spi_mmio 6072000.spi: probe ... failed with error -2` and a backlight
+  stuck in deferred probe behind it (#84, 2026-09-11; five rows for SPI2 and
+  PWM0). In the VENDOR driver the same gap was harmless: 101 of the periph
+  controller's 122 ids are unregistered there because its own drivers poked the
+  syscon by hand, which is why the ids exist in the header at all. #75 (wdt),
+  #76 (mmc), #81 (i2c/gpio) and #84 all had to add rows. **Before wiring a new
+  peripheral's `clocks =`, check the table, not the header.** Corroborate a new
+  gate bit by reading the live word: every registered-and-unconsumed gate reads
+  0 (`clk_disable_unused` cleared it) while a gate the boot chain left on and
+  nobody owns reads 1.
+- **A NixOS unit's `PATH` is not the system's.** It gets `coreutils`,
+  `findutils`, `gnugrep`, `gnused` and `systemd` — nothing else — so every
+  external tool a service shells out to must be in its own `path`.
+  `nanokvm-display`'s `ip -j -4 addr` was an `ENOENT` the daemon caught and
+  turned into an empty address list: the panel read "no network" on a board
+  that was routed and serving (#84, 2026-09-11). The 4.19 image ran the same
+  daemon with an Ubuntu `PATH`, so nothing offline could have caught it.
 - **Measure a binary's compiled-in paths; do not reason about its upstream
   defaults.** nixpkgs' `wpa_cli` is built with `/run/wpa_supplicant/control`
   and `/run/wpa_supplicant/client` patched in, NOT upstream's
@@ -435,10 +457,23 @@ not an option), and an update from a cache, the idle gate, the unattended reboot
 and a `bootcount` rollback onto the previous generation all ran end to end
 against a throwaway signed `file://` cache tunnelled in over SSH
 (`.#appliance-toplevel-cachetest` is that harness; it is inert under pure
-evaluation). Eight boots, 51-58 s each, one U-Boot attempt every time. Still
-unproven: a real cache (#96), an update that changes the KERNEL, a generation
+evaluation). Eight boots, 51-58 s each, one U-Boot attempt every time. **A
+generation that changes the KERNEL switches the same way** — #84 shipped one on
+2026-09-11 (new clock rows in the tree), 53-54 s to SSH, `bootcount` cleared
+both times; the Image is in the closure, so `nix copy` carries it and the
+extlinux builder writes it. Still unproven: a real cache (#96), a generation
 that genuinely fails to boot, and the store db that `mkStoreDb` builds into a
 flashed image. `docs/mainline-port.md` "What exists now (#100)".
+
+**The mini-display is live on mainline (#84, 2026-09-11).** `/dev/fb0`,
+`nanokvm-panel` + `nanokvm-display` active, the status screen drawn, the
+backlight's duty tracking `brightness`, the 180 s blank and the wake-on-press
+all measured. Read the panel without eyes on the board by dumping `/dev/fb0`
+and rendering it off-device (kvm-device skill) — **the dump contains the
+board's IP, so never commit one.** HDMI audio probes as the card
+`Lontium Lt6911UXC` but cannot be captured: the attached source sends no audio
+(`/proc/lt6911_info/asr` = 0), so the port has no bit clock and `arecord`
+EIOs.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

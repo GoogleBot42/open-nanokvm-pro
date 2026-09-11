@@ -20,6 +20,11 @@ the panel, its geometry, `/dev/fb0`, the orientation mapping and the daemon are
 unchanged, and the findings are where they were established. That section is
 the delta: which drivers replaced which, and what the hardware proved.
 
+**The mainline panel was proven on the board on 2026-09-11** — `/dev/fb0`, the
+daemon drawing the real status screen, the backlight's duty cycle read out of
+the PWM registers, the 3-minute blank and the wake. What is still open is
+audio, and only because the attached HDMI source sends none.
+
 - [What the display is](#what-the-display-is)
 - [How it is blob-free](#how-it-is-blob-free)
 - [What ships in the image](#what-ships-in-the-image)
@@ -455,68 +460,115 @@ so no existing DT changes behaviour):
   at all, having no bit clock to program, so without naming the APB gate
   `clk_disable_unused()` takes the register window away partway through boot.
 
-Interrupt load at 48 kHz stereo is `48000 / fifo_th` per second — 6 000 at a
-16-deep FIFO, 12 000 at 8 — of roughly 28 MMIO accesses each. That is the
-number the first hardware round has to measure under a live encode; if
-`RX overrun` shows up in `dmesg` during real capture, the `axera,dma-per`
+Interrupt load at 48 kHz stereo is `48000 / fifo_th` per second. The block
+reports a **16-deep FIFO** (`I2S_COMP_PARAM_1` = `0x024C00EE`, read on the
+board), so `fifo_th` is 8 and the rate is **6 000/s** of roughly 28 MMIO
+accesses each — the low end of the estimate. What that costs under a live
+encode is still unmeasured, because the attached source sends no audio; if
+`RX overrun` ever shows up in `dmesg` during real capture, the `axera,dma-per`
 dmaengine driver becomes a separate rung and **is not started without saying
 so first**.
 
 ### What is not proven, and can only be proven on hardware
 
-1. `I2S_COMP_PARAM_1/2` for this block (`devmem 0x060511F4` / `0x060511F0`,
-   with the APB gate on). They decide `fifo_depth`, and `COMP1_MODE_EN` must
-   read **0** or `set_fmt` rejects `BC_FC` and the card never probes.
-2. That the stream really is on RX channel 1. Sweeping `i2s-s-rx0-sel` on the
-   vendor kernel would settle it, and a value that lands it on channel 0 makes
-   the `snps,rx-channel` half of patch 0003 unnecessary.
-3. Whether `CLK_I2S_REF0_EB` is needed at all for a pure slave.
-4. The SPI2 pads' live words: the `/dev/mem` pad dump in
-   `docs/reference/mainline/device-reads-20260906/` stops at window-0 offset
-   `0x5fc` and `I2C1_SCL`/`UART3_TXD` are at `0x4024`/`0x4084`. The boot
-   chain's own table (`AX630C_DEMO_pinmux.h`) writes `0x00010083` to both,
-   which is what `spi2_pins` asks for, so this is a confirmation rather than a
-   question.
-5. Everything in the round plan below.
+Four of the five entries this section used to list were settled on the board on
+2026-09-11; the measurements are in the next section. What is left needs
+something SSH cannot supply:
 
-### Hardware verification (mainline)
+1. **A source that sends audio over HDMI.** `/proc/lt6911_info/asr` reads 0 on
+   the attached host, so the I2S port has no bit clock and nothing can be
+   captured. That one fact blocks three questions at once: whether the stream
+   really lands on RX channel **1** (the `snps,rx-channel` half of patch 0003),
+   whether a pure slave needs `CLK_I2S_REF0_EB` at all, and what PIO's overrun
+   count is under a live encode — the number that decides whether `dma_per`
+   ever becomes a rung.
+2. **Hands on the knob**, and **eyes on the panel**. Both input devices exist
+   with the right capability bits and every backlight duty cycle was read out
+   of the PWM's own registers, but that the three GPIOs reach the knob and that
+   the glass lights up are physical facts.
 
-**A display driver that hangs at load costs a `bootcount` rollback**, which is
-exactly what the fallback generation exists for — but it is a 4-attempt,
-several-minute detour, so the panel modules are loaded by a unit rather than
-built in, and round 1 below is ordered so that the cheap oracles come first.
+### Hardware verification (mainline) — DONE 2026-09-11
 
-**Round 1 — display.**
+**The panel works on the mainline appliance.** `/dev/fb0`, the status daemon,
+the backlight, the idle blank and the wake-on-press were all measured on the
+board (generations 20 and 21, boots of 54 s and 53 s to SSH, `bootcount`
+`0xB0010001` cleared by `nanokvm-mark-good` each time).
 
-| step | oracle |
+**What the first boot found: five clock rows that were never registered.**
+`/dev/fb0` did not appear, and the reason was two lines of `dmesg`:
+
+```
+dw_spi_mmio 6072000.spi: probe with driver dw_spi_mmio failed with error -2
+dwc-pwm-of 6060000.pwm: error -ENOENT: cannot get the bus clock
+```
+
+`ax630c-clock.h` declared `AX630C_CLK_SPI_M2_{SEL,EB}`, `PCLK_SPI_M2_EB`,
+`CLK_PWM00_EB` and `PCLK_PWM0_EB`; `ax630c_periph_clks[]` carried none of them,
+and `ax630c_clk_probe()` fills every unregistered id with `ERR_PTR(-ENOENT)`.
+Neither driver can probe without its clocks, so there was no SPI device for
+`fb_jd9853` to bind to and the backlight sat in permanent deferred probe
+(`platform backlight: deferred probe pending: supplier 6060000.pwm not ready` —
+the one line that names the whole chain). The rows are in the table now, each
+bit cited and then read back off the board; see `clk-ax630c-tables.c`.
+
+| oracle | measured |
 |---|---|
-| boot the generation | SSH back in ~71 s; `bootcount` (`devmem 0x02390030 32`) = `0xB0010000` after `nanokvm-mark-good` |
-| the panel modules loaded | `systemctl status nanokvm-panel` active; `lsmod \| grep -E 'fbtft\|jd9853'` |
-| the framebuffer exists | `/dev/fb0`, and `dmesg \| grep fb_jd9853` says `frame buffer, 172x320` |
-| the pads moved | `devmem 0x02304024` = `0x00010083`, `devmem 0x02304084` = `0x00010083`, `devmem 0x104F000C` = `0x00020003` (the PWM pad — this one the boot chain does **not** write) |
-| the clocks are on | `grep -E 'spi_m2\|pwm00\|pclk_pwm0' /sys/kernel/debug/clk/clk_summary` — all enabled, `clk_spi_m2_eb` at 208 MHz |
-| the daemon draws | `systemctl status nanokvm-display` active; `dd if=/dev/fb0 bs=344 count=320` off the board, rendered on the build host, reads as the status screen with the right hostname and IP |
-| the backlight | `echo 1 > /sys/class/backlight/backlight/bl_power` (dark), `echo 0` (lit); `echo 10 > brightness` then `100` — **visibly** dimmer/brighter, which is the polarity check that `fdtget` cannot make |
-| the knob | `evtest /dev/input/eventN` — the button emits `KEY_ENTER` 1/0, the encoder emits `REL_X` ±1; a press after the 3-minute blank wakes the panel |
-| the ATX read | `nanokvm-gpio get atx-power-led` agrees with the host's real power state, and the daemon's "host on/off" line matches |
-| teardown | **none.** Do not `rmmod`. |
+| boot | SSH at 53 s; `bootcount` `0xB0010001` → `0xB0010000`, `mark-good: healthy after 0s`, fallback promoted |
+| modules | `nanokvm-panel` active, `fbtft` + `fb_jd9853` loaded, `nanokvm-panel: /dev/fb0 up` |
+| the framebuffer | `/dev/fb0` (29:0), `fb_jd9853 spi0.1` — the panel binds as **`spi0.1`**, not `spi2.1`: with one SPI master registered the bus number is 0 |
+| the pads | `0x02304024` = `0x00010083`, `0x02304084` = `0x00010083`, `0x104F000C` = `0x00020003` — all three exactly as predicted, and the third is the one the boot chain does *not* write, so `pwm0_pins` is doing it |
+| the clocks | `clk_spi_m2_sel` 208 MHz, `clk_spi_m2_eb`/`pclk_spi_m2_eb` enabled with `6072000.spi` named, `clk_pwm00_eb` 24 MHz and `clk_timer_eb` pulled up with it, `pclk_pwm0_eb` with `6060000.pwm` named |
+| the daemon | `nanokvm-display` active, `input devices: ['rotary-encoder', 'gpio_keys']`, and the framebuffer dumped off the board renders as the status screen: hostname, IP, `host off`, `video idle (no viewer)`, `hdmi in 4096x2160`, firmware and uptime |
+| the backlight | `/sys/class/backlight/backlight`, `max_brightness` 100. Duty measured in the PWM's own registers (`0x06060000` low period, `0x060600b0` high period, 11021 ticks total ≈ 462963 ns at 24 MHz): brightness 1 → 0.98 % high, 10 → 9.9 %, 50 → 49.5 %, 80 → 79.2 %. **Monotonic in the right direction**, which is the polarity check, made without eyes on the panel |
+| the blank | after `NANOKVM_DISPLAY_SLEEP_S` (180 s): `bl_power` 1 and `/dev/fb0` all zeros (md5 equal to 110080 zero bytes) |
+| the wake | a synthetic `KEY_ENTER` press written to the `gpio_keys` evdev node → `bl_power` 0, brightness 80, framebuffer non-zero |
+| the evdev nodes | `rotary-encoder` = `event0`, `EV=5` / `REL=1` (REL_X); `gpio_keys` = `event1`, `EV=100003` / `KEY=10000000` (bit 28 = `KEY_ENTER`) |
+| teardown | none. Nothing was unloaded. |
 
-**Round 2 — audio**, only after round 1 is green (the two share a boot but not
-a failure mode).
+**One bug the hardware found that nothing offline could.** The status daemon
+read "no network" in amber on a board that was routed, serving and reachable:
+NixOS gives a unit `coreutils`, `findutils`, `gnugrep`, `gnused` and `systemd`
+and nothing else, so the daemon's `ip -j -4 addr` was an `ENOENT` it caught and
+turned into an empty address list. `nanokvm-display.service` carries
+`pkgs.iproute2` now. The 4.19 image ran the same daemon with an Ubuntu `PATH`,
+which is why this is new.
 
-| step | oracle |
-|---|---|
-| the card exists | `arecord -l` lists `Lontium Lt6911UXC`; `dmesg \| grep -i i2s` shows no probe error |
-| the block is sane | `devmem 0x060511F4` / `0x060511F0` — record them, decode `fifo_depth` and `COMP1_MODE_EN` (must be 0) |
-| the crossbar was written | `devmem 0x0487003C` reads `0x00080620` in its low 24 bits |
-| it captures | with a host playing a 1 kHz tone over HDMI: `arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 /tmp/a.wav` |
-| the signal is real | copy off-device and check with `sox /tmp/a.wav -n stat` (RMS well above zero) and `ffprobe -show_frames`; a spectrum with a peak at 1 kHz, not a silent or DC file |
-| under load | repeat while a web viewer is streaming 1080p, then `dmesg \| grep -c 'RX overrun'` — a non-zero count is the PIO verdict |
-| the web path | if the server exposes audio, check it end to end; otherwise record that libkvm's ALSA capture opens the card by index and its device name did not change |
+**Still needs a human, and cannot be done over SSH:**
 
-Both rounds are read-only apart from the two `echo`s into the backlight, and
-every step is reversible by a reboot. Six rounds is the budget; these two
-should fit in two.
+- **Turning and pressing the real knob.** Both input devices exist with the
+  right capability bits, and the daemon's wake path is proven with injected
+  events — but nothing here proves the three GPIOs are wired to the knob.
+- **Seeing the panel.** Every pixel is proven at the framebuffer and every
+  duty cycle at the PWM register; that the glass lights up, at the right
+  brightness and the right way up, is an eyes-on check.
+- **The ATX power-LED sense.** `nanokvm-gpio get atx-power-led` reads 0 and the
+  daemon prints `host off` while the HDMI input is live at 4096x2160 — which is
+  either a disconnected ATX harness or a sense line that does not read. It is
+  #81's oracle, not the display's, and it needs someone who knows what is
+  plugged into the board.
+
+**Audio — the card is there, the capture is not.** `arecord -l` lists
+`card 0: Lt6911UXC [Lontium Lt6911UXC], device 0: 6051000.i2s-dir-hifi`, so the
+DW I2S, the `linux,spdif-dir` codec and `simple-audio-card` all probed. The
+register reads:
+
+| | value | decode |
+|---|---|---|
+| `I2S_COMP_PARAM_1` `0x060511F4` | `0x024C00EE` | `COMP1_MODE_EN` = **0** (so `set_fmt` accepts `BC_FC` — the one value that had to be right), `FIFO_DEPTH_GLOBAL` = 3 → **16-deep FIFO**, `fifo_th` 8, TX and RX both enabled, `RX_CHANNELS` = 1 → **two RX channels, so channel 1 exists**, 32-bit APB |
+| `I2S_COMP_PARAM_2` `0x060511F0` | `0x000004A4` | RX word sizes 32/32/16/16-bit |
+| `I2S_COMP_VERSION` `0x060511F8` | `0x3131312A` | "1.11*" |
+| crossbar `0x0487003C` | `0x00080620` | exactly the word `snps,syscon` asks for |
+
+At 48 kHz stereo a 16-deep FIFO is **6 000 interrupts/s**, the low end of the
+estimate. The capture itself cannot be run here: `/proc/lt6911_info/asr` reads
+**0** — the attached source sends no audio at all — so there is no bit clock,
+`/proc/interrupts` line 19 (`GIC 177`, `6051000.i2s`) stands at **0** on both
+CPUs, and `arecord` returns `read error: Input/output error` immediately for
+both `S16_LE` and `S32_LE`. That is the correct behaviour for a slave port with
+no clock, and it is also why **the RX-channel question, `CLK_I2S_REF0_EB` and
+the PIO overrun count are all still open**: every one of them needs a source
+that sends audio. `dma_per` stays unstarted — there is no overrun number yet to
+justify it.
 
 ---
 
