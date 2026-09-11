@@ -358,6 +358,40 @@
 			no-map;
 		};
 	};
+
+	/*
+	 * The WiFi module's reset line (#85), as an MMC power sequencer rather
+	 * than a driver-private GPIO.
+	 *
+	 * The vendor describes this radio as a platform device
+	 * (`aicsemi,aic_bsp`, reset GPIO1_A29) whose driver toggles the line
+	 * itself. That is not how mainline does an SDIO card: the reset has to
+	 * be released BEFORE the host scans the bus, or the scan finds nothing
+	 * and the SDIO driver is never probed at all. mmc-pwrseq-simple is the
+	 * standard binding for exactly that, and it runs from the MMC core at
+	 * card-power-up time.
+	 *
+	 * GPIO1_A29 is pad EPHY_LED1 (pinctrl pin 32, mux word 0x104F0078,
+	 * GPIO = function 6). The pad is deliberately NOT in `gmac_pins` --
+	 * see the comment there -- so claiming it here is what programs its
+	 * mux, and nothing else on this board wants it.
+	 *
+	 * ACTIVE_LOW is the polarity the part's datasheet family uses for a
+	 * RESETN pin and it is what the live board reads at the pad, but it is
+	 * NOT hardware-verified for this line yet -- the first WiFi hardware
+	 * round is what settles it. If the card never enumerates, this is the
+	 * first thing to invert.
+	 */
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&gpio1 29 GPIO_ACTIVE_LOW>;
+		/*
+		 * The radio's own boot takes a while after reset is released
+		 * and the MMC core starts clocking the bus immediately. 200 ms
+		 * is what the vendor stack waits before its first SDIO access.
+		 */
+		post-power-on-delay-ms = <200>;
+	};
 };
 
 /*
@@ -514,6 +548,33 @@
 };
 
 /*
+ * WiFi (#85). An AIC8800 on the SDIO host at 0x104d0000, described in
+ * ax630c.dtsi and disabled there; this is the board saying a radio is soldered
+ * to it.
+ *
+ * NO CHILD NODE. The driver binds by SDIO vendor/device ID (aicsdio.c's
+ * `sdio_device_id` table -- vendor 0xc8a1 for the DC/D80 family, 0x5449 for
+ * the 8801), which the card reports from its own CIS at enumeration. A
+ * `compatible` child would describe nothing the bus does not already say, and
+ * the chip variant is exactly the thing this board has not yet been asked.
+ *
+ * `non-removable` because it is soldered, and because it is what makes the MMC
+ * core scan the bus at probe rather than waiting for a card-detect that does
+ * not exist (the controller already has `broken-cd`). `cap-power-off-card`
+ * lets the core cycle the pwrseq line across a rescan, which is the only way
+ * back if the radio's firmware wedges. `keep-power-in-suspend` is free here --
+ * this appliance does not suspend -- and is what the binding wants for an SDIO
+ * function that must survive one.
+ */
+&sdio {
+	status = "okay";
+	non-removable;
+	cap-power-off-card;
+	keep-power-in-suspend;
+	mmc-pwrseq = <&wifi_pwrseq>;
+};
+
+/*
  * ATX (#81). Four lines to the host's front-panel header, driven from
  * userspace: the KVM's whole reason to exist is pressing a button on a machine
  * that is not this one.
@@ -547,7 +608,10 @@
 
 &gpio1 {
 	gpio-line-names =
-		"", "", "", "atx-reset";
+		"", "", "", "atx-reset", "", "", "", "",
+		"", "", "", "", "", "", "", "",
+		"", "", "", "", "", "", "", "",
+		"", "", "", "", "", "wifi-reset";
 };
 
 &gpio2 {

@@ -30,6 +30,11 @@
   # `degraded`. That hides the failures this harness exists to find.
   nanokvm.videoStack.enable = false;
 
+  # Same argument for WiFi (#85): `-M virt` has no SDIO host, so the aic8800
+  # modules insmod and then no card enumerates, and the unit's `wlan0` oracle
+  # fails. Off here also keeps the radio firmware out of this image.
+  nanokvm.wifi.enable = false;
+
   # There is no vfat p16 in QEMU. The mount is already `nofail`, so the boot
   # would survive it, but a 90 s device timeout on every run is noise that
   # hides the thing being tested.
