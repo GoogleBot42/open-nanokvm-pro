@@ -9,8 +9,11 @@ implement. Everything below was learned by paying for it at least once.
 
 # 1. Launch
 
-- **One `Agent` per item, `model: opus`, `isolation: "worktree"`.** Fable
-  only when Jeremy asks or the item is genuinely Fable-tier RE.
+- **One `Agent` per item, `model: opus`, `isolation: "worktree"`.** Always
+  Opus (Jeremy, 2026-09-11); never Fable, never the session model.
+- **A helper an agent spawns reports to YOU, not to it.** Its task
+  notifications land in the coordinator's turn; relay the decision it asks
+  for to the parent agent by `SendMessage`, or it stalls.
 - **The prompt is the whole brief.** Give: the issue number (`tea issues N`),
   the exact docs to read *in order* (CLAUDE.md first, then the section of
   `docs/mainline-port.md` or the doc that owns the topic, then the skill),
@@ -56,6 +59,18 @@ git diff main...origin/<branch> | grep -E '^\+' \
 cd .claude/worktrees/agent-<id> && nix flake check --no-build && nix build .#<the checks and outputs the branch touches>
 ```
 
+- **Check the SHAPE against the standing directives before checking the
+  claims** — NixOS-native (kernel in the generation, official scripts write
+  `/boot`, nix on the device), blob policy, mainline-everything, tags only.
+  #86's tar-bundle transport and content-addressed `/boot` kernels passed
+  every claim check and were the wrong shape; Jeremy caught it, not the
+  review, and it cost #99 and #100. A design that reimplements what NixOS
+  already does is a finding, not a feature.
+- **A brick-class bug an agent finds in `main` is fixed on `main` first**,
+  by you, as its own commit (reproduce it on the host, then patch, build the
+  generated script, push), and the agent is told to take main's hunk on its
+  next merge. Do not leave it in `main` while a device round is pending
+  (the mark-good `sed` delimiter, 2026-09-10).
 - **Identifier scan is mandatory**: device IPs, the board MAC, the UID words.
   One agent in three redacts on its own. The LAN IP had been on `main` since
   August before anyone looked.

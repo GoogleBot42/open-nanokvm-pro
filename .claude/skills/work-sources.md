@@ -587,6 +587,19 @@ propose SG2002 work without flagging this gap up front.
   rollback covers one, the legacy OTA deleted -- and needs ONE device round to
   close. Then **#84**; **#85** (aic8800) is an owner decision,
   `needs-human`; **#87** last.
+  **2026-09-11 status: #83 CLOSED (video streams on mainline, in-tree
+  drivers, modules in the closure) and #99 CLOSED (kernel/initrd/dtb in the
+  generation, NixOS's extlinux builder owns `/boot`, kernel rollback
+  hardware-proven).** Jeremy's directives the same day reshaped #86: nix IS
+  on the device (**#100**, merged offline, hardware rounds running), updates
+  are `nix copy` from a signed cache + `nix-env --set` +
+  `switch-to-configuration boot`, auto-updates are a web-UI checkbox with an
+  idle-gated reboot, only tagged releases, and the legacy migration OTA is
+  dropped (no users). Filed: **#96** binary cache (attic; Jeremy provides the
+  endpoint, cache name, token and public key — the one blocker for a real
+  update), **#97** remove the legacy 4.19 build (after #84/#86/#100),
+  **#98** 4096-wide capture cap. **#86** closes after #100's hardware rounds
+  prove the checkbox/idle path. Then **#84**, **#85**, **#87**, **#95**.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

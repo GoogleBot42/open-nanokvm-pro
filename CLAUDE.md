@@ -410,7 +410,7 @@ slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
 | Capture-pipeline internals / RE history | `docs/blob-replacement.md` |
 | Full deblob epic (#55): capture-stack replacement plan + scoping | `docs/deblob-capture.md` |
 | Open-encoder driver bring-up / #49 resolution (CMA = blob ABI break; no-flash coherent carveout) | `docs/vcmd-cma-unblock.md` |
-| Slot-B kernel boot-testing (proven A/B harness) | `docs/flashing-and-recovery.md` |
+| Testing a kernel or generation on the board (since #99: a generation switch; the slot-B A/B harness is history, #97 removes it) | `docs/nixos-rootfs.md` §4b, kvm-device skill |
 | NixOS appliance / pure-Nix rootfs: boot contract, identity, gaps (#26, #78) | `docs/nixos-rootfs.md` |
 | Mainline port (#26): driver inventory, boot/rollback contract, child issues #74-#87, and how a serial-less first boot is made observable | `docs/mainline-port.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
@@ -440,8 +440,8 @@ slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
 - Questions get direct answers before (or instead of) action.
 - Delegate aggressively to `model: opus` subagents to save usage — searching, mining,
   bulk writing, analysis, verification, anything that doesn't truly need the session
-  model. Reserve Fable/Mythos-tier work for what genuinely requires it; never let
-  subagents inherit the session model. Always check the agent's work yourself
+  model. **Subagents are always `model: opus`** (Jeremy, 2026-09-11) — never
+  Fable/Mythos, never the session model. Always check the agent's work yourself
   (spot-read the code paths it cites, verify its claims) before acting on it.
   For bulk transcription, hand the agent the invariant counts up front as an
   acceptance test it must measure and reconcile itself -- then re-check them
