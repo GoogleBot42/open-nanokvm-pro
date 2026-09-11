@@ -104,6 +104,12 @@ Worth fixing in the core later.
 
 ## DMA memory map (#53)
 
+**This is the 4.19 image's map. On mainline the same three addresses are
+`reserved-memory` nodes in `dts/ax630c-nanokvm-pro.dts` and the module
+parameters below are gone** (#83) -- the drivers take them from
+`memory-region` phandles. The addresses and sizes are identical, so the table
+still describes the hardware; what changed is who computes it.
+
 Four consumers DMA out of the same CMM pool, and until #53 three of them
 overlapped: the vendor CMM allocator `ax_cmm`, the open encoder's frame-buffer
 carveout (`framebuf_alloc.c`), the open capture driver's buffer carveout

@@ -58,6 +58,10 @@ let
   localversion = "-nanokvm";
   release = "${version}${localversion}";
 
+  # The video stack's modules (#83). Only the appliance variant can load
+  # them; see the buildPhase.
+  buildModules = variant != "bringup";
+
   crossCC = crossPkgs.buildPackages.gcc;
   crossBinutils = crossPkgs.buildPackages.binutils;
   crossPrefix = crossPkgs.stdenv.cc.targetPrefix;
@@ -85,6 +89,11 @@ pkgs.stdenv.mkDerivation {
   ] ++ (with pkgs; [
     gnumake bc bison flex openssl ncurses perl elfutils kmod cpio
     gzip lzop which gawk bash zstd rsync
+    # `make modules` builds every driver arm64 defconfig leaves modular,
+    # which is a thousand drivers for other people's hardware -- and some of
+    # them generate headers with a host tool. drivers/gpu/drm/msm wants
+    # python3 and fails with a bare `Error 127` without it.
+    python3
   ]);
 
   # Modifications to files that already exist upstream. Unlike treeGraft below
@@ -399,12 +408,18 @@ pkgs.stdenv.mkDerivation {
     # `make dtbs` would build every arm64 vendor's dtbs; ours is compiled from
     # dts/ by pkgs/dtb-mainline.nix, out of tree, on purpose.
     #
-    # `modules` builds exactly three .ko: the video stack (#83). Every other
-    # driver this board has is built in, and that is deliberate -- these three
-    # are modular so a capture or encoder fix is a file copy and an insmod on
-    # the running board rather than a /boot write and a reboot into a kernel
-    # with no automatic rollback.
-    make O=build -j$NIX_BUILD_CORES Image modules
+    # `modules` for the appliance only. Six of them ship (#83): the video
+    # stack plus the videobuf2 modules it imports. Everything else this board
+    # has is built in, and that is deliberate -- these are modular so a
+    # capture or encoder fix is a file copy and an insmod on the running
+    # board rather than a /boot write and a reboot into a kernel with no
+    # automatic rollback.
+    #
+    # The bring-up variant skips it. Its userspace is a static /init in a cpio
+    # with no insmod path, so the .ko would be unloadable -- and
+    # pkgs/dtb-mainline.nix depends on that variant purely for its
+    # dt-bindings headers, which is not a reason to build a thousand modules.
+    make O=build -j$NIX_BUILD_CORES Image ${lib.optionalString buildModules "modules"}
     runHook postBuild
   '';
 
@@ -442,19 +457,21 @@ pkgs.stdenv.mkDerivation {
     # The order is depmod's, resolved at build time and asserted below:
     # videobuf2-common <- memops, v4l2 <- open_vin_capture; the receiver and
     # the encoder import nothing.
-    make O=build INSTALL_MOD_PATH="$TMPDIR/modstage" INSTALL_MOD_STRIP=1 \
-      DEPMOD=${pkgs.kmod}/bin/depmod modules_install
+    ${lib.optionalString buildModules ''
+      make O=build INSTALL_MOD_PATH="$TMPDIR/modstage" INSTALL_MOD_STRIP=1 \
+        DEPMOD=${pkgs.kmod}/bin/depmod modules_install
 
-    mkdir -p "$out/modules"
-    for ko in videobuf2-common videobuf2-memops videobuf2-v4l2 \
-              open_vin_csi2 open_vin_capture ax630c_venc_vcmd; do
-      src=$(find "$TMPDIR/modstage/lib/modules/${release}" -name "$ko.ko")
-      [ -n "$src" ] \
-        || { echo "ERROR: $ko.ko was not built as a module" >&2; exit 1; }
-      install -m 0644 "$src" "$out/modules/$ko.ko"
-      echo "$ko.ko" >> "$out/modules/load-order"
-    done
-    echo "video modules: $(cat "$out/modules/load-order" | tr '\n' ' ')"
+      mkdir -p "$out/modules"
+      for ko in videobuf2-common videobuf2-memops videobuf2-v4l2 \
+                open_vin_csi2 open_vin_capture ax630c_venc_vcmd; do
+        src=$(find "$TMPDIR/modstage/lib/modules/${release}" -name "$ko.ko")
+        [ -n "$src" ] \
+          || { echo "ERROR: $ko.ko was not built as a module" >&2; exit 1; }
+        install -m 0644 "$src" "$out/modules/$ko.ko"
+        echo "$ko.ko" >> "$out/modules/load-order"
+      done
+      echo "video modules: $(tr '\n' ' ' < "$out/modules/load-order")"
+    ''}
 
     # dt-bindings headers, so pkgs/dtb-mainline.nix compiles dts/ against the
     # exact kernel it will boot on rather than unpacking the tarball twice.

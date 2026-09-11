@@ -234,6 +234,13 @@ defconfig forward.
 
 ## 3. Our three open drivers on mainline
 
+**DONE (#83, 2026-09-10).** They live in the kernel tree now, at
+`pkgs/kernel-mainline/tree/drivers/media/platform/axera/`, and build as
+modules. What follows is the delta list this section was written as; the
+result is the "What exists now (#83)" entry in section 8, and the 4.19
+out-of-tree packages under `pkgs/{open-vin-csi2,open-vin-capture,vc8000-vcmd}`
+are unchanged and still build the shipped 4.19 image's modules.
+
 They were designed for this move ([deblob-capture.md](deblob-capture.md)); the
 concrete deltas, from the sources:
 
