@@ -63,7 +63,7 @@ The costs that remain:
 |---|---|
 | ~~**OTA redesign**~~ — **done (#86, nix-native since #100)** | An update is a **signed system closure**: the release names a toplevel store path, the device substitutes it from our binary cache with `require-sigs` against its own keys, sets the system profile and runs `switch-to-configuration boot`. The 4.19 overlay path is deleted, not ported. [updates.md](updates.md). |
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [gap 2](#known-gaps). |
-| ~~**WiFi**~~ — **packaged (#85), not hardware-proven** | `pkgs/aic8800.nix` builds the two SDIO modules out of tree from `radxa-pkg/aic8800` against this kernel; `pkgs/aic8800-firmware.nix` MD5-pins the radio firmware; `nixos/wifi.nix` is the option, the loader unit, the supplicant and the `/kvmcomm/scripts/wifi.sh` the server's WiFi routes exec. Nothing has run on the board — [mainline-port.md](mainline-port.md) "What exists now (#85)". |
+| ~~**WiFi**~~ — **packaged (#85), not hardware-proven** | `pkgs/aic8800.nix` builds the two SDIO modules out of tree from `radxa-pkg/aic8800` against this kernel; `pkgs/aic8800-firmware.nix` MD5-pins the radio firmware; `nixos/wifi.nix` is the option, the loader unit, the supplicant and the `/kvmcomm/scripts/wifi.sh` the server's WiFi routes exec. **The radio scans on hardware (2026-09-11)** — [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS". |
 | **The `rc.local` glue** | `S99checkboot` is now a unit and is live (below). `axemac.sh`, `npu_set_bw_limiter.sh` and a bare `devmem` poke are not. |
 | **No hardware yet** | Video (#83) and USB HID (#82) are stubs on this kernel, and the mini-display (#84) has no framebuffer to draw on. ATX works in principle — #81 landed, and the appliance ships `nanokvm-gpio` and the libgpiod server build — but has never been exercised on the board. The appliance boots, serves the web UI and answers SSH; it is not yet a working KVM. |
 | **Boot risk** | The rootfs is the one thing between U-Boot and a working device, `bootdelay=0` means there is no serial break-in, and recovery is physical AXDL. |
@@ -1259,15 +1259,15 @@ number, so closed gaps keep their slot and new ones are appended.
    on`), `npu_set_bw_limiter.sh start`, and the bare
    `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` has nothing to do
    here — see gap 5.
-4. **WiFi — PACKAGED (#85, 2026-09-11), unproven on hardware.** `aic8800_bsp`
+4. **WiFi — WORKING (#85, 2026-09-11).** `aic8800_bsp`
    and `aic8800_fdrv` are built out of tree from `radxa-pkg/aic8800` against
    this kernel (`pkgs/aic8800.nix`, vermagic asserted from the finished `.ko`),
    and the firmware — the only closed content the blob policy allows — is 62
    files MD5-pinned to AICsemi's own manifest (`pkgs/aic8800-firmware.nix`).
    `nanokvm.wifi.enable` is on by default; turning it off drops both from the
    closure. `aic8800_btlpm` is deliberately not built: Bluetooth is out of
-   scope. What is left is a hardware round — see
-   [mainline-port.md](mainline-port.md) "What exists now (#85)".
+   scope. The radio scans on the board; joining a network needs credentials —
+   see [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS".
 5. **OTA — CLOSED (#86, nix-native since #100).** An update is a **signed system
    closure**: `.#system-manifest` publishes ~200 bytes naming a toplevel store
    path, the release pushes that closure to our binary cache, and

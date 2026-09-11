@@ -132,6 +132,35 @@ that is arbitration, not a bug.
   systemd, ethernet dead" into "kernel died before ramoops" for two rungs.
   Run the control experiment (warm-reboot a known-good boot and look) before
   trusting any absence-of-evidence channel.
+- **`=m` is a lie in this kernel, and `IS_ENABLED()` believes it.** The
+  mainline kernel has no module search path — six `.ko` are installed by hand
+  and nothing else can ever load — so any `=m` symbol that a *built-in*
+  `IS_ENABLED()` tests will send the built-in code down a path whose driver
+  does not exist. `CONFIG_RESET_GPIO=m` (an arm64 defconfig default) did
+  exactly that in #85: `mmc_pwrseq_simple` asks the reset core for a reset
+  control whenever there is exactly one `reset-gpios`, the core synthesised an
+  auxiliary `reset-gpio` device because `IS_ENABLED(CONFIG_RESET_GPIO)` was
+  true, and then waited forever for the module. Permanent `-EPROBE_DEFER` on
+  the pwrseq, which its consumer `104d0000.mmc` inherited — so the SDIO host
+  never probed, no card enumerated, and a perfectly good radio looked dead.
+  The only trace is two `deferred probe pending` lines 12 s into the boot and
+  a missing entry in `/sys/class/mmc_host`. Make such a symbol `y` or unset it;
+  never leave it `m`. Nothing offline catches it.
+- **A peripheral that is allowed to be absent must not be allowed to fail.**
+  A `Type=oneshot` unit that `exit 1`s when its hardware is missing makes
+  `systemctl is-system-running` report `degraded`, which makes
+  `nanokvm-mark-good` poll 240 s and give up, which leaves `bootcount`
+  uncleared — so **every reboot counts as a failed boot attempt and the fourth
+  rolls the board onto the fallback generation**. #85's WiFi unit did this;
+  `nanokvm-panel.service` (#84) still does. Optional hardware gets a journal
+  line and `exit 0`.
+- **Measure a binary's compiled-in paths; do not reason about its upstream
+  defaults.** nixpkgs' `wpa_cli` is built with `/run/wpa_supplicant/control`
+  and `/run/wpa_supplicant/client` patched in, NOT upstream's
+  `/var/run/wpa_supplicant` — so `networking.wireless.userControlled` is what a
+  bare `wpa_cli -i wlan0` needs, and #85's carefully-argued override of it cost
+  a hardware round. `strings` on the binary settles such a question in seconds.
+  Same lesson as the browser-codec rule above, in a different subsystem.
 - **A pad no DT node names is a pad the port does not own.** Linux inherits
   whatever the loader left on it, so it works under the vendor U-Boot and dies
   under mainline U-Boot (which programs nothing). The fourteen RGMII pads had

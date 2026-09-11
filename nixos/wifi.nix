@@ -32,16 +32,16 @@
 #      appliance provides /kvmcomm/scripts/wifi.sh, honouring the path the
 #      server compiles in rather than inventing a new one.
 #
-# WPA_SUPPLICANT is nixpkgs' own module, with two deliberate settings:
+# WPA_SUPPLICANT is nixpkgs' own module, unmodified in the way that counts:
 #   * `allowAuxiliaryImperativeNetworks` -- the UI adds networks at runtime and
 #     they have to survive a reboot, so the primary config is the writable
 #     /etc/wpa_supplicant/imperative.conf with update_config=1.
-#   * `userControlled = false` plus an explicit `ctrl_interface` in
-#     extraConfig. Upstream's userControlled puts the control sockets in
-#     /run/wpa_supplicant/CONTROL/, and the server runs a bare `wpa_cli -i
-#     wlan0 status`, whose default control path is /var/run/wpa_supplicant ->
-#     /run/wpa_supplicant. One directory level is the whole difference between
-#     a working WiFi page and one that reports "not connected" forever.
+#   * `userControlled` -- which is what puts the control socket where a BARE
+#     `wpa_cli -i wlan0` looks, and a bare wpa_cli is exactly what the server
+#     runs. nixpkgs compiles both halves of that path into the binary
+#     (/run/wpa_supplicant/control and .../client); it is not upstream's
+#     /var/run/wpa_supplicant, and #85 lost a hardware round to assuming it
+#     was. See the option itself for the measurement.
 #
 # NOT DONE HERE: AP mode. The server's AP-mode provisioning flow (the /wifi
 # page, `X-AP-Key`, /tmp/ap.pass, `pgrep hostapd`) needs hostapd, a DHCP
@@ -368,15 +368,27 @@ in
       # The UI adds networks at runtime; they live in the writable primary
       # config and survive reboots.
       allowAuxiliaryImperativeNetworks = true;
-      # NOT upstream's userControlled: see the header. The control socket has
-      # to be /run/wpa_supplicant/wlan0, because that is where a bare
-      # `wpa_cli -i wlan0` looks and the server runs exactly that.
-      userControlled = false;
-      extraConfig = ''
-        ctrl_interface=/run/wpa_supplicant
-        ctrl_interface_group=wpa_supplicant
-        update_config=1
-      '';
+      # UPSTREAM'S SETTING, and it is the one that matters most in this file.
+      #
+      # It emits `ctrl_interface=/run/wpa_supplicant/control`,
+      # `ctrl_interface_group=wpa_supplicant` and `update_config=1`, and its
+      # ExecStartPre creates /run/wpa_supplicant/client. All four are needed,
+      # because NIXPKGS PATCHES BOTH PATHS INTO THE BINARY: `strings` on the
+      # board's own wpa_cli gives exactly
+      #
+      #   /run/wpa_supplicant/control     (where it looks for the server)
+      #   /run/wpa_supplicant/client      (where it puts its own socket)
+      #
+      # NOT upstream wpa_supplicant's /var/run/wpa_supplicant. #85 first
+      # shipped `userControlled = false` plus an explicit
+      # `ctrl_interface=/run/wpa_supplicant`, reasoning from upstream's
+      # default -- and on the board a bare `wpa_cli -i wlan0 status`, which is
+      # precisely what NanoKVM-Server runs, failed twice over: first
+      # "/run/wpa_supplicant/client: No such file or directory", then
+      # "Failed to connect to non-global ctrl_ifname: wlan0". Both paths were
+      # wrong and neither was visible offline. Measure the binary; do not
+      # reason about its defaults.
+      userControlled = true;
     };
 
     # networkd already brings up a station wlan0 (nixpkgs' generic
