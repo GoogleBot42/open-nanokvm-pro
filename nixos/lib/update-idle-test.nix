@@ -267,6 +267,25 @@ pkgs.runCommand "nanokvm-update-idle"
     || { cat "$PWD/i3.log" >&2; fail "'status' does not report what the boot configs pin"; }
   ok "pending and status report the version, the checkbox and the pins"
 
+  # =====================================================================
+  # J. THE WEB UI'S BUTTON -- `install-now`, which is all the server calls.
+  # =====================================================================
+  # A human pressed it, so neither gate applies: not the checkbox (still
+  # unticked from phase I) and not the idle question (the room is full). The
+  # markers are still written, because the note is what lets the page say what
+  # happened on the other side of the restart -- and the server takes the
+  # reboot itself.
+  echo "=== J. install-now, unticked and in use ==="
+  rm -f "$marker" "$note"
+  rm -f "$R/run/current-system"; ln -s "$R$V2" "$R/run/current-system"
+  inuse
+  offer "$V3" "9.9.10"
+  U install-now > "$PWD/j.log" 2>&1 || { cat "$PWD/j.log" >&2; fail "install-now failed"; }
+  [ "$(system_path "$R")" = "$V3" ] || fail "install-now did not install what the channel offers"
+  [ -e "$marker" ] || fail "install-now wrote no pending marker"
+  no_reboot "install-now rebooted the device itself -- that is the server's job"
+  ok "install-now ignores the checkbox and the idle gate, and leaves the reboot to its caller"
+
   kill "$http_pid" 2>/dev/null || true
   wait "$http_pid" 2>/dev/null || true
 
