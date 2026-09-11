@@ -77,6 +77,16 @@ let
       # so every call that matters is checked by its output.
       ok() { case "$1" in OK*) return 0 ;; *) return 1 ;; esac; }
 
+      # NO ADAPTER is a first-class answer, not an error. The radio is
+      # optional hardware: it may be absent, and it may fail to enumerate on
+      # the SDIO bus -- nanokvm-wifi.service deliberately does not fail when
+      # that happens (see the unit in nixos/wifi.nix). The server calls this
+      # script regardless: `GetWifi` reports `supported: false` only after it
+      # has found no interface with a `wireless` directory, and the scan and
+      # connect routes have no such guard at all. So every verb below has to
+      # behave sensibly with no interface present.
+      have_adapter() { [ -e "/sys/class/net/$IFACE" ]; }
+
       state() { wcli status 2>/dev/null | sed -n 's/^wpa_state=//p'; }
       ipaddr() { wcli status 2>/dev/null | sed -n 's/^ip_address=//p'; }
 
@@ -87,6 +97,12 @@ let
       # has its own fixer for wpa_cli's `\xNN` form (singleHexEscapeRegex),
       # and rewriting them here would defeat it.
       do_scan() {
+        if ! have_adapter; then
+          # An empty array is a valid answer the server parses; anything else
+          # makes its scan route log a failure the user cannot act on.
+          echo "[]"
+          return 0
+        fi
         wcli scan >/dev/null 2>&1 || true
         # The supplicant scans asynchronously; results accumulate. Three
         # seconds is one full pass of the 2.4/5 GHz channel list on this part.
@@ -135,6 +151,7 @@ let
       # (isWifiConnected), and it has to be persistent, because a disconnect
       # that comes back after a reboot is not a disconnect.
       do_connect_stop() {
+        have_adapter || return 0
         wcli disable_network all >/dev/null 2>&1 || true
         wcli disconnect >/dev/null 2>&1 || true
         wcli save_config >/dev/null 2>&1 || true
@@ -143,6 +160,10 @@ let
       # --- connect_start <ssid> [psk] -------------------------------------
       # Blocking, and the server kills the whole process group after 30 s.
       do_connect_start() {
+        if ! have_adapter; then
+          echo "connect_start: no wireless adapter ('$IFACE' does not exist)" >&2
+          exit 1
+        fi
         ssid="$1"
         psk="''${2-}"
         [ -n "$ssid" ] || { echo "connect_start: empty ssid" >&2; exit 1; }
@@ -193,7 +214,8 @@ let
         # The server calls this on the way in to every connect, so it must
         # exist and must succeed.
         ap_stop)       exit 0 ;;
-        status)        wcli status; echo "ip=$(ipaddr)" ;;
+        status)        have_adapter || { echo "no wireless adapter"; exit 0; }
+                       wcli status; echo "ip=$(ipaddr)" ;;
         *)
           echo "usage: wifi.sh {try_scan|connect_start <ssid> [psk]|connect_stop|ap_stop}" >&2
           exit 1 ;;
@@ -238,51 +260,104 @@ in
       description = "NanoKVM-Pro WiFi (AIC8800 SDIO modules)";
       wantedBy = [ "multi-user.target" ];
       # After the video stack, because that is what this appliance is for and
-      # a radio should not delay it. NOT before `network-pre.target`: this
-      # unit waits up to 10 s for wlan0 and then fails, and nothing that can
-      # do that belongs in front of the interface the board is reached on.
+      # a radio should not delay it. NOT before `network-pre.target`: nothing
+      # that can wait ten seconds belongs in front of the interface the board
+      # is reached on.
       after = [ "systemd-modules-load.service" "nanokvm-video.service" ];
       # wpa_supplicant-wlan0.service `requires` the wlan0 .device unit, so it
-      # would wait for us anyway; ordering says so explicitly.
+      # would wait for us anyway; ordering says so explicitly. When the radio
+      # is absent that unit reports "Dependency failed" and goes *inactive*,
+      # not failed -- measured on the board 2026-09-11 -- so it does not gate
+      # boot health either.
       before = [ "wpa_supplicant-${iface}.service" ];
       path = [ pkgs.kmod ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
       };
+      # ===================================================================
+      # THIS UNIT NEVER FAILS, AND THAT IS THE POINT.
+      #
+      # It used to `exit 1` when the radio did not come up, and on 2026-09-11
+      # the board showed what that costs: the AIC8800 never enumerated, the
+      # unit failed, `systemctl is-system-running` went `degraded`,
+      # nanokvm-mark-good polled for 240 s and gave up, `bootcount` was never
+      # cleared -- so every reboot counted as a failed boot attempt and the
+      # fourth would have rolled the board onto the fallback generation. A
+      # KVM whose HDMI, USB and ethernet all work is not unhealthy because it
+      # has no wireless.
+      #
+      # So every failure here is a journal line and an inactive interface.
+      # The diagnosis stays in the journal -- including the one line that
+      # actually explains a dead radio, which is whether the SDIO HOST probed
+      # at all. If `104d0000.mmc` is not in /sys/class/mmc_host then no card
+      # can possibly have enumerated and the fault is the host or its power
+      # sequencer, not the module, the firmware or the chip.
+      # ===================================================================
       script = ''
-        set -e
+        say() { echo "nanokvm-wifi: $*"; }
+        note() { echo "nanokvm-wifi: $*" >&2; }
+
+        # Which SDIO host, if any. Read first, because it is the answer to
+        # every other question below.
+        host=""
+        for h in /sys/class/mmc_host/*; do
+          [ -e "$h" ] || continue
+          case "$(readlink -f "$h")" in
+            *104d0000.mmc*) host=$(basename "$h") ;;
+          esac
+        done
+        if [ -n "$host" ]; then
+          say "SDIO host 104d0000.mmc is $host"
+        else
+          note "the SDIO host 104d0000.mmc did not probe -- no card can enumerate."
+          note "check: dmesg | grep -iE 'mmc|pwrseq', and /sys/kernel/debug/devices_deferred"
+        fi
+
         dir=${nanokvm.aic8800}/lib/modules/$(uname -r)
         if [ ! -r "$dir/load-order" ]; then
-          echo "nanokvm-wifi: $dir does not exist." >&2
-          echo "nanokvm-wifi: the aic8800 modules were built for a different" >&2
-          echo "nanokvm-wifi: kernel than the one running ($(uname -r))." >&2
-          exit 1
+          note "$dir does not exist: the aic8800 modules were built for a"
+          note "different kernel than the one running ($(uname -r)). No WiFi."
+          exit 0
         fi
+
+        failed=""
         while read -r ko; do
           [ -n "$ko" ] || continue
           if [ -d "/sys/module/$(basename "$ko" .ko | tr - _)" ]; then
-            echo "nanokvm-wifi: $ko already loaded"
+            say "$ko already loaded"
             continue
           fi
-          echo "nanokvm-wifi: insmod $ko"
-          insmod "$dir/$ko"
+          if insmod "$dir/$ko"; then
+            say "insmod $ko"
+          else
+            # ENODEV from aic8800_fdrv is the ordinary "no card on the SDIO
+            # bus" answer: the bsp module's power-on timed out, so the fdrv
+            # has nothing to attach a wiphy to.
+            note "insmod $ko failed -- see dmesg for the driver's own reason."
+            failed=1
+            break
+          fi
         done < "$dir/load-order"
 
-        # The oracle. aic8800_bsp probing means the SDIO card enumerated and
-        # the firmware loaded; wlan0 appearing means aic8800_fdrv registered
-        # the wiphy. Neither is implied by a successful insmod -- the modules
-        # load fine on a board whose radio never came out of reset.
+        if [ -n "$failed" ]; then
+          note "no WiFi on this boot. The appliance is otherwise unaffected."
+          exit 0
+        fi
+
+        # The oracle. A successful insmod proves nothing: the modules load
+        # fine on a board whose radio never came out of reset.
         for _ in $(seq 1 40); do
           [ -e /sys/class/net/${iface} ] && break
           sleep 0.25
         done
         if [ ! -e /sys/class/net/${iface} ]; then
-          echo "nanokvm-wifi: modules loaded but ${iface} never appeared" >&2
-          echo "nanokvm-wifi: check dmesg for the SDIO scan and the firmware path" >&2
-          exit 1
+          note "modules loaded but ${iface} never appeared."
+          note "check dmesg for the SDIO scan and the firmware path."
+          note "no WiFi on this boot. The appliance is otherwise unaffected."
+          exit 0
         fi
-        echo "nanokvm-wifi: ${iface} up"
+        say "${iface} up"
       '';
     };
 
