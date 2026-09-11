@@ -91,10 +91,15 @@ let
         # The supplicant scans asynchronously; results accumulate. Three
         # seconds is one full pass of the 2.4/5 GHz channel list on this part.
         sleep 3
+        # Captured first, NOT piped into the loop: a `... | while` runs the
+        # loop in a subshell, and `first` would be invisible to anything after
+        # it. Here it is one shell throughout.
+        results=$(wcli scan_results 2>/dev/null | tail -n +2 || true)
+
         echo -n "["
         first=1
         # scan_results: bssid<TAB>frequency<TAB>signal<TAB>flags<TAB>ssid
-        wcli scan_results 2>/dev/null | tail -n +2 | while IFS=$'\t' read -r bssid freq sig flags ssid; do
+        while IFS=$'\t' read -r bssid freq sig flags ssid; do
           [ -n "$bssid" ] || continue
           [ -n "$ssid" ] || continue
           # Security: the first flag group that is not a capability marker.
@@ -106,14 +111,21 @@ let
             *WEP*) sec="WEP" ;;
             *) sec="" ;;
           esac
-          # A literal quote or backslash in an SSID would make invalid JSON.
-          ssid=''${ssid//\\/\\\\}
-          ssid=''${ssid//\"/\\\"}
+          # The SSID is passed through EXACTLY as wpa_cli printed it. Its
+          # printf_encode() already emits `\\`, `\"`, `\n`, `\r` and `\t` --
+          # every one of them a valid JSON escape -- and `\xNN` for anything
+          # non-printable, which is the one form that is not valid JSON and
+          # is precisely what the server's own fixer rewrites. Re-escaping
+          # here would double the backslashes and defeat it.
+          # signal and frequency are JSON NUMBERS in the server's struct, so a
+          # blank field would make the whole array unparseable.
+          case "$sig" in -[0-9]*|[0-9]*) ;; *) sig=0 ;; esac
+          case "$freq" in [0-9]*) ;; *) freq=0 ;; esac
           [ "$first" = 1 ] || echo -n ","
           first=0
           printf '{"ssid":"%s","bssid":"%s","signal":%s,"frequency":%s,"security":"%s"}' \
             "$ssid" "$bssid" "$sig" "$freq" "$sec"
-        done
+        done <<< "$results"
         echo "]"
       }
 

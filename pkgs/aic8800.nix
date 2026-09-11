@@ -57,7 +57,7 @@ assert lib.assertMsg (lib.hasPrefix "/" firmwarePath)
 
 pkgs.stdenv.mkDerivation {
   pname = "aic8800-modules";
-  version = "${aic8800-src.version}-${kernel.version}";
+  version = "${aic8800-src.version}-${kernel.modDirVersion}";
 
   src = aic8800-src;
 
@@ -91,7 +91,7 @@ pkgs.stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
-    kdir="${kernel.dev}/lib/modules/${kernel.version}/build"
+    kdir="${kernel.dev}/lib/modules/${kernel.modDirVersion}/build"
     [ -d "$kdir" ] \
       || { echo "ERROR: no KDIR at $kdir -- the kernel's dev output has no" >&2
            echo "       out-of-tree build tree (pkgs/kernel-mainline.nix)." >&2; exit 1; }
@@ -107,7 +107,7 @@ pkgs.stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    d="$out/lib/modules/${kernel.version}"
+    d="$out/lib/modules/${kernel.modDirVersion}"
     mkdir -p "$d"
 
     # Load order is the contract, exactly as it is for the video stack: bsp
@@ -130,10 +130,10 @@ pkgs.stdenv.mkDerivation {
     for ko in "$d"/*.ko; do
       vm=$(modinfo -F vermagic "$ko")
       case "$vm" in
-        "${kernel.version} "*|"${kernel.version}")
+        "${kernel.modDirVersion} "*|"${kernel.modDirVersion}")
           echo "$(basename "$ko"): vermagic '$vm'" ;;
         *)
-          echo "ERROR: $(basename "$ko") vermagic is '$vm', not ${kernel.version}" >&2
+          echo "ERROR: $(basename "$ko") vermagic is '$vm', not ${kernel.modDirVersion}" >&2
           exit 1 ;;
       esac
     done
@@ -149,7 +149,7 @@ pkgs.stdenv.mkDerivation {
     # depmod so `modinfo` and `modprobe -d` work for anyone debugging on the
     # board. It is not the loader -- nixos/wifi.nix walks load-order with
     # insmod, the same two-line mechanism nanokvm-video.service uses.
-    depmod -b "$out" "${kernel.version}"
+    depmod -b "$out" "${kernel.modDirVersion}"
 
     ls -l "$d"
 
