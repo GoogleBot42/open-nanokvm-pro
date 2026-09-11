@@ -284,21 +284,20 @@ costs a 300 s watchdog cycle, and ten minutes was what made #94 look like a bad
 flash. `docs/mainline-port.md` §11.10 "Handoff" is the current device contract;
 §11.11 is #94.
 
-**`/boot` is NixOS's since #99 (hardware-proven 2026-09-11) — there is no
-`/boot/Image`.** The kernel, the initrd and the dtb are store paths in the
-generation, and `boot.loader.generic-extlinux-compatible`, run by
-`switch-to-configuration boot`, is the ONLY writer of `/boot`: it copies the
-three files into `/boot/nixos/<store-hash>-…` and writes
-`/boot/extlinux/extlinux.conf` with one `LABEL` per generation, each pinning
-its own `init=`. `nanokvm-mark-good` derives `extlinux-fallback.conf` from that
-file by changing one `DEFAULT` line. Consequences when you touch the board:
-`/boot` must be mounted before any switch (`mountpoint -q /boot`), a kernel
-change needs no extra copy, `nanokvmboot=` and `Image-<hash>` are gone, and
-**read the `DEFAULT` label, never the first `init=`** — both files list every
-generation. A generation built with `boot.kernel.enable = false` gets NO menu
-entry (the builder skips any toplevel with no `kernel`/`initrd` link), which is
-why generations 1-3 on this board are not bootable and why migrating a pre-#99
-`/boot` costs one generation of space, not three.
+**`/boot` IS the NixOS layout on the board, hardware-proven 2026-09-11 (#99),
+and there is no `/boot/Image` any more.** It holds `extlinux/`, `nixos/` and
+`ver` — 51 MB of 245 MB — and the mechanism below was watched working over six
+boots: the bootstrap, a forced rollback, a kernel-only generation, and a
+rollback that came back on the OLD kernel while the profile symlink still
+pointed at the new one. Four things that cost time if you assume otherwise:
+`/boot` must be MOUNTED before any `switch-to-configuration boot`
+(`mountpoint -q /boot`) or the builder writes into the rootfs's own `/boot`;
+**read the `DEFAULT` label, never the first `init=`**, because both files list
+every generation; a toplevel with no `kernel`/`initrd` link gets NO menu entry
+at all (`addEntry()` returns early), which is why generations 1-3 on this board
+are not bootable and why migrating a pre-#99 `/boot` costs one generation of
+space rather than `configurationLimit`; and a kernel change needs no extra
+copy, because the kernel is in the closure.
 
 **Try a U-Boot candidate through the one-shot chainload slot, never by writing
 the `uboot` partition** — there is one copy and no B twin. `nanokvm-uboot-test
