@@ -1,16 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * THIS IS THE 4.19 COPY. The mainline port lives in the kernel tree, at
- * pkgs/kernel-mainline/tree/drivers/media/platform/axera/ (#83, device-proven
- * 2026-09-10). The TODO(mainline) comments below are DONE there; they are left
- * here because this file still builds the shipped 4.19 image's module and
- * nothing about it should move. Delete this copy when the 4.19 image retires.
- */
-/*
  * open_vin_capture -- open V4L2 VIN/IFE capture video node for the Axera
  * AX630C (replaces the vendor ax_proton bypass/IFE-WDMA path). Epic #55 /
- * issue #59 (M2). Digital YUV422-8 over MIPI CSI-2 -> IFE bypass (MODE10 /
- * MODE3 whole-frame) -> IFE-WDMA -> DDR.
+ * issue #59 (M2); ported to the mainline kernel by #83. Digital YUV422-8 over
+ * MIPI CSI-2 -> IFE bypass (MODE10 / MODE3 whole-frame) -> IFE-WDMA -> DDR.
  *
  * CLEAN-ROOM: written from the behavioral specs
  *   docs/reference/deblob-scope/specs/spec-proton-bypass.md  ("spec §N" below)
@@ -23,28 +16,49 @@
  * register file; RMW is read-modify-write in the driver (no hardware RMW);
  * enable / shadow-commit bits are set LAST (spec §4).
  *
- * Memory model (#49: CONFIG_CMA is off, VIDEOBUF2_DMA_CONTIG not built):
- * vb2 buffers come from a reserved coherent carveout declared with
- * dma_declare_coherent_memory() over a slice of the CMM tail -- the pattern
- * proven by pkgs/vc8000-vcmd/ax630c_vcmd_glue.c (docs/vcmd-cma-unblock.md).
- * A small custom vb2 mem_ops allocates via dma_alloc_coherent() from that
- * declared pool; the buffer's dma_addr is exactly the physical DDR address
- * the WDMA needs ("writel(dma_addr >> 3, ...)", spec §3 -- THE GATE).
+ * Memory model: vb2 buffers come from a reserved-memory `shared-dma-pool`
+ * named by `memory-region`, attached with of_reserved_mem_device_init(). A
+ * small custom vb2 mem_ops allocates via dma_alloc_coherent() from that pool;
+ * the buffer's dma_addr is exactly the physical DDR address the WDMA needs
+ * ("writel(dma_addr >> 3, ...)", spec §3 -- THE GATE). There is no IOMMU on
+ * this SoC, so bus == phys.
  *
- * Hardware-proven and shipping since #55 M3 (2026-09-02): 4K30 and every
- * sub-4K crop byte-identical to the vendor's frames, cold-boot clean. The
- * remaining TODO(bringup) comments mark values the spec could not pin that
- * still carry a best guess (each states how to confirm it).
+ * WHAT THE MAINLINE PORT CHANGED (#83):
+ *
+ *   - The carveout is a DT reserved-memory node, not the carveout_base /
+ *     carveout_size module parameters the 4.19 shell loader computed. The
+ *     loader's whole `compute_mem_map` has no mainline counterpart.
+ *   - The clock/reset window at 0x02500000 is a syscon phandle
+ *     ("axera,isp-syscon"), not an ioremap of a literal address. It is the
+ *     one window on this SoC with no clock or reset provider -- the vendor
+ *     never wrote one either -- so the gate and reset sweeps below stay
+ *     driver-owned register writes, and they are exactly the writes that are
+ *     device-proven.
+ *   - The VI and ISP-MM domain gates in the common syscon ARE modelled by the
+ *     in-tree clock provider, and are taken here as `clocks =` consumers.
+ *     That is not decoration: clk_disable_unused() gates an unclaimed clock
+ *     on mainline, and mainline U-Boot leaves nothing enabled.
+ *   - Subdev binding is the fwnode graph (v4l2_async_nf_add_fwnode_remote),
+ *     not the platform-device-name match the vendor DT forced.
+ *
+ * Hardware-proven and shipping since #55 M3 (2026-09-02) on 4.19: 4K30 and
+ * every sub-4K crop byte-identical to the vendor's frames, cold-boot clean.
+ * The remaining TODO(bringup) comments mark values the spec could not pin
+ * that still carry a best guess (each states how to confirm it).
  */
 
+#include <linux/clk.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
-#include <linux/of_device.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/iosys-map.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
@@ -54,6 +68,7 @@
 #include <media/v4l2-dev.h>
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-async.h>
+#include <media/v4l2-fwnode.h>
 #include <media/media-device.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-fh.h>
@@ -74,29 +89,6 @@
 /* ------------------------------------------------------------------------ */
 
 /*
- * Capture-buffer carveout. Since #53 this is a FORMAL slice of the CMM pool:
- * the curated boot loader (pkgs/rootfs/ax-load-drv.sh) derives the whole DMA
- * map from the board's pool geometry, lowers ax_cmm's cmmpool= ceiling below
- * every open carveout, and exports the numbers to /run/openkvm-memmap.env --
- *     . /run/openkvm-memmap.env
- *     insmod open_vin_capture.ko carveout_base=$OPENKVM_CAPTURE_BASE \
- *                               carveout_size=$OPENKVM_CAPTURE_SIZE
- * (this module is still loaded by hand during bring-up; fold it into the
- * loader when it ships). The defaults below are the 1G-board values that map
- * computes (pool 0x73800000-0x7FFFFFFF -> 0x7C000000 + 56MB, between the open
- * encoder framebuf carveout below and the VCMD coherent pool above). 56MB
- * fits 3x 4K YUYV frames (3840*2160*2 = ~15.9MB each).
- * Layout table: docs/vcmd-cma-unblock.md, "DMA memory map".
- */
-static unsigned long carveout_base = 0x7C000000UL;
-module_param(carveout_base, ulong, 0444);
-MODULE_PARM_DESC(carveout_base, "phys base of the capture-buffer coherent carveout");
-
-static unsigned long carveout_size = 0x03800000UL;	/* 56MB */
-module_param(carveout_size, ulong, 0444);
-MODULE_PARM_DESC(carveout_size, "size of the capture-buffer coherent carveout (0 = use default pool)");
-
-/*
  * ISP-top module gate masks (spec §2 "MODE10 bypass mask"). Device-confirmed
  * 2026-09-01 (see OVC_TOP_GATE_*): the status word 0x02400150 resets to
  * all-ones and the vendor clears bits 0,1,2,15 (status 0xffff7ff8); the SET
@@ -106,22 +98,6 @@ MODULE_PARM_DESC(carveout_size, "size of the capture-buffer coherent carveout (0
 static u32 bypass_set_mask;
 module_param(bypass_set_mask, uint, 0444);
 MODULE_PARM_DESC(bypass_set_mask, "ISP-top module gate SET strobe (0x02400154); 0 = skip");
-
-/*
- * M1 <-> M2 link. The open_vin_csi2 subdev (pkgs/open-vin-csi2, loaded with
- * standalone=0) registers itself with v4l2-async; this driver's notifier
- * matches it by platform-device name, binds it to our v4l2_device, links its
- * source pad to our sink pad on the media graph, and fans s_stream out to it
- * from start/stop_streaming -- so the D-PHY/CSI-2 receiver runs exactly while
- * /dev/video0 streams, and nobody needs start_on_probe any more. Matching by
- * device name rather than a DT graph endpoint: the vendor DT has no
- * port/endpoint nodes and changing the dtb means a slot flash (TODO(mainline):
- * fwnode graph + v4l2_fwnode_endpoint once the mainline DT exists). Empty
- * string = no notifier (bench mode: run the receiver standalone).
- */
-static char *csi2_devname = "2600000.mipi_rx";
-module_param(csi2_devname, charp, 0444);
-MODULE_PARM_DESC(csi2_devname, "platform device name of the open_vin_csi2 subdev to bind (\"\" = none)");
 
 static u32 bypass_clr_mask = 0x00008007;
 module_param(bypass_clr_mask, uint, 0444);
@@ -240,9 +216,9 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_WDMA_WH(c)		(OVC_IFE_BLOCK + 0x18 * (c) + 0x3ec)
 
 /* Clock/reset controller = low 0x100 of the 0x02500000 window (spec §8).
- * Not part of the DT reg property; mapped separately. W1S/W1C pairs. */
-#define OVC_CLKRST_PHYS		0x02500000
-#define OVC_CLKRST_LEN		0x100
+ * Reached through the "axera,isp-syscon" phandle -- the one window on this
+ * SoC that has no clock or reset provider, in the vendor tree or ours
+ * (dt-bindings/reset/ax630c-reset.h says so). W1S/W1C pairs. */
 #define OVC_CLK_MUX_RD		0x00
 #define OVC_CLK_MUX_SET		0xC8
 #define OVC_CLK_MUX_CLR		0xCC
@@ -260,6 +236,13 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_CLK_MUX_NFIELDS	3
 #define OVC_CLK_MUX_FIELD	0x7
 #define OVC_CLK_MUX_READY	0x5af	/* golden MUX_RD after apply (device-proven) */
+/*
+ * ...but only bits [10:2] of it are the mux. MUX_RD[3:0] is the CSI deskew
+ * lock status, which is 0xf only while a source is driving the link -- so an
+ * idle board reads 0x5ac and comparing the whole word cries wolf on every
+ * boot (measured 2026-09-10, first mainline run).
+ */
+#define OVC_CLK_MUX_FIELDS	0x7fc
 #define OVC_CLK_GATE_A_SET	0xD0	/* bits [5:0] */
 #define OVC_CLK_GATE_B_SET	0xD8	/* bits [9:1] */
 #define OVC_RST0_ASSERT		0xE0
@@ -304,20 +287,36 @@ struct ovc_buffer {
 	struct list_head list;
 };
 
+/*
+ * The two common-syscon gates that feed the VI/ISP domain. They are real CCF
+ * clocks (drivers/clk/axera), and taking them is what keeps
+ * clk_disable_unused() from gating the block out from under us -- the vendor
+ * kernel never had to care because its bootloader left them running.
+ */
+enum ovc_clk {
+	OVC_CLK_VI,
+	OVC_CLK_ISP_MM,
+	OVC_NUM_CLKS,
+};
+
+static const char * const ovc_clk_names[OVC_NUM_CLKS] = {
+	[OVC_CLK_VI] = "vi",
+	[OVC_CLK_ISP_MM] = "isp_mm",
+};
+
 struct ovc_dev {
 	struct device *dev;
 	void __iomem *regs;	/* 0x02400000 ISP/VIN register file */
-	void __iomem *clkrst;	/* 0x02500000 clock/reset window */
+	struct regmap *clkrst;	/* 0x02500000 isp syscon (clock/reset window) */
+	struct clk_bulk_data clks[OVC_NUM_CLKS];
 
 	struct v4l2_device v4l2_dev;
 	struct video_device vdev;
 	struct media_pad pad;	/* sink pad for the CSI-2 subdev (M1) */
 	struct media_device mdev;
 
-	/* M1 link (see csi2_devname) */
+	/* M1 link: the CSI-2 receiver, bound over the DT graph. */
 	struct v4l2_async_notifier notifier;
-	struct v4l2_async_subdev asd;
-	struct v4l2_async_subdev *asds[1];
 	struct v4l2_subdev *csi2;	/* bound open_vin_csi2 subdev, or NULL */
 	bool notifier_registered;
 
@@ -330,7 +329,8 @@ struct ovc_dev {
 	unsigned int sequence;
 
 	struct v4l2_pix_format fmt;
-	bool carveout_declared;
+	/* Size of the reserved-memory pool, for the queue_setup buffer cap. */
+	resource_size_t carveout_size;
 };
 
 static inline struct ovc_buffer *to_ovc_buffer(struct vb2_v4l2_buffer *vbuf)
@@ -349,15 +349,18 @@ static inline void ovc_wr(struct ovc_dev *ovc, u32 off, u32 val)
 	writel(val, ovc->regs + off);
 }
 
-/* clock/reset window (0x02500000) accessors */
+/* clock/reset window (0x02500000) accessors, over the shared syscon regmap */
 static inline void ovc_clkrst_wr(struct ovc_dev *ovc, u32 off, u32 val)
 {
-	writel(val, ovc->clkrst + off);
+	regmap_write(ovc->clkrst, off, val);
 }
 
 static inline u32 ovc_clkrst_rd(struct ovc_dev *ovc, u32 off)
 {
-	return readl(ovc->clkrst + off);
+	unsigned int val = 0;
+
+	regmap_read(ovc->clkrst, off, &val);
+	return val;
 }
 
 /* new = (old & keep) | set  -- the vendor RMW idiom (spec §0.1, §4.3) */
@@ -397,9 +400,8 @@ static void ovc_mem_put(void *buf_priv)
 	}
 }
 
-static void *ovc_mem_alloc(struct device *dev, unsigned long attrs,
-			   unsigned long size, enum dma_data_direction dma_dir,
-			   gfp_t gfp_flags)
+static void *ovc_mem_alloc(struct vb2_buffer *vb, struct device *dev,
+			   unsigned long size)
 {
 	struct ovc_mem_buf *buf;
 
@@ -413,7 +415,7 @@ static void *ovc_mem_alloc(struct device *dev, unsigned long attrs,
 	buf->dev = dev;
 	buf->size = size;
 	buf->vaddr = dma_alloc_coherent(dev, size, &buf->dma_addr,
-					GFP_KERNEL | gfp_flags);
+					GFP_KERNEL);
 	if (!buf->vaddr) {
 		dev_err(dev, "coherent alloc of %lu bytes failed (carveout full?)\n",
 			size);
@@ -429,7 +431,7 @@ static void *ovc_mem_alloc(struct device *dev, unsigned long attrs,
 	return buf;
 }
 
-static void *ovc_mem_vaddr(void *buf_priv)
+static void *ovc_mem_vaddr(struct vb2_buffer *vb, void *buf_priv)
 {
 	struct ovc_mem_buf *buf = buf_priv;
 
@@ -437,7 +439,7 @@ static void *ovc_mem_vaddr(void *buf_priv)
 }
 
 /* vb2-dma-contig convention: cookie points at the dma_addr_t */
-static void *ovc_mem_cookie(void *buf_priv)
+static void *ovc_mem_cookie(struct vb2_buffer *vb, void *buf_priv)
 {
 	struct ovc_mem_buf *buf = buf_priv;
 
@@ -475,7 +477,7 @@ static int ovc_mem_mmap(void *buf_priv, struct vm_area_struct *vma)
 		return ret;
 	}
 
-	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+	vm_flags_set(vma, VM_DONTEXPAND | VM_DONTDUMP);
 	vma->vm_private_data = &buf->handler;
 	vma->vm_ops = &vb2_common_vm_ops;
 	vma->vm_ops->open(vma);
@@ -551,23 +553,17 @@ static void ovc_dmabuf_release(struct dma_buf *dbuf)
 	ovc_mem_put(dbuf->priv);
 }
 
-static void *ovc_dmabuf_kmap(struct dma_buf *dbuf, unsigned long pgnum)
-{
-	struct ovc_mem_buf *buf = dbuf->priv;
-
-	return buf->vaddr + pgnum * PAGE_SIZE;
-}
-
 static int ovc_dmabuf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
 {
 	return ovc_mem_mmap(dbuf->priv, vma);
 }
 
-static void *ovc_dmabuf_vmap(struct dma_buf *dbuf)
+static int ovc_dmabuf_vmap(struct dma_buf *dbuf, struct iosys_map *map)
 {
 	struct ovc_mem_buf *buf = dbuf->priv;
 
-	return buf->vaddr;
+	iosys_map_set_vaddr(map, buf->vaddr);
+	return 0;
 }
 
 static const struct dma_buf_ops ovc_dmabuf_ops = {
@@ -576,12 +572,12 @@ static const struct dma_buf_ops ovc_dmabuf_ops = {
 	.map_dma_buf	= ovc_dmabuf_map,
 	.unmap_dma_buf	= ovc_dmabuf_unmap,
 	.release	= ovc_dmabuf_release,
-	.map		= ovc_dmabuf_kmap,
 	.mmap		= ovc_dmabuf_mmap,
 	.vmap		= ovc_dmabuf_vmap,
 };
 
-static struct dma_buf *ovc_mem_get_dmabuf(void *buf_priv, unsigned long flags)
+static struct dma_buf *ovc_mem_get_dmabuf(struct vb2_buffer *vb,
+					  void *buf_priv, unsigned long flags)
 {
 	struct ovc_mem_buf *buf = buf_priv;
 	struct dma_buf *dbuf;
@@ -660,9 +656,10 @@ static void ovc_clk_mux_apply(struct ovc_dev *ovc)
 	}
 
 	after = ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD);
-	dev_info(ovc->dev, "clk-src mux applied: MUX_RD=%#06x (want %#06x)\n",
+	dev_info(ovc->dev, "clk-src mux applied: MUX_RD=%#06x (want %#06x in bits [10:2])\n",
 		 after, OVC_CLK_MUX_READY);
-	if (after != OVC_CLK_MUX_READY)
+	if ((after & OVC_CLK_MUX_FIELDS) !=
+	    (OVC_CLK_MUX_READY & OVC_CLK_MUX_FIELDS))
 		dev_warn(ovc->dev,
 			 "clk-src mux: MUX_RD %#06x != golden %#06x -- clock-source not selected (spec-vin-write-enable §6)\n",
 			 after, OVC_CLK_MUX_READY);
@@ -1039,8 +1036,9 @@ static int ovc_queue_setup(struct vb2_queue *vq, unsigned int *nbuffers,
 	/* Never promise more buffers than the carveout holds (a 4K YUYV frame
 	 * is 15.8 MB; the 56 MB default fits three) -- otherwise vb2 tries the
 	 * allocation and dma_alloc_coherent logs a failure for every start. */
-	if (carveout_size) {
-		unsigned int max = carveout_size / PAGE_ALIGN(ovc->fmt.sizeimage);
+	if (ovc->carveout_size) {
+		unsigned int max = div_u64(ovc->carveout_size,
+					   PAGE_ALIGN(ovc->fmt.sizeimage));
 
 		if (max < 2)
 			return -ENOMEM;
@@ -1099,9 +1097,9 @@ static void ovc_return_buffers(struct ovc_dev *ovc, enum vb2_buffer_state state)
 }
 
 /*
- * M1 fan-out: push the active geometry to the CSI-2 subdev's source pad and
- * start/stop the receiver. -ENOIOCTLCMD (no subdev bound) is not an error --
- * the receiver may be running standalone (bench mode).
+ * M1 fan-out: start/stop the receiver with our stream. -ENOIOCTLCMD (no
+ * subdev bound) is not an error -- the receiver may be running standalone
+ * (bench mode).
  */
 static int ovc_csi2_stream(struct ovc_dev *ovc, bool on)
 {
@@ -1111,22 +1109,12 @@ static int ovc_csi2_stream(struct ovc_dev *ovc, bool on)
 	if (!sd)
 		return 0;
 
-	if (on) {
-		struct v4l2_subdev_format sfmt = {
-			.which = V4L2_SUBDEV_FORMAT_ACTIVE,
-			.pad = OVC_CSI2_SOURCE_PAD,
-			.format = {
-				.width = ovc->fmt.width,
-				.height = ovc->fmt.height,
-				.code = MEDIA_BUS_FMT_UYVY8_1X16,
-				.field = V4L2_FIELD_NONE,
-			},
-		};
-
-		ret = v4l2_subdev_call(sd, pad, set_fmt, NULL, &sfmt);
-		if (ret && ret != -ENOIOCTLCMD)
-			return ret;
-	}
+	/*
+	 * Format is NOT pushed to the receiver. It programs no geometry of any
+	 * kind -- it forwards whatever the bridge emits -- and a set_fmt call
+	 * with a NULL subdev state is a NULL dereference on a modern subdev.
+	 * The graph carries the format; the hardware does not care.
+	 */
 	ret = v4l2_subdev_call(sd, video, s_stream, on);
 	return (ret == -ENOIOCTLCMD) ? 0 : ret;
 }
@@ -1207,8 +1195,6 @@ static const struct vb2_ops ovc_vb2_ops = {
 	.buf_queue		= ovc_buf_queue,
 	.start_streaming	= ovc_start_streaming,
 	.stop_streaming		= ovc_stop_streaming,
-	.wait_prepare		= vb2_ops_wait_prepare,
-	.wait_finish		= vb2_ops_wait_finish,
 };
 
 /* ------------------------------------------------------------------------ */
@@ -1242,9 +1228,8 @@ static int ovc_querycap(struct file *file, void *priv,
 	strscpy(cap->card, "AX630C open VIN/IFE capture", sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 OVC_DRV_NAME);
-	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
-			   V4L2_CAP_READWRITE;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+	/* capabilities / device_caps are filled from vdev->device_caps by the
+	 * core after this returns; setting them here would be dead stores. */
 	return 0;
 }
 
@@ -1396,7 +1381,7 @@ static inline struct ovc_dev *notifier_to_ovc(struct v4l2_async_notifier *n)
 
 static int ovc_notifier_bound(struct v4l2_async_notifier *notifier,
 			      struct v4l2_subdev *sd,
-			      struct v4l2_async_subdev *asd)
+			      struct v4l2_async_connection *asc)
 {
 	struct ovc_dev *ovc = notifier_to_ovc(notifier);
 	int ret;
@@ -1425,7 +1410,7 @@ static int ovc_notifier_bound(struct v4l2_async_notifier *notifier,
 
 static void ovc_notifier_unbind(struct v4l2_async_notifier *notifier,
 				struct v4l2_subdev *sd,
-				struct v4l2_async_subdev *asd)
+				struct v4l2_async_connection *asc)
 {
 	struct ovc_dev *ovc = notifier_to_ovc(notifier);
 
@@ -1447,12 +1432,61 @@ static const struct v4l2_async_notifier_operations ovc_notifier_ops = {
 	.complete	= ovc_notifier_complete,
 };
 
+/*
+ * The graph edge. This node has one port with one endpoint, whose remote is
+ * the CSI-2 receiver's source endpoint; v4l2_async_nf_add_fwnode_remote()
+ * resolves that remote and the notifier binds whichever subdev registers for
+ * it. Replaces the 4.19 V4L2_ASYNC_MATCH_DEVNAME on "2600000.mipi_rx", which
+ * existed only because the vendor DT had no ports at all.
+ */
+static int ovc_notifier_init(struct ovc_dev *ovc)
+{
+	struct v4l2_async_connection *asc;
+	struct fwnode_handle *ep;
+	int ret;
+
+	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(ovc->dev), 0, 0,
+					     FWNODE_GRAPH_ENDPOINT_NEXT);
+	if (!ep) {
+		dev_info(ovc->dev,
+			 "no port/endpoint: running without a CSI-2 subdev\n");
+		return 0;
+	}
+
+	v4l2_async_nf_init(&ovc->notifier, &ovc->v4l2_dev);
+	ovc->notifier.ops = &ovc_notifier_ops;
+
+	asc = v4l2_async_nf_add_fwnode_remote(&ovc->notifier, ep,
+					      struct v4l2_async_connection);
+	fwnode_handle_put(ep);
+	if (IS_ERR(asc)) {
+		ret = PTR_ERR(asc);
+		dev_err(ovc->dev, "async connection add failed: %d\n", ret);
+		goto err_cleanup;
+	}
+
+	ret = v4l2_async_nf_register(&ovc->notifier);
+	if (ret) {
+		dev_err(ovc->dev, "async notifier register failed: %d\n", ret);
+		goto err_cleanup;
+	}
+
+	ovc->notifier_registered = true;
+	return 0;
+
+err_cleanup:
+	v4l2_async_nf_cleanup(&ovc->notifier);
+	return ret;
+}
+
 static int ovc_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct ovc_dev *ovc;
+	struct device_node *rmem_np;
 	struct resource *res;
 	struct vb2_queue *q;
+	unsigned int i;
 	int irq, ret;
 
 	ovc = devm_kzalloc(dev, sizeof(*ovc), GFP_KERNEL);
@@ -1467,10 +1501,19 @@ static int ovc_probe(struct platform_device *pdev)
 	if (IS_ERR(ovc->regs))
 		return PTR_ERR(ovc->regs);
 
-	/* Clock/reset window (spec §8) is not in the DT node; map it raw. */
-	ovc->clkrst = devm_ioremap(dev, OVC_CLKRST_PHYS, OVC_CLKRST_LEN);
-	if (!ovc->clkrst)
-		return -ENOMEM;
+	/* Clock/reset window (spec §8): a syscon phandle, shared with whoever
+	 * else ever describes that window. */
+	ovc->clkrst = syscon_regmap_lookup_by_phandle(dev->of_node,
+						      "axera,isp-syscon");
+	if (IS_ERR(ovc->clkrst))
+		return dev_err_probe(dev, PTR_ERR(ovc->clkrst),
+				     "axera,isp-syscon\n");
+
+	for (i = 0; i < OVC_NUM_CLKS; i++)
+		ovc->clks[i].id = ovc_clk_names[i];
+	ret = devm_clk_bulk_get(dev, OVC_NUM_CLKS, ovc->clks);
+	if (ret)
+		return dev_err_probe(dev, ret, "VI/ISP domain clocks\n");
 
 	/* Bank-0 line (DT index 0 = GIC_SPI 27, device-confirmed §5.5). */
 	irq = platform_get_irq(pdev, 0);
@@ -1482,23 +1525,35 @@ static int ovc_probe(struct platform_device *pdev)
 		return ret;
 
 	/*
-	 * Reserved coherent carveout for capture buffers (the proven
-	 * vc8000-vcmd pattern; docs/vcmd-cma-unblock.md). EXCLUSIVE: no
-	 * fallback to the (CMA-less) default allocator, so a full pool
-	 * fails loudly instead of handing out non-carveout memory.
+	 * Capture-buffer carveout: a `shared-dma-pool` reserved-memory node
+	 * named by `memory-region`. dma_alloc_coherent() then comes out of it
+	 * with no fallback to the page allocator, so a full pool fails loudly
+	 * instead of handing out memory the WDMA cannot reach. On 4.19 this
+	 * was dma_declare_coherent_memory() over numbers a shell loader
+	 * computed from the board id.
 	 */
-	if (carveout_size) {
-		ret = dma_declare_coherent_memory(dev, carveout_base,
-						  carveout_base, carveout_size,
-						  DMA_MEMORY_EXCLUSIVE);
-		if (ret) {
-			dev_err(dev, "coherent carveout 0x%lx+0x%lx failed: %d\n",
-				carveout_base, carveout_size, ret);
-			return ret;
-		}
-		ovc->carveout_declared = true;
-		dev_info(dev, "capture carveout 0x%lx+0x%lx declared\n",
-			 carveout_base, carveout_size);
+	ret = of_reserved_mem_device_init(dev);
+	if (ret)
+		return dev_err_probe(dev, ret, "capture memory-region\n");
+
+	rmem_np = of_parse_phandle(dev->of_node, "memory-region", 0);
+	if (rmem_np) {
+		struct reserved_mem *rmem = of_reserved_mem_lookup(rmem_np);
+
+		if (rmem)
+			ovc->carveout_size = rmem->size;
+		of_node_put(rmem_np);
+	}
+	dev_info(dev, "capture carveout %pa bytes\n", &ovc->carveout_size);
+
+	/*
+	 * The VI/ISP domain gates, before the first register access. Nothing
+	 * on mainline enables them for us.
+	 */
+	ret = clk_bulk_prepare_enable(OVC_NUM_CLKS, ovc->clks);
+	if (ret) {
+		dev_err(dev, "VI/ISP clock enable failed: %d\n", ret);
+		goto err_rmem;
 	}
 
 	mutex_init(&ovc->lock);
@@ -1526,7 +1581,7 @@ static int ovc_probe(struct platform_device *pdev)
 	ret = devm_request_irq(dev, irq, ovc_isr, 0, OVC_DRV_NAME, ovc);
 	if (ret) {
 		dev_err(dev, "request_irq(%d) failed: %d\n", irq, ret);
-		goto err_carveout;
+		goto err_clk;
 	}
 
 	/* Media controller: the graph is csi2 (source pad 1) -> video0 (pad 0). */
@@ -1540,7 +1595,7 @@ static int ovc_probe(struct platform_device *pdev)
 	ret = v4l2_device_register(dev, &ovc->v4l2_dev);
 	if (ret) {
 		media_device_cleanup(&ovc->mdev);
-		goto err_carveout;
+		goto err_clk;
 	}
 
 	q = &ovc->queue;
@@ -1551,7 +1606,7 @@ static int ovc_probe(struct platform_device *pdev)
 	q->ops = &ovc_vb2_ops;
 	q->mem_ops = &ovc_mem_ops;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
-	q->min_buffers_needed = 2;
+	q->min_queued_buffers = 2;
 	q->dev = dev;
 	q->lock = &ovc->lock;
 	ret = vb2_queue_init(q);
@@ -1574,10 +1629,19 @@ static int ovc_probe(struct platform_device *pdev)
 	ovc->vdev.v4l2_dev = &ovc->v4l2_dev;
 	ovc->vdev.queue = q;
 	ovc->vdev.lock = &ovc->lock;
+	/*
+	 * REQUIRED since 5.4, and its absence is a WARN plus -EINVAL out of
+	 * __video_register_device with nothing that names the field
+	 * (v4l2-dev.c: `WARN_ON(type != VFL_TYPE_SUBDEV && !vdev->device_caps)`).
+	 * On 4.19 only vidioc_querycap filled this in, which is why the port
+	 * did not carry it. Measured on hardware 2026-09-10.
+	 */
+	ovc->vdev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
+				V4L2_CAP_READWRITE;
 	strscpy(ovc->vdev.name, OVC_DRV_NAME, sizeof(ovc->vdev.name));
 	video_set_drvdata(&ovc->vdev, ovc);
 
-	ret = video_register_device(&ovc->vdev, VFL_TYPE_GRABBER, -1);
+	ret = video_register_device(&ovc->vdev, VFL_TYPE_VIDEO, -1);
 	if (ret) {
 		dev_err(dev, "video_register_device failed: %d\n", ret);
 		goto err_entity;
@@ -1594,29 +1658,15 @@ static int ovc_probe(struct platform_device *pdev)
 		 OVC_DRV_NAME, ovc->vdev.num, wdma_chn);
 
 	/*
-	 * Last: the async notifier for the CSI-2 subdev. If open_vin_csi2 is
-	 * already registered this binds synchronously from here (module order
-	 * does not matter). Registered after the video node so the media link
-	 * has both ends.
+	 * Last: the async notifier for the CSI-2 subdev, over this node's own
+	 * `port { endpoint }`. If open_vin_csi2 is already registered this
+	 * binds synchronously from here (module order does not matter).
+	 * Registered after the video node so the media link has both ends.
 	 */
-	if (csi2_devname && csi2_devname[0]) {
-		ovc->asd.match_type = V4L2_ASYNC_MATCH_DEVNAME;
-		ovc->asd.match.device_name = csi2_devname;
-		ovc->asds[0] = &ovc->asd;
-		ovc->notifier.subdevs = ovc->asds;
-		ovc->notifier.num_subdevs = 1;
-		ovc->notifier.ops = &ovc_notifier_ops;
-		ret = v4l2_async_notifier_register(&ovc->v4l2_dev,
-						   &ovc->notifier);
-		if (ret) {
-			dev_err(dev, "async notifier register failed: %d\n",
-				ret);
-			goto err_mdev;
-		}
-		ovc->notifier_registered = true;
-	} else {
-		dev_info(dev, "no CSI-2 subdev bound (csi2_devname empty)\n");
-	}
+	ret = ovc_notifier_init(ovc);
+	if (ret)
+		goto err_mdev;
+
 	return 0;
 
 err_mdev:
@@ -1628,30 +1678,32 @@ err_entity:
 err_v4l2:
 	v4l2_device_unregister(&ovc->v4l2_dev);
 	media_device_cleanup(&ovc->mdev);
-err_carveout:
-	if (ovc->carveout_declared)
-		dma_release_declared_memory(dev);
+err_clk:
+	clk_bulk_disable_unprepare(OVC_NUM_CLKS, ovc->clks);
+err_rmem:
+	of_reserved_mem_device_release(dev);
 	return ret;
 }
 
-static int ovc_remove(struct platform_device *pdev)
+static void ovc_remove(struct platform_device *pdev)
 {
 	struct ovc_dev *ovc = platform_get_drvdata(pdev);
 
-	if (ovc->notifier_registered)
-		v4l2_async_notifier_unregister(&ovc->notifier);
+	if (ovc->notifier_registered) {
+		v4l2_async_nf_unregister(&ovc->notifier);
+		v4l2_async_nf_cleanup(&ovc->notifier);
+	}
 	media_device_unregister(&ovc->mdev);
 	video_unregister_device(&ovc->vdev);
 	media_entity_cleanup(&ovc->vdev.entity);
 	v4l2_device_unregister(&ovc->v4l2_dev);
 	media_device_cleanup(&ovc->mdev);
-	if (ovc->carveout_declared)
-		dma_release_declared_memory(&pdev->dev);
-	return 0;
+	clk_bulk_disable_unprepare(OVC_NUM_CLKS, ovc->clks);
+	of_reserved_mem_device_release(&pdev->dev);
 }
 
 static const struct of_device_id ovc_of_match[] = {
-	{ .compatible = "axera,proton" },
+	{ .compatible = "axera,ax630c-vin" },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, ovc_of_match);
@@ -1667,5 +1719,6 @@ static struct platform_driver ovc_driver = {
 module_platform_driver(ovc_driver);
 
 MODULE_LICENSE("GPL v2");
+MODULE_IMPORT_NS("DMA_BUF");	/* VIDIOC_EXPBUF: the zero-copy hand-off to the encoder */
 MODULE_AUTHOR("open-nanokvm-pro contributors");
-MODULE_DESCRIPTION("Open V4L2 VIN/IFE capture node for AX630C (ax_proton bypass replacement, #59)");
+MODULE_DESCRIPTION("Open V4L2 VIN/IFE capture node for AX630C (ax_proton bypass replacement, #59/#83)");

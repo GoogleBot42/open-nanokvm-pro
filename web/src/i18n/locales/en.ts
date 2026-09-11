@@ -550,6 +550,22 @@ const en = {
         previewDesc: 'Get early access to new features and improvements',
         previewTip:
           'Please be aware that preview releases may contain bugs or incomplete functionality!',
+        auto: 'Automatic Updates',
+        autoDesc: 'Install updates on their own, and restart when nobody is using the device',
+        autoTip:
+          'Updates are checked for daily and installed in the background. The restart that applies one waits until no video stream, keyboard session, terminal or mounted image is in use — or until you press Restart now.',
+        restartPending: 'Update installed. It takes effect after a restart.',
+        restartNow: 'Restart now',
+        waitingFor: 'Waiting for:',
+        busy: {
+          stream: 'video stream',
+          input: 'keyboard/mouse session',
+          terminal: 'terminal session',
+          preview: 'display preview',
+          image: 'mounted image',
+          video: 'recent video activity',
+          web: 'recent web activity'
+        },
         download: 'Download',
         install: 'Install',
         changelog: 'Changelog',

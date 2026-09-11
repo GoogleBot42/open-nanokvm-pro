@@ -83,6 +83,14 @@ jobs:
       - name: Resolve and verify version
         id: ver
         run: |
+          # NOTHING PUBLISHES FROM A BRANCH. The `on:` trigger is already tags
+          # only, but this job is what writes the two things a device polls --
+          # `releases/latest/download` and the rolling `preview` release -- so
+          # the rule is asserted here as well rather than left to a trigger a
+          # future edit could widen. A device must never be offered the tip of
+          # main: the alpha channel is prerelease TAGS. docs/updates.md.
+          [ "${GITHUB_REF_TYPE}" = "tag" ] \
+            || { echo "::error::this workflow publishes update channels and may only run on a tag (ref_type='${GITHUB_REF_TYPE}', ref='${GITHUB_REF}')"; exit 1; }
           V="${GITHUB_REF_NAME#v}"
           echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$' \
             || { echo "::error::invalid tag '$GITHUB_REF_NAME' (expected vX.Y.Z)"; exit 1; }

@@ -1,0 +1,195 @@
+package ui
+
+// IS ANYBODY USING THIS KVM, AND IS A REBOOT OWED (#86).
+//
+// One handler, two routes (pkgs/nanokvm-server.nix wires both):
+//
+//   GET /api/update/idle          loopback only -- what `nanokvm-update` asks
+//                                 before it reboots into an update it has
+//                                 already installed
+//   GET /api/application/pending  token -- what the web UI's update page shows
+//
+// Same answer either way, deliberately: the machine's decision and the banner a
+// person reads must come from one computation, or the UI will explain a wait
+// that is not happening.
+//
+// WHAT "IDLE" MEANS HERE, and why each term is in it:
+//
+//   stream clients   any video consumer with a live client (MJPEG, both direct
+//                    streams, WebRTC) -- service/stream/claims.go already holds
+//                    the per-consumer counts because it arbitrates between them
+//   input clients    /api/ws sessions: a browser with keyboard and mouse
+//                    attached, which is the definition of "at the console"
+//   terminals        web-terminal shells (common/activity.go)
+//   panel preview    the mini-display's live-preview lease -- somebody is
+//                    standing at the device looking at the screen
+//   image mounted    an ISO or IMG exported to the host. Rebooting yanks a USB
+//                    disk out of a machine that may be installing from it.
+//   video quiet      seconds since the last frame or audio read. Redundant with
+//                    the client counts on a healthy server and not redundant at
+//                    all if a count ever leaks.
+//   api quiet        seconds since the last web request from somewhere other
+//                    than loopback (middleware/activity.go)
+//
+// The two "quiet" terms are compared against `?quiet=<seconds>`, which the
+// updater passes from `nanokvm.update.idleQuietSec`. Everything else is a hard
+// zero. `busy` names the terms that failed, so the page can say what it is
+// waiting for rather than just spinning.
+//
+// THE PENDING HALF reads the two markers `nanokvm-update` writes:
+// /run/nanokvm-update-pending ("a reboot is owed", tmpfs, so the reboot clears
+// it) and /var/lib/nanokvm/update-pending ("an update was installed", which
+// survives the reboot so the page can say what happened).
+//
+// Installed as service/ui/update_status.go by pkgs/nanokvm-server.nix.
+
+import (
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"NanoKVM-Server/common"
+	"NanoKVM-Server/service/stream"
+	"NanoKVM-Server/service/ws"
+
+	"github.com/gin-gonic/gin"
+)
+
+const (
+	updatePendingRun  = "/run/nanokvm-update-pending"
+	updatePendingNote = "/var/lib/nanokvm/update-pending"
+	runningVersion    = "/run/current-system/etc/nanokvm-version"
+
+	// service/storage/image.go's mountDevice, which is an unexported const
+	// there. Non-empty contents = an image is exported to the host.
+	msdLun = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0/lun.0/file"
+
+	defaultQuietSec = 600
+)
+
+type UpdatePending struct {
+	Version       string `json:"version"`        // what was installed
+	From          string `json:"from"`           // what it replaced
+	RebootPending bool   `json:"reboot_pending"` // installed, not yet booted
+	Current       string `json:"current"`        // what is running now
+}
+
+type UpdateStatusRsp struct {
+	Idle          bool           `json:"idle"`
+	Busy          []string       `json:"busy"`
+	QuietSec      int            `json:"quiet_sec"`
+	StreamClients int            `json:"stream_clients"`
+	InputClients  int            `json:"input_clients"`
+	Terminals     int            `json:"terminals"`
+	PanelPreview  bool           `json:"panel_preview"`
+	ImageMounted  bool           `json:"image_mounted"`
+	VideoQuietSec int            `json:"video_quiet_sec"`
+	APIQuietSec   int            `json:"api_quiet_sec"`
+	Pending       *UpdatePending `json:"pending"`
+}
+
+// The house envelope, so the web UI's http client sees the code/msg/data shape
+// every other route returns. Declared here rather than imported from proto
+// because this file is appended to a package that does not otherwise use it.
+type updateStatusEnvelope struct {
+	Code int              `json:"code"`
+	Msg  string           `json:"msg"`
+	Data *UpdateStatusRsp `json:"data"`
+}
+
+func GetUpdateStatus(c *gin.Context) {
+	quiet := defaultQuietSec
+	if q, err := strconv.Atoi(c.Query("quiet")); err == nil && q >= 0 {
+		quiet = q
+	}
+
+	rsp := &UpdateStatusRsp{
+		QuietSec:      quiet,
+		Busy:          []string{},
+		StreamClients: stream.TotalStreamClients(),
+		InputClients:  len(ws.GetManager().GetClients()),
+		Terminals:     common.TerminalSessions(),
+		PanelPreview:  common.PanelPreviewActive(),
+		ImageMounted:  imageMounted(),
+		VideoQuietSec: int(common.SinceVideoRead() / time.Second),
+		APIQuietSec:   int(common.SinceAPIActivity() / time.Second),
+		Pending:       readPending(),
+	}
+
+	if rsp.StreamClients > 0 {
+		rsp.Busy = append(rsp.Busy, "stream")
+	}
+	if rsp.InputClients > 0 {
+		rsp.Busy = append(rsp.Busy, "input")
+	}
+	if rsp.Terminals > 0 {
+		rsp.Busy = append(rsp.Busy, "terminal")
+	}
+	if rsp.PanelPreview {
+		rsp.Busy = append(rsp.Busy, "preview")
+	}
+	if rsp.ImageMounted {
+		rsp.Busy = append(rsp.Busy, "image")
+	}
+	if rsp.VideoQuietSec < quiet {
+		rsp.Busy = append(rsp.Busy, "video")
+	}
+	if rsp.APIQuietSec < quiet {
+		rsp.Busy = append(rsp.Busy, "web")
+	}
+	rsp.Idle = len(rsp.Busy) == 0
+
+	c.JSON(http.StatusOK, &updateStatusEnvelope{Code: 0, Msg: "success", Data: rsp})
+}
+
+func imageMounted() bool {
+	content, err := os.ReadFile(msdLun)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(content)) != ""
+}
+
+func readPending() *UpdatePending {
+	run, runOk := readKeyValues(updatePendingRun)
+	note, noteOk := readKeyValues(updatePendingNote)
+	if !runOk && !noteOk {
+		return nil
+	}
+	if !runOk {
+		run = note
+	}
+
+	return &UpdatePending{
+		Version:       run["VERSION"],
+		From:          run["FROM"],
+		RebootPending: runOk,
+		Current:       strings.TrimSpace(readFile(runningVersion)),
+	}
+}
+
+func readKeyValues(path string) (map[string]string, bool) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	out := map[string]string{}
+	for _, line := range strings.Split(string(content), "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if found {
+			out[key] = value
+		}
+	}
+	return out, true
+}
+
+func readFile(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(content)
+}

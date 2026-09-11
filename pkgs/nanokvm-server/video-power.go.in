@@ -168,3 +168,22 @@ func StartVideoIdleWatcher() {
 		}
 	}()
 }
+
+// SinceVideoRead reports how long ago any client last read a frame or audio.
+// markVideoActive() only runs on a real read and every streamer loop exits at
+// zero clients, so this is "time since anybody was watching" -- with one
+// caveat the caller has to know: the panel-preview tick marks activity at 10 Hz
+// while its lease is live, so check PanelPreviewActive() alongside it.
+//
+// Seeded to process start by init(), so a freshly booted server reads as its
+// own uptime rather than infinity. That is the conservative direction for the
+// update reboot gate (#86), which is the caller.
+func SinceVideoRead() time.Duration {
+	return time.Since(time.Unix(0, lastVideoRead.Load()))
+}
+
+// PanelPreviewActive reports whether the mini-display's live-preview lease is
+// still running -- i.e. somebody is standing at the device watching its screen.
+func PanelPreviewActive() bool {
+	return time.Now().UnixNano() < previewUntil.Load()
+}

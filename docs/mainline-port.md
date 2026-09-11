@@ -234,6 +234,13 @@ defconfig forward.
 
 ## 3. Our three open drivers on mainline
 
+**DONE (#83, 2026-09-10).** They live in the kernel tree now, at
+`pkgs/kernel-mainline/tree/drivers/media/platform/axera/`, and build as
+modules. What follows is the delta list this section was written as; the
+result is the "What exists now (#83)" entry in section 8, and the 4.19
+out-of-tree packages under `pkgs/{open-vin-csi2,open-vin-capture,vc8000-vcmd}`
+are unchanged and still build the shipped 4.19 image's modules.
+
 They were designed for this move ([deblob-capture.md](deblob-capture.md)); the
 concrete deltas, from the sources:
 
@@ -518,7 +525,8 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
    unstable pin: systemd ≥ 258 is fine on ≥ 5.10), identity, `fw_env.config`,
    health-gated checkboot.
 5. clk/reset/pinctrl real drivers.
-6. USB HID; video stack; audio; display; WiFi.
+6. USB HID (#82, done); video stack (**#83, done 2026-09-10 -- the board
+   streams H.264 on mainline**); audio; display; WiFi.
 7. Rollback + flake-based updates replace the custom OTA. **Done (#86,
    2026-09-10):** an update is a system bundle, the kernel is content-addressed
    so the rollback covers it too, and the legacy OTA is deleted with no
@@ -616,10 +624,15 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
    this port, so peripheral is the shipped and tested mode.
    Depends on: #80.
 10. **#83 Video stack on mainline (fwnode graph, syscon, reserved-memory)** —
-    Port `open_vin_csi2`, `open_vin_capture`, `vc8000-vcmd` glue to the
-    current V4L2/dma APIs; DT `ports/endpoints` incl. the LT6911 subdev;
-    carveouts as `reserved-memory` + `memory-region`; drop module-param maps
-    and `compute_mem_map`. libkvm unchanged. Depends on: #80, #81.
+    **DONE 2026-09-10, device-proven: the board streams H.264.** The three
+    drivers are in the kernel tree as modules, the fwnode graph binds them,
+    every shared block is a syscon phandle, the four domain gates and the
+    encoder's reset are CCF/reset consumers, and the carveouts are
+    `reserved-memory` nodes at the 4.19 addresses. `compute_mem_map` and every
+    module parameter are gone; libkvm is unchanged. The modules ride in the
+    NixOS generation's closure (`pkgs/video-modules.nix`), which leaves the
+    kernel-outside-the-generation seam #99 closes. See "What exists now (#83)"
+    below. Depends on: #80, #81.
 11. **#84 Mini-display + audio on mainline** — `spi-dw-mmio` + `fb_jd9853`
     (staging fbtft port or `drm/tiny/panel-mipi-dbi` with an init blob),
     `pwm-dwc` OF glue for the backlight, `gpio-keys`/`rotary-encoder` DT;
@@ -1529,6 +1542,159 @@ Not proven: video (#83), the USB gadget's policy half (#82), the mini-display
 root, which is what kept them reversible. The `mmc` alias fix has one good boot
 behind it rather than a series; it is correct by construction, but the race it
 closes was only ever visible statistically.
+
+### What exists now (#83, 2026-09-10) — THE BOARD STREAMS H.264 ON MAINLINE
+
+**A live host's screen came off this board as H.264, through the open stack,
+on a mainline kernel.** Ninety NALs pulled over SSH and decoded on the build
+host: 84 frames, H.264 Main, 1920x1080, yuv420p, a readable picture of the
+attached machine's lock screen. Two boot rounds, the second on the tree merged
+with #86.
+
+The three drivers are in the kernel tree now, at
+`pkgs/kernel-mainline/tree/drivers/media/platform/axera/`, hooked into
+`drivers/media/platform`'s Kconfig and Makefile between `atmel` and
+`broadcom`. They are the only modular code in this kernel; everything else is
+built in.
+
+**What the port changed, and what it did not.** The register sequences are
+untouched — they are device-proven and they were right. Everything that moved
+is the seam between the driver and the kernel:
+
+- **The fwnode graph replaced the platform-device-name match.** The capture
+  node has one port, the receiver two, and the LT6911UXC's MIPI output closes
+  the edge; `v4l2_async_nf_add_fwnode_remote` binds them. The board's lane
+  wiring is a DT fact now rather than a driver constant: `clock-lanes = <2>`,
+  `data-lanes = <0 1 3 4>` on the bridge's endpoint, read with
+  `v4l2_fwnode_endpoint()`. The receiver logged `lane map from DT:
+  d[0 1 3 4] c[2 5]` on the board — the same map the vendor streaming state
+  proved in #57, now written where a board fact belongs.
+- **Every fixed-address `devm_ioremap` of a shared block is gone.** The ISP
+  window at `0x2500000` is a new `syscon@2500000` node — the ninth clock
+  window #80 dropped for having no implementation, which is still true: its
+  gates, soft resets and deskew-lock word have no CCF or reset-controller
+  model in the vendor kernel or ours, so they stay driver-owned single-bit
+  SET/CLR strobes over a shared regmap. The VI common window is the clock
+  provider's own syscon. The D-PHY file is a second `reg` entry.
+- **Four gates became clocks and one reset became a reset line**, and that is
+  load-bearing rather than tidy: `clk_disable_unused()` gates an unclaimed
+  clock and mainline U-Boot enables nothing. The receiver takes
+  `CLK_DPHYRX_TLB_EB`; the capture node takes `CLK_VI_EB` and
+  `CLK_ISP_MM_EB`; the encoder takes `CLK_VENC_EB`. The receiver's TLB soft
+  reset needed a line that did not exist — `AX630C_RST_COMM_DPHYRX_TLB`, comm
+  word `0x54` bit 7, which no vendor DT node binds and which comes from the
+  MIPI RX specification instead. **151 reset lines now, not 150.**
+- **The carveouts are `reserved-memory` nodes at the addresses the 4.19 image
+  has been DMAing to since #53**, and `compute_mem_map` has no mainline
+  counterpart. They sit ABOVE what the kernel treats as RAM — the command line
+  still carries `mem=512M` — and that works by design rather than by luck:
+  `no-map` regions outside memory are explicitly supported
+  (`drivers/of/of_reserved_mem.c`: *"don't worry if the region isn't memory as
+  it won't be mapped"*), and the DMA pool code `memremap`s them
+  write-combining, which is exactly what `dma_declare_coherent_memory()` did on
+  4.19. Raising `mem=` later cannot silently eat them.
+- **The VCMD glue is an ordinary DT-bound platform driver.** No
+  `platform_device_register_simple`, no hand-set DMA masks (#63 is structurally
+  gone: the device comes from DT, so `of_dma_configure()` has run), no module
+  parameters. Its clock and its reset are phandles, and
+  `reset_control_deassert()` on `AX630C_RST_VPU_VENC` is **the first use of
+  #80's reset provider's `.assert`/`.deassert` on silicon**. It works: the
+  block came out of reset and the engine reported `hw_version_id 0x43421500`.
+- **The twelve `CDRX_*` MIPI pads are in a named pinctrl group**, function
+  `dphy_rx`, drive 0, no pull, no schmitt — byte for byte what the boot chain's
+  own pad table writes, so the state is a no-op in value and the point is
+  ownership. On 4.19 the vendor boot chain and then `ax_pinmux` replayed the
+  SDK table; nothing replays it on mainline. `VI_D7` is deliberately absent:
+  it carries SW_PWR.
+
+**The modules are in the NixOS generation; the kernel is not.**
+`pkgs/video-modules.nix` copies the six `.ko` out of the kernel derivation the
+Image comes from and lays them out as `/lib/modules/<release>` with depmod
+output beside them. It is a *build-time* dependency on that kernel, so the
+appliance's closure gains **316 KB** of driver rather than the 51 MB Image;
+`nanokvm-video.service` resolves the directory by `uname -r` and insmods the
+six in the order the kernel build's own depmod produced. A `/boot`-staged
+module set was built first and then deleted: the kernel is handled inside
+NixOS or not at all, and #99 moves the kernel, initrd and dtb into the
+generation through NixOS' own extlinux builder. Until it lands, a generation
+and its kernel can disagree and nothing can detect it — the vermagic is the
+release string alone, which does not change when a built-in driver does. That
+is the one seam this work leaves open, and it is stated in both files.
+
+**Two things hardware found that no amount of reading would have.**
+`__video_register_device` has required `vdev->device_caps` since 5.4 and
+returns `-EINVAL` with a WARN that names no field; on 4.19 only
+`vidioc_querycap` filled it in, so the port did not carry it, and that was the
+whole of "no `/dev/video0`". And `MUX_RD[3:0]` is the CSI deskew-lock status
+rather than part of the clock mux, so an idle board reads `0x5ac` where the
+golden word is `0x5af` and the check warned on every probe; it compares bits
+[10:2] now.
+
+**What the board measured**, all from the running mainline kernel:
+
+| Oracle | Value |
+|---|---|
+| DT nodes bound | `2400000.video-capture`, `2500000.syscon`, `2600000.csi2-rx`, `4010000.video-encoder` |
+| Reserved pools | `DMA memory pool at 0x7c000000, 56 MiB` and `at 0x7f800000, 8 MiB` |
+| ISP clk/rst bring-up | `mux=0x05ac rst0=0x00000000 rst1=0x00000000 file[0]=0x00000040` |
+| ISP-top gate | `0xffff7ff8` — the golden word, so the datapath is writable |
+| CSI-2 link | `link locked (deskew status 0x00000f0f)` |
+| Capture | `1920x1080 YUYV stride=1920 px via /dev/video0, 4 buffers, bus[0]=0x7c000000` |
+| Encoder | `hwid=0x43421500 H.264 1920x1080 framebuf 0x73800000+0xef8000`; VCMD pools at `0x7f800000` / `0x7fa00000` / `0x7fc00000` |
+| Nodes | `/dev/video0`, `/dev/media0`, `/dev/v4l-subdev0`, `/dev/es_venc` |
+| Stream | 3 SPS + 3 PPS + 3 I + 81 P; 84 decoded frames, Main profile, yuv420p |
+| Teardown | three full stop/start cycles, byte-identical output (86372 B each), no WARN, no oops |
+| Server path | `nanokvm.service` streamed MJPEG through the same drivers: 29 JPEG frames, 1920x1080, web 200 |
+
+The ISP register file reading `0x40` rather than `0xDEADBEEF` is the load-
+bearing one: the whole VIN clock/reset bring-up — the mux, the gates, the
+per-bit reset sweeps over both groups — works unchanged on a boot chain that
+programs nothing.
+
+**What is NOT proven.** 4K, and for a reason that predates this work: the
+attached host is 4096x2160, and both the driver (`OVC_MAX_WIDTH`) and libkvm
+(`V4L2_MAX_W`, `pkgs/kvm-encoder/src/kvm_capture_v4l2.c`) cap at 3840, so the
+shipped path needs `OPENKVM_FORCE_GEOM` on this source. Identical on the 4.19
+image; raising the kernel constant alone changes nothing, because libkvm's is
+a compile-time constant. Also unproven: H.265 through this stack on mainline,
+unloading the whole module set (only `open_vin_capture` was rmmod'd and
+reloaded), the receiver's second controller, the 1/2/3-lane tables, the
+private control IDs, and the `standalone` / `start_on_probe` bench modes.
+
+**And one thing this round found in someone else's code.** `nanokvm-mark-good`
+deleted `/boot/ax630c-nanokvm-pro.dtb` while both extlinux configs named it.
+`s|...|` makes `\|` an *escaped delimiter*, not alternation, so
+`\(LINUX\|FDT\)` matched the literal string `LINUX|FDT`, `keep` came out empty,
+and every file matching the globs was "named by neither config". Only the
+pre-#86 `/boot/Image` name saved the kernel; on the content-addressed layout
+both go and the board loops into AXDL. Fixed on main as its own commit
+(`d4f0e5f`): a comma delimiter, and a guard that collects nothing when `keep`
+is empty — the second being the property that should have made it loud. The
+third boot below is that fix firing: mark-good promoted the fallback and
+deleted nothing.
+
+**Device end state**, read back after the third boot:
+
+| | |
+|---|---|
+| kernel | `7.1.3-nanokvm`, 54 s from `reboot` to SSH |
+| `bootcount` (`0x02390030`) | `0xB0010000` — one attempt |
+| slot register (`0x02390024`) | `0x30000008` |
+| profile / booted system | `system-3-link` → `ay6b5yyyxqin0d9x310iih4nbvk13snm` |
+| `is-system-running` | `running` |
+| `/boot/Image` | `4e07806f21e4d1eef71218bd2fbf0259` |
+| `/boot/ax630c-nanokvm-pro.dtb` | `378e1b642c8100d65196888896592779` |
+| `/boot/Image.prev` | `558e7e171dd215d30f77e8de1304ad57` (round 1's kernel, also proven) |
+| `/boot/ax630c-nanokvm-pro.dtb.prev` | `b58a8e3eb474989efd3543bd7d6e68af` (the pre-#83 tree) |
+| both extlinux configs | `LINUX /Image`, `FDT /ax630c-nanokvm-pro.dtb` |
+| services | `nanokvm`, `nanokvm-video`, `nanokvm-mark-good` all active; web 200 |
+| nodes | `/dev/video0`, `/dev/media0`, `/dev/v4l-subdev0`, `/dev/es_venc` |
+| `/boot` | 100 MB of 245 MB used |
+
+`/boot` is still the PRE-#86 shape — `Image` and `ax630c-nanokvm-pro.dtb`, not
+the content-addressed names — because bootstrapping that layout is #86's own
+hardware round, not this one's. The `.prev` pair is the hand-made rollback the
+brief called for while `Image` and the fallback still named one kernel.
 
 ---
 ---

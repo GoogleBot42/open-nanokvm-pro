@@ -159,6 +159,14 @@ that is arbitration, not a bug.
   exactly like an intermittent hang for four hardware rounds. Any patch whose
   tail is load-bearing gets verified in the built artefact (disassemble the
   function, grep the ELF), never by "the patch applied".
+- **`sed 's|\(A\|B\)|…|'` has no alternation.** With `|` as the `s` delimiter,
+  `\|` is an escaped delimiter (a literal bar), so the group matches the string
+  `A|B` and nothing else — silently. The `/boot` collector in `nanokvm-mark-good`
+  shipped that way (#86), its keep-list came out empty, and it deleted the live
+  dtb on the board on the first healthy boot (2026-09-10, caught by #83 round 2;
+  on the content-addressed layout it would have removed the kernel too and looped
+  the board to AXDL). Use another delimiter, and give every collector the
+  property that an empty keep-list collects nothing.
 - **A stale fixed-output hash is invisible on any host that already holds the
   output** (the store path comes from the hash alone, so the fetch never
   re-runs): the release OTA package built green here for two days while the
@@ -301,7 +309,11 @@ cycle.
 `nanokvm-gc` reclaims old generations from the closure lists the installer
 records (it refuses to delete anything if one is missing). The 4.19 overlay OTA
 and `.#update-package` are **deleted** — a vendor-layout board is reflashed over
-AXDL, by decision, because nobody runs the alpha releases. `docs/updates.md`.
+AXDL, by decision, because nobody runs the alpha releases. **Unattended updates
+are a web-UI checkbox** (`/etc/kvm/auto_updates`, beside the preview flag — there
+is no `nanokvm.update.auto`), they install on the timer and **reboot only when
+the server's loopback `/api/update/idle` route says nobody is connected**, and
+both channels are tagged releases only. `docs/updates.md`.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

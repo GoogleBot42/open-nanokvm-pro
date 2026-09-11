@@ -5,7 +5,9 @@ import { useTranslation } from 'react-i18next';
 import semver from 'semver';
 
 import * as api from '@/api/application.ts';
+import * as vmApi from '@/api/vm.ts';
 
+import { Auto } from './auto.tsx';
 import { Preview } from './preview.tsx';
 import { Updating } from './updating.tsx';
 
@@ -13,7 +15,16 @@ type UpdateProps = {
   setIsLocked: (isClosable: boolean) => void;
 };
 
-type Status = '' | 'loading' | 'updating' | 'outdated' | 'latest' | 'failed';
+type Status = '' | 'loading' | 'updating' | 'outdated' | 'latest' | 'failed' | 'pending';
+
+// What the server reports about an installed-but-not-yet-booted update
+// (pkgs/nanokvm-server/update-status.go.in).
+type Pending = {
+  version: string;
+  from: string;
+  reboot_pending: boolean;
+  current: string;
+};
 
 export const Update = ({ setIsLocked }: UpdateProps) => {
   const { t } = useTranslation();
@@ -23,15 +34,41 @@ export const Update = ({ setIsLocked }: UpdateProps) => {
   const [latestVersion, setLatestVersion] = useState('');
   const [errMsg, setErrMsg] = useState('');
   const [tipMsg, setTipMsg] = useState('');
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [busy, setBusy] = useState<string[]>([]);
 
   useEffect(() => {
     checkForUpdates();
   }, []);
 
+  // A PENDING REBOOT OUTRANKS THE VERSION CHECK. An automatic update installs
+  // as soon as the timer finds one and reboots only when nobody is using the
+  // device, so the page must say "installed, restart pending" rather than
+  // offering the same version again -- which the device would refuse anyway.
   function checkForUpdates() {
     if (status === 'loading') return;
     setStatus('loading');
 
+    api
+      .getUpdateStatus()
+      .then((rsp: any) => {
+        if (rsp.code === 0 && rsp.data?.pending?.reboot_pending) {
+          setPending(rsp.data.pending);
+          setBusy(rsp.data.busy || []);
+          setStatus('pending');
+          return;
+        }
+
+        setPending(null);
+        checkVersion();
+      })
+      .catch(() => {
+        setPending(null);
+        checkVersion();
+      });
+  }
+
+  function checkVersion() {
     api
       .getVersion()
       .then((rsp: any) => {
@@ -70,11 +107,20 @@ export const Update = ({ setIsLocked }: UpdateProps) => {
     });
   }
 
+  // The person reading this page is usually the person the device is waiting
+  // for, so let them say "go". Same route the system reboot button uses.
+  function restartNow() {
+    setIsLocked(true);
+    setStatus('updating');
+    vmApi.reboot();
+  }
+
   return (
     <>
       <div className="text-base font-bold">{t('settings.update.title')}</div>
       <Divider className="opacity-50" />
 
+      <Auto />
       <Preview checkForUpdates={checkForUpdates} />
       <Divider className="opacity-50" />
 
@@ -86,6 +132,30 @@ export const Update = ({ setIsLocked }: UpdateProps) => {
         )}
 
         {status === 'updating' && <Updating />}
+
+        {status === 'pending' && pending && (
+          <Result
+            status="success"
+            icon={<RocketOutlined />}
+            title={`${pending.from} -> ${pending.version}`}
+            subTitle={
+              <div className="flex flex-col items-center space-y-1">
+                <span>{t('settings.update.restartPending')}</span>
+                {busy.length > 0 && (
+                  <span className="text-xs text-neutral-500">
+                    {t('settings.update.waitingFor')}{' '}
+                    {busy.map((b) => t(`settings.update.busy.${b}`)).join(', ')}
+                  </span>
+                )}
+              </div>
+            }
+            extra={[
+              <Button key="restart" type="primary" onClick={restartNow}>
+                {t('settings.update.restartNow')}
+              </Button>
+            ]}
+          />
+        )}
 
         {status === 'latest' && (
           <Result

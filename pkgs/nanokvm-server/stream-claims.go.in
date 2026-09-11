@@ -81,3 +81,21 @@ func ReleaseStreamType(streamType uint8, clients int) {
 		return
 	}
 }
+
+// TotalStreamClients reports how many video clients are attached across every
+// consumer. The map is fed by all four of them (nanokvm-server.nix step 12 and
+// direct-h265.go.in), and every add and remove path reports its own count, so
+// this converges on the truth without anyone owning a global counter.
+//
+// It is the first term of the update reboot gate (#86): nobody is watching the
+// screen. service/ui/update_status.go is the caller.
+func TotalStreamClients() int {
+	streamClients.mutex.Lock()
+	defer streamClients.mutex.Unlock()
+
+	total := 0
+	for _, clients := range streamClients.count {
+		total += clients
+	}
+	return total
+}

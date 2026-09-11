@@ -219,6 +219,20 @@
           variant = "appliance";
         };
 
+        # The video stack's modules, copied out of that kernel (#83). A
+        # BUILD-time dependency on it, so the appliance's closure carries the
+        # ~280 KB of .ko rather than a second reference to the Image.
+        #
+        # #83 had to write a careful note here about not creating a cycle: the
+        # kernel embedded that configuration's initrd, and the configuration
+        # loaded these modules. #99 removed the first half -- the kernel is a
+        # function of nothing but its own sources now -- so the dependency runs
+        # one way and the generation's kernel and its modules are built from
+        # the same derivation by construction.
+        video-modules = callPkg ./pkgs/video-modules.nix {
+          kernel = kernel-mainline-appliance;
+        };
+
         # NOTE (#49, resolved 2026-08-30): there is deliberately NO CMA kernel
         # variant. CONFIG_CMA/CONFIG_DMA_CMA are vermagic-invisible but ABI-
         # BREAKING for the vendor ax_*.ko blobs -- DMA_CMA adds `cma_area` to
@@ -491,6 +505,9 @@
           kernel = kernel-mainline-appliance;
           dtb = dtb-mainline;
           inherit nanokvm-gpio nanokvm-web nanokvm-display version;
+          # The open capture/encode modules (#83), built against the kernel
+          # the appliance boots and carried in the generation's closure.
+          inherit video-modules;
         };
         # The shipped variant also carries the .axp builder: nixos/image-axp.nix
         # defines `system.build.axpImage` from this configuration's own closure,
@@ -853,7 +870,7 @@
             kernel-mainline-appliance
             kernel-mainline-appliance-slot-image
             nixos-appliance-qemu nixos-appliance-qemu-run
-            open-vin-csi2 open-vin-capture
+            open-vin-csi2 open-vin-capture video-modules
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
@@ -924,6 +941,12 @@
           # things survived -- including that gc REFUSES when it cannot know
           # the live set. Everything an update does except meeting hardware.
           nanokvm-updater-loop = callPkg ./nixos/lib/updater-test.nix { };
+          # The policy wrapped around that loop (#86): the web UI's automatic-
+          # updates checkbox gating the timer, the pending markers, and the
+          # reboot that waits for an empty room -- including that an
+          # unanswerable idle question fails CLOSED. A fake release host and a
+          # fake idle route on loopback; everything else is the real scripts.
+          nanokvm-update-idle = callPkg ./nixos/lib/update-idle-test.nix { };
           # The release artefact itself, read back: the manifest hash against
           # the tarball, closure.txt against the toplevel's real closure, and
           # the /boot payload against the kernel the bundle carries.
