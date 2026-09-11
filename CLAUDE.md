@@ -159,6 +159,14 @@ that is arbitration, not a bug.
   exactly like an intermittent hang for four hardware rounds. Any patch whose
   tail is load-bearing gets verified in the built artefact (disassemble the
   function, grep the ELF), never by "the patch applied".
+- **`sed 's|\(A\|B\)|…|'` has no alternation.** With `|` as the `s` delimiter,
+  `\|` is an escaped delimiter (a literal bar), so the group matches the string
+  `A|B` and nothing else — silently. The `/boot` collector in `nanokvm-mark-good`
+  shipped that way (#86), its keep-list came out empty, and it deleted the live
+  dtb on the board on the first healthy boot (2026-09-10, caught by #83 round 2;
+  on the content-addressed layout it would have removed the kernel too and looped
+  the board to AXDL). Use another delimiter, and give every collector the
+  property that an empty keep-list collects nothing.
 - **A stale fixed-output hash is invisible on any host that already holds the
   output** (the store path comes from the hash alone, so the fetch never
   re-runs): the release OTA package built green here for two days while the

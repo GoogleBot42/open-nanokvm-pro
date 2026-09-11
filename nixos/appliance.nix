@@ -623,14 +623,22 @@ let
       # /boot is the one partition with no room to leak. A file named by EITHER
       # config is kept, so the worst case of a racing update is that a kernel
       # survives one cycle longer.
-      keep=$(sed -n 's|^[[:space:]]*\(LINUX\|FDT\)[[:space:]]\+/||p' "$conf" "$fallback" 2>/dev/null | sort -u)
-      for f in /boot/Image-* /boot/*.dtb; do
-        [ -e "$f" ] || continue
-        b=$(basename "$f")
-        if printf '%s\n' "$keep" | grep -qxF "$b"; then continue; fi
-        echo "mark-good: /boot/$b is named by neither config -- removing"
-        rm -f "$f"
-      done
+      # NOT `s|...|` here: with `|` as the delimiter, `\|` is an escaped
+      # delimiter (a literal bar), not alternation, and `keep` came out empty --
+      # which deleted the live dtb on the board (2026-09-10, #83 round 2).
+      keep=$(sed -n 's,^[[:space:]]*\(LINUX\|FDT\)[[:space:]]\+/,,p' "$conf" "$fallback" 2>/dev/null | sort -u)
+      # A collector with nothing to keep is a collector that deletes everything.
+      if [ -z "$keep" ]; then
+        echo "mark-good: no LINUX/FDT lines in $conf / $fallback -- collecting nothing." >&2
+      else
+        for f in /boot/Image-* /boot/*.dtb; do
+          [ -e "$f" ] || continue
+          b=$(basename "$f")
+          if printf '%s\n' "$keep" | grep -qxF "$b"; then continue; fi
+          echo "mark-good: /boot/$b is named by neither config -- removing"
+          rm -f "$f"
+        done
+      fi
       sync
     '';
   };
