@@ -843,17 +843,18 @@ Design, trust model, garbage collection and the hardware plan:
 the build** if any store path matches `axera-libs`, `ax-ko-blobs` or
 `libsns-dummy`. This is the blob policy from CLAUDE.md turned into a build error
 at the one point where the entire closure is visible, rather than a provenance
-audit finding six months later. (The last two derivations no longer exist —
-#97 deleted them — so only the first pattern can fire; the list is kept as the
-statement of what may never come back.)
+audit finding six months later. (None of those three derivations exists any
+more — #97 deleted two, #102 the third — so no pattern can fire; the list is
+kept as the statement of what may never come back.)
 
-It exists because it already caught something. `pkgs/kvm-encoder.nix` sets
-libkvm's `DT_RPATH` to `/opt/lib:<axera-libs>/lib`, because it compiles against
-the Axera SDK headers `axera-libs` supplies. On an overlay rootfs that store
-path was a dead string. **In a Nix closure it is a reference**, and it dragged
-the entire closed Axera library set into an image whose whole point is to
-contain none of it. The shipped build links no vendor library at all, so the
-appliance re-RPATHs libkvm at the three open libraries it actually needs.
+It exists because it already caught something. `pkgs/kvm-encoder.nix` used to
+set libkvm's `DT_RPATH` to `/opt/lib:<axera-libs>/lib`, because libkvm compiled
+against the Axera SDK headers that derivation supplied. On an overlay rootfs
+that store path was a dead string. **In a Nix closure it is a reference**, and
+it dragged the entire closed Axera library set into an image whose whole point
+is to contain none of it. libkvm has its own headers since #102 and the RPATH is
+`/opt/lib` alone; the appliance still re-RPATHs it at the three open libraries
+it actually needs.
 
 Two traps inside that fix:
 
@@ -861,7 +862,8 @@ Two traps inside that fix:
   as two real files, not a symlink pair. Patch one and the store path survives in
   the other and the closure is dragged in anyway. The `kvmapp` derivation
   (`nixos/appliance.nix`) patches both and then `grep`s both plus
-  `NanoKVM-Server` for the string `axera-libs` as a belt-and-braces check.
+  `NanoKVM-Server` for `axera-libs` and for any `libax_` as a belt-and-braces
+  check.
 - **`--force-rpath`.** `DT_RPATH`, not `DT_RUNPATH`. libkvm is `dlopen`'d by the
   server and only `DT_RPATH` is inherited down the dependency chain — the trap in
   [architecture.md](architecture.md#load-bearing-linker-detail).

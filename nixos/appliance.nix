@@ -63,13 +63,12 @@ let
   # Layout is the vendor's (server/{NanoKVM-Server,web,dl_lib}, version), so
   # NanoKVM-Server finds ./web and $ORIGIN/dl_lib exactly as it does today.
   #
-  # libkvm.so is RE-RPATH'd here, and that is not cosmetic. pkgs/kvm-encoder.nix
-  # sets DT_RPATH to "/opt/lib:<axera-libs>/lib" so the same artifact also works
-  # in the vendor-encoder configuration. On an overlay rootfs that store path is
-  # a dead string; in a Nix closure it is a REFERENCE, and it would drag the
-  # entire closed Axera library set into an image that is supposed to contain
-  # none of it. The V4L2/openVenc build links no vendor library at all, so the
-  # three open libraries it does need are named directly.
+  # libkvm.so is RE-RPATH'd here so the three open libraries it needs are named
+  # by store path rather than reached for in /opt/lib. It used to also be how
+  # the closed Axera library set was kept out of the closure -- kvm-encoder.nix
+  # put "<axera-libs>/lib" in the RPATH, which on an overlay rootfs is a dead
+  # string but in a Nix closure is a REFERENCE. That entry, and the SDK it came
+  # from, are gone (#102); the assertions below stay as the regression guard.
   kvmapp = pkgs.runCommand "kvmapp"
     {
       nativeBuildInputs = [ pkgs.patchelf ];
@@ -100,6 +99,12 @@ let
       if grep -qa 'axera-libs' "$f"; then
         echo "ERROR: $f still references axera-libs -- the closed media" >&2
         echo "       libraries would be pulled into the image closure." >&2
+        exit 1
+      fi
+      # ... and neither binary may ASK for one either (#102): a DT_NEEDED on a
+      # libax_* is a server that cannot start on a blob-free image.
+      if grep -qa 'libax_' "$f"; then
+        echo "ERROR: $f names a closed Axera library (libax_*)." >&2
         exit 1
       fi
     done

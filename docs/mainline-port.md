@@ -1499,8 +1499,8 @@ generates a self-signed per-device pair if absent, and the server runs.
 
 **Nothing closed, and the build proves it.** `nixos/rootfs.nix` fails if any
 path in the system closure is `axera-libs`, `ax-ko-blobs` or `libsns-dummy`, and
-it fired the first time: `pkgs/kvm-encoder.nix` sets libkvm's DT_RPATH to
-`/opt/lib:<axera-libs>/lib` so one artifact serves both encoder configurations,
+it fired the first time: `pkgs/kvm-encoder.nix` then set libkvm's DT_RPATH to
+`/opt/lib:<axera-libs>/lib` so one artifact served both encoder configurations,
 and on an overlay rootfs that store path is a dead string — in a Nix closure it
 is a reference, and it dragged the entire closed library set into an image
 meant to contain none of it. The appliance re-RPATHs **both** `libkvm.so` and

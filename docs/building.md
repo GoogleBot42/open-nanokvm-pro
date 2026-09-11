@@ -140,7 +140,6 @@ copy and no B twin.
 | `nanokvm-display` | mini-display status daemon | pure-stdlib Python + build-time-generated fonts |
 | `vcenc-ewl` | `ewl_probe` | userspace VC8000E submitter; shares its register-program sources with libkvm's encoder |
 | `edid` | clean-room EDID set | for the LT6911UXC front end, from source, `edid-decode --check` clean |
-| `axera-libs` | Axera `ax_*.h` headers | **headers only.** The blob-free libkvm compiles against the SDK's frame/stream types; no library from it is linked or shipped |
 
 ### Host tools
 
