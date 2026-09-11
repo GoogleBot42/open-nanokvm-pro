@@ -24,6 +24,12 @@
   # table: the raw ext4 image IS the disk.
   nanokvm.rootDevice = "/dev/vda";
 
+  # There is no AX630C here. The six video modules (#83) load cleanly on a
+  # virt machine -- same kernel, same vermagic -- and then nothing probes, so
+  # the unit's `/dev/video0` oracle fails and a perfectly good boot ends up
+  # `degraded`. That hides the failures this harness exists to find.
+  nanokvm.videoStack.enable = false;
+
   # There is no vfat p16 in QEMU. The mount is already `nofail`, so the boot
   # would survive it, but a 90 s device timeout on every run is noise that
   # hides the thing being tested.

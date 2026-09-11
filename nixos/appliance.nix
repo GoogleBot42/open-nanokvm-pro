@@ -565,9 +565,16 @@ in
       description = ''
         Load the open capture/encode kernel modules at boot: `open_vin_csi2`,
         `open_vin_capture` and `ax630c_venc_vcmd`, plus the videobuf2 modules
-        the capture node imports. They ship on `/boot/modules` with the kernel
-        that loads them (#83); the load order is `/boot/modules/load-order`.
+        the capture node imports (#83). They are in this generation's own
+        closure (`pkgs/video-modules.nix`), built from the same kernel
+        derivation `boot.kernelPackages` names -- so a generation and the
+        kernel it boots cannot disagree about them (#99). The load order is
+        `<video-modules>/lib/modules/<release>/load-order`.
+
         Turning this off gives a server that serves the UI but no stream.
+        `nixos/qemu-test.nix` does exactly that: the modules load fine on a
+        QEMU virt machine and then nothing probes, so the unit's /dev/video0
+        oracle fails on a boot that is otherwise perfect.
       '';
     };
 

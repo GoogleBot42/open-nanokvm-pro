@@ -168,8 +168,8 @@ pkgs.runCommand "nanokvm-updater-loop"
   # THE UPDATER MUST NOT HAVE TOUCHED /boot (#99). It was empty going in and it
   # stays empty: `switch-to-configuration boot` is the only writer, and this
   # run was --no-activate.
-  [ -z "$(ls -A "$R/boot/extlinux" "$R/boot/nixos")" ] \
-    || { ls -lR "$R/boot" >&2; fail "the updater wrote /boot"; }
+  [ -z "$(find "$R/boot" -mindepth 2)" ] \
+    || { find "$R/boot" >&2; fail "the updater wrote /boot"; }
   ok "/boot is untouched -- the extlinux builder owns it, not this script"
 
   [ ! -e "$R/run/nanokvm-pending-boot" ] || fail "a pending-boot note was left behind"
