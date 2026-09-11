@@ -346,25 +346,61 @@ not work — both the server and `curl` verify.
 
 ### What hardware still has to prove
 
-Offline coverage stops at the sandbox boundary. On the board, in this order:
+Offline coverage stops at the sandbox boundary. Three board rounds, each
+ending in a state the plug recovers from — a cold cycle clears `bootcount`, and
+a candidate that does not come up is on the fallback config by the fourth
+attempt.
 
-1. `nanokvm-update --no-reboot install <bundle.tar.gz>` from a file copied over
-   SSH — proves the `/nix/store` remount, the rename into the store, the `/boot`
-   write and `switch-to-configuration boot` on the real filesystem. Oracle:
-   `nanokvm-update status` shows generation N+1 and the new kernel, and
-   `extlinux.conf` names both.
-2. Reboot. Oracle: the board comes back on the new generation
-   (`readlink /run/booted-system`), `bootcount` is `0xB0010000` after
-   `nanokvm-mark-good`, and the fallback names the **new** pair.
-   Failure catch: if it does not come back, three more attempts take
-   `altbootcmd`, milestone bit 30 of `0x02390024` is set, and the board returns
-   to the previous generation *and its kernel* — which is the thing #86 added
-   and the thing this round exists to see fire.
-3. `nanokvm-gc --keep 2 -n`, read it, then without `-n`. Oracle: the previous
-   generation survives while the fallback names it; the one before that does
-   not.
+**Round 1 — bootstrap.** The board is running a generation from before this
+work: it has no `nanokvm-update`, and its `/boot` holds the old flat `Image`.
+So the first move is the manual switch
+(`.claude/skills/kvm-device/SKILL.md`) plus a `/boot` rename, in this order:
 
-Then, and only then, the web-UI button against a real release.
+```sh
+cp /boot/Image /root/Image.pre86       # mark-good WILL collect the old one
+# copy .#boot-payload's Image-<h> and <dtb>-<h>.dtb into /boot  (add, do not replace)
+# ship the missing store paths, set the profile, switch-to-configuration switch
+# write extlinux.conf naming the NEW pair; LEAVE extlinux-fallback.conf alone
+reboot
+```
+
+Leaving the fallback alone is the whole safety of this round: it still names
+the old generation and the old `/boot/Image`, so three failed attempts land
+back exactly where the board started. **Oracles:** SSH at ~71 s;
+`nanokvm-update status` prints the new generation and `Image-<hash>`;
+`devmem 0x02390030 32` = `0xB0010000`; `journalctl -u nanokvm-mark-good` shows
+the fallback promoted to the new pair **and the old `/boot/Image` collected** —
+that last line is the `/boot` GC proving itself.
+
+**Round 2 — a real bundle, end to end.** Build a bundle from a
+trivially-changed configuration (any config change moves both the toplevel and
+the kernel, because the stage-1 initrd is inside the Image), copy it over, and:
+
+```sh
+nanokvm-update --no-reboot install /root/nanokvm_pro_sys_<v>.tar.gz
+nanokvm-update status      # gen N+1, two Image-* in /boot, fallback still N
+reboot
+```
+
+**Oracles:** `readlink /run/booted-system` is the new toplevel; `bootcount`
+back to `0xB0010000`; the fallback now names the new pair and `/boot` is back
+to one kernel. Then, on the same round, force the rollback rather than breaking
+a generation — `devmem 0x02390030 32 0xB001000A; reboot` — and confirm the
+board comes up on the **previous** generation *and its kernel*, with bit 30 of
+`0x02390024` set. That is the thing #86 added and the only way to watch it fire
+that cannot strand the board.
+
+**Round 3 — collection, then the button.** `nanokvm-gc --keep 2 -n`, read it,
+then without `-n`; the generation the fallback names must survive, the one
+before it must not, and `du -sh /nix/store` must drop. Then cut an alpha and
+press **update** in the web UI (or point `nanokvm.update.stableUrl` at a local
+HTTPS server), which is the only path that exercises the server's `install()`
+handoff rather than the CLI.
+
+**Failure catch, every round:** the boot counter. Nothing above writes a
+partition, so the worst outcome is a generation that does not come up, which
+`altbootcmd` undoes on the fourth attempt. The plug is the backstop if even
+that does not fire.
 
 ---
 
