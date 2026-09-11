@@ -57,8 +57,9 @@
 # those are diagnostics and build inputs, and a hundred megabytes of them has
 # no business inside an OTA bundle or on the appliance's rootfs.
 #
-# It replaced pkgs/kernel.nix (Linux 4.19.125, once the shipped
-# kernel). No shipped firmware/rootfs/update output references this file yet.
+# It replaced the vendor's Linux 4.19.125 build outright (#97): this is the
+# kernel the appliance boots, and `.#video-modules`, `.#display-modules` and
+# `.#aic8800` are all built against it.
 #
 # Version ceiling: 7.2. The out-of-tree aic8800 WiFi driver (#85) does not
 # build above it. WiFi is explicitly droppable (#26, #55) -- when that call is

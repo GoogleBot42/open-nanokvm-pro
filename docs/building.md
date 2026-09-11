@@ -5,145 +5,216 @@ How to build the firmware and its components with the flake. For what the pieces
 [flashing-and-recovery.md](flashing-and-recovery.md).
 
 - [Prerequisites](#prerequisites)
+- [Building the image](#building-the-image)
 - [Packages](#packages)
-- [Build DAG](#build-dag)
-- [Building the firmware image](#building-the-firmware-image)
+- [Checks](#checks)
 - [Pinned hashes](#pinned-hashes)
 - [Cross-compile notes](#cross-compile-notes)
-- [`ax_*.ko` vermagic](#ax_ko-vermagic)
-- [Heavy builds & caching](#heavy-builds--caching)
+- [Caching](#caching)
 
 ---
 
 ## Prerequisites
 
 - Nix with flakes enabled (`experimental-features = nix-command flakes`).
-- An `x86_64-linux` dev box (cross-compiles to aarch64; the vendor `ax_gzip`
-  partition packer is an x86-64-only static ELF, so the flashable outputs
-  cannot build on an aarch64 host). No exotic toolchain is required — stock
-  nixpkgs aarch64 glibc GCC is sufficient.
-- Disk + patience for the heavy derivations (see [below](#heavy-builds--caching)):
-  the base `.axp` is a 1.4 GB fixed-output fetch and the rootfs de-sparses to a
-  multi-GB ext4.
+- An **`x86_64-linux`** dev box. This is the flake's only supported build
+  system, and the reason is one prebuilt tool: Axera's `ax_gzip` partition
+  packer (`tools/ax_gzip_tool/ax_gzip` in the SDK snapshot) is an **x86-64-only
+  static ELF**, and every stage the SPL loads must be axgzip'd — the SPL rejects
+  a raw payload. `pkgs/boot.nix` and `pkgs/ax-sign.nix` both declare
+  `platforms = [ "x86_64-linux" ]`, so `.#spl-minimal`, `.#atf-mainline`,
+  `.#uboot-mainline` and the image inherit the constraint. Retiring `ax_gzip` is
+  #95.
+- Cross-compilation to aarch64 uses the stock nixpkgs cross set; no exotic
+  toolchain is needed.
 
 ```bash
-nix flake show          # list all outputs
-nix develop             # dev shell: cross toolchain + SDK/image tooling + axdl
+nix flake show     # every output
+nix develop        # dev shell: cross toolchain + SDK/image tooling + axdl
+```
+
+---
+
+## Building the image
+
+```bash
+nix build .#nixos-firmware-image-mainline     # also `packages.default`
+# -> result/AX630C_emmc_arm64_k419_sipeed_nanokvm-nixos_mainline.axp
+```
+
+That is the whole product: a `.axp` packed **from scratch** by
+`nixos/lib/make-axp-image.nix` — there is no vendor bundle behind it, and every
+partition it stores comes out of this flake. It is a function of a system
+closure, called from inside the module system by `nixos/image-axp.nix`, so
+`.#nixos-firmware-image-mainline` and
+`.#nixosConfigurations.nanokvm-pro.config.system.build.axpImage` are one
+derivation and the image can never disagree with the system it images.
+
+Flash it per [flashing-and-recovery.md](flashing-and-recovery.md):
+
+```bash
+nix run .#axdl -- --file result/*.axp --wait-for-device
+```
+
+The appliance is also a first-class NixOS system, so ordinary tooling works:
+
+```bash
+nix build .#nixosConfigurations.nanokvm-pro.config.system.build.toplevel
+nixos-rebuild switch --flake .#nanokvm-pro --target-host root@<device>
+```
+
+To watch a boot on a console — the real board has none — run the same appliance
+under QEMU:
+
+```bash
+nix run .#nixos-appliance-qemu-run
 ```
 
 ---
 
 ## Packages
 
-All are `nix build .#<name>`. State reflects the current tree.
+All are `nix build .#<name>`.
+
+### The product
 
 | Package | Output | Notes |
 |---|---|---|
-| `axera-libs` | `libax_*.so` + V3.0.0 headers | pinned blob install (msp repo) |
-| `ax-ko-blobs` | prebuilt `ax_*.ko` | pinned blob install; **not shipped** — the vendor modules are deleted from the image (#54). Bench/harness reference only |
-| `kvm-encoder` | `libkvm.so` / `.so.0` | the original vendor-MPI backend (links `libax_*`); reference/fallback only |
-| **`kvm-encoder-v4l2`** | `libkvm.so` / `.so.0` | **the shipped backend** — V4L2 capture + open VC8000E encode, zero `libax_*`. `kvm-encoder-open`/`-openvenc` are the earlier open variants (raw-ioctl capture against the vendor closure) |
-| `vc8000-vcmd` | `ax630c_venc_vcmd.ko` | our open VC8000E VCMD encode driver (replaces `ax_venc`/`ax_jenc`) |
-| `open-vin-csi2` | `open_vin_csi2.ko` | our open MIPI CSI-2 / D-PHY receiver |
-| `open-vin-capture` | `open_vin_capture.ko` | our open VIN/IFE bypass capture driver → V4L2 `/dev/video0` |
-| `nanokvm-web` | React `dist/` bundle | built from our in-tree fork `web/`; pnpm-hash pinned |
-| `nanokvm-server` | `NanoKVM-Server` (aarch64) | Go+cgo, links libkvm+libopus; vendorHash pinned |
-| `kernel` | `Image` + `dtbs` + modules + `lt6911_manage.ko` | Linux 4.19.125 |
-| `dtb` / `dtb-sd` | patched board DTB (eMMC / SD-root) | reserved-mem + bootargs patch |
-| `dtb-slot-image` / `-sd` | signed `dtb.img` partition | `ax_gzip -9` + 1 KB header |
-| `kernel-slot-image` | signed kernel partition | `ax_gzip -9` + 1 KB header |
-| `kernel-mainline` | `Image` + `dt-bindings` headers | mainline Linux 7.1.3 from the nixpkgs pin, `arm64 defconfig` + `pkgs/kernel-mainline/ax630c.config`. **Boots this board since #75.** Variants: `-appliance` (NixOS stage 1 embedded), `-appliance-loop`, `-appliance-qemu`. Epic #26 |
-| `dtb-mainline` | our own board DTB | compiled from `dts/` **in this repo** with `cpp` + `dtc -p 4096`; nothing vendor about it |
-| `kernel-mainline-slot-image` / `dtb-mainline-slot-image` | signed slot-B partitions | same header format as above, so #75's first boot is a reversible slot-B flash |
-| `boot` / `boot-sd` | full boot chain (UART0 / UART1 console) | SPL+ATF+OP-TEE+U-Boot. Three deltas to the vendor U-Boot defconfig, all applied in `pkgs/boot.nix`'s `configurePhase`: `CONFIG_SUPPORT_AB=y` (A/B slot), `CONFIG_CMD_AXERA_CIPHER` + `CONFIG_AXERA_SECURE_BOOT` **off** (they linked in 78 KB of closed EIP-130 crypto-engine firmware; #90), and `CONFIG_CONS_INDEX=2` under `sdConsoleUart1` only. The install phase build-asserts the EIP-130 firmware is absent from every output |
-| `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
-| `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |
-| `rootfs` | overlaid `ubuntu_rootfs_sparse.ext4` | vendor base + our libkvm + modules + service selection |
-| `nixos-appliance` | NixOS `ext4` (+ sparse, + the generation's `/boot` tree) | the pure-Nix rootfs, #78. One nixpkgs pin, mainline kernel, **boot-proven on hardware from slot B**. See [nixos-rootfs.md](nixos-rootfs.md) |
-| **`firmware-image`** | **`…-selfbuilt.axp`** | **the flashable eMMC image (default output)** |
-| **`nixos-firmware-image`** | **`…-nixos.axp`** | **the NixOS appliance's flashable eMMC image** — packed from scratch, no vendor bundle; `system.build.axpImage` on `nixosConfigurations.nanokvm-pro` |
-| `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` carries the `/boot` tree NixOS's own extlinux builder wrote for the imaged generation (#99) and asserts room for `configurationLimit + 1` of them |
-| **`system-manifest`** | `nanokvm_pro_sys_latest.json` | **the update artefact** — ~200 bytes naming the toplevel store path a release offers (#100). The payload is that closure — kernel, initrd and dtb included as store paths since #99 — pushed to the binary cache and substituted by the device. [updates.md](updates.md) |
-| `appliance-toplevel` | the appliance's system closure | what a release pushes to the cache, and what `nix copy --to ssh://` sends to a board |
-| `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
-| `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
+| **`nixos-firmware-image-mainline`** | `…-nixos_mainline.axp` | **the flashable eMMC image; `packages.default`** |
+| `appliance-toplevel` | the appliance's system closure | what a release pushes to the binary cache, and what `nix copy --to ssh://` sends to a board |
+| `system-manifest` | `nanokvm_pro_sys_latest.json` | the release artefact — a few hundred bytes naming the toplevel above. [updates.md](updates.md) |
+| `nixos-appliance-mainline-chain` | rootfs ext4 (+ sparse) + the generation's `/boot` tree | the appliance itself, unpacked. `.eval` is the NixOS evaluation |
+| `bootfs` | the `boot` partition image | 272 MiB ext4 carrying the `/boot` tree NixOS's extlinux builder wrote; asserts room for `configurationLimit + 1` generations |
+| `nixos-appliance-qemu` / `-qemu-run` | the same appliance retargeted at `qemu-system-aarch64 -M virt` | where the NixOS half of a boot is proven before anything is written to the device |
+
+### Boot chain
+
+| Package | Output | Notes |
+|---|---|---|
+| `spl-minimal` | signed SPL | blob-free (empty firmware member, #90), compiled for this layout's byte offsets |
+| `spl-minimal-eip` | signed SPL | the vendor-shaped container with the closed EIP-130 firmware spliced in. Kept as a `dd`-away fallback; no image stores it |
+| `atf-mainline` | signed BL31 | upstream TF-A 2.15 + our `plat/axera/ax630c` |
+| `uboot-mainline` | signed BL33 | upstream U-Boot 2026.07 + our five-patch board port |
+| `uboot-env` | the `env` partition | generated from the mainline U-Boot's own compiled-in default, so partition and binary cannot disagree |
+| `gpt-image` | primary + alternate GPT | generated from `nixos/lib/emmc-layout.nix` |
+| `boot` | the vendor SDK boot chain | **nothing boots from it.** Two things come out: the FDL1/FDL2 download agents the flasher pushes into BootROM RAM, and the vendor `atf_bl31_signed.bin` the `atf-mainline` check compares its header against |
+
+`atf-mainline-debug` and the `uboot-mainline-*` family are **diagnostics, never
+shipped**. Reach for one when a stage dies before it can say anything:
+
+| Variant | What it adds |
+|---|---|
+| `atf-mainline-debug` | seven milestone-bit writes through BL31 |
+| `uboot-mainline-debug` | milestone writes through every `board_init_r` hook. Writes bits 12–20, which are Linux's in the shipping assignment |
+| `uboot-mainline-console` | the pre-console capture and nothing that writes the slot register — the variant to reach for on this board |
+| `uboot-mainline-trace` | the shipping image with the console redirected into the pre-console buffer from `board_late_init()` |
+| `uboot-mainline-tee` | every console write *also* copied into the buffer; takes nothing away |
+| `uboot-mainline-probe` | `tee` plus a one-shot eMMC interrogation in `preboot` |
+| `uboot-mainline-spldrv` | `tee` plus the first-stage loader's own SD4HC read path. Wedges this board past WDT0 — chainload-slot only, and it has never measured anything |
+| `uboot-mainline-hangtest` | hangs at the first instruction U-Boot runs. The negative half of the chainload-slot proof |
+| `uboot-mainline-nommu` | never switches the MMU on |
+
+Try a candidate through the one-shot chainload slot (`nanokvm-uboot-test stage
+<raw u-boot.bin>`), **never** by writing the `uboot` partition — there is one
+copy and no B twin.
+
+### Kernel and drivers
+
+| Package | Output | Notes |
+|---|---|---|
+| `kernel-mainline-appliance` | `Image` + kernelrelease + the module set | **the appliance's kernel.** Linux 7.1.x, no embedded initramfs — the initrd is the generation's. `boot.kernelPackages` names this |
+| `kernel-mainline` | `Image` with the bring-up initramfs | the #75 variant: a static `/init` that leaves boot evidence and reboots. `initramfsMainline` is that cpio |
+| `dtb-mainline` | the board DTB | compiled from `dts/` **in this repo** with `cpp` + `dtc -p 4096`; nothing vendor about it |
+| `video-modules` | six `.ko` as `/lib/modules/<release>` | `open_vin_csi2`, `open_vin_capture`, `ax630c_venc_vcmd` and the three videobuf2 modules, copied out of the appliance kernel with a `load-order` beside them |
+| `display-modules` | `fbtft` + `fb_jd9853` | the mini-display's panel, same shape, separate package on purpose |
+| `aic8800` / `aic8800-src` / `aic8800-firmware` | WiFi | GPL driver built out of tree against the appliance kernel; the firmware is the only closed content the blob policy permits, MD5-pinned |
+
+### App layer
+
+| Package | Output | Notes |
+|---|---|---|
+| `kvm-encoder` | `libkvm.so` / `.so.0` | **the one build** — V4L2 capture + open VC8000E encode, zero `libax_*` linked |
+| `nanokvm-server` | `NanoKVM-Server` (aarch64) | Go+cgo, links libkvm + libopus; `vendorHash` pinned |
+| `nanokvm-web` | React `dist/` bundle | built from our in-tree fork `web/`; pnpm hash pinned |
+| `nanokvm-gpio` | ATX power/reset/LED tool | resolves a line by its `gpio-line-names` entry over libgpiod v2; the request programs the pad mux |
+| `nanokvm-display` | mini-display status daemon | pure-stdlib Python + build-time-generated fonts |
+| `vcenc-ewl` | `ewl_probe` | userspace VC8000E submitter; shares its register-program sources with libkvm's encoder |
+| `edid` | clean-room EDID set | for the LT6911UXC front end, from source, `edid-decode --check` clean |
+| `axera-libs` | Axera `ax_*.h` headers | **headers only.** The blob-free libkvm compiles against the SDK's frame/stream types; no library from it is linked or shipped |
+
+### Host tools
+
+| Package | Output | Notes |
+|---|---|---|
+| `axdl` | `axdl-cli` | USB flasher; built for the local system, not cross-compiled. Also `nix run .#axdl` |
 | `toolchain` | cross-gcc bundle | convenience `buildEnv` |
 
+Host-side regression provers — `kvm-encoder-geom-test`, `vcenc-geom-test`,
+`vcenc-rc-test` — are also packages; they are wired up as checks below.
+
+`appliance-toplevel-cachetest` is the #100 hardware harness: the same appliance
+with its update channel, cache URL, cache key and version read from the
+*environment*. `builtins.getEnv` returns `""` under pure evaluation, so it is
+inert unless deliberately built with `--impure`. **Never cut a release from it** —
+its device would trust a key nobody rotates and poll a channel nobody publishes.
+
 ---
 
-## Build DAG
-
-```
-axera-libs ──> kvm-encoder-v4l2 ──> nanokvm-server ─┐
-nanokvm-web ────────────────────────────────────────┤
-kernel ─┬───────────────────────────────────────────┤
-        ├──> vc8000-vcmd ───────────────────────────┼─> rootfs ──> firmware-image
-        ├──> open-vin-csi2 ─────────────────────────┤                 ▲
-        └──> open-vin-capture ──────────────────────┘                 │
-boot ──────> {kernel,dtb}-slot-image ─────────────────────────────────┘
-```
-
-(`ax-ko-blobs` is a pinned reference for the vendor `ax_*.ko`; nothing in the
-image path builds from it.)
+## Checks
 
 `nix flake check` evaluates the whole tree without building the heavy leaves.
-Five of its gates belong to the update and boot path (#86, #99, #100) and are
-worth running by name after touching anything under `nixos/lib/`,
-`pkgs/bootfs.nix` or `pkgs/system-manifest*`:
+Every gate is hardware-free.
 
 ```bash
-nix build .#checks.x86_64-linux.nanokvm-updater-loop -L        # a real signed closure into a real store
-nix build .#checks.x86_64-linux.nanokvm-update-idle -L         # the checkbox, the markers, the idle gate
-nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L  # the derived rollback config
-nix build .#checks.x86_64-linux.nanokvm-boot-dir -L            # the /boot NixOS writes
-nix build .#checks.x86_64-linux.nanokvm-system-manifest -L     # the artefact, read back
+nix build .#checks.x86_64-linux.<name> -L
 ```
 
-The first two run **real nix inside the build sandbox** — a signed `file://`
-cache and two chroot stores — so they are slower than they look and they need
-no network.
+| Check | What it proves |
+|---|---|
+| `open-capture-geometry` | 1080p byte-identity for the open capture backend's parametric geometry |
+| `open-venc-geometry` | the open encoder's geometry laws against 17 golden vendor vectors + a 1080p template identity |
+| `open-venc-rc` | the from-scratch rate controller: vendor trajectory replay + closed-loop simulation |
+| `mainline-dtb` | the DT asserts its own boot contract — FDT slack, the `blkdevparts=` clause, the ATF/OP-TEE reservations |
+| `atf-mainline` | BL31 builds, its ELF entry and link address are `0x40040000`, the signed image fits the 256 KiB `atf` partition, and its Axera header matches the vendor `atf_bl31_signed.bin` field for field with both checksums recomputed |
+| `uboot-mainline` | U-Boot links where the SPL jumps, the signed image fits `uboot` and carries the AX header magic, the DT reserves what belongs to other stages, and the `blkdevparts=` partition driver — compiled from the *shipped* source — yields the same table `nixos/emmc-partitions.nix` does |
+| `uboot-gpt` | the GPT-at-a-base-LBA parser (patch 0023) **run**, not read: sandbox U-Boot against a faithful model of the eMMC |
+| `emmc-partition-map` | the layout, rendered — the table, the `blkdevparts=` clause and `fw_env.config` from the one definition |
+| `nixos-axp-manifest` | the from-scratch `.axp` read back: one manifest, the partition table against the `blkdevparts=` clause, every `<Img>` against what the host flasher's parser requires, every member inside its partition, the signed headers intact |
+| `nanokvm-boot-dir` | the `/boot` tree the flashed image carries: one `extlinux.conf`, no top-level `MENU` keyword, `LINUX`/`INITRD`/`FDT` lines whose files are actually there |
+| `nanokvm-mark-good-fallback` | the rollback fallback derivation against a fake `/boot`: promote, and check exactly the `DEFAULT` line moved — then that it *refuses* when the booted generation has no `LABEL` in the file |
+| `nanokvm-updater-loop` | the update loop for real against a fake root: apply, check the profile advanced and the boot config names the new generation and its kernel, then collect and check the right things survived — including that `gc` refuses when it cannot know the live set |
+| `nanokvm-update-idle` | the policy around it: the automatic-updates checkbox gating the timer, the pending markers, and the reboot that waits for an empty room — including that an unanswerable idle question fails **closed** |
+| `nanokvm-system-manifest` | the release artefact read back: the manifest names the toplevel *this commit* builds, carries this commit's version, and its closure list is the toplevel's real closure |
 
----
-
-## Building the firmware image
-
-```bash
-nix build .#firmware-image
-# -> result/AX630C_emmc_arm64_k419_sipeed_nanokvm-selfbuilt.axp
-```
-
-`image.nix` does a **streaming zip-rewrite** of the pinned base `.axp`, swapping
-in our from-source boot chain, signed kernel/dtb partitions, and the overlaid
-rootfs — a pure userspace ZIP rewrite (no sudo/mount/chroot). It fails loudly if
-any expected swap target is missing from the base `.axp` central directory.
-
-Flash it per [flashing-and-recovery.md](flashing-and-recovery.md).
+The two updater checks run **real nix inside the build sandbox** — a signed
+`file://` cache and two chroot stores — so they are slower than they look. They
+need no network. Run them by name after touching anything under `nixos/lib/`,
+`pkgs/bootfs.nix` or `pkgs/system-manifest*`.
 
 ---
 
 ## Pinned hashes
 
-Two fixed-output hashes must be regenerated when their inputs change (set the
-field to `pkgs.lib.fakeHash`, rebuild, paste the printed hash back):
+Fixed-output hashes to regenerate when their inputs change (set the field to
+`pkgs.lib.fakeHash`, rebuild, paste the printed hash back):
 
 | Where | Field | Regenerate when |
 |---|---|---|
 | `pkgs/nanokvm-server.nix` | `vendorHash` | `server/go.mod` / `go.sum` change, **or `postPatch` changes a Go import** |
 | `pkgs/nanokvm-web.nix` | `pnpmDeps.hash` | `web/pnpm-lock.yaml` changes |
+| `pkgs/atf-mainline.nix` / `pkgs/uboot-mainline.nix` | the source `hash` / `sha256` | the pinned upstream tag moves |
+| `pkgs/axdl.nix` | the source `hash` | the flasher pin moves |
 
-The `base-axp` FOD hash changes only if you re-pin a different vendor release
-(`pkgs/base-axp.nix`, `version = "1.0.15"`).
+`buildGoModule`'s go-modules derivation inherits `postPatch`, so **every patch
+that adds or removes an import moves `vendorHash`** — not just a `go.mod` bump.
+`go mod vendor` vendors only the packages the main module actually imports.
 
-`pkgs/aic8800-src.nix` pins the WiFi driver by commit and `sha256`. Bumping
-that `rev` means a new hash **and** two assertions to reconcile: the count of
+`pkgs/aic8800-src.nix` pins the WiFi driver by commit and `sha256`. Bumping that
+`rev` means a new hash **and** two assertions to reconcile: the count of
 `debian/patches` entries that touch `src/SDIO` (the build prints every one it
-applies or skips), and the 62 firmware files
-`pkgs/aic8800-firmware.nix` checks against the upstream MD5 manifest. Both
-exist so an upstream change is read rather than absorbed.
-
-`buildGoModule`'s go-modules derivation inherits `postPatch`, so every patch that
-adds or removes an import moves `vendorHash` — not just a `go.mod` bump. `go mod
-vendor` vendors only the packages the main module actually imports.
+applies or skips), and the 62 firmware files `pkgs/aic8800-firmware.nix` checks
+against the upstream MD5 manifest. Both exist so an upstream change is read
+rather than absorbed.
 
 **A stale FOD hash is invisible on any host that already has the output.** A
 fixed-output derivation's store path comes from its hash alone, so a machine that
@@ -163,74 +234,59 @@ nix build --rebuild "$(nix derivation show .#nanokvm-server \
 
 `--rebuild` re-runs the fetch and compares, so drift fails here instead of on the
 runner. Setting the field to `pkgs.lib.fakeHash` and rebuilding gets the same
-answer. This is a step of [cutting a release](releasing.md), not an optional
-one: since #100 the release job pushes `.#appliance-toplevel`'s whole closure to
-the binary cache, and that closure contains the server this FOD builds.
+answer. This is a step of [cutting a release](releasing.md), not an optional one:
+the release job pushes `.#appliance-toplevel`'s whole closure to the binary
+cache, and that closure contains the server this FOD builds.
 
 ---
 
 ## Cross-compile notes
 
-- `crossPkgs` is `pkgsCross.aarch64-multiplatform`; the flake's only supported
-  build system is `x86_64-linux` (`ax_gzip` is an x86-64-only static ELF).
+- `crossPkgs` is `pkgsCross.aarch64-multiplatform`; the only supported build
+  system is `x86_64-linux` (`ax_gzip`).
 - **Go/cgo:** use `crossPkgs.buildGoModule` (the cross-capable `go`). Overriding
-  it with a native `pkgs.go_*` breaks cgo (native go passes `-m64` to the aarch64
-  gcc). `GOEXPERIMENT=boringcrypto` is kept for parity with upstream `build.sh`.
-- **cgo link:** the server links our real `libkvm.so` (`-L../dl_lib -lkvm`) and
-  `libopus`. The shipped `kvm-encoder-v4l2` pulls in no AX graph at all; the
-  build keeps `-Wl,-rpath-link,${axera-libs}/lib` so `ld` can still *resolve*
-  the transitive `libax_engine` (via `libax_proton`) for the vendor-linked
-  `kvm-encoder` variant **without** adding it as `DT_NEEDED` to the server binary.
-- **libkvm rpath:** `kvm-encoder.nix` uses `patchelf --force-rpath` to emit
-  `DT_RPATH` (transitive), not `DT_RUNPATH`. Moot for the shipped build (zero
-  vendor libs), load-bearing the moment a `libax_*`-linking variant is deployed —
-  see [architecture.md](architecture.md#the-videoaudio-pipeline-our-libkvm).
+  it with a native `pkgs.go_*` breaks cgo — native go passes `-m64` to the
+  aarch64 gcc. `GOEXPERIMENT=boringcrypto` is kept for parity with upstream's
+  `build.sh`.
+- **cgo link:** the server links our real `libkvm.so` (`-L$PWD/dl_lib -lkvm`) plus
+  libopus, and its own `DT_RUNPATH` is the bare, store-free
+  `$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib`.
+- **libkvm rpath:** `pkgs/kvm-encoder.nix` uses `patchelf --force-rpath` to emit
+  `DT_RPATH` (transitive), not `DT_RUNPATH`, and `nixos/appliance.nix` re-rpaths
+  both copies into the image so no closed-library store path survives as a
+  closure reference. Both halves are load-bearing —
+  [architecture.md](architecture.md#load-bearing-linker-detail).
+- **Kernel:** `pkgs/kernel-mainline.nix` drives `make` directly rather than going
+  through nixpkgs' `buildLinux`, because we want the config we wrote, an
+  assertable `kernelrelease` and the raw `Image` U-Boot's `booti` wants. Only the
+  *source* comes from nixpkgs, so the tarball stays pinned and hash-verified by
+  the flake's nixpkgs input. `CONFIG_LOCALVERSION` lives in
+  `pkgs/kernel-mainline/ax630c.config` **and** is asserted against the string
+  `pkgs/kernel-mainline.nix` computed; changing only the Nix side fails the build
+  with `CONFIG_LOCALVERSION is not '…'`. That is the assertion working.
 - **Vendor triples:** the SDK Makefiles expect `aarch64-none-linux-gnu-`; nixpkgs
   is `aarch64-unknown-linux-gnu-`. `CROSS_COMPILE` is passed explicitly.
 
 ---
 
-## `ax_*.ko` vermagic
-
-**Nothing shipped depends on this any more.** Our loader stopped insmod'ing the
-prebuilt Axera media modules in #55 M3 (2026-09-02) — three from-source video
-modules replace the whole set — and #54 (2026-09-03) deleted the blobs from the
-image outright, so a flashed device carries no `ax_*.ko` at all. `vermagic` is
-now purely a **bench-harness** concern: the `ax-load-drv.{openvenc,base-only}.sh`
-variants insmod vendor blobs, and they only run on a device flashed with the
-vendor `.axp`. When you do that, the kernel's `vermagic` (kernel version + key
-`CONFIG_*` + compiler) has to line up with what those blobs were built against,
-which is why `kernel.nix` still builds against the vendor
-`axera_AX630C_emmc_arm64_k419_sipeed_nanokvm_defconfig`. And vermagic match is
-not ABI safety — a config flag that adds `#ifdef` fields to a struct the blobs
-touch still kills the boot; see [vcmd-cma-unblock.md](vcmd-cma-unblock.md).
-
-The standing rule survives the purge: an `ax_*.ko` must **never** land under
-`/lib/modules/4.19.125/`. `rootfs.nix` stages only the from-source modules
-there and hard-fails if any `ax_*.ko` sneaks in — a merged tree gives them
-`of:` modaliases, udev autoloads `ax_cmm` parameter-less, and the device
-panic-loops (this bricked a unit once). On the bench, vendor blobs are reached
-only by path from `/soc/ko`, with the required parameters.
-
----
-
-## Heavy builds & caching
-
-- `base-axp` is a **1.4 GB** fixed-output fetch; `rootfs` de-sparses it to a
-  multi-GB raw ext4, edits it with `debugfs`, then re-sparses. Budget disk + time.
-- `nix flake check` and `nix build` of the light leaves (`axera-libs`,
-  `ax-ko-blobs`, `kvm-encoder`, `nanokvm-web`) are fast and are the right
-  inner-loop targets when iterating on the app/encoder layer.
-- riscv64 is irrelevant here (that's the other, SG2002 project); this target is
-  plain aarch64 and builds with the standard nixpkgs cross set.
+## Caching
 
 **There is no binary cache yet, and that is #96.** Every build above is from
-source on your machine. The flake carries the intended
-`nixConfig.extra-substituters` / `extra-trusted-public-keys` as a **comment**
-next to the `description`, not as a value: a substituter listed there is
-contacted for every path any build on any host is missing, so a placeholder URL
-would cost every developer and the release runner a warning or a connect
-timeout per path and buy nothing. #96 fills those two lines in, and the same
-cache is what the appliance substitutes its updates from
-([updates.md](updates.md)); until then, `nanokvm.update.cacheUrl` stays empty
-and a built image says at evaluation time that it cannot update itself.
+source on your machine — a cross toolchain, a kernel, U-Boot and an appliance
+closure.
+
+The flake carries the intended `nixConfig.extra-substituters` /
+`extra-trusted-public-keys` as a **comment** next to the `description`, not as a
+value. A substituter listed there is contacted for every path any build on any
+host is missing, so a placeholder URL would cost every developer and the release
+runner a warning or a connect timeout per path and buy nothing. An unreachable
+substituter is worse than no substituter.
+
+#96 fills those two lines in, and the same cache is what the appliance
+substitutes its updates from ([updates.md](updates.md)); until then
+`nanokvm.update.cacheUrl` stays empty and a built image says at evaluation time
+that it cannot update itself.
+
+The light leaves — `.#kvm-encoder`, `.#nanokvm-web`, `.#nanokvm-server`,
+`.#dtb-mainline` — are fast, and are the right inner-loop targets when iterating
+on the app or encoder layer.

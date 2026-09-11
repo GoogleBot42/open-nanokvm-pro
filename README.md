@@ -1,30 +1,14 @@
 # open-nanokvm-pro
 
 An **open, self-built firmware for the Sipeed NanoKVM-Pro** (Axera **AX630C**,
-dual Cortex-A53, aarch64/glibc), packaged as a Nix flake. The boot chain, Linux
-kernel, video/encode backend, and the KVM application are built **from source**.
+dual Cortex-A53, aarch64), packaged as a Nix flake. Mainline Linux, mainline
+TF-A, mainline U-Boot, a NixOS rootfs built entirely from nixpkgs, and a video
+stack — capture *and* encode, kernel drivers included — that is ours from
+source.
 
-**The whole video stack is now blob-free, kernel included** (#55, 2026-09-02):
-the device boots **three from-source kernel modules and zero vendor ones** —
-`ax630c_venc_vcmd.ko` (open VC8000E encode), `open_vin_csi2.ko` (open MIPI
-CSI-2 / D-PHY receiver) and `open_vin_capture.ko` (open VIN/IFE bypass capture,
-exposing a plain V4L2 `/dev/video0`). Our `libkvm.so` captures over **standard
-V4L2** and hands each buffer's dma-buf to the encoder zero-copy, doing H.264 +
-MJPEG with **zero** Axera userspace libraries linked — blob-free all the way up
-to **4K** since #52 (2026-09-03). Since #54 (2026-09-03)
-the vendor media closure is **deleted from the image**, not merely unloaded:
-all 22 `ax_*.ko` plus the vendor `libsns_*.so`, the NPU/AI-ISP model data and
-the ISP sensor-tuning set are gone (~355 files, ~248 MB). Still closed on the
-image: the aic8800 Wi-Fi/BT **firmware** and the flash-time-only AXDL helper.
-
-The result is a reproducible `.axp` firmware image that **boots and runs the full
-web KVM on real hardware**, driven by our own open `libkvm.so` backend instead
-of Sipeed's withheld closed glue.
-
-> **Status: working.** `nix build .#firmware-image` produces a flashable `.axp`;
-> flashed via AXDL it boots our from-source kernel + boot chain and auto-starts
-> the web KVM (HTTPS on :80/:443) with our libkvm doing HDMI capture, H.264/MJPEG
-> encode, and Opus audio. Verified end-to-end on a NanoKVM-Pro Desk.
+**The only closed content on the image is the aic8800 radio firmware**, which
+executes on the radio and not on the CPU. No closed userspace, no closed kernel
+module, no vendor rootfs: the whole vendor-derived build was deleted in #97.
 
 ---
 
@@ -32,147 +16,119 @@ of Sipeed's withheld closed glue.
 
 ```bash
 # Build the flashable firmware image (aarch64, cross-built from x86_64).
-nix build .#firmware-image
-ls result/                       # AX630C_emmc_arm64_k419_sipeed_nanokvm-selfbuilt.axp
+# This is packages.default, so a bare `nix build` does the same thing.
+nix build .#nixos-firmware-image-mainline
+ls result/     # AX630C_emmc_arm64_k419_sipeed_nanokvm-nixos_mainline.axp
 
-# Flash it over USB (device in AXDL download mode — see docs/flashing-and-recovery.md).
-nix run .#axdl -- --file result/*-selfbuilt.axp --wait-for-device
-
-# Then open the web UI and set a password:
-#   https://<device-ip>/
+# Put the board in USB download mode: hold `User` ~10 s while powering on.
+nix run .#axdl -- --file result/*.axp --wait-for-device
 ```
 
-There is a second image: `nix build .#nixos-firmware-image` builds the **NixOS
-appliance** — mainline Linux plus a rootfs built entirely from nixpkgs, packed
-into an `.axp` from scratch with no vendor bundle behind it. It boots and serves
-the web UI, but the KVM hardware (video, USB HID, mini-display, WiFi) is not
-wired up on that kernel yet. [docs/nixos-rootfs.md](docs/nixos-rootfs.md), and
-[flashing-and-recovery.md](docs/flashing-and-recovery.md#flashing-the-nixos-appliance-image)
-before you flash it.
+First boot is ~71 s to SSH. The board keeps its own MAC and DHCP lease, comes up
+as `kvm-XXXX`, and serves the web UI on `:80`/`:443` with a self-signed cert.
+SSH is `root` / `sipeed` — change it. Full procedure, including backups and
+recovery: [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md).
 
-Everything you need beyond this lives in [`docs/`](docs/):
-
-| Doc | What's in it |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | Boot chain, partition layout, the video pipeline, our `libkvm`, and the **two vendor app stacks** (why we run `nanokvm`, not `kvmcomm`) |
-| [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
-| [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL USB flashing, the `User`-button recovery path, full backup/restore, non-destructive SD-card boot |
-| [docs/updates.md](docs/updates.md) | **Our own update system**: the device substitutes the tagged release's **signed system closure** from our binary cache, makes it the system profile and reboots into it; the web-UI "update" button pulls from **our** releases, not Sipeed, and a bad update rolls itself back |
-| [docs/releasing.md](docs/releasing.md) | Cutting a release: `cut-release` on Gitea → mirrored to GitHub → Actions pushes the closure to the cache and publishes the manifest and the `.axp` |
-| [docs/mini-display.md](docs/mini-display.md) | The built-in screen: driven **fully from source** (kernel drivers built from our tree + our open Python status daemon; no `kvm_ui`, no `.ko` blobs), incl. sleep/wake on the knob button |
-
-> The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
-> findings, the resolved MIPI/VIN/VENC capture config, per-test results) lives in
-> [docs/plan-sg2002-research.md](docs/plan-sg2002-research.md). This repo's
-> `docs/` is the distilled, buildable reference.
-> **That log is frozen** — its last substantive entry is 2026-07-18, predating
-> blob-free capture, idle power-down, the mini-display, and the SD-image
-> rework; current status lives in this repo's `docs/` and git history.
+Flashing **overwrites the eMMC**. The AX630C's mask-ROM download mode cannot be
+bricked, so recovery is always another AXDL flash — a bench trip, never a brick.
 
 ---
 
-## What's from source vs pinned
+## What you get
 
-| Component | Provenance | License |
-|---|---|---|
-| FSBL/SPL + DDR init, TF-A 2.7, OP-TEE 3.21, U-Boot 2020.04 | **from source** (`maix_ax620e_sdk`) | GPL/BSD |
-| Linux 4.19.125 kernel + NanoKVM-Pro DTS | **from source** (`maix_ax620e_sdk_kernel`) | GPL-2.0 |
-| `lt6911_manage.ko` (HDMI-in bridge driver) | **from source** | GPL-2.0 |
-| Mini-display stack: `fbtft`/`fb_jd9853`/`gpio_keys`/`rotary_encoder` drivers + `nanokvm-display` status daemon | **from source** (drivers from the SDK kernel tree; daemon is ours, fonts generated from source-built `terminus_font`) | GPL-2.0 / GPL-3.0 |
-| `libkvm.so` (our capture + H.264/MJPEG + Opus backend) | **from source** — V4L2 capture + open VC8000E encode, dma-buf zero-copy between them; **links zero `libax_*`** | ours (GPL-3 app) |
-| `ax630c_venc_vcmd.ko` (open VC8000E encode driver) | **from source** — replaces vendor `ax_venc`/`ax_jenc` | GPL-2.0 / MIT |
-| `open_vin_csi2.ko` + `open_vin_capture.ko` (open MIPI CSI-2 receiver + VIN/IFE bypass capture → V4L2) | **from source** — replace the entire vendor `ax_proton` capture closure | GPL-2.0 |
-| `lt6911_manage.ko` (HDMI-in bridge) | **from source** | GPL-2.0 |
-| NanoKVM-Server (Go) | **from source** (pinned `NanoKVM-Pro`, patched at build) | GPL-3.0 |
-| Web UI (React) | **from source** — our fork of Sipeed's `NanoKVM-Pro/web`, in-tree at `web/` (`web/FORK.md`) | GPL-3.0 |
-| ~~`ax_*.ko` modules (`proton`/`mipi_rx`/`ivps`/`sys`/`cmm`/`venc`/`jenc`/…)~~ | **REMOVED from the image** — the encode pair in #25, the whole 22-module `/soc/ko` set in #54; `/soc/ko` now holds only our three open modules | — |
-| ~~vendor `libsns_*.so`, NPU/AI-ISP model data, ISP tuning `*.ini`/`*.bin`~~ | **REMOVED from the image** (#54) — no referrer left once `libax_*` went | — |
-| `libax_*.so` | **PURGED from the image** (#25) — nothing we ship links or `dlopen`s them | BSD-3, redistributable |
-| `libsns_dummy.so` | **from source** (`pkgs/libsns-dummy.nix`, #30) | ours |
-| Rootfs base | **pinned** vendor Ubuntu 22.04 arm64 (from the v1.0.15 base `.axp`) | mixed |
+**Working on hardware**
 
-The design goal is a **zero-vendor-blob device** (ISP included). The video path
-is there — capture and encode are blob-free down to the kernel drivers, and
-since #54 no closed kernel module or media library ships at all; what's left is
-the aic8800 Wi-Fi/BT firmware. See [docs/architecture.md](docs/architecture.md#from-source-vs-pinned-blobs)
-and [docs/provenance.md](docs/provenance.md) for the full, current blob audit.
+- The web KVM over HTTPS, served by NanoKVM-Server (from source) and our fork of
+  Sipeed's React UI (in-tree at `web/`).
+- HDMI capture and encode with **zero vendor code**: `open_vin_csi2.ko` +
+  `open_vin_capture.ko` expose a plain V4L2 `/dev/video0`, `ax630c_venc_vcmd.ko`
+  drives the VC8000E, and our `libkvm.so` hands dma-bufs between them
+  zero-copy — H.264, H.265 and MJPEG, up to 4K.
+- Self-updates: a release publishes a **signed system closure**, the device
+  substitutes it, makes it a generation and reboots when nobody is watching.
+  Proven end to end against a throwaway signed cache; the public one is #96.
+- **Rollback.** U-Boot counts boot attempts in a reset-surviving register; the
+  fourth runs `altbootcmd` and boots the previous generation. Proven unattended.
 
-> **Deliberately excluded:** the vendor's closed **mini-display app `kvm_ui`**
-> (no source published). The built-in screen is instead driven by our own open
-> stack — from-source kernel drivers + a small Python status daemon with
-> sleep/wake on the knob button
-> ([details](docs/mini-display.md)).
+**Built, not yet proven on hardware**: the mini-display and HDMI audio (#84),
+WiFi (#85), the ATX power/reset pulse (#81 — the code is live, the GPIO has
+never been pulsed).
+
+**Not there yet**: USB HID — no keyboard, no mouse, no mass storage (#82). The
+controller and every configfs function driver are in the kernel and a host has
+enumerated a gadget off this board; what is missing is the gadget *policy*.
+
+---
+
+## Where to read next
+
+| Doc | What's in it |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Boot chain, partition layout, the video pipeline, our `libkvm` |
+| [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
+| [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL flashing, backups, the chainload slot, rollback, the tripwires |
+| [docs/nixos-rootfs.md](docs/nixos-rootfs.md) | The appliance: boot contract, identity, `/boot`, the known gaps |
+| [docs/mainline-port.md](docs/mainline-port.md) | The #26 port — driver inventory, U-Boot/TF-A bring-up, how a serial-less first boot is made observable |
+| [docs/provenance.md](docs/provenance.md) | The approval baseline: every blob and every network endpoint |
+| [docs/updates.md](docs/updates.md) | How the device updates itself, and how a bad update rolls back |
+| [docs/releasing.md](docs/releasing.md) | Cutting a release |
+| [docs/mini-display.md](docs/mini-display.md) | The built-in screen, driven fully from source |
 
 ---
 
 ## How it's put together
 
-Cross-compiled from `x86_64-linux` (the only supported build system — the
-vendor `ax_gzip` packer is an x86-64-only static ELF) via nixpkgs
-`pkgsCross.aarch64-multiplatform` (stock aarch64 glibc GCC — **no exotic
-toolchain**); the firmware target is always aarch64.
+Cross-compiled from `x86_64-linux` — the only supported build system, because
+the Axera `ax_gzip` packer every signed boot payload passes through is an
+x86-64-only static ELF — via nixpkgs `pkgsCross.aarch64-multiplatform`. Stock
+aarch64 glibc GCC; no exotic toolchain.
 
 ```
-firmware-image (.axp)  ◄── image.nix: streaming zip-rewrite of the vendor base .axp,
-     ▲                     swapping in our signed partitions + overlaid rootfs
+nixos-firmware-image-mainline (.axp)   packed from scratch, no vendor bundle
      │
-     ├── boot            (SPL/DDR-init + ATF + OP-TEE + U-Boot, one from-source build)
-     ├── kernel-slot-image  (Image → ax_gzip -9 + signed header)
-     ├── dtb-slot-image     (patched DTB → ax_gzip -9 + signed header)
-     └── rootfs          (vendor Ubuntu base + our libkvm.so + merged/depmod'd modules,
-                          edited in-place with debugfs — no root/mount needed)
-              ▲
+     ├── spl-minimal        BootROM's first stage, recompiled for our layout, blob-free
+     ├── atf-mainline       TF-A 2.15 + our plat/axera/ax630c
+     ├── uboot-mainline     U-Boot 2026.07 + this repo's AX630C patch series
+     ├── uboot-env          U-Boot's own compiled-in default env + a delta
+     ├── bootfs             ext4 /boot: extlinux, and each generation's kernel/initrd/dtb
+     └── appliance-toplevel the NixOS system
+              ├── kernel-mainline-appliance   Linux 7.1 + our AX630C support
+              ├── video-modules / display-modules
               ├── kvm-encoder   → libkvm.so   (V4L2 capture → dma-buf → open VC8000E)
-              ├── vc8000-vcmd   → ax630c_venc_vcmd.ko    (open encode driver, replaces ax_venc/jenc)
-              ├── open-vin-csi2 → open_vin_csi2.ko       (open MIPI CSI-2 / D-PHY receiver)
-              ├── open-vin-capture → open_vin_capture.ko (open VIN capture → V4L2 /dev/video0)
-              ├── kernel        → /lib/modules + lt6911_manage.ko
-              └── ax-ko-blobs   → prebuilt ax_*.ko (pinned reference for the bench harness; NOT shipped)
+              ├── nanokvm-server / nanokvm-web / nanokvm-gpio / nanokvm-display
+              └── aic8800 (+ its MD5-pinned firmware)
 ```
 
-Full package list and the dependency DAG are in
-[docs/building.md](docs/building.md).
+The appliance is also a first-class NixOS system:
 
----
+```bash
+nix build .#nixosConfigurations.nanokvm-pro.config.system.build.toplevel
+nixos-rebuild switch --flake .#nanokvm-pro --target-host root@<device>
+nix run .#nixos-appliance-qemu-run      # boot it under QEMU, no hardware
+```
 
-## Non-destructive SD-card boot (test path)
-
-`nix build .#sd-image` produces a `dd`-able microSD image that boots the **entire
-from-source stack from the SD/TF slot, leaving eMMC untouched** — hold the `User`
-button while applying power to select it, power on normally to revert. This is the
-safe way to try changes without touching the installed firmware. Details and the
-strap/boot-source caveats are in
-[docs/flashing-and-recovery.md](docs/flashing-and-recovery.md#sd-card-boot).
+Hardware-free regression gates live in `nix flake check` — the eMMC partition
+map, the mainline DT's boot contract, the signed TF-A and U-Boot headers, the
+GPT-at-a-base-LBA parser run against a model of the eMMC, the `.axp` read back
+against its own manifest, the update loop and the rollback promotion.
 
 ---
 
 ## Updates come from us, not Sipeed
 
-We build `NanoKVM-Server` from source, so it's patched to fetch updates from
-**our** [GitHub Releases](https://github.com/GoogleBot42/open-nanokvm-pro/releases)
-instead of `cdn.sipeed.com`. The GitHub repo is a public, read-only downstream
-mirror of the Gitea source of truth: write the `CHANGELOG.md` section, then run
-the Gitea `cut-release` workflow (`tools/release` is the local fallback) — it
-tags on Gitea, the mirror carries the tag to GitHub, and GitHub Actions pushes
-the appliance's **system closure** to our binary cache, then publishes the
-`.axp` image and a ~200-byte manifest naming that closure's store path.
+The server is built from source with Sipeed's CDN update URLs deleted at build
+time — and a build-time grep that fails if one survives. Since #101 the device
+knows exactly one channel: `nanokvm.update.stableUrl` in its own NixOS
+configuration.
 
-The device is a NixOS system with `nix` on it, so applying that is the standard
-NixOS story: `nix copy` the closure — only the paths the board is missing, each
-NAR verified against the keys the system was built with — `nix-env --set` the
-system profile, `switch-to-configuration boot`, reboot. U-Boot's boot counter
-rolls the update back if the new system does not come up healthy. Full design in
-[docs/updates.md](docs/updates.md); the release procedure is
+Gitea (`git.neet.dev/zuckerberg/open-nanokvm-pro`) is the source of truth;
+GitHub is a **read-only public mirror** that hosts releases. A release pushes
+the appliance's system closure to our binary cache and publishes a ~200-byte
+manifest naming that closure. The device `nix copy`s only the paths it is
+missing, with `require-sigs` against the keys in its own configuration, sets the
+system profile, and reboots. The cache endpoint and its key are placeholders
+until #96 stands one up. [docs/updates.md](docs/updates.md),
 [docs/releasing.md](docs/releasing.md).
-
----
-
-## Recovery
-
-The AX630C's mask-ROM USB **download mode is unbrickable**: hold `User` ~10 s to
-enter it, then re-flash any `.axp` (ours or the stock vendor image) with
-`nix run .#axdl`. Make a full backup first — see
-[docs/flashing-and-recovery.md](docs/flashing-and-recovery.md#backup-and-restore).
 
 ---
 
@@ -180,9 +136,5 @@ enter it, then re-flash any `.axp` (ours or the stock vendor image) with
 
 [GPL-3.0](LICENSE) — Copyright (C) 2026 GoogleBot42.
 
-Some bundled and pinned components keep their own licenses: the Ubuntu rootfs
-base is its own mix, and the aic8800 Wi-Fi/BT firmware is redistributable
-vendor firmware. The Axera `libax_*.so` (BSD-3) and `ax_*.ko` (GPL-tagged,
-source unpublished) no longer ship at all — `axera-libs` / `ax-ko-blobs` remain
-only as pinned build-time and bench-harness references. See the
-[table above](#whats-from-source-vs-pinned).
+The aic8800 Wi-Fi firmware is redistributable vendor firmware under its own
+terms; see [docs/provenance.md](docs/provenance.md).

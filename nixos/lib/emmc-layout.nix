@@ -35,9 +35,9 @@
 #               pkgs/gpt-image.nix hands to sgdisk, and what U-Boot and Linux
 #               both read back.
 #   flashParts  physical byte offsets in the eMMC user area. What the .axp
-#               manifest describes and what tools/migrate-layout.sh `dd`s --
-#               including the `spl` region and the two GPT structures, which
-#               are not partitions in either of the other views.
+#               manifest describes -- including the `spl` region and the two
+#               GPT structures, which are not partitions in either of the
+#               other views.
 #   kernelParts the two-entry `blkdevparts=` clause, the only thing Linux is
 #               told directly.
 #

@@ -1,461 +1,445 @@
 # Architecture
 
-How the from-source NanoKVM-Pro firmware fits together, from power-on to a live
-web KVM. For build mechanics see [building.md](building.md); for flashing see
+How the NanoKVM-Pro appliance fits together, from power-on to a live web KVM.
+The product is a **mainline NixOS appliance**: mainline TF-A, mainline U-Boot
+and mainline Linux behind a blob-free first-stage loader, with a NixOS
+generation on `/boot` and a blob-free video pipeline. For build mechanics see
+[building.md](building.md); for flashing see
 [flashing-and-recovery.md](flashing-and-recovery.md).
 
 - [Hardware](#hardware)
 - [Boot chain](#boot-chain)
-- [Partition layout](#partition-layout)
-- [Root filesystem](#root-filesystem)
-- [The video/audio pipeline (our libkvm)](#the-videoaudio-pipeline-our-libkvm)
-- [The two app stacks: nanokvm vs kvmcomm](#the-two-app-stacks-nanokvm-vs-kvmcomm)
-- [Runtime service model](#runtime-service-model)
-- [From-source vs pinned blobs](#from-source-vs-pinned-blobs)
+- [eMMC layout](#emmc-layout)
+- [Generations and `/boot`](#generations-and-boot)
+- [Rollback](#rollback)
+- [The video pipeline](#the-video-pipeline)
+- [Load-bearing linker detail](#load-bearing-linker-detail)
+- [Service model](#service-model)
+- [Updates](#updates)
+- [What is from source, and what is not](#what-is-from-source-and-what-is-not)
 
 ---
 
 ## Hardware
 
 - **SoC:** Axera **AX630C** — 2× ARM Cortex-A53 (aarch64), a VeriSilicon
-  **Hantro VC8000E** hardware video encoder (H.264/H.265/MJPEG), MIPI-CSI RX, and
-  an Axera ISP.
-- **HDMI-in:** a **Lontium LT6911UXC** HDMI→MIPI-CSI bridge converts the captured
-  host HDMI signal to MIPI. An open in-tree driver, `lt6911_manage.ko`, polls it
-  and exposes resolution/format under `/proc/lt6911/*`.
-- **Storage:** eMMC (installed firmware) + a microSD/TF slot (non-destructive
-  boot path).
-- **Console UARTs:** `ttyS0` @ `0x4880000` (primary console, hidden pads),
-  `ttyS1` @ `0x4881000` (exposed header pin U1), `ttyS2` @ `0x4882000`. The clock
-  gives a `base_baud` of 13000000 (208 MHz / 16).
-- **`User` button:** the reset-time `CHIP_MODE` strap. Hold while powering on to
-  boot the SD card; hold ~10 s to enter USB download mode. A normal power-on
-  always boots eMMC. See [flashing-and-recovery.md](flashing-and-recovery.md).
+  **Hantro VC8000E** hardware video encoder (H.264/H.265/MJPEG), MIPI-CSI RX,
+  and an Axera ISP (unused — see below).
+- **HDMI-in:** a **Lontium LT6911UXC** HDMI→MIPI-CSI bridge converts the
+  captured host HDMI signal to MIPI CSI-2 and recovers the embedded audio. Our
+  `drivers/misc/lt6911-manage.c` (built in, `CONFIG_LT6911_MANAGE=y`) programs
+  it over I2C and publishes resolution/format through `/proc/lt6911_info/`.
+- **Storage:** eMMC, 31 272 730 624 bytes (29.1 GiB), measured 2026-09-09. The
+  two 4 MiB eMMC boot partitions are blank and unreachable — which area the
+  BootROM reads is a pin strap, and this board is strapped to the user area.
+  There is also a microSD slot; nothing in the product uses it.
+- **Console UARTs:** `ttyS0` @ `0x4880000` (the boot console, on hidden pads),
+  `ttyS1` @ `0x4881000` (exposed header pin U1), `ttyS2` @ `0x4882000`. Every
+  stage runs its console on `ttyS0`, which no cable on this unit reaches — so
+  the boot is made observable through the slot register, ramoops and U-Boot's
+  pre-console ring instead ([mainline-port.md](mainline-port.md)).
+- **`User` button:** the reset-time `CHIP_MODE` strap. Hold ~10 s while
+  powering on to enter USB download mode, which is how AXDL flashes the board.
+  A normal power-on always boots eMMC.
+- **Ethernet PHY:** a Realtek **RTL8211F** (PHYID `0x001cc916`, read over MDIO
+  2026-09-06), not the JLSemi part the vendor device tree names. Both 2 ns RGMII
+  delays are pin-strapped on, so `phy-mode` is `rgmii-id`.
 
 ---
 
 ## Boot chain
 
-All stages are built **from source** (`pkgs/boot.nix`, one shared build; the
-`boot-fsbl/atf/optee/uboot` selectors expose subsets):
-
 ```
 BootROM (mask ROM, unbrickable)
-  └─► SD-SPL / bl1  (DDR init + training, from-source C)
-        └─► ATF / bl31   (TF-A 2.7)
-              └─► OP-TEE / bl32 (3.21)
-                    └─► U-Boot 2020.04 (bl33)
-                          └─► Linux 4.19.125  + DTB
-                                └─► embedded initramfs /init
-                                      └─► switch_root → /realroot → systemd
+  └─► SPL  .#spl-minimal          blob-free, compiled for our layout
+        └─► TF-A 2.15 BL31  .#atf-mainline    plat/axera/ax630c, ours
+              └─► U-Boot 2026.07  .#uboot-mainline    our AX630C board port
+                    └─► sysboot /boot/extlinux/extlinux.conf
+                          └─► Linux 7.1.x  .#kernel-mainline-appliance
+                                └─► NixOS stage 1 → stage 2 → systemd
 ```
 
-- The BootROM latches its boot source (eMMC vs SD vs USB) from the `CHIP_MODE`
-  strap (the `User` button) at reset — it does not probe. The SD path is
-  **file-based** (FAT32 + named images), not raw-offset; see
-  [flashing-and-recovery.md](flashing-and-recovery.md#sd-card-boot).
-- The kernel embeds an **initramfs**, whose `/init` reads `root=` from the
-  cmdline and does `switch_root /realroot /sbin/init`. Removing it breaks the root
-  mount — it must stay (`INITRAMFS_SOURCE`). It is built by `pkgs/initramfs.nix`:
-  the vendor `/init` + `/show_iostat` scripts verbatim over a **static busybox +
-  `e2fsck` from nixpkgs**, so no vendor binary is packed into the `Image`.
-- **Secure boot** is gated on the efuse `SECURE_BOOT_EN`
-  (`COMM_SYS_BOND_OPT @ 0x02340098`, bit 26). On the units checked it reads **0
-  (off)**, so self-signed/unsigned firmware boots. Boot derivations default to the
-  unsigned path.
+**SPL** (`pkgs/spl-minimal.nix`). The AX630C BootROM reads the first-stage
+loader from byte 0 of the eMMC user area, so byte 0 belongs to the ROM. The SPL
+is the vendor bl1/SPL source recompiled for our layout: it finds BL31 and BL33
+by **compile-time byte offsets**, generated from `nixos/lib/emmc-layout.nix`,
+which is why the layout and the first-stage loader are one artefact — a layout
+change is an SPL rebuild, and a bad SPL is an AXDL bench trip. OP-TEE and the
+DDR-init partition are compiled out; both `*_BAK_FLASH_BASE` point at the A
+bases, so the slot register's SLOT bits select between two identical addresses.
 
-Every stage — SPL/ATF/OP-TEE/U-Boot and the kernel — runs its console on
-`ttyS0` (`0x4880000`), for the SD image as well as eMMC, matching the official
-firmware. (An experimental UART1-redirect boot chain for SD was removed in
-`86b8c58`: touching the still-clock-gated UART1 hung the SPL before any output.)
+It is **blob-free** (#90): signed with an *empty* firmware member, so the closed
+EIP-130 crypto-engine firmware is not spliced into the container at all. Nothing
+documented said the BootROM would accept a header declaring `fw_size = 0`; it
+does, proven across two warm reboots and a cold power cycle. `.#spl-minimal-eip`
+rebuilds the vendor-shaped container with the firmware, kept as the fallback a
+`dd` away should a unit ever refuse the empty one.
+
+**BL31** (`pkgs/atf-mainline.nix`). Upstream TF-A v2.15.0 plus a new
+`plat/axera/ax630c` platform carried as an upstream-shaped patch series. BL31
+only: no SPD, no BL32, no secure services beyond PSCI `CPU_ON` / `CPU_OFF` /
+`SYSTEM_RESET`. The SPL hands it a stock `bl_params_t` v2 chain, so it is an
+ordinary loaded (non-`RESET_TO_BL31`) platform and the SPL needs no change to
+boot it. Packaged exactly like the vendor's `atf_bl31_signed.bin`: `ax_gzip -9`
+plus a 1 KiB signed header, 256 KiB, entered at `0x40040000`.
+
+**BL33** (`pkgs/uboot-mainline.nix`). Upstream U-Boot 2026.07 plus a five-patch
+AX630C board port, 885 lines — mainline already ships the two drivers the vendor
+forked (`sdhci-cadence` for the eMMC's Cadence SD4HC, `ns16550` for the
+DesignWare UART), and the SPL hands BL33 a SoC whose clocks, muxes and pads are
+already programmed. `bootcmd` runs `sysboot` on
+`/boot/extlinux/extlinux.conf`. Signed and axgzip'd like BL31, links at
+`0x5C000400`.
+
+`bootdelay` is 0: there is no autoboot interrupt window, even over serial.
+
+**A U-Boot candidate is tried through the one-shot chainload slot, never by
+writing the `uboot` partition** — there is one copy and no B twin. U-Boot patch
+0025 gives that partition its A/B property back as a *file*:
+`nanokvm-uboot-test stage <raw u-boot.bin>` puts the candidate on `/boot` and
+arms a token in flash which `bootcmd` **spends before it jumps**, so a candidate
+runs exactly once even if it hangs at its first instruction (WDT0 then resets
+into the production copy). Hardware-proven both ways, 2026-09-10.
+
+**Kernel** (`pkgs/kernel-mainline.nix`, appliance variant). Linux 7.1.x from the
+kernel.org tree our nixpkgs pin carries, with our config fragment
+(`pkgs/kernel-mainline/ax630c.config`), our drivers grafted into
+`pkgs/kernel-mainline/tree/`, and our device tree compiled from `dts/` by
+`.#dtb-mainline`. No vendor SDK tree, no vendor defconfig, no vermagic contract,
+no prebuilt `.ko` to stay ABI-compatible with. The version ceiling is 7.2,
+asserted at build time: the out-of-tree aic8800 WiFi driver does not build above
+it.
+
+The appliance kernel embeds **nothing** — the initrd is the generation's. Almost
+everything is built in; the only modules are the video stack's six and the
+panel's two.
 
 ---
 
-## Partition layout
+## eMMC layout
 
-The firmware is an Axera **`.axp`** (a ZIP of signed partition images). The eMMC
-carries a 17-partition A/B layout. Our `image.nix` does a **streaming zip-rewrite**
-of the pinned vendor base `.axp`, swapping in our from-source members by basename:
+One layout, defined once in `nixos/lib/emmc-layout.nix` and derived everywhere
+else (the SPL's compile-time offsets, the `blkdevparts=` clause, `fw_env.config`,
+the NixOS `fileSystems`, the `.axp` manifest). Two logical devices:
 
-| `.axp` member(s) | Source | Notes |
-|---|---|---|
-| SPL / DDR-init / ATF / OP-TEE / U-Boot | `pkgs/boot.nix` | signed basenames match `make_axp_v2.py` |
-| `boot_signed.bin` (+ A/B `.1`) | `pkgs/kernel.nix` → `pkgs/slot-image.nix` | `Image` → `ax_gzip -9` + 1 KB signed header |
-| `dtb.img` (+ A/B) | `pkgs/dtb.nix` → `pkgs/slot-image.nix` | patched DTB → `ax_gzip -9` + signed header |
-| `ubuntu_rootfs_sparse.ext4` | `pkgs/rootfs.nix` | overlaid rootfs (below) |
-| everything else | vendor base `.axp` | kept as-is |
+| Region | Physical offset | Size | What |
+|---|---|---|---|
+| `spl` | `0x0` | 768 KiB | the BootROM's image. Outside every partition table |
+| `disk` | `0xC0000` | rest of the device | carries a real GPT at **its own** LBA 0 |
 
-The rootfs on eMMC is partition **p17** (`/dev/mmcblk0p17`); the kernel `root=`
-cmdline points there for an eMMC boot, or `/dev/mmcblk1p2` for an SD boot.
+Inside `disk`, a spec-conformant GPT — protective MBR at disk LBA 0 (physical
+LBA 1536), header at disk LBA 1, entry array at LBA 2–33, alternate header at
+the last LBA — with five partitions:
 
----
+| # | Name | Size | Contents |
+|---|---|---|---|
+| 1 | `atf` | 1 MiB | signed BL31 |
+| 2 | `uboot` | 2 MiB | signed BL33 |
+| 3 | `env` | 1 MiB | the stored U-Boot environment (`.#uboot-env`) |
+| 4 | `boot` | 272 MiB | ext4: `extlinux/`, `nixos/`, `ver` |
+| 5 | `rootfs` | to `last_usable_lba` | the NixOS appliance ext4 |
 
-## Root filesystem
+`rootfs` starts at `0x115C0000` and an assertion in `emmc-layout.nix` keeps it
+there — the SPL is compiled for the offsets in front of it.
 
-`pkgs/rootfs.nix` starts from the **vendor Ubuntu 22.04 arm64** rootfs (extracted
-from the base `.axp`) and overlays our bits **without root/mount privileges**,
-editing the ext4 in place with `debugfs -w` (a Nix sandbox has no loop mount):
+**How each consumer reaches the table.** Linux cannot be told to parse a
+partition table at an offset, so the kernel command line carries
+`blkdevparts=mmcblk0:768K(spl),-(disk)` — two entries, whose only job is to hand
+back `disk` as a block device — and stage 1 then runs `losetup -P /dev/loop0
+/dev/mmcblk0p2`, at which point the in-kernel EFI parser creates
+`/dev/loop0p1..5`. Root is `/dev/loop0p5`, `/boot` is `/dev/loop0p4`. U-Boot
+reads the same GPT through `CONFIG_EFI_PARTITION_BASE_LBA=1536` (patch 0023).
+`fw_setenv` addresses the `env` partition by physical byte offset and needs
+neither.
 
-1. **`libkvm.so`** → `/kvmapp/server/dl_lib/` (our capture/encode backend).
-2. **Kernel modules** → `/lib/modules/4.19.125/`: our from-source modules only
-   (incl. `lt6911_manage.ko`), `depmod`'d on a host staging tree so autoloading
-   works with no on-device depmod. The prebuilt `ax_*.ko` are **deliberately
-   excluded** — the build fails if any appear. Merging them in makes `depmod`
-   emit `of:` aliases that udev coldplug autoloads parameter-less at boot;
-   `ax_cmm` without its `cmm=` parameter panics and the device boot-loops
-   (this bricked a unit on the first OTA). Since #54 (2026-09-03) they are not
-   on the image at all — step 5d2 deletes the whole 22-module vendor set from
-   `/soc/ko`, which now holds exactly our three open modules, insmod'd by path
-   with the required parameters by `/soc/scripts/auto_load_all_drv.sh`. That
-   loader is **ours** since issue #39
-   (`pkgs/rootfs/ax-load-drv.sh`), and since #55 M3 (#60, 2026-09-02) it loads
-   **three from-source modules and zero vendor blobs**:
-   `ax630c_venc_vcmd.ko` (open VC8000E encode, #25), `open_vin_csi2.ko` (open
-   MIPI CSI-2 / D-PHY receiver, #57) and `open_vin_capture.ko` (open VIN/IFE
-   bypass capture → V4L2 `/dev/video0`, #59). The vendor `ax_sys`/`ax_cmm`/
-   `ax_pool`/`ax_base` base stack and the 10-module `ax_proton` capture closure
-   are no longer loaded at all — device-proven from a cold boot. It also
-   **splits the DMA pool** (#53): one `compute_mem_map` derives the whole map
-   from the board's pool geometry and hands the open encoder
-   (`framebuf_base/size`, `coherent_base/size`) and the open capture driver
-   (`carveout_base/size`) non-overlapping slices — printing the map at boot
-   and exporting it to `/run/openkvm-memmap.env`; layout table and derivation
-   rule in [vcmd-cma-unblock.md](vcmd-cma-unblock.md#dma-memory-map-53). Since
-   **#52** (2026-09-03) the three carveouts take the whole 200 MB pool on the
-   1G board — encoder frame buffers `0x73800000` +136 MB (up from 64 MB, which
-   is what makes 4K blob-free H.264 fit), capture `0x7C000000` +56 MB, VCMD
-   coherent `0x7F800000` +8 MB — since `ax_cmm` is no longer loaded and needs
-   no remainder; the build asserts `MAP_FRAMEBUF_MB >= 92` on the shipped
-   loader.
-   **No rollback loader ships any more** (#54): with every vendor `ax_*.ko`
-   deleted there is nothing left for one to insmod, so reverting to the vendor
-   stack means reflashing the vendor `.axp`.
-   `pkgs/rootfs/ax-load-drv.vendor.sh` stays in-repo purely as the byte-compare
-   pin against the base `.axp`; the `.openvenc` / `.base-only` / `.stub`
-   variants are bench tooling for a device that still carries the blobs and are
-   never shipped. Keep/drop history:
-   [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39).
-3. **Service selection** (see below): disable `kvmcomm.service`, enable
-   `nanokvm.service` in `multi-user.target.wants`.
-4. **Mini-display**: `/opt/nanokvm-display/` (status daemon + generated fonts)
-   plus the enabled `nanokvm-display.service`; `/etc/modules-load.d/nanokvm.conf`
-   also loads the from-source display/input modules
-   (`fb_jd9853`→`fbtft`, `gpio_keys`, `rotary_encoder`). See
-   [mini-display.md](mini-display.md).
+**The eMMC is not reliably `mmcblk0`.** The three SD4HC instances probe
+concurrently, and the `blkdevparts=` clause binds the split to a device *name* —
+lose the race and the table lands on the empty SD slot while the eMMC comes up
+with no partitions at all (two boots in five, measured in #78). Fixed by
+`aliases { mmc0 = &emmc; ... }` in `dts/ax630c.dtsi`.
 
-`debugfs`'s `sif … uid/gid 0` restores root ownership after each write. The build
-asserts our `libkvm.so` matches byte-for-byte and that the service symlinks are
-correct before re-sparsing the image.
+There are **no A/B twins**. The vendor map's pairs were always byte-identical,
+and the slot register only ever chose between two copies of one image.
 
 ---
 
-## The video/audio pipeline (our libkvm)
+## Generations and `/boot`
 
-`pkgs/kvm-encoder.nix` cross-builds **`libkvm.so`**, our open reimplementation of
-Sipeed's withheld glue. It implements the `kvm_vision.h` ABI that the Go server
-links against (`kvmv_init` / `kvmv_read_img` / `kvmv_read_audio` / `kvmv_set_fps` /
-`kvmv_hdmi_control` / …) and drives an entirely **from-source** path end-to-end:
+`nixos/appliance.nix` is the system definition; `nixos/rootfs.nix` evaluates it
+into a closure and packs a rootless ext4; `nixos/axp-image.nix` assembles the
+flashable `.axp` from the same closure, so `.#nixos-firmware-image-mainline` and
+the system it images cannot disagree.
+
+**The kernel, the initrd and the device tree are part of the generation.**
+`boot.kernelPackages` names `.#kernel-mainline-appliance` and
+`hardware.deviceTree` names `.#dtb-mainline`, so a kernel change is a generation
+change: it rolls back with everything else and needs no out-of-band copy.
+
+**NixOS's own `boot.loader.generic-extlinux-compatible` builder is the only
+writer of `/boot`.** Nothing in this repo renders an `extlinux.conf`. Run by
+`switch-to-configuration boot`, it writes `/boot/extlinux/extlinux.conf` and
+copies each generation's kernel, initrd and dtb into `/boot/nixos/`. `/boot` is
+~51 MB of 245 MB usable at `configurationLimit = 3` and roughly 50 MB per
+generation; `pkgs/bootfs.nix` asserts room for `configurationLimit + 1` at the
+moment of a switch.
+
+Two invariants, both load-bearing:
+
+- **`boot.loader.timeout` must stay 0.** Any other value makes the builder emit
+  a top-level `MENU TITLE`, U-Boot's `parse_pxefile_top()` then sets
+  `cfg->prompt = 1`, and U-Boot waits forever on this board's unreachable
+  console.
+- **`init=` comes from the bootloader, per entry.** Each `LABEL`'s `APPEND`
+  pins `init=<generation>/init`, which is what lets two config files name two
+  different generations. The rootfs's `/init` symlink is a backstop, not the
+  mechanism.
+
+Stage 1 is classic (script) stage 1, not systemd-in-initrd: the failure mode of
+a stage 1 that dies here is a board with no console and no autoboot window, and
+a shell script that maps one loop device and mounts one ext4 is the smaller,
+more inspectable thing. It sets `panicOnFail=1` from `preDeviceCommands` —
+upstream's `fail()` is interactive and would otherwise block in `read` forever
+while the kernel pets U-Boot's watchdog. The command line carries the bare
+`boot.panic_on_fail` and `stage1panic=1` tokens as well; **`boot.panic_on_fail=1`
+matches nothing**, because upstream's parser is a shell `case` over whole words.
+
+A mainline boot is **71 seconds to SSH** (2026-09-10, one U-Boot attempt).
+
+---
+
+## Rollback
+
+U-Boot increments `bootcount` in `TOP_CHIPMODE_GLB_BACKUP1` (`0x02390030`,
+readable with `devmem 0x02390030 32`) on every boot: `0xB0010000` is healthy,
+`0xB001000N` is N attempts since the last healthy boot. `bootlimit` is 3, so the
+**fourth** attempt runs `altbootcmd`, which sets milestone bit 30 and boots
+`/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`.
+
+Both files carry the **same labels** — one per generation, each with its own
+kernel and pinned `init=` — and differ only in which one `DEFAULT` selects.
+`sysboot` boots a config's `DEFAULT` entry and cannot be told a label, so the
+choice of generation is made by choosing a file.
+
+`nanokvm-mark-good` (timer, `OnBootSec=60s`) is the health gate. It polls until
+`systemctl is-system-running` says `running` and the system is routed and
+serving, then clears the counter and **derives** the fallback by copying
+`extlinux.conf` and setting `DEFAULT` to the label of the generation
+`/run/booted-system` resolves to. It refuses, loudly, leaving the previous
+fallback, if that label is not in the file — a `DEFAULT` U-Boot cannot match
+falls through to the *first* label, which is the generation the rollback exists
+to escape. It deletes nothing; the extlinux builder collects its own obsolete
+kernels.
+
+The failure mode is the safe one: if the unit does not run, the counter is not
+cleared and the next boot counts one higher.
+
+To exercise the rollback: `devmem 0x02390030 32 0xB001000A; reboot`. That proves
+`bootcount_error()`, `altbootcmd`, bit 30 and the fallback config in one boot and
+cannot strand the board — which is why it, and not a deliberately broken
+generation, is the way to test it. Hardware-proven unattended 2026-09-09. Full
+detail: [nixos-rootfs.md](nixos-rootfs.md) §4b.
+
+---
+
+## The video pipeline
+
+Blob-free end to end, down to the kernel drivers.
 
 ```
-LT6911UXC HDMI→CSI-2
-  └─► open_vin_csi2.ko    (D-PHY 4-lane, 600 Mbps, CSI-2 receiver)
-        └─► open_vin_capture.ko  (VIN/IFE, ISP bypassed)
-              └─► V4L2 /dev/video0  (YUYV, mmap + EXPBUF dma-buf)
-                    └─► ax630c_venc_vcmd.ko  (open VC8000E, dma-buf zero-copy)
-                          ├─► H.264 register program              → web stream
-                          ├─► H.265 register program (#64)        → IMG_H265_* (no web consumer yet)
-                          └─► from-source software JPEG (MJPEG)   → web stream
-        └─► ALSA capture (LT6911 audio card) ─► Opus encode       → web audio
+LT6911UXC HDMI→CSI-2   (drivers/misc/lt6911-manage.c, built in)
+  └─► open_vin_csi2.ko        D-PHY 4-lane, 600 Mbps, CSI-2 receiver
+        └─► open_vin_capture.ko   VIN/IFE, ISP bypassed
+              └─► V4L2 /dev/video0   (YUYV, mmap + EXPBUF dma-buf)
+                    └─► ax630c_venc_vcmd.ko   open VC8000E, dma-buf zero-copy
+                          ├─► H.264 register program   → web stream
+                          ├─► H.265 register program   → web stream
+                          └─► from-source software JPEG (MJPEG) → web stream
+        └─► ALSA capture (LT6911 audio card) ─► Opus encode → web audio
 ```
 
-The host HDMI is captured as already-formed YUV (the LT6911 bridge does the
-conversion), so the ISP is **bypassed** — no ISP/3A algorithm blobs are needed on
-the KVM path.
+The host HDMI arrives as already-formed YUV — the LT6911 bridge does the
+conversion — so the ISP is **bypassed** and no ISP/3A algorithm blob is needed
+on the KVM path.
 
-**The shipped `libkvm` is the V4L2 build** (`.#kvm-encoder-v4l2`, flags
-`openCapture` + `openVenc` + `v4l2Capture`; source `kvm_capture_v4l2.c`), the
-default since #55 M3 (2026-09-02). Capture is plain V4L2 — `S_FMT` YUYV →
-`REQBUFS` mmap → `EXPBUF` → `STREAMON` → `poll`/`DQBUF`. Each buffer's dma-buf
-is imported **once** through the open VCMD driver's `HANTRO_IOCH_IMPORT_DMABUF`
-ioctl (nr 38; `RELEASE` is 39), which resolves it to the bus address the
-encoder register program consumes, so frames reach the encoder **zero-copy**;
-the same mmap is the CPU view for the soft-JPEG MJPEG path and the mini-display
-preview. Encode is our from-source open VC8000E path (`kvm_venc_open.c` over
-`ax630c_venc_vcmd.ko`: H.264 register program + software MJPEG). The library
-links **zero** `libax_*` — only `-ljpeg -lopus -lasound` — and nothing in the
-path touches a vendor kernel module. The source format is `V4L2_PIX_FMT_YUYV`,
-byte-identical to what the vendor pool used to hand back; the geometry envelope
-is 64×64…3840×2160 (even dimensions), 30 fps sustained at both 4K and 1080p.
-Since **#52** (2026-09-03) the **encoder** carries at least the same envelope —
-H.264 is blob-free at native 4K (Main L5.1, device-proven live over
-`h264-direct`), with rate control still fixed QP32 (#46). Since 2026-09-04 the
-encoder's own ceiling is 3840×2400 (vendor-validated geometry laws, prover-proven
-on device); the capture path is what still caps the pipeline at 2160 rows.
-Since 2026-09-05 (#64) the same builder also emits **H.265/HEVC** (Main, fixed
-QP32, IPPP; VPS/SPS/PPS from `vcenc_hevc_header.h`): `kvmv_read_img` with an
-`IMG_H265_*` type opens a third channel (`KVM_VENC_H265_CHN`) and serves VPS+SPS
-as the "SPS", the PPS, then IDR/P NALs — decodable end to end from a real HDMI
-capture (bench reader + ffmpeg), roughly a third of the H.264 bytes at equal QP.
-The web consumer is the `h265-direct` stream mode (#66): a second direct streamer
-(`service/stream/direct/h265.go`, from `pkgs/nanokvm-server/direct-h265.go.in`)
-reads `ReadH265`, folds VPS/SPS/PPS into every IDR message so a description-less
-WebCodecs `hvc1` decoder can start at any key frame, and serves
-`GET /api/stream/h265/direct` with the same `[key][ts][Annex-B]` framing as
-H.264. The web UI has two players for these streams:
+**The three drivers live in the kernel tree**, at
+`pkgs/kernel-mainline/tree/drivers/media/platform/axera/`, and come out of the
+appliance kernel build as `.#video-modules`: six `.ko` (`videobuf2-common`,
+`videobuf2-memops`, `videobuf2-v4l2`, `open_vin_csi2`, `open_vin_capture`,
+`ax630c_venc_vcmd`), ~280 KB, laid out as `/lib/modules/<release>` with a
+`load-order` file beside them. They are modular because the capture and encode
+stack is the part still being brought up on hardware, and a driver fix should be
+a file copy and an `insmod` rather than a reboot into a kernel with no automatic
+rollback. Because `boot.kernelPackages` names the derivation `.#video-modules`
+is built from, a generation carries the drivers it was built with by
+construction.
 
-- **WebCodecs direct** (`direct.worker.ts`, upstream's design): `VideoDecoder`
-  in a worker draws onto an `OffscreenCanvas`. Lowest latency, but on Linux
-  both Firefox and Chrome reject every HEVC configuration in
-  `isConfigSupported` even though their `<video>` element plays HEVC.
-- **MSE** (`mse-player.tsx` + `mse.worker.ts` + `web/src/lib/mp4/`, ours,
-  2026-09-05): the worker remuxes each message into fragmented MP4 (a
-  hand-written ftyp/moov with `avcC`/`hvcC` built from the stream's own SPS/PPS
-  (+VPS), one `moof`+`mdat` per frame, parameter sets stripped from samples) and
-  the page appends it to a `SourceBuffer` in `sequence` mode on a `<video>`.
-  The browser's media pipeline decodes, so HEVC plays wherever `<video>` can. A
-  new init segment goes out when the parameter sets change (resolution change;
-  `changeType` if the codec string moves). Latency policy: jump to the live
-  edge when more than 250 ms behind, 1.1× playback above 100 ms, history
-  trimmed, `QuotaExceededError` handled; the WebSocket reconnects with backoff
-  (0.5 s → 5 s). Measured in headless Firefox 154 against the device: 1080p60
-  HEVC at ~60 fps, 50–90 ms behind the last appended frame, first frame ~300 ms
-  after connect; a `nanokvm` restart mid-stream is recovered without a reload.
-
-Mode selection (`h265-direct.tsx`, `lib/video.ts`): **H.265 Direct** picks
-WebCodecs when `isConfigSupported` accepts an HEVC configuration, otherwise MSE
-when `MediaSource.isTypeSupported` does, otherwise tries WebCodecs anyway and
-falls back to `h264-direct` with a notice when the decoder fails (every probe
-answer and the choice are logged). **H.264 Direct (MSE)** / **H.265 Direct
-(MSE)** (`h264-mse` / `h265-mse`, client-side modes mapped to the direct server
-modes by `serverStreamMode`) force the MSE player. Headless Chromium 152 on the
-build host has no HEVC by any path (WebCodecs and MSE both say no) and takes the
-H.264 fallback; Firefox 154 takes MSE.
-
-The web UI itself is **our fork** of Sipeed's `NanoKVM-Pro/web`, vendored
-in-tree at `web/` (upstream `8d0557b`, GPL-3.0 — `web/FORK.md`). It used to be
-built from the pinned upstream input plus a patch stack in `pkgs/patches/`;
-since 2026-09-05 every UI change is an ordinary commit in `web/` and
-`pkgs/nanokvm-web.nix` builds from `../web`. The `nanokvm-pro-src` flake input
-now feeds only the Go server.
-
-The server serves that bundle from `<execdir>/web` with our own static handler
-(`pkgs/nanokvm-server/web-static.go.in`, nix step 11): content-hashed `assets/`
-files are `immutable` for a year, `index.html` and every other non-hashed file
-are `no-cache` with a strong content ETag. Upstream's `gin-contrib/static` sent
-neither, and every bundle file carries the Nix store's 1970 mtime, so browsers
-kept a stale `index.html` for years — and even a forced revalidation was
-answered with a stale 304, because that mtime never changes across deploys
-(#71, fixed and device-proven 2026-09-05:
-`docs/reference/vcenc-open/cache-headers-20260905/`).
-
-Earlier backends stay buildable as bench alternatives — both need vendor blobs
-that a #54 image no longer carries, so they only run on a device flashed with
-the vendor `.axp`: `.#kvm-encoder-openvenc` (raw-ioctl replay against the
-vendor `ax_proton` capture closure — the shipped default from #25 until
-2026-09-02, partnered with the bench-only `ax-load-drv.openvenc.sh`) and
-`.#kvm-encoder` (the original vendor-MPI build, which *did* link `-lax_venc
--lax_sys -lax_proton -lax_mipi -lax_ivps` and drove `AX_VENC`).
-
-### Capture lifecycle & idle power-down
+**`libkvm.so`** (`.#kvm-encoder`, `pkgs/kvm-encoder.nix`) is the userspace half:
+our open reimplementation of Sipeed's withheld glue, implementing the
+`kvm_vision.h` ABI the Go server links against (`kvmv_init` / `kvmv_read_img` /
+`kvmv_read_audio` / `kvmv_set_fps` / `kvmv_hdmi_control` / …). There is **one
+build** and it links no vendor library at all — only `-ljpeg -lopus -lasound`.
+Capture is plain V4L2 (`S_FMT` YUYV → `REQBUFS` mmap → `EXPBUF` → `STREAMON` →
+`poll`/`DQBUF`); each buffer's dma-buf is imported once through the VCMD driver's
+`HANTRO_IOCH_IMPORT_DMABUF` ioctl, which resolves it to the bus address the
+encoder register program consumes, so frames reach the encoder zero-copy. The
+same mmap is the CPU view for the software-JPEG MJPEG path and the mini-display
+preview.
 
 The pipeline is **lazy**: nothing is initialized until the first
-`kvmv_read_img` call, which opens `/dev/video0`, sets the format, starts
-streaming and brings the encoder up at the
-*live* source geometry read from `/proc/lt6911_info` (`init_pipeline_locked`
-in `libkvm.c`). Every streamer loop in the Go server (WebRTC, MJPEG, direct
-H.264) exits as soon as its client count reaches zero, so frames are only ever
-read while somebody is watching.
+`kvmv_read_img`, which opens `/dev/video0`, sets the format from the live
+geometry in `/proc/lt6911_info`, starts streaming and brings the encoder up.
+Every streamer loop in the Go server exits when its client count reaches zero.
+After `videoIdleTimeout` seconds with no read (`/etc/kvm/server.yaml`; unset =
+300 s, negative = disabled) the server calls `kvmv_video_suspend()`, which tears
+down the encoder, the capture buffers and the ALSA/Opus capture. The **LT6911
+receiver stays powered** on purpose: its only power control cuts the whole chip
+including the EDID/HPD it presents to the attached host, which would make the
+host see its monitor unplug. Resume is synchronous on the next read and re-reads
+the live geometry, so an HDMI mode change while suspended is absorbed like a
+fresh start. State shows as `"video_state"` in `GET /api/streamer/local`.
 
-**Idle suspend (our addition):** the Go server hooks every frame/audio read
-(`markVideoActive()` in the patched-in `common/video_power.go`; see
-`pkgs/nanokvm-server.nix` + `pkgs/nanokvm-server/video-power.go.in`) and runs
-a watcher that, after **`videoIdleTimeout` seconds without any read** (config
-key in `/etc/kvm/server.yaml`; `0`/unset = **300 s**, negative = disabled),
-calls our libkvm extension `kvmv_video_suspend()`:
+**One capture channel serves every viewer**, gated by the global
+`KvmVision.StreamType`. A second viewer in another mode takes the stream and
+starves the first; `service/stream/claims.go` hands it back to whoever still has
+clients when a consumer empties. Two viewers at once still means one is starved
+— that is arbitration, not a bug.
 
-- **Torn down:** the encoder instance and its frame buffers, then `STREAMOFF` +
-  dma-buf release + `close()` on `/dev/video0` (which frees the capture
-  carveout buffers), plus the ALSA/Opus HDMI-audio capture. This is the exact
-  `kvmv_deinit` teardown sequence, re-used.
-- **Deliberately kept powered:** the **LT6911UXC HDMI receiver**. Its only
-  power control (`/proc/lt6911_info/power` → `lt6911_pwr_ctrl()` → the chip's
-  PWR GPIO in `drivers/misc/lt6911_manage.c` — this is also what the legacy
-  `kvmv_hdmi_control()` toggles) cuts the whole chip, including the EDID/HPD
-  it presents to the attached host: the host would see its monitor unplug and
-  rearrange the desktop. Partial savings with zero host-visible side effects
-  wins.
+**The Go server** (`.#nanokvm-server`) is upstream Sipeed's `server/` plus
+nix-time patches (`pkgs/nanokvm-server.nix`): it links `libkvm.so` through cgo,
+drives the ATX lines through `nanokvm-gpio`, serves the web bundle from
+`<execdir>/web` with our own static handler (hashed `assets/` `immutable` for a
+year, `index.html` and every other non-hashed file `no-cache` with a strong
+content ETag), and hands the web UI's update button to `nanokvm-update`.
 
-**Resume** is synchronous and transparent: the first read after a suspend
-(first viewer connecting, WebRTC or MJPEG alike) calls `kvmv_video_resume()`,
-which re-runs the normal lazy-init path — including re-reading the live
-`/proc/lt6911_info` geometry, so an **HDMI mode change while suspended** is
-absorbed exactly like a fresh server start. Expected resume latency is the
-normal first-frame bring-up (~1–2 s). Even if the explicit resume fails
-(e.g. no HDMI signal at that instant), `kvmv_read_img` keeps retrying init on
-every read, same as at process start. Suspend state is visible as
-`"video_state": "active" | "suspended"` in `GET /api/streamer/local` (the
-endpoint keeps working while suspended — it reads only `/proc` and in-memory
-state), and in the logs (`video capture suspended after …` /
-`OPEN-KVM: video pipeline suspended/resumed`). The mini-display's status poll
-uses only that endpoint, never the read path, so it cannot keep capture awake;
-it shows `asleep (power save)` while suspended.
+**The web UI** is our fork of Sipeed's `NanoKVM-Pro/web`, vendored in-tree at
+`web/` (upstream `8d0557b`, GPL-3.0 — `web/FORK.md`) and built by
+`.#nanokvm-web`. It has two players: **WebCodecs direct**, a `VideoDecoder` in a
+worker drawing onto an `OffscreenCanvas` (lowest latency), and **MSE**
+(`mse-player.tsx`), which remuxes each message into fragmented MP4 and appends it
+to a `SourceBuffer` on a `<video>`. On Linux both Firefox and Chrome play HEVC in
+`<video>` but reject every HEVC configuration in WebCodecs'
+`isConfigSupported`, so H.265 reaches them only through MSE. Never assert
+browser codec support without measuring it.
 
-No-signal behavior is unchanged: HDMI-unplugged with a viewer attached keeps
-the pipeline up (reads continue, frames time out), and with no viewer the
-ordinary idle timer suspends anyway.
+Capture-pipeline internals and the reverse-engineering history are in
+[blob-replacement.md](blob-replacement.md) and
+[deblob-capture.md](deblob-capture.md); the encoder driver's bring-up is
+[vcmd-cma-unblock.md](vcmd-cma-unblock.md).
 
-**Load-bearing linker detail** (moot for the shipped V4L2 build, which links no
-vendor library at all — but it bites the instant a `libax_*`-linking variant is
-deployed, so it stays recorded): such a `libkvm` needs `DT_RPATH` (transitive),
-**not** `DT_RUNPATH`. It `DT_NEEDED`s `libax_proton`, which in turn needs `libax_engine`.
-`DT_RUNPATH` is searched only for a library's *own* direct deps, so the transitive
-`libax_engine` would fail to resolve under systemd (which has neither `/opt/lib`
-on `LD_LIBRARY_PATH` nor in `ld.so.cache`) — the server would crash-loop with
-`libax_engine.so: cannot open shared object file`. `kvm-encoder.nix` therefore
-uses `patchelf --force-rpath` to emit `DT_RPATH`, which is inherited down the whole
-dependency chain. This is self-contained: no `ldconfig` entry or `LD_LIBRARY_PATH`
-is needed on the target.
+### Load-bearing linker detail
 
----
+`libkvm.so` must carry **`DT_RPATH`, not `DT_RUNPATH`**. `DT_RUNPATH` is
+searched only for a library's *own* direct dependencies; `DT_RPATH` is inherited
+down the whole dependency chain. A `libkvm` whose transitive dependencies are
+not on `ld.so`'s path resolves fine from an SSH shell (which has
+`LD_LIBRARY_PATH`) and crash-loops under systemd (which does not) — that
+signature is always this.
 
-## The two app stacks: nanokvm vs kvmcomm
+Both places that produce a `libkvm.so` therefore use `patchelf --force-rpath`:
 
-The pinned vendor base ships **two independent, mutually exclusive KVM
-application stacks**, and enables the one that is useless to us. This is the single
-most surprising thing about the platform, so it's worth stating plainly:
+- `pkgs/kvm-encoder.nix` sets `/opt/lib:<axera-libs>/lib`, so the same artefact
+  also works in a vendor-encoder bench configuration.
+- `nixos/appliance.nix`'s `kvmapp` derivation **re-rpaths it** to
+  `/opt/lib:<opus>/lib:<alsa>/lib:<jpeg>/lib`. That is not cosmetic: in a Nix
+  closure the `axera-libs` store path is a *reference*, and leaving it would drag
+  the entire closed Axera library set into an image that is supposed to contain
+  none of it. Both `libkvm.so` and `libkvm.so.0` are patched — they are two real
+  files, not a symlink pair — and the derivation greps both, plus the server
+  binary, for `axera-libs` and fails the build if any survives.
 
-| | **kvmapp** (we use this) | **kvmcomm** (vendor default) |
-|---|---|---|
-| systemd unit | `nanokvm.service` | `kvmcomm.service` |
-| web server | `NanoKVM-Server` (Go) on :80/:443 | hands web to PiKVM's `kvmd` |
-| capture/encode | **our open `libkvm.so`** | `kvm_vin` + `kvm_ui`, straight to the Axera libs (no libkvm) |
-| built-in mini-display | **our open `nanokvm-display` daemon** (from-source drivers) | closed `kvm_ui` drives it |
-| web UI on this base | **works** | **`kvmd` ships disabled + inactive → no web UI at all** |
-
-Both stacks are full capture pipelines and **contend for the single MIPI_RX/VENC
-hardware** if run together, so exactly one must be active. The vendor enables
-`kvmcomm` by default — so an *unmodified* flash of our image boots into a stack
-with no reachable web UI (this was the "web interface is down" symptom during
-bring-up).
-
-`pkgs/rootfs.nix` fixes this: it drops the `kvmcomm.service` symlink from
-`multi-user.target.wants` and adds `nanokvm.service`. For an open, from-source web
-KVM, `nanokvm` is the correct stack.
-
-### The built-in mini-display
-
-On the vendor stack the small on-device screen is driven by `kvm_ui` (+
-`frameforge`), **closed-source vendor binaries** we neither ship nor run. On our
-firmware the display is instead driven **entirely from source**:
-
-- **Drivers:** `fbtft` + `fb_jd9853` (panel → `/dev/fb0`), `gpio_keys` (knob
-  button) and `rotary_encoder` (knob rotation) — all built by our own kernel
-  build (their sources ship in the SDK kernel tree and the vendor defconfig
-  already sets them `=m`), loaded at boot via `/etc/modules-load.d/nanokvm.conf`.
-  No `/kvmcomm/ko` blob copies are used (they are deleted from the image).
-- **UI:** `nanokvm-display.service` runs `/opt/nanokvm-display/nanokvm_display.py`
-  (`pkgs/nanokvm-display.nix`) — a small pure-stdlib-Python status screen
-  (hostname, IP, live-stream state, HDMI input, firmware version, uptime) with
-  inactivity sleep (backlight off after 3 min), wake on the knob button, a
-  knob-driven target power/reset page, and a **live HDMI preview** page fed
-  from libkvm's frames (never a second capture pipeline). Fonts are generated
-  at build time from source-built `terminus_font` — no new binary assets.
-
-Full panel details, the blob-free story, and the sleep/wake behavior are in
-[mini-display.md](mini-display.md).
+`/opt/lib` exists on the appliance because `NanoKVM-Server`'s own `DT_RUNPATH` is
+the bare, store-free `$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib`. It holds exactly
+three open libraries: `libopus.so.0`, `libasound.so.2`, `libjpeg.so.8`.
 
 ---
 
-## Runtime service model
+## Service model
 
-`nanokvm.service` (and its `kvmcomm` sibling) follow the same vendor pattern:
+Everything is declared in `nixos/appliance.nix`. There is no vendor
+`kvmcomm.service` on this image and no vendor `nanokvm.sh` supervisor; the three
+things that script did — the tmpfs copy, the restart loop, the HTTPS cert — are
+three units.
 
-- **`ExecStartPre` (`nanokvm_pre.sh`)** copies `/kvmapp` → `/dev/shm/kvmapp`
-  (tmpfs) at boot. **Consequence:** on-device edits must go to the *persistent*
-  `/kvmapp` to survive a reboot; the tmpfs copy is regenerated from it.
-- **`ExecStart` (`nanokvm.sh`)** is a supervisor: it verifies/regenerates the
-  HTTPS cert+key under `/etc/kvm/`, then `while true` restarts
-  `/dev/shm/kvmapp/server/NanoKVM-Server` if it exits. After a target crash-loops
-  **3×** it gives up (`exit 1`) — which is why a broken `libkvm` silently took the
-  whole service down during bring-up.
-- The server serves the React web UI + a JSON/WebRTC API on :80/:443, reads frames
-  from `libkvm`, and exposes keyboard/mouse HID, storage/image mount, and the
-  update flow. (The update route is live only on the **appliance** build, where
-  it hands off to `nanokvm-update`; the 4.19 build's `install()` refuses and
-  points at AXDL — #86, [updates.md](updates.md).)
-- **Logging:** `/var/log/nanokvm/NanoKVM-Server.log` is the server's redirected
-  stdout+stderr (`nanokvm.sh` appends `>> $LOG_DIR/$exe_name.log`; `server.yaml`
-  sets `logger.file: stdout`, so logrus never opens a file itself) — it carries
-  both Go log lines and `libkvm`'s C-side output. Rotated by our
-  `/etc/logrotate.d/nanokvm` (size 10M, `copytruncate` — mandatory, the server
-  holds the fd open for its lifetime) via the vendor base's daily
-  `logrotate.timer`. System logging is stock **`rsyslogd`** only: the vendor's
-  closed `axbox` syslog/klog daemon, which `/etc/rc.local` used to start
-  alongside it, is removed from the image (`docs/provenance.md`).
-- **Vendor `wifi.service`** (`/etc/systemd/system/wifi.service`, `Type=simple`,
-  `Restart=on-failure`, `RestartSec=3`) runs `/opt/scripts/wifi.sh start`, which
-  `exit 1`s whenever `aic8800_fdrv` is already loaded. That turns "nothing to do"
-  into a failure and the restart policy loops it forever — `RestartSec=3` puts 5
-  attempts (~12 s) outside systemd's default 10 s `StartLimitIntervalSec` window,
-  so the rate limiter never trips. On the device this ran up 2184 restarts and
-  ~100 MB/week of journal + syslog churn onto eMMC. We ship
-  `/etc/systemd/system/wifi.service.d/override.conf` with `Restart=no` (issue
-  #43); the vendor unit and its `multi-user.target.wants` symlink are untouched,
-  so the one-shot boot-time module load still happens. Since #54 the shipped
-  `/opt/scripts/wifi.sh` (`pkgs/rootfs/wifi.sh`, vendor byte-pinned as
-  `wifi.sh.vendor`) is the vendor script with its four
-  `insmod`/`rmmod /soc/ko/aic8800_*.ko` lines rewritten to `modprobe` /
-  `modprobe -r`: the vendor `/soc/ko` copies are gone and our from-source
-  `aic8800_{bsp,btlpm,fdrv}.ko` live in `/usr/lib/modules/4.19.125`, where udev
-  autoloads them anyway (device-proven). **None of this is how the mainline
-  appliance does WiFi** (#85): there the modules are built out of tree from
-  `radxa-pkg/aic8800`, loaded by `nanokvm-wifi.service`, the firmware is
-  MD5-pinned and reached through `hardware.firmware`, and the script the
-  server's WiFi routes actually exec — `/kvmcomm/scripts/wifi.sh`, which is a
-  different path with different verbs from the one above — is provided by
-  `nixos/wifi.nix`. See [mainline-port.md](mainline-port.md) "What exists now
-  (#85)".
-- **`nanokvm-display.service`** (ours, independent of the two stacks above) runs
-  the mini-display status daemon from `/opt/nanokvm-display`; it only reads
-  `/dev/fb0`, the backlight sysfs, the knob evdev devices, and the server's
-  loopback `/api/streamer/local` endpoint — see [mini-display.md](mini-display.md).
+| Unit | What it does |
+|---|---|
+| `nanokvm-video` | `insmod`s the six video modules in `load-order`, then waits for `/dev/video0`. The oracle is not a formality: every module can load cleanly and still leave no pipeline |
+| `nanokvm-panel` | same shape for the two panel modules (`fbtft`, `fb_jd9853`), oracle `/dev/fb0`. A separate unit on purpose — a panel that did not come up must not read as a capture failure |
+| `nanokvm-appdir` | copies `/kvmapp` → `/dev/shm/kvmapp` (tmpfs). Its own unit, not an `ExecStartPre`: systemd applies `WorkingDirectory=` to every `Exec*` line |
+| `nanokvm-cert` | generates the self-signed per-device HTTPS cert under `/etc/kvm` if absent. Without it the server binds both ports and exits 1 |
+| `nanokvm` | the Go server, `WorkingDirectory=/dev/shm/kvmapp/server`, `Restart=on-failure`, stdout appended to `/var/log/nanokvm/NanoKVM-Server.log` |
+| `nanokvm-display` | the mini-display status daemon — [mini-display.md](mini-display.md) |
+| `nanokvm-identity` | derives the MAC and the transient hostname from the SoC UID, ordered before `network-pre.target` |
+| `nanokvm-checkboot` | re-arms the A/B slot register. Under this layout the slot bits select nothing; the unit keeps them deterministic, which is what makes the milestone register a readable oracle instead of a value that alternates every boot |
+| `nanokvm-mark-good` | the rollback health gate (timer, `OnBootSec=60s`) — see [Rollback](#rollback) |
+| `nanokvm-uboot-test-clear` | consumes the one-shot U-Boot chainload slot |
+| `nanokvm-update`, `-reboot`, `nanokvm-gc` | the update timers — see [Updates](#updates) |
+| `nanokvm-wifi` | loads the two aic8800 modules (`nixos/wifi.nix`, only with `nanokvm.wifi.enable`) |
+| `nanokvm-usb` | **stub**. The dwc3 glue and the configfs function drivers are in the kernel, but `usbdev.sh` — the script that builds the gadget — is vendor-only and not captured yet: no HID, no mass storage |
+
+**There is no ATX GPIO unit**, and that is a result rather than a gap. Consumers
+address lines by their device-tree name (`atx-power`, `atx-reset`,
+`atx-power-led`, `atx-hdd-led`), and requesting a line runs through
+`gpio-ranges` → `gpio_request_enable()` so the pin controller programs the pad.
+The tool is `nanokvm-gpio` (libgpiod v2), which the server reaches by absolute
+store path. This retires the vendor-era sysfs export, the `devmem` pad poke and
+the server's per-press pinmux re-assert.
+
+**`serverPath`** is the appliance's most easily missed contract:
+`environment.systemPackages` does *not* set a unit's PATH, so `nanokvm.service`
+carries an explicit one derived from a full grep of the server's `exec.Command`
+calls. The server is the parent of `usbdev.sh` and `wifi.sh`, so they inherit it.
+Known-absent and documented: `chronyc` (we run timesyncd) and `dpkg`/`tailscale`.
+
+**WiFi** has three pieces, each somewhere a reader would not guess
+(`nixos/wifi.nix`): the modules are out-of-tree from `radxa-pkg/aic8800`, built
+against the appliance kernel and loaded by `nanokvm-wifi`; the firmware goes
+through `hardware.firmware` with `firmwareCompression` off, because the driver
+builds with `CONFIG_USE_FW_REQUEST=n` and `filp_open`s a literal compiled-in
+path; and the web UI's WiFi page drives `/kvmcomm/scripts/wifi.sh` with the verbs
+`try_scan` / `connect_start` / `connect_stop` / `ap_stop`, a path the server
+compiles in, which the appliance provides as a shim rather than inventing a new
+one. AP mode is not implemented.
 
 ---
 
-## From-source vs pinned blobs
+## Updates
 
-The project's stance has shifted with progress: the original v1 goal was to
-**link** Axera's redistributable blobs rather than chase a blob-free build. As
-of #55 M3 (2026-09-02) the **entire video stack is blob-free down to the kernel
-drivers** and the standing direction is a **zero-vendor-blob device, ISP
-included** (Jeremy, 2026-08-30). What's pinned has shrunk accordingly:
+An update is a **signed Nix closure**. A release publishes ~200 bytes —
+`.#system-manifest`, naming a toplevel store path — and pushes that closure to a
+binary cache. The device runs `nix copy --from <cache>` with `require-sigs` and
+its **own** `trusted-public-keys` (passed on the command line, never read from
+`/etc/nix/nix.conf`), then `nix-env -p /nix/var/nix/profiles/system --set`, then
+`switch-to-configuration boot`. Only what the board is missing crosses the wire,
+and a NAR nobody trusted signed does not install. Nix runs single-user; the image
+ships a **registered** store, because a directory of store paths is not a store.
+Unattended updates are a web-UI checkbox and reboot only when the server's
+loopback `/api/update/idle` route says nobody is connected. The cache URL and its
+key are placeholders until #96. Hardware-proven end to end 2026-09-11. Full
+detail — trust, GC, the manifest, local testing — is
+[updates.md](updates.md); cutting a release is [releasing.md](releasing.md).
 
-- **From source:** boot chain, kernel + DTS, `lt6911_manage.ko`, the **open
-  VC8000E encode driver** (`ax630c_venc_vcmd.ko`), the **open capture drivers**
-  (`open_vin_csi2.ko` + `open_vin_capture.ko`), our `libkvm` (V4L2 capture +
-  open encode, **zero `libax_*` linked**), `libsns_dummy.so`, the Go server, the
-  React web UI.
-- **No longer needed / removed:**
-  - `ax_venc.ko` + `ax_jenc.ko` — the vendor **encode** kernel modules, dropped
-    from the loader and the image in **#25**; the open VCMD driver replaces them.
-  - `libax_*.so` — the Axera userspace media libs are **purged from the flashed
-    image** (`pkgs/rootfs.nix` step 5d1); nothing we ship links or `dlopen`s them.
-  - the whole remaining `ax_*.ko` closure (`ax_proton`/`ax_mipi_rx`/`ax_sys`/
-    `ax_cmm`/`ax_ivps`/…, `ax_perf_monitor` included, and the vendor `/soc/ko` copies
-    of `aic8800_*`/`hynitron_touch`) — **deleted in #54** (step 5d2), together
-    with the vendor `libsns_*.so`, the NPU/AI-ISP model data (`/opt/etc/models`,
-    `/opt/etc/skelModels`, `/opt/data/npu`) and the `/opt/etc` ISP sensor-tuning
-    `*.ini`/`*.bin` set: ~355 files, ~248 MB. `/soc/ko` now holds exactly our
-    three open modules, so the `vermagic` constraint no longer binds anything
-    shipped — see [building.md](building.md#ax_ko-vermagic). The 4.19 overlay
-    OTA could not delete, so a device upgraded by one kept them until a reflash;
-    that OTA is retired (#86) and the mainline appliance never had them.
-- **Pinned base:** the vendor Ubuntu 22.04 arm64 rootfs (v1 decision — matches the
-  on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
-  long-term north star; the feasibility study, the systemd-vs-4.19 version wall
-  that shapes it, and a buildable (not yet booted) NixOS scaffold are in
-  [nixos-rootfs.md](nixos-rootfs.md).
+---
 
-The authoritative, enforceable list of every pinned blob (shipped and build-time)
-and every runtime network endpoint — each with an explicit approval status — is
-[provenance.md](provenance.md).
+## What is from source, and what is not
+
+Everything on the image is built from source except the **aic8800 radio
+firmware**, which is the only closed content the blob policy permits and is only
+present with `nanokvm.wifi.enable`. `nixos/rootfs.nix` asserts the closure
+carries no Axera library and no vendor `.ko`.
+
+Three vendor-derived *inputs* are still read at build time, and these are all of
+them:
+
+- **`maix_ax620e_sdk`** — for the bl1/SPL source `.#spl-minimal` recompiles, the
+  `imgsign` signing tool `pkgs/ax-sign.nix` drives, and the two FDL download
+  agents the AXDL flasher pushes into BootROM RAM (`pkgs/boot.nix` builds both
+  from SDK sources). Nothing out of this tree boots, and only the FDLs ride in
+  the `.axp` — flash-time only, never stored on the eMMC.
+- **`maix_ax620e_sdk_msp`** — for the Axera `ax_*.h` **headers** the blob-free
+  `libkvm` compiles against, for the SDK's frame and stream types. No library
+  from it is linked or shipped.
+- **`nanokvm-pro-src`** — upstream Sipeed's Go server (GPL-3.0). Source, patched
+  at nix time.
+
+The enforceable list of every pinned input and every runtime network endpoint,
+each with an approval status, is [provenance.md](provenance.md).

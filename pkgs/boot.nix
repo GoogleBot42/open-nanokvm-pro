@@ -11,24 +11,27 @@
 , ... }:
 
 # ===========================================================================
-# AX630C / NanoKVM-Pro boot chain, all four stages, from source.
+# AX630C / NanoKVM-Pro VENDOR boot chain, all four stages, from source.
 # Source: maix_ax620e_sdk (boot/{bl1,atf,optee,uboot} + build/ make system +
 # tools/), driven by the vendor build/ make system in one writable tree.
 #
-# Produces the vendor's per-partition SIGNED images for the 17-partition eMMC
-# A/B layout of project AX630C_emmc_arm64_k419_sipeed_nanokvm:
-#   p1  spl        -> spl_<project>_signed.bin        (+ _enc_signed variant)
-#   p2  ddrinit    -> ddrinit_<project>_signed.bin    (empty payload by design*)
-#   p3  atf        -> atf_bl31_signed.bin
-#   p4  atf_b      -> atf_b_bl31_signed.bin
-#   p5  uboot      -> u-boot_signed.bin
-#   p6  uboot_b    -> u-boot_b_signed.bin
-#   p10 optee      -> optee_signed.bin  (image layer copies to optee + optee_b)
-#   p11 optee_b    -> optee_signed.bin
-#     (p8/p9 are logo/logo_b -- this header said p8/p9 until #78 derived the
-#      whole map from the blkdevparts= clause; nixos/emmc-partitions.nix)
-# plus the AXDL download agents (not stored partitions, used by the host
-# flasher): fdl_<project>_signed.bin (FDL1) and fdl2_signed.bin (FDL2 = u-boot).
+# NOTHING HERE BOOTS THE BOARD ANY MORE (#97). The appliance runs
+# `.#spl-minimal` -> mainline TF-A (`.#atf-mainline`) -> mainline U-Boot
+# (`.#uboot-mainline`), and the 17-partition A/B layout this chain was compiled
+# for is gone with the 4.19 image. TWO THINGS out of this derivation are still
+# consumed, and they are why it survives:
+#
+#   fdl_<project>_signed.bin (FDL1) and fdl2_signed.bin (FDL2)
+#       The host-side AXDL download agents. They are never stored on the eMMC;
+#       the flasher pushes them into BootROM RAM to get a programmer running,
+#       and nixos/axp-image.nix puts them in every bundle.
+#   atf_bl31_signed.bin
+#       Read by the `atf-mainline` check, which compares our own signed BL31's
+#       1 KiB Axera header against the vendor's field for field.
+#
+# Everything else it builds (the vendor SPL, ddrinit, OP-TEE bl32, U-Boot
+# 2020.04, the `_b` twins, the SD-boot SPL) is built because the vendor make
+# system builds it in one pass, and is consumed by nothing.
 #
 # *ddrinit: for AX630C the DDR init/training C code (driver/ddr/*.o) is linked
 #  INTO the SPL; the vendor build touches an empty ddrinit.bin and signs it, so
@@ -51,8 +54,8 @@
 # key -- these repo-key-signed images boot as-is, so a self-built boot chain is
 # flashable. A unit fused to a different key would reject them at
 # public_key_verify; that state is per-unit. Behaviorally confirmed open on at
-# least one retail unit (2026-07): the dev-key-signed .#firmware-image flashes
-# over AXDL and boots from eMMC.
+# least one retail unit (2026-07), and continuously since: `.#spl-minimal` is
+# signed with the same keys by pkgs/ax-sign.nix and the board boots it.
 #
 # Toolchain (per stage): a single aarch64 linux-gnu cross gcc13 builds all four.
 # nixpkgs dropped gcc9..12; gcc13 (matching kernel.nix) works for every stage.
