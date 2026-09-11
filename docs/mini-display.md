@@ -3,8 +3,9 @@
 **Status: included in the firmware, with ZERO vendor display blobs.** The panel
 driver stack is built from our own kernel tree and a small open Python status
 daemon draws to it. The vendor's closed `kvm_ui`/`frameforge` binaries and the
-prebuilt `/kvmcomm/ko/*.ko` copies are neither shipped nor used (the rootfs
-overlay still deletes them — see `pkgs/rootfs.nix` step 5d).
+prebuilt `/kvmcomm/ko/*.ko` copies are not shipped: since #97 there is no
+vendor-derived rootfs to strip them out of — the appliance is built from
+source and nothing puts them on it.
 
 The panel findings below were verified on real hardware (a NanoKVM-Pro Desk
 running our from-source firmware); the orientation mapping was additionally
@@ -12,10 +13,12 @@ confirmed against a live framebuffer dump from a stock-firmware device. The
 from-source module + daemon stack was proven end-to-end on the device
 (2026-08-15, see [Hardware verification](#hardware-verification)).
 
-Everything below describes the **shipped 4.19 image** unless it says otherwise.
-The mainline kernel has the same panel, the same `/dev/fb0` and the same daemon
-through a different driver stack -- see [Mainline (#84)](#mainline-84) for the
-delta and for the hardware plan that proves it.
+**The shipped stack is mainline.** The 4.19 image the panel was first brought
+up on was deleted in #97, so every section before
+[Mainline (#84)](#mainline-84) describes the **4.19 bring-up** — kept because
+the panel, its geometry, `/dev/fb0`, the orientation mapping and the daemon are
+unchanged, and the findings are where they were established. That section is
+the delta: which drivers replaced which, and what the hardware proved.
 
 - [What the display is](#what-the-display-is)
 - [How it is blob-free](#how-it-is-blob-free)
@@ -96,53 +99,52 @@ literal module (`pkgs/nanokvm-display/gen_font.py`).
    `/etc/modules-load.d/nanokvm.conf` (`fb_jd9853` pulls `fbtft` through
    `modules.dep`). All four are parameter-less-safe DT-bound drivers, so this
    explicit load **cannot** re-create the `ax_cmm` autoload brick
-   (`docs/provenance.md`, `pkgs/rootfs.nix` step [4]).
+   (`docs/provenance.md`).
 2. **Status daemon**: `/opt/nanokvm-display/nanokvm_display.py` (+
    `font_data.py`), run by the enabled systemd unit
    `nanokvm-display.service`. Package: `pkgs/nanokvm-display.nix`.
-3. **ATX GPIO setup**: the enabled oneshot `nanokvm-gpio.service` (same
-   package) exports the target power/reset pins at boot — `gpio7` SW_PWR and
-   `gpio35` SW_RST as outputs idling low (exported via `low` so the power
-   line never glitches), `gpio75`/`gpio74` LED-sense inputs. The vendor's
-   disabled kvmcomm stack used to do this; without it the server's
-   `POST /api/vm/gpio` (web UI power menu) and the knob control page have
-   nothing to actuate.
+3. **ATX GPIO**: the server and the knob's control page actuate the target's
+   power/reset lines through `nanokvm-gpio` (`pkgs/nanokvm-gpio.nix`), which
+   resolves each line by its device-tree `gpio-line-names` entry —
+   `atx-power`, `atx-reset`, `atx-power-led`, `atx-hdd-led` — over libgpiod
+   v2. Without it the server's `POST /api/vm/gpio` (web UI power menu) and the
+   knob control page have nothing to actuate.
 
-   **The SW_PWR pinmux trap** (cost a real debugging session — device-proven
-   2026-08-16): sysfs GPIO export **never programs the pinmux** on this SoC
-   (`axera-pinctrl` doesn't wire `gpio_request_enable` to the mux), and
-   `gpio7` sits on the **`VI_D7` camera-data pad**, whose mux register is
-   `0x02300060` (function 6 = `GPIO0_A7`, correct word `0x00060003`). Two
-   consequences: (a) the vendor's own `gpio.sh` pokes `0x02302024` — that is
-   **GPIO3_A2's register, not VI_D7's** — so the power button is likely
-   broken on stock firmware too; (b) the closed capture stack re-muxes the
-   VI pad group back to camera-data function on pipeline init (observed
-   across a `nanokvm` restart), so no boot-time write can stick. Reset
-   (`gpio35` = `UART3_RXD` pad, mux `0x02304090`) and the LED senses
-   (`CDTX_L0N/P`, `0x0230A00C`/`0x0230A018`) are not touched by capture,
-   which is why "reset works but power doesn't" is the symptom signature.
-   The durable fix is in the server: `muxPowerPin()`
-   (`pkgs/nanokvm-server/pinmux-power.go.in`) re-asserts `VI_D7 → GPIO0_A7`
-   via `/dev/mem` immediately before **every** power press;
-   `nanokvm-gpio.service` also writes it once at boot as belt-and-braces.
-   Kernel-side reading: a GPIO's `value` file just echoes the output
-   latch — it proves nothing about the ball; check the pad word with
-   `devmem 0x02300060` instead.
+   **The SW_PWR pinmux trap — RETIRED by #81.** It no longer applies, and this
+   is why the device tree names those lines. On 4.19 the lines were driven
+   through legacy sysfs, and sysfs GPIO export **never programs the pinmux**
+   on this SoC (the vendor `axera-pinctrl` doesn't wire `gpio_request_enable`
+   to the mux). `gpio7` sits on the **`VI_D7` camera-data pad** (mux register
+   `0x02300060`, function 6 = `GPIO0_A7`, correct word `0x00060003`), and the
+   closed capture stack re-muxed that pad group back to camera-data function
+   on pipeline init, so no boot-time write stuck — "reset works but power
+   doesn't", because reset (`UART3_RXD`, `0x02304090`) and the LED senses
+   (`CDTX_L0N/P`, `0x0230A00C`/`0x0230A018`) were never touched by capture.
+   The 4.19 fix was a `/dev/mem` re-assert in the Go server before every power
+   press. On mainline the **request itself programs the pad**: `gpio-ranges`
+   in the DT routes a claim through `gpio_request_enable`, so there is no
+   sysfs export, no boot-time pad poke and no per-press re-assert anywhere in
+   the tree. The vendor's own `gpio.sh` poking `0x02302024` (GPIO3_A2's
+   register, not VI_D7's) stands as the original clue that stock firmware had
+   the same bug. One reading habit survives: a GPIO's `value` echoes the
+   output latch and proves nothing about the ball — check the pad word.
 
 ---
 
 ## The status daemon
 
-Pure-stdlib **Python** (the Ubuntu-arm64 base already ships `python3`; no PIL,
-no new interpreter, no pip packages). Source: `pkgs/nanokvm-display/nanokvm_display.py`.
+Pure-stdlib **Python** (no PIL, no pip packages — the daemon runs on the
+`pkgs.python3` already in the appliance closure). Source:
+`pkgs/nanokvm-display/nanokvm_display.py`.
 
 Shown (refreshed every 2 s while awake):
 
 - hostname
 - **IP address(es)** (large font; `ip -j -4 addr`, skipping `lo`)
-- **target host power** — `host on`/`off`, read directly from the gpio75
-  power-LED sense in sysfs (exported at boot by `nanokvm-gpio.service`;
-  inverted: host on = reads 0); `?` if the pin isn't exported
+- **target host power** — `host on`/`off`, read from the ATX power-LED sense:
+  `nanokvm-gpio get atx-power-led`, whose logical value already applies the
+  DT's active-low flag (on 4.19 it was the raw, inverted `gpio75` sysfs latch);
+  `?` if the line cannot be read
 - **video state** — `LIVE <n> fps` (green) while a client is actively
   streaming, `idle (no viewer)` otherwise, `asleep (power save)` once the
   server has suspended the capture pipeline after its idle timeout (see
@@ -176,8 +178,7 @@ press fires the action. Actions go through the KVM server's loopback
 `POST /api/vm/gpio` (no auth from 127.0.0.1; press durations mirror the web
 UI: 800 ms click, 8 s force-off) in a worker thread, so even an 8-second
 hold never blocks knob input; a `done`/`FAILED` result flashes afterwards.
-Both pages show the target's power state via the direct gpio75 sysfs read
-above. Falling asleep resets to the status page. Slow status sources (the `ip` subprocess and the streamer poll)
+Both pages show the target's power state via the power-LED read above. Falling asleep resets to the status page. Slow status sources (the `ip` subprocess and the streamer poll)
 run in a `StatusPoller` thread that pauses during panel sleep, so knob
 latency is never bounded by server health.
 
@@ -295,7 +296,7 @@ powered so the host keeps seeing its monitor). See
 
 The panel, its backlight, the knob and the LT6911UXC's HDMI audio all exist on
 the mainline kernel (`pkgs/kernel-mainline`, Linux 7.1.x). Everything above
-still describes the shipped 4.19 image; this section is the delta.
+describes the 4.19 bring-up; this section is the delta, and it is what ships.
 
 **What is the same.** The panel, its geometry, `/dev/fb0`, the orientation
 mapping, the backlight ABI (`/sys/class/backlight/backlight`, `bl_power` 0/1,
@@ -588,21 +589,22 @@ DT node:    /proc/device-tree/soc/spi@6072000/jd9853@1  (compatible "jadard,jd98
 Framebuffer:/dev/fb0  172x320  16bpp  stride=344  (~110 KB)  name "fb_jd9853"
 Backlight:  /sys/class/backlight/backlight  bl_power(0=on,1=off) brightness(0..100)
 Inputs:     gpio-keys "GPIO KEY ENTER" (KEY_ENTER/28), rotary-encoder (REL_X)
-Modules:    OURS, from source, /usr/lib/modules/4.19.125/kernel/...
-            fbtft.ko fb_jd9853.ko gpio_keys.ko rotary_encoder.ko (loaded at boot)
-            f_udisp_drv.ko (built, NOT loaded -- USB-display gadget function)
+Modules:    OURS, from source. Mainline: two, from pkgs/display-modules.nix at
+            /lib/modules/<release>, insmod'd by nanokvm-panel.service --
+            fbtft.ko fb_jd9853.ko (gpio-keys + rotary-encoder are built in).
+            4.19 shipped four under /usr/lib/modules/4.19.125/kernel/, plus
+            f_udisp_drv.ko (built, NOT loaded -- USB-display gadget function).
 Rotation:   physical (x,y) = fb[row 319-x, col y]  (vendor's R270)
 Daemon:     /opt/nanokvm-display/nanokvm_display.py  (nanokvm-display.service)
             sleep after 180 s idle (backlight off), wake on knob button/turn
             twist on status page -> target-control page (power press / reset /
             force off, confirm-then-fire via loopback POST /api/vm/gpio)
-ATX pins:   nanokvm-gpio.service (oneshot, boot) exports gpio7=SW_PWR out,
-            gpio35=SW_RST out (idle low), gpio75/74 LED sense in; host on
-            when gpio75 reads 0 (server inverts: GET /api/vm/gpio .pwr)
-            SW_PWR pad = VI_D7, mux reg 0x02300060 must hold 0x00060003
-            (GPIO0_A7); capture init re-muxes it, server re-asserts before
-            every power press (pinmux-power.go.in). Reset pad = UART3_RXD
-            (0x02304090), LED pads = CDTX_L0N/P -- capture leaves those alone.
-Closed junk:kvm_ui / frameforge / kvm_vin and /kvmcomm/ko blob copies -- still
-            REMOVED from the image (pkgs/rootfs.nix 5d)
+ATX pins:   nanokvm-gpio (libgpiod v2), lines by DT gpio-line-names:
+            atx-power, atx-reset, atx-power-led, atx-hdd-led. The request
+            programs the pad mux via gpio-ranges -> gpio_request_enable, so
+            there is NO sysfs export and NO per-press re-assert (#81). `get`
+            prints the logical value, so 1 = host on. Pads: SW_PWR = VI_D7
+            (0x02300060), reset = UART3_RXD (0x02304090), LEDs = CDTX_L0N/P.
+Closed junk:kvm_ui / frameforge / kvm_vin and /kvmcomm/ko blob copies are not
+            built and not shipped -- nothing puts them on the image (#97)
 ```

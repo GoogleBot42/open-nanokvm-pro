@@ -8,7 +8,8 @@
 
 # ===========================================================================
 # The U-Boot environment partition image (the `env` partition), from source.
-# Under the minimal layout (#89 rung 4) that is p4, 256 KiB, at 0x280000.
+# GPT partition 3, 1 MiB, at physical byte 0x4C0000 -- and this file takes all
+# three numbers from nixos/lib/emmc-layout.nix rather than repeating them.
 #
 # THE VENDOR .axp SHIPS NO ENVIRONMENT AT ALL. Its only env-related manifest
 # entry is an `ERASEENV` action with `select="0"`, and the SDK's XML generator
@@ -43,8 +44,9 @@
 #
 # The cost is that a stored environment is a snapshot: reflash or rewrite p7
 # whenever p5 changes, or the board runs an old bootcmd against a new U-Boot.
-# `.#nixos-firmware-image` packs both members from the same build, so a flash
-# can never disagree; a hand-written p5 must be paired with a hand-written p7.
+# `.#nixos-firmware-image-mainline` packs the environment and the U-Boot it was
+# lifted from in one image, so a flash can never disagree; a hand-written
+# `uboot` partition must be paired with a hand-written `env`.
 #
 # WHERE IT GOES. The eMMC user area, at the `env` partition's offset, a single
 # copy (no `CONFIG_SYS_REDUNDAND_ENVIRONMENT`, so the image is a 4-byte CRC32

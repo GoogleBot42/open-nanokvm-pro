@@ -4,7 +4,8 @@ name: release
 #
 # This GitHub repo is a READ-ONLY DOWNSTREAM MIRROR of the Gitea source of
 # truth (git.neet.dev/zuckerberg/open-nanokvm-pro). Tags are cut on Gitea
-# (`tools/release`) and reach here via the push mirror; this workflow's only
+# (the `cut-release` workflow, `tools/release` locally) and reach here via the
+# push mirror; this workflow's only
 # job is to build and attach release assets to the mirrored tag. It must
 # NEVER create commits or tags — that would diverge from the mirror. Hence:
 # no workflow_dispatch, no VERSION writing; the committed VERSION file is the
@@ -32,7 +33,7 @@ name: release
 # that as a fatal error that aborts the whole release (it took down the first
 # real run *after* the update assets had uploaded). So the update assets — the
 # only thing a device needs — publish first via action-gh-release, and the
-# 1.4 GB .axp uploads afterward with the `gh` CLI (proper chunked upload +
+# multi-hundred-MB .axp uploads afterward with the `gh` CLI (chunked upload +
 # backoff) and retries. If it still fails, the job fails loudly; the update is
 # already live and a re-run finishes the .axp.
 
@@ -51,7 +52,7 @@ jobs:
     # runner (which has no binary cache and no nix sandbox).
     if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
-    timeout-minutes: 150   # the cross kernel + boot chain + multi-GB rootfs are slow
+    timeout-minutes: 150   # the cross kernel, the boot chain and the .axp are slow
     steps:
       - name: Free up runner disk space
         # The NixOS closure is ~1.3 GB and it is staged again inside the .axp;
@@ -168,10 +169,10 @@ jobs:
           echo "pushed $(nix path-info -r "$TOPLEVEL" | wc -l) store paths to $ATTIC_CACHE"
 
       - name: Build firmware image (.axp)
-        # The MAINLINE appliance image (#86): the product, and the only way onto
-        # a board that is not already running it -- there is no migration path,
-        # a vendor-layout device is reflashed over AXDL. It also needs no
-        # vendor bundle, so this no longer drags the 1.4 GB base .axp fetch.
+        # The appliance image: the product, and the only way onto a board that
+        # is not already running it -- there is no migration path, a board on
+        # anything else is reflashed over AXDL. Built entirely from source
+        # since #97; no vendor bundle is fetched.
         run: nix build .#nixos-firmware-image-mainline --print-build-logs --out-link result-image
 
       - name: Stage release assets

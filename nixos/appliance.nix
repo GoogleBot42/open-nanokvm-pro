@@ -928,8 +928,10 @@ in
     # rung 2p, and what lives above 512 MB has not been established.
     #
     # `blkdevparts=` is the layout, and it is the same string U-Boot's own
-    # `part_cmdline` driver reads -- nixos/emmc-partitions.nix parses it out of
-    # dts/ax630c-nanokvm-pro.dts, so there is one definition, not three.
+    # `part_cmdline` driver reads. Since #89 rung 4 it is GENERATED from
+    # nixos/lib/emmc-layout.nix -- the SPL's stage offsets are compile-time
+    # constants derived from that list, so the list is the definition and the
+    # DT clause is checked against it, not the other way round.
     #
     # `boot.panic_on_fail` AND `stage1panic=1` CARRY NO `=1`, and that is the
     # whole point. Upstream's stage-1 parser is
