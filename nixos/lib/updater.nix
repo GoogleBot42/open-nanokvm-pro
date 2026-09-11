@@ -454,6 +454,15 @@ let
         # `nix-env --set` is what makes a generation: it creates
         # system-<N>-link, points `system` at it, and leaves the old ones
         # where the rollback can still find them.
+        #
+        # BEFORE THE ACTIVATION, and that order is load-bearing: NixOS's
+        # extlinux builder writes one LABEL per profile generation, so a
+        # generation that is not in the profile yet is a generation the boot
+        # menu does not name. `nixos-rebuild` does the same two steps in the
+        # same order. If step 3 then fails, the profile points at the new
+        # generation and /boot still names the old one -- which is the safe
+        # way round, because /boot is what U-Boot reads and every entry pins
+        # its own `init=`.
         say "making $top generation $(next_generation) of the system profile"
         nix-env --store "$store" \
           -p "$(P /nix/var/nix/profiles/system)" --set "$top" \
