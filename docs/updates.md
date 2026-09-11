@@ -17,6 +17,7 @@ edits on GitHub directly** — all git data flows one way, Gitea → GitHub.
 
 - [The idea](#the-idea)
 - [The system bundle](#the-system-bundle)
+- [How the device updates itself](#how-the-device-updates-itself)
 - [How the device installs one](#how-the-device-installs-one)
 - [Rollback, including the kernel](#rollback-including-the-kernel)
 - [Garbage collection without nix](#garbage-collection-without-nix)
@@ -29,13 +30,15 @@ edits on GitHub directly** — all git data flows one way, Gitea → GitHub.
 ---
 
 > **Status (2026-09-10, #86): built and proven offline; not yet run on
-> hardware.** Two `nix flake check` gates cover the whole loop —
-> `nanokvm-updater-loop` applies a real bundle to a fake root with the real
-> scripts, and `nanokvm-system-bundle` reads the published artefact back
-> against the closure it claims. What is unproven is everything that needs the
-> board: `switch-to-configuration`, the `/nix/store` remount, and whether
-> U-Boot boots what the updater wrote. See
-> [the hardware plan](#what-hardware-still-has-to-prove).
+> hardware.** Three `nix flake check` gates cover the loop and the policy
+> around it — `nanokvm-updater-loop` applies a real bundle to a fake root with
+> the real scripts, `nanokvm-update-idle` drives the checkbox, the pending
+> markers and the idle reboot gate against a fake release host, and
+> `nanokvm-system-bundle` reads the published artefact back against the closure
+> it claims. What is unproven is everything that needs the board:
+> `switch-to-configuration`, the `/nix/store` remount, whether U-Boot boots
+> what the updater wrote, and whether the server's own idle answer is right.
+> See [the hardware plan](#what-hardware-still-has-to-prove).
 
 ## The idea
 
@@ -122,6 +125,82 @@ proportional to the change even though the download is not.
 
 ---
 
+## How the device updates itself
+
+Three rules, and each of them is something a KVM gets wrong at its owner's
+expense.
+
+**1. The switch is a checkbox, not a NixOS option.** Settings → Check for
+Updates carries **Automatic updates** beside **Preview updates**, and both are
+flag files in `/etc/kvm`: `auto_updates` and `preview_updates`, presence = on.
+The timer runs whenever `nanokvm.update.enable` is set and `nanokvm-update
+update` exits 0 doing nothing while the box is unticked, so ticking it takes
+effect immediately and without a rebuild. `nanokvm.update.auto` is gone.
+
+**2. It installs on a timer; it reboots when the room is empty.** Nothing a
+`switch-to-configuration boot` installs is live until the board restarts, and
+a KVM is the machine you are using to fix the machine — so the restart waits.
+After a successful install the updater writes two markers and asks the server
+whether anybody is there:
+
+| marker | says | cleared by |
+|---|---|---|
+| `/run/nanokvm-update-pending` | a reboot is owed | the reboot itself (tmpfs) |
+| `/var/lib/nanokvm/update-pending` | an update was installed | the next `reboot-if-idle` after the boot, by comparing versions |
+
+Idle → reboot now. In use → exit 0, leave the markers, and let
+`nanokvm-update-reboot` (every ten minutes) ask again. `nanokvm.update.rebootWindow`
+is an `OnCalendar` expression that *becomes* that timer's schedule when set, so
+it must fire repeatedly inside the window you want
+(`*-*-* 03..05:00/10:00` is every ten minutes between three and five); installs
+are unaffected. A second update never stacks on an unbooted one.
+
+**"Idle" is what the server can actually see**, over a loopback-only route
+(`GET /api/update/idle`, `pkgs/nanokvm-server/update-status.go.in`), and every
+term is a zero except the last two:
+
+- video clients across all four consumers — the arbitration map from #69 keeps
+  the counts, `stream.TotalStreamClients()` reads them;
+- `/api/ws` HID sessions (`ws.GetManager().GetClients()`): a browser with
+  keyboard and mouse attached *is* the definition of at-the-console;
+- web-terminal sessions and the last web request from anywhere but loopback —
+  neither of which anything recorded before, hence `common/activity.go` and
+  `middleware/activity.go`. Loopback is filtered out or the mini-display's
+  once-a-second poll would keep the device permanently busy;
+- the mini-display's live-preview lease: somebody is standing at the device;
+- a mounted virtual-media image — rebooting yanks a USB disk out of a machine
+  that may be installing from it. **An image left mounted blocks the reboot
+  indefinitely**; unmount it, or press *Restart now*;
+- seconds since the last frame read, and since that last web request, both
+  against `nanokvm.update.idleQuietSec` (default 600).
+
+**A server that does not answer is BUSY.** An unanswered question must never
+become a reboot, and the offline check asserts exactly that.
+
+**None of this is tied to the tarball.** `update` is check → download/verify →
+one `install_staged` call → markers → idle-gated reboot, and `install_staged`
+reports what it installed through `STAGED_VERSION`/`STAGED_TOPLEVEL` rather than
+writing the markers itself. When #100 replaces the transport with `nix copy`
+from a binary cache, that one function and the download above it are what is
+replaced; the checkbox, the markers, the idle gate and the second timer do not
+move.
+
+The update page shows `<from> -> <version>`, "Update installed. It takes effect
+after a restart.", what it is waiting for, and a **Restart now** button — the
+person reading that page is usually the person the device is waiting for. It
+does not offer to install the pending version again.
+
+**3. No device ever follows a branch.** Both channels are GitHub releases cut
+from a `vX.Y.Z` tag: stable is `releases/latest/download`, which never serves a
+prerelease, and preview is the rolling `preview` release, which only a
+tag-triggered run refreshes. `.github/workflows/release.yml` triggers on tags
+only *and* asserts `GITHUB_REF_TYPE = tag` before it writes either channel,
+because that job is where the write happens and a trigger is something a future
+edit can widen. Nothing publishes from `main`; the alpha channel is prerelease
+**tags**.
+
+---
+
 ## How the device installs one
 
 `nanokvm-update` (`nixos/lib/updater.nix`) is the whole implementation, and it
@@ -131,12 +210,14 @@ has two callers:
   SHA-512-verifies and untars, then our `install()`
   (`pkgs/nanokvm-server/install-bundle.go.in`) runs
   `nanokvm-update install-staged <dir>` and reboots;
-- **the timer** → `nanokvm-update update` does the whole cycle itself
-  (`nanokvm.update.auto`, off by default — a KVM that reboots on its own
-  schedule is a surprise in the middle of someone's console session).
+- **the timer** → `nanokvm-update update` does the whole cycle itself, gated by
+  the web UI's *Automatic updates* checkbox and rebooting only once nobody is
+  using the device ([above](#how-the-device-updates-itself)).
 
 ```
 nanokvm-update update
+  ├─ exit 0 unless /etc/kvm/auto_updates     the web UI's checkbox
+  ├─ exit 0 if a reboot is already owed      never stack on an unbooted update
   ├─ refuse if `bootcount` != 0xB0010000     this boot is not marked good yet;
   │                                          installing now would replace the
   │                                          very thing the counter is counting
@@ -154,7 +235,9 @@ nanokvm-update update
       7. switch-to-configuration boot   → nanokvm-install-boot writes
                                           /boot/extlinux/extlinux.conf naming
                                           THIS generation and THIS kernel
-      8. reboot
+      8. write the pending markers
+  └─ reboot IF the server says nobody is using the device; otherwise leave the
+     markers and let nanokvm-update-reboot take it later
 ```
 
 Three details that are not obvious:
@@ -311,10 +394,11 @@ head result/closure.txt
 openssl dgst -sha512 -binary result/*.tar.gz | base64 -w0
 ```
 
-The two gates that run in `nix flake check`:
+The three gates that run in `nix flake check`:
 
 ```bash
 nix build .#checks.x86_64-linux.nanokvm-updater-loop -L
+nix build .#checks.x86_64-linux.nanokvm-update-idle -L
 nix build .#checks.x86_64-linux.nanokvm-system-bundle -L
 ```
 
@@ -330,6 +414,19 @@ still names generation 1 (nothing may be deleted) and once after the fallback
 has been promoted (generation 1 and its exclusive paths go, the live set stays)
 — and finally checks that `nanokvm-gc` **refuses and deletes nothing** when a
 kept generation's closure list is missing.
+
+**`nanokvm-update-idle`** (`nixos/lib/update-idle-test.nix`) runs the same real
+scripts against a fake root, a fake release host and a fake idle route on
+loopback — a python `http.server` serving the manifest, the tarball and a JSON
+file the test rewrites between phases. Nine of them: an unticked checkbox
+installs nothing and is not an error; ticked-and-in-use installs, writes both
+markers and does **not** reboot; a second update refuses to stack on an unbooted
+one; the reboot timer waits while the room is full and takes it when it empties;
+an **unreachable** idle route fails closed; the note settles after the boot and
+says the update is live; ticked-and-idle installs and reboots in one run. Under
+`--root` the reboot is *recorded* in `/run/nanokvm-reboot-requested` rather than
+taken — `writeShellApplication` puts its own systemd first on `PATH`, so a stub
+could not catch it, and a build sandbox is no place to find out.
 
 **`nanokvm-system-bundle`** (`pkgs/system-bundle-check.nix`) opens the published
 artefact: the manifest's SHA-512 and size against the tarball, the digest's
@@ -397,6 +494,24 @@ press **update** in the web UI (or point `nanokvm.update.stableUrl` at a local
 HTTPS server), which is the only path that exercises the server's `install()`
 handoff rather than the CLI.
 
+**Round 4 — the checkbox and the wait.** Two board rounds at most, and neither
+writes a partition.
+
+1. Tick **Automatic updates** in Settings → Check for Updates; confirm
+   `/etc/kvm/auto_updates` appears and `nanokvm-update status` says `on`. Open a
+   video stream from a browser and leave it open, then
+   `systemctl start nanokvm-update` with a real bundle on the channel.
+   **Oracles:** `nanokvm-update status` shows the new generation *and* `reboot
+   pending`; `curl -sk https://127.0.0.1/api/update/idle` reports
+   `idle:false` with `busy` naming `stream`; the board has **not** rebooted; the
+   update page shows `<from> -> <version>` and *Restart now*.
+2. Close the browser tab and wait for the next `nanokvm-update-reboot` tick
+   (≤10 min). **Oracles:** the board reboots on its own; after it comes back,
+   `readlink /run/booted-system` is the new toplevel, `bootcount` is
+   `0xB0010000`, and within two minutes `journalctl -u nanokvm-update-reboot`
+   says `update <version> is live` with the note gone. Pressing *Restart now*
+   instead of waiting is the same round with the button as the trigger.
+
 **Failure catch, every round:** the boot counter. Nothing above writes a
 partition, so the worst outcome is a generation that does not come up, which
 `altbootcmd` undoes on the fourth attempt. The plug is the backstop if even
@@ -444,6 +559,33 @@ in an ext4 `/boot` and a config that names one of them. The content-addressed
 scheme gets the same property with no partition table change and no
 first-stage-loader rebuild, and it scales past two.
 
+**Rebooting as soon as the update is installed.** What the first cut of #86 did,
+and what every appliance auto-updater does. Rejected because this appliance is a
+KVM: the one session an unattended reboot is guaranteed to interrupt is somebody
+using the console to fix a machine they cannot otherwise reach. Installing is
+free (nothing is live until the restart), so the reboot is the only part that
+has to wait, and waiting costs a marker file and a second timer.
+
+**A NixOS option instead of a checkbox** (`nanokvm.update.auto`, which is what
+this replaced). Rejected on Jeremy's instruction and for two mechanical reasons:
+the owner of the box never sees the flake, and a device whose owner had ticked
+the box would still read `auto = false` in the configuration that built it. A
+default that the UI can override also needs tri-state storage plus a way to ship
+that default into the server, where presence-or-absence of one file needs
+neither. The option is gone; `enable` (ship the tools at all) and `schedule`
+stay.
+
+**Polling `main`.** A device that tracked the branch would get every commit,
+including the ones that do not boot, and the rollback would then be the only
+review step. Both channels are tags; the alpha channel is *prerelease* tags, so
+"give me the new stuff early" and "give me whatever landed an hour ago" stay
+different things.
+
+**Letting the server decide the idle threshold.** The route reports raw counts
+and takes `?quiet=<seconds>` from the caller, rather than owning a policy
+constant, so `nanokvm.update.idleQuietSec` is the only place the number lives
+and the same route can answer a UI that wants to display the state.
+
 **`switch-to-configuration switch` instead of `boot`.** Rejected: it activates
 a userspace the boot counter has not vouched for, restarts `nanokvm.service`
 underneath the HTTP request that asked for the update, and leaves no automatic
@@ -464,6 +606,10 @@ way back. The reboot *is* the test.
   downloaded to `/root/.kvmcache`, untarred there, and the missing paths renamed
   into the store; a full-closure change therefore wants ~2 GB free on a 29 GiB
   rootfs. `nanokvm-gc` is what keeps that true over time.
+- **A mounted virtual-media image blocks the reboot for as long as it is
+  mounted.** That is the intended behaviour — the host may be installing from
+  it — but it is the one idle term that can stay true forever with nobody
+  present. The update page names it, and *Restart now* overrides it.
 - **An update needs a healthy boot.** `nanokvm-update update` refuses while
   `bootcount` is non-zero, i.e. before `nanokvm-mark-good` has run. That is
   deliberate: installing then would rewrite the config the counter is counting.

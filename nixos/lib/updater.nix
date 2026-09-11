@@ -315,6 +315,17 @@ let
       }
 
       # ---- installing an unpacked bundle ----------------------------------
+      # THE SEAM (#100). Everything above this function is transport -- fetch a
+      # tarball, check a SHA-512, untar it -- and everything below `STAGED_*` is
+      # policy: the pending markers and the idle-gated reboot. When the device
+      # gets `nix` and the transport becomes `nix copy` from a binary cache,
+      # THIS function and the download above it are what is replaced; the
+      # markers, the checkbox and the reboot gate do not move. So it reports
+      # what it installed through two variables rather than writing the markers
+      # itself, and its callers decide what that means.
+      STAGED_VERSION=""
+      STAGED_TOPLEVEL=""
+
       install_staged() {
         local dir="$1"
         local mf="$dir/MANIFEST.json"
@@ -423,13 +434,8 @@ let
         rm -f "$(P /run/nanokvm-pending-boot)"
         sync
 
-        # --- 6. the pending markers ---------------------------------------
-        # WRITTEN HERE, so BOTH callers get them: the timer, which may have to
-        # wait hours for an empty room, and the web UI's button, which reboots
-        # at once and still wants the note on the other side to say what
-        # happened. Nothing has rebooted yet -- this generation is installed
-        # and not live.
-        mark_pending "$(jq -r '.version' "$mf")" "$top" "$(current_version)"
+        STAGED_VERSION=$(jq -r '.version' "$mf")
+        STAGED_TOPLEVEL="$top"
 
         say "installed. The reboot is what proves it: U-Boot counts the attempt"
         say "and nanokvm-mark-good clears the counter only once this system is"
@@ -552,6 +558,8 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         top=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
         install_staged "$top"
         rm -rf "$d" "$tarball"
+        # From here down is policy, and survives the #100 transport swap.
+        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
         [ "$REBOOT" = 1 ] || exit 0
         ${lib.optionalString (!rebootImmediately) ''
         say "a reboot window is configured, so this install does not reboot."
@@ -591,16 +599,25 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
 
       install)
         tarball="''${1:?usage: nanokvm-update install <bundle.tar.gz>}"
+        cur=$(current_version)
         d="$(P "$CACHE")/unpacked"
         rm -rf "$d"; mkdir -p "$d"
         tar -C "$d" -xzf "$tarball"
         top=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
         install_staged "$top"
         rm -rf "$d"
+        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
         ;;
 
+      # The web UI's path: the server has already downloaded, verified and
+      # untarred the bundle (pkgs/nanokvm-server/install-bundle.go.in) and
+      # reboots itself afterwards -- an explicit human action, so no idle gate.
+      # The markers are still written, because the note is what lets the page
+      # say what happened on the other side of the restart.
       install-staged)
+        cur=$(current_version)
         install_staged "''${1:?usage: nanokvm-update install-staged <dir> [version]}"
+        mark_pending "$STAGED_VERSION" "$STAGED_TOPLEVEL" "$cur"
         ;;
 
       gc)

@@ -301,7 +301,11 @@ cycle.
 `nanokvm-gc` reclaims old generations from the closure lists the installer
 records (it refuses to delete anything if one is missing). The 4.19 overlay OTA
 and `.#update-package` are **deleted** — a vendor-layout board is reflashed over
-AXDL, by decision, because nobody runs the alpha releases. `docs/updates.md`.
+AXDL, by decision, because nobody runs the alpha releases. **Unattended updates
+are a web-UI checkbox** (`/etc/kvm/auto_updates`, beside the preview flag — there
+is no `nanokvm.update.auto`), they install on the timer and **reboot only when
+the server's loopback `/api/update/idle` route says nobody is connected**, and
+both channels are tagged releases only. `docs/updates.md`.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
