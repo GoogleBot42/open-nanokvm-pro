@@ -24,15 +24,19 @@ the NanoKVM-Pro that strap is the `User` button.
 
 | Action | Result |
 |---|---|
-| Power on **normally** | Boot **eMMC** — the installed firmware. Always. |
+| Power on **normally** | Boot **eMMC** — the installed firmware. Always, regardless of SD presence. |
+| Hold `User` **while applying power**, release right after | Boot the **SD card**, if a valid one is present. |
 | Hold `User` **~10 s** | Enter **USB download mode** (AXDL), the mask-ROM flasher. |
 
-Download mode lives in mask ROM, so it cannot be bricked by a bad eMMC image.
-Every recovery on this board is another AXDL flash: a bench trip, never a brick.
+All three are manual: there is no unattended "insert a card to boot", and eMMC
+is never written unless you flash it. Download mode lives in mask ROM, so it
+cannot be bricked by a bad eMMC image — every recovery on this board is another
+AXDL flash, a bench trip and never a brick. Keep a stock Sipeed `.axp` on hand
+as the ultimate fallback.
 
-Holding `User` while applying power selects the SD/TF slot. That path is
-hardware, but this repo builds no SD image (#7/#9) — and a normal power-on
-always boots eMMC, so nothing about it is automatic.
+The SD path is hardware and still works, but **this repo builds no SD image**:
+`.#sd-image` was the vendor-layout one and went out with #97. Building one for
+the appliance is #7/#9.
 
 > **No U-Boot autoboot interrupt window.** `bootdelay=0`, so there is no
 > countdown to break into, even with a working serial console. A bad boot-chain
@@ -86,7 +90,8 @@ Stage 1 fsck's the root partition and `switch_root`s; systemd then grows the
 filesystem to fill it. Userspace derives the board's identity from the SoC UID,
 so:
 
-- the MAC is the one this unit has always had (`48:da:35:…`),
+- the MAC is derived from the SoC UID, so a unit keeps the MAC it has always
+  had across a reflash,
 - `ClientIdentifier=mac` gets it the **same DHCP lease**, so `tools/kvmssh`
   reaches it at the address it already knows,
 - the hostname is `kvm-XXXX`, from `sha512sum /device_key`,

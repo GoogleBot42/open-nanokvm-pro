@@ -83,13 +83,15 @@ ordinary loaded (non-`RESET_TO_BL31`) platform and the SPL needs no change to
 boot it. Packaged exactly like the vendor's `atf_bl31_signed.bin`: `ax_gzip -9`
 plus a 1 KiB signed header, 256 KiB, entered at `0x40040000`.
 
-**BL33** (`pkgs/uboot-mainline.nix`). Upstream U-Boot 2026.07 plus a five-patch
-AX630C board port, 885 lines — mainline already ships the two drivers the vendor
-forked (`sdhci-cadence` for the eMMC's Cadence SD4HC, `ns16550` for the
-DesignWare UART), and the SPL hands BL33 a SoC whose clocks, muxes and pads are
-already programmed. `bootcmd` runs `sysboot` on
-`/boot/extlinux/extlinux.conf`. Signed and axgzip'd like BL31, links at
-`0x5C000400`.
+**BL33** (`pkgs/uboot-mainline.nix`). Upstream U-Boot 2026.07 plus the AX630C
+board port in `pkgs/uboot-mainline/patches/`, 25 patches. The board support
+proper is small: mainline already ships the two drivers the vendor forked
+(`sdhci-cadence` for the eMMC's Cadence SD4HC, `ns16550` for the DesignWare
+UART), and the SPL hands BL33 a SoC whose clocks, muxes and pads are already
+programmed. The rest of the series is this board's own — the milestone and
+`bootcount` registers, the GPT base LBA, the chainload slot. `bootcmd` runs
+`sysboot` on `/boot/extlinux/extlinux.conf`. Signed and axgzip'd like BL31,
+links at `0x5C000400`.
 
 `bootdelay` is 0: there is no autoboot interrupt window, even over serial.
 

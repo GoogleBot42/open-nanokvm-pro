@@ -94,7 +94,7 @@ All are `nix build .#<name>`.
 | `spl-minimal` | signed SPL | blob-free (empty firmware member, #90), compiled for this layout's byte offsets |
 | `spl-minimal-eip` | signed SPL | the vendor-shaped container with the closed EIP-130 firmware spliced in. Kept as a `dd`-away fallback; no image stores it |
 | `atf-mainline` | signed BL31 | upstream TF-A 2.15 + our `plat/axera/ax630c` |
-| `uboot-mainline` | signed BL33 | upstream U-Boot 2026.07 + our five-patch board port |
+| `uboot-mainline` | signed BL33 | upstream U-Boot 2026.07 + our 25-patch AX630C board port |
 | `uboot-env` | the `env` partition | generated from the mainline U-Boot's own compiled-in default, so partition and binary cannot disagree |
 | `gpt-image` | primary + alternate GPT | generated from `nixos/lib/emmc-layout.nix` |
 | `boot` | the vendor SDK boot chain | **nothing boots from it.** Two things come out: the FDL1/FDL2 download agents the flasher pushes into BootROM RAM, and the vendor `atf_bl31_signed.bin` the `atf-mainline` check compares its header against |
