@@ -374,7 +374,7 @@ three units.
 | `nanokvm-checkboot` | re-arms the A/B slot register. Under this layout the slot bits select nothing; the unit keeps them deterministic, which is what makes the milestone register a readable oracle instead of a value that alternates every boot |
 | `nanokvm-mark-good` | the rollback health gate (timer, `OnBootSec=60s`) — see [Rollback](#rollback) |
 | `nanokvm-uboot-test-clear` | consumes the one-shot U-Boot chainload slot |
-| `nanokvm-update`, `-reboot`, `nanokvm-gc` | the update timers — see [Updates](#updates) |
+| `nanokvm-update`, `nanokvm-update-reboot`, `nanokvm-gc` | the update path, each with its own timer — see [Updates](#updates) |
 | `nanokvm-wifi` | loads the two aic8800 modules (`nixos/wifi.nix`, only with `nanokvm.wifi.enable`) |
 | `nanokvm-usb` | **stub**. The dwc3 glue and the configfs function drivers are in the kernel, but `usbdev.sh` — the script that builds the gadget — is vendor-only and not captured yet: no HID, no mass storage |
 
@@ -389,8 +389,9 @@ the server's per-press pinmux re-assert.
 **`serverPath`** is the appliance's most easily missed contract:
 `environment.systemPackages` does *not* set a unit's PATH, so `nanokvm.service`
 carries an explicit one derived from a full grep of the server's `exec.Command`
-calls. The server is the parent of `usbdev.sh` and `wifi.sh`, so they inherit it.
-Known-absent and documented: `chronyc` (we run timesyncd) and `dpkg`/`tailscale`.
+calls. The server is the parent of the shell helpers it execs, `wifi.sh` among
+them, so they inherit it. Known-absent and documented: `chronyc` (we run
+timesyncd) and `dpkg`/`tailscale`.
 
 **WiFi** has three pieces, each somewhere a reader would not guess
 (`nixos/wifi.nix`): the modules are out-of-tree from `radxa-pkg/aic8800`, built
@@ -426,8 +427,11 @@ detail — trust, GC, the manifest, local testing — is
 
 Everything on the image is built from source except the **aic8800 radio
 firmware**, which is the only closed content the blob policy permits and is only
-present with `nanokvm.wifi.enable`. `nixos/rootfs.nix` asserts the closure
-carries no Axera library and no vendor `.ko`.
+present with `nanokvm.wifi.enable`. Two build-time assertions keep it that way:
+`nixos/appliance.nix`'s `kvmapp` derivation fails if `libkvm.so` or the server
+still references `axera-libs` after the re-rpath, and
+`nixos/lib/appliance-artifacts.nix` fails if any `axera-libs`, `ax-ko-blobs` or
+`libsns-dummy` path appears in the image closure at all.
 
 Three vendor-derived *inputs* are still read at build time, and these are all of
 them:
