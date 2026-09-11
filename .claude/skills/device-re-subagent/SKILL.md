@@ -1,6 +1,6 @@
 ---
 name: device-re-subagent
-description: Delegate a NanoKVM-Pro hardware reverse-engineering / on-device tracing / feasibility task to a Fable subagent — the safety envelope, content-filter framing, and verify-the-evidence discipline for it. Use when a task needs deep device probing (ioctl traces, /dev/mem register dumps, blob characterization) that genuinely requires Fable-tier skill.
+description: Delegate a NanoKVM-Pro hardware reverse-engineering / on-device tracing / feasibility task to an Opus subagent — the safety envelope, content-filter framing, and verify-the-evidence discipline for it. Use when a task needs deep device probing (ioctl traces, /dev/mem register dumps, blob characterization).
 ---
 
 Distilled from the 2026-08-22 VC8000E encoder RE campaign (docs/blob-replacement.md
@@ -12,17 +12,14 @@ A task needs **deep device reverse-engineering** — LD_PRELOAD ioctl traces,
 `/dev/mem` register/pool dumps, differential capture, binary disassembly, blob
 characterization, or a device-grounded feasibility call. This is high-skill work.
 
-If the SESSION is running on Opus (downgraded from Fable/Mythos), delegate it UP to
-a **Fable** subagent and keep orchestration + verification in the main session (the
-reciprocal of the save-usage Opus-delegation rule — memory
-`delegate-to-opus-subagents`). If the session is already Fable/Mythos, you may still
-fan this out to a Fable subagent to keep the deep trace logs out of the main context.
+**Subagents are always Opus** (Jeremy, 2026-09-11; CLAUDE.md). The older rule
+here — delegate UP to a Fable subagent for deep tracing — is withdrawn: Opus
+describing passes have proven sufficient (2026-09-01: spec-dphy-writes.md,
+spec-ife-start.md, both device-verified), and every #26 campaign rung since
+ran on Opus. If a task genuinely needs Fable-tier skill, it stays in the
+session, with the trace logs written to files rather than into the context.
 
-Launch: `Agent` with `subagent_type: "general-purpose"`, `model: "fable"` for on-device
-tracing/feasibility. For pure STATIC describing passes over an unstripped vendor .ko
-(instruction-level register write lists) `model: "opus"` has proven sufficient twice
-(2026-09-01: spec-dphy-writes.md, spec-ife-start.md -- both device-verified) -- use it
-and save the Fable budget. For a
+Launch: `Agent` with `subagent_type: "general-purpose"`, `model: "opus"`. For a
 multi-step campaign, resume the same agent with `SendMessage` (it keeps the tooling
 + offsets it built) rather than starting fresh.
 
