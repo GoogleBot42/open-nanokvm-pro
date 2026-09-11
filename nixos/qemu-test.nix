@@ -30,6 +30,11 @@
   # `degraded`. That hides the failures this harness exists to find.
   nanokvm.videoStack.enable = false;
 
+  # And the mini-display (#84). There is no SPI panel on a virt machine: the
+  # two modules load, fb_jd9853 finds no device to bind, and the unit's
+  # `/dev/fb0` oracle fails on an otherwise perfect boot.
+  nanokvm.panel.enable = false;
+
   # Same argument for WiFi (#85): `-M virt` has no SDIO host, so the aic8800
   # modules insmod and then no card enumerates, and the unit's `wlan0` oracle
   # fails. Off here also keeps the radio firmware out of this image.

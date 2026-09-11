@@ -259,6 +259,14 @@
           kernel = kernel-mainline-appliance;
         };
 
+        # The mini-display's panel modules (#84), out of the same kernel. A
+        # second package rather than more entries in the one above: the two
+        # sets are loaded by different units with different oracles, and a
+        # panel that did not come up must not read as a capture failure.
+        display-modules = callPkg ./pkgs/display-modules.nix {
+          kernel = kernel-mainline-appliance;
+        };
+
         # --- WiFi (#85) ------------------------------------------------------
         # The AIC8800 on mmc@104d0000. The DRIVER is GPL source, pinned from
         # radxa-pkg/aic8800 and built out of tree against the appliance
@@ -548,6 +556,8 @@
           # The open capture/encode modules (#83), built against the kernel
           # the appliance boots and carried in the generation's closure.
           inherit video-modules;
+          # The panel's fbtft + JD9853 modules (#84), same arrangement.
+          inherit display-modules;
           # WiFi (#85), same shape: the out-of-tree aic8800 modules built
           # against that kernel, and the MD5-pinned radio firmware. Both are
           # dropped from the closure entirely by `nanokvm.wifi.enable = false`.
@@ -972,7 +982,7 @@
             kernel-mainline-appliance
             kernel-mainline-appliance-slot-image
             nixos-appliance-qemu nixos-appliance-qemu-run
-            open-vin-csi2 open-vin-capture video-modules
+            open-vin-csi2 open-vin-capture video-modules display-modules
             aic8800-src aic8800 aic8800-firmware
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2

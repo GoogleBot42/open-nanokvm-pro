@@ -9,6 +9,7 @@
 , kernel # pkgs/kernel-mainline.nix, no embedded initramfs -- boot.kernelPackages
 , dtb # pkgs/dtb-mainline.nix -- hardware.deviceTree.dtbSource
 , video-modules # pkgs/video-modules.nix: the open capture/encode .ko set
+, display-modules # pkgs/display-modules.nix: the mini-display panel .ko set (#84)
 , aic8800 # pkgs/aic8800.nix: the out-of-tree WiFi modules (#85)
 , aic8800-firmware # pkgs/aic8800-firmware.nix: the radio firmware (#85)
 , version ? "0.0.0-dev"
@@ -70,7 +71,7 @@ let
 
   nanokvm = {
     inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
-      kernel dtb video-modules version;
+      kernel dtb video-modules display-modules version;
     inherit aic8800 aic8800-firmware;
     image = imageBuilder;
     # The three open libraries libkvm DT_NEEDEDs, taken from crossPkgs -- the

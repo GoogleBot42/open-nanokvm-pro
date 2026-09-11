@@ -12,6 +12,11 @@ confirmed against a live framebuffer dump from a stock-firmware device. The
 from-source module + daemon stack was proven end-to-end on the device
 (2026-08-15, see [Hardware verification](#hardware-verification)).
 
+Everything below describes the **shipped 4.19 image** unless it says otherwise.
+The mainline kernel has the same panel, the same `/dev/fb0` and the same daemon
+through a different driver stack -- see [Mainline (#84)](#mainline-84) for the
+delta and for the hardware plan that proves it.
+
 - [What the display is](#what-the-display-is)
 - [How it is blob-free](#how-it-is-blob-free)
 - [What ships in the image](#what-ships-in-the-image)
@@ -20,6 +25,7 @@ from-source module + daemon stack was proven end-to-end on the device
 - [Orientation](#orientation)
 - [Drawing to it](#drawing-to-it)
 - [Coexistence with the web KVM](#coexistence-with-the-web-kvm)
+- [Mainline (#84)](#mainline-84)
 - [Hardware verification](#hardware-verification)
 - [Reference](#reference)
 
@@ -282,6 +288,234 @@ server's streaming goroutines exit and stop pulling frames — and after
 capture pipeline (VIN/VENC/MIPI_RX + audio capture; the LT6911 HDMI-RX stays
 powered so the host keeps seeing its monitor). See
 [architecture.md](architecture.md), *capture lifecycle & idle power-down*.
+
+---
+
+## Mainline (#84)
+
+The panel, its backlight, the knob and the LT6911UXC's HDMI audio all exist on
+the mainline kernel (`pkgs/kernel-mainline`, Linux 7.1.x). Everything above
+still describes the shipped 4.19 image; this section is the delta.
+
+**What is the same.** The panel, its geometry, `/dev/fb0`, the orientation
+mapping, the backlight ABI (`/sys/class/backlight/backlight`, `bl_power` 0/1,
+`brightness` 0..100), the two evdev devices, the status daemon, the live HDMI
+preview and its `/dev/shm/nanokvm-preview` layout. `nanokvm-display` runs
+unchanged apart from the two fixes below, and libkvm's preview publisher is
+untouched.
+
+**What changed, and why.**
+
+| | 4.19 | mainline |
+|---|---|---|
+| panel driver | SDK `fb_jd9853.ko`, built by the vendor defconfig | `pkgs/kernel-mainline/tree/drivers/staging/fbtft/fb_jd9853.c`, our port |
+| tearing-effect pin | used: IRQ + workqueue + double buffer + 5 s liveness timer | **not used**; `te-gpios` is absent from the DT |
+| SPI controller | SDK `spi-dw-mmio.c` fork with a DMA endian swap | stock mainline `spi-dw-mmio`, PIO |
+| backlight PWM | `drivers/pwm/pwm-axera.c` (527 lines) | `drivers/pwm/pwm-dwc-of.c` (~110) over upstream's `pwm-dwc-core` |
+| `gpio_keys` / `rotary_encoder` | modules, loaded at boot | built in |
+| module set | four modules | two: `fbtft`, `fb_jd9853` |
+| loader | `/etc/modules-load.d/nanokvm.conf` | `nanokvm-panel.service`, out of the generation's own closure |
+| ATX pin setup | `nanokvm-gpio.service` + sysfs export + a `devmem` pad poke | nothing — a GPIO claim programs the pad (#81) |
+| audio | vendor `sound/soc/axera/dwc-i2s.c` (993 lines) + `dummy-codec` | stock `snps,designware-i2s` in PIO mode + `linux,spdif-dir` |
+
+### The module list
+
+Two, both in `pkgs/display-modules.nix`, laid out as `/lib/modules/<release>`
+in the generation's closure exactly like the video stack's (#83):
+
+```
+fbtft.ko
+fb_jd9853.ko
+```
+
+`nanokvm-panel.service` insmods them in that order (`fb_jd9853` imports
+`fbtft`'s symbols and the loader is a plain `insmod`, not `modprobe`), then
+waits up to 5 s for `/dev/fb0`. `nanokvm-display.service` is ordered after it
+and still gated on `ConditionPathExists=/dev/fb0`, so a board with no panel
+runs no daemon rather than accumulating a failed unit.
+
+**They are modules for a safety reason, not a convenience one.** Loading
+`fb_jd9853` runs the vendor's power-on sequence twice — ~560 ms of `mdelay`,
+two hardware resets and about forty SPI register writes. Built in, a hang
+anywhere in there is a kernel that never reaches userspace, which on this board
+costs a `bootcount` rollback. As a module the system is already up, the unit
+fails, and the board is still reachable.
+
+### The device-tree nodes
+
+All in `dts/`, all disabled in the SoC file and enabled by the board:
+
+| node | compatible | notes |
+|---|---|---|
+| `spi@6072000` | `snps,dw-apb-ssi` | 2 chip selects, CS1 is `gpio0 27`; `spi2_pins` claims SCLK+MOSI (no MISO — the panel is write-only) |
+| `spi@6072000/panel@1` | `jadard,jd9853` | 80 MHz asked, 52 MHz actual (208 MHz SSI / 4) |
+| `pwm@6060000` | `snps,dw-apb-timers-pwm2` | clocks `bus`/`timer`; `pwm0_pins` is the one pin state here that is **not** a no-op in value |
+| `backlight` | `pwm-backlight` | `pwms = <&pwm0 0 462963 0>` — 0 is `PWM_POLARITY_NORMAL` |
+| `gpio-keys` | `gpio-keys` | `label = "gpio_keys"`, which is what the input device is named |
+| `rotary-encoder` | `rotary-encoder` | gray, 4 steps/period, REL_X |
+| `i2s@6051000` | `snps,designware-i2s` | PIO; `snps,syscon` + `snps,rx-channel` are patch 0003's |
+| `spdif-in` | `linux,spdif-dir` | the stub codec |
+| `sound` | `simple-audio-card` | card name "Lontium Lt6911UXC", verbatim from the vendor |
+
+Five new clock rows carry them (`AX630C_CLK_SPI_M2_{SEL,EB}`,
+`AX630C_PCLK_SPI_M2_EB`, `AX630C_CLK_PWM00_EB`, `AX630C_PCLK_PWM0_EB`). Every
+bit position is cited rather than derived: the vendor `spi-dw-mmio.c` writes
+`EB0` bit `(6 + spi_id)` and `EB3` bit `(2 + spi_id)`, and the vendor `pwm0`
+node spells its own register offsets out in DT properties. The PWM block's
+source mux and class gate turn out to be the **timer** ones — it is a
+DesignWare APB timer in PWM mode — so only the per-channel gate and the APB
+gate are new.
+
+### Two GPIO polarities that are inverted relative to the vendor DT
+
+4.19 fbtft drove `dc` and `reset` through `gpio_set_value()`, which is the
+**raw** GPIO API and ignores the active-low flag. Mainline fbtft uses
+`gpiod_set_value()`, which does not. So:
+
+- **`dc-gpios` is `GPIO_ACTIVE_HIGH` here** where the vendor DT says active-low.
+  Get this wrong and every command byte is sent as data: a blank panel, no
+  error message, nothing in `dmesg`.
+- **`reset-gpios` stays `GPIO_ACTIVE_LOW`.** `fbtft_reset()` asserts then
+  deasserts *logically*, which with that flag is the same low-then-high pulse
+  the vendor's raw writes produced.
+
+`pkgs/dtb-mainline.nix` asserts both flag cells with `fdtget`, because neither
+failure is visible any other way.
+
+### The rmmod hard-hang, explained
+
+The trap this document has carried since 2026-08-15 — *unloading a loaded
+`fb_jd9853` hard-hangs the device* — is understood now, and it is not the TE
+timer.
+
+The vendor's `init_display()` does `dev_set_drvdata(&par->spi->dev, panel)`,
+overwriting the `struct fb_info *` that `fbtft_register_framebuffer()` had just
+stored there. `fbtft_driver_remove_spi()` then reads a ~120-byte
+`jd9853_priv_data` as a `fb_info`, `info->par` is uninitialised slab memory
+well past the end of that object, and `fbtft_unregister_framebuffer()` makes an
+indirect call through `par->fbtftops.unregister_backlight`. The SDK's own
+`fb_jd9853_hkc_2_01.c` is the repaired copy of the same driver and fixes
+exactly this (it uses `par->extra`), which is the corroboration.
+
+Our port keeps **no** private state, so the mechanism is structurally absent.
+**The rule is unchanged anyway: load at boot, never unload.** It has not been
+tested on hardware and there is nothing to gain from finding out the hard way.
+
+### Rejected paths
+
+- **`drm/tiny/panel-mipi-dbi` with a firmware init blob** — zero lines of C.
+  The JD9853's whole init sequence fits its `command, len, params...` blob
+  format, and the awkward part of this panel (172 columns at offset 34 on a
+  240-column array) is expressed natively by `panel-timing`'s back porches. It
+  was rejected on three counts: it drags the entire DRM/KMS stack into an Image
+  that has a 64 MiB ceiling for one 172×320 status screen; it needs a binary
+  artifact loaded through `request_firmware` on an image whose blob policy is
+  "the aic8800 firmware and nothing else"; and DRM's fbdev emulation is another
+  layer between the daemon's byte-exact 172×320/stride-344 writes and the
+  panel. Worth revisiting if the DRM stack ever arrives for another reason.
+- **A new `drm/tiny/jd9853.c`** (~400-500 lines, TE as a vblank source) — this
+  is the **upstreamable** form, and it is the right answer for #87: mainline's
+  own fbtft `TODO` says the subsystem takes no new drivers. It is not the right
+  answer for #84, which is about making the panel work on the kernel we boot.
+- **Porting the vendor driver as-is, TE and all** (~70 changed lines) — smaller
+  than the rewrite on paper, but the thing being copied is the one that hangs
+  on unload, plus a `blank()` that cannot blank, a teardown that cancels work
+  before stopping the two things that queue it, and a `memcpy_reverse32()` that
+  exists only to cancel the vendor SPI DMA's 32-bit endian swap and would
+  scramble every pixel against a stock master.
+- **`dma_per` for the audio path** — not started, by the brief. PIO first.
+
+### Audio
+
+`arecord`-visible as the card **Lontium Lt6911UXC**, stock
+`snps,designware-i2s` in **PIO** mode. The driver picks PIO purely from the DT:
+mainline's `dw_i2s_probe()` registers the PIO PCM when the node has
+`interrupts` and dmaengine when it does not — and `dw_pcm_register()` is an
+`-EINVAL` stub without `CONFIG_SND_DESIGNWARE_PCM`, so a kernel missing that
+symbol does not fall back to DMA, it fails the probe.
+
+Three things the stock driver cannot know, added as optional properties by
+`patches/0003-ASoC-dwc-integration-properties.patch` (each a no-op when absent,
+so no existing DT changes behaviour):
+
+- **`snps,syscon = <&periph_clk 0x3c 0x00ffffff 0x00080620>`** — the audio
+  crossbar word in the peripheral syscon, written masked before the block is
+  used. The value is recomputed from the vendor board DT's own seventeen
+  `i2s-*-sel` properties: `exter-codec-en` (bit 19), `s-rx0-sel = 3` (bits
+  10:9), `s-sclk-sel = 1` (bits 6:5). Six I2S instances share this one
+  register and only this one is enabled, so there is exactly one writer.
+- **`snps,rx-channel = <1>`** — that crossbar setting lands the capture stream
+  on the block's RX channel **1**, not 0. The vendor driver carries a
+  hardcoded `if (rx0_sel == 3) { enable RER(1); break; }` for precisely this;
+  the stock driver assumes channel 0 in four places (`RCR/RFCR/RER`, the
+  `IMR` unmask, the ISR's channel test, and the PIO FIFO registers) and would
+  wait forever for an interrupt that is masked.
+- **`clock-names = "apb", "mclk"`** — in slave mode the driver takes no clock
+  at all, having no bit clock to program, so without naming the APB gate
+  `clk_disable_unused()` takes the register window away partway through boot.
+
+Interrupt load at 48 kHz stereo is `48000 / fifo_th` per second — 6 000 at a
+16-deep FIFO, 12 000 at 8 — of roughly 28 MMIO accesses each. That is the
+number the first hardware round has to measure under a live encode; if
+`RX overrun` shows up in `dmesg` during real capture, the `axera,dma-per`
+dmaengine driver becomes a separate rung and **is not started without saying
+so first**.
+
+### What is not proven, and can only be proven on hardware
+
+1. `I2S_COMP_PARAM_1/2` for this block (`devmem 0x060511F4` / `0x060511F0`,
+   with the APB gate on). They decide `fifo_depth`, and `COMP1_MODE_EN` must
+   read **0** or `set_fmt` rejects `BC_FC` and the card never probes.
+2. That the stream really is on RX channel 1. Sweeping `i2s-s-rx0-sel` on the
+   vendor kernel would settle it, and a value that lands it on channel 0 makes
+   the `snps,rx-channel` half of patch 0003 unnecessary.
+3. Whether `CLK_I2S_REF0_EB` is needed at all for a pure slave.
+4. The SPI2 pads' live words: the `/dev/mem` pad dump in
+   `docs/reference/mainline/device-reads-20260906/` stops at window-0 offset
+   `0x5fc` and `I2C1_SCL`/`UART3_TXD` are at `0x4024`/`0x4084`. The boot
+   chain's own table (`AX630C_DEMO_pinmux.h`) writes `0x00010083` to both,
+   which is what `spi2_pins` asks for, so this is a confirmation rather than a
+   question.
+5. Everything in the round plan below.
+
+### Hardware verification (mainline)
+
+**A display driver that hangs at load costs a `bootcount` rollback**, which is
+exactly what the fallback generation exists for — but it is a 4-attempt,
+several-minute detour, so the panel modules are loaded by a unit rather than
+built in, and round 1 below is ordered so that the cheap oracles come first.
+
+**Round 1 — display.**
+
+| step | oracle |
+|---|---|
+| boot the generation | SSH back in ~71 s; `bootcount` (`devmem 0x02390030 32`) = `0xB0010000` after `nanokvm-mark-good` |
+| the panel modules loaded | `systemctl status nanokvm-panel` active; `lsmod \| grep -E 'fbtft\|jd9853'` |
+| the framebuffer exists | `/dev/fb0`, and `dmesg \| grep fb_jd9853` says `frame buffer, 172x320` |
+| the pads moved | `devmem 0x02304024` = `0x00010083`, `devmem 0x02304084` = `0x00010083`, `devmem 0x104F000C` = `0x00020003` (the PWM pad — this one the boot chain does **not** write) |
+| the clocks are on | `grep -E 'spi_m2\|pwm00\|pclk_pwm0' /sys/kernel/debug/clk/clk_summary` — all enabled, `clk_spi_m2_eb` at 208 MHz |
+| the daemon draws | `systemctl status nanokvm-display` active; `dd if=/dev/fb0 bs=344 count=320` off the board, rendered on the build host, reads as the status screen with the right hostname and IP |
+| the backlight | `echo 1 > /sys/class/backlight/backlight/bl_power` (dark), `echo 0` (lit); `echo 10 > brightness` then `100` — **visibly** dimmer/brighter, which is the polarity check that `fdtget` cannot make |
+| the knob | `evtest /dev/input/eventN` — the button emits `KEY_ENTER` 1/0, the encoder emits `REL_X` ±1; a press after the 3-minute blank wakes the panel |
+| the ATX read | `nanokvm-gpio get atx-power-led` agrees with the host's real power state, and the daemon's "host on/off" line matches |
+| teardown | **none.** Do not `rmmod`. |
+
+**Round 2 — audio**, only after round 1 is green (the two share a boot but not
+a failure mode).
+
+| step | oracle |
+|---|---|
+| the card exists | `arecord -l` lists `Lontium Lt6911UXC`; `dmesg \| grep -i i2s` shows no probe error |
+| the block is sane | `devmem 0x060511F4` / `0x060511F0` — record them, decode `fifo_depth` and `COMP1_MODE_EN` (must be 0) |
+| the crossbar was written | `devmem 0x0487003C` reads `0x00080620` in its low 24 bits |
+| it captures | with a host playing a 1 kHz tone over HDMI: `arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 /tmp/a.wav` |
+| the signal is real | copy off-device and check with `sox /tmp/a.wav -n stat` (RMS well above zero) and `ffprobe -show_frames`; a spectrum with a peak at 1 kHz, not a silent or DC file |
+| under load | repeat while a web viewer is streaming 1080p, then `dmesg \| grep -c 'RX overrun'` — a non-zero count is the PIO verdict |
+| the web path | if the server exposes audio, check it end to end; otherwise record that libkvm's ALSA capture opens the card by index and its device name did not change |
+
+Both rounds are read-only apart from the two `echo`s into the backlight, and
+every step is reversible by a reboot. Six rounds is the budget; these two
+should fit in two.
 
 ---
 
