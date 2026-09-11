@@ -2669,6 +2669,128 @@ to justify it.
 
 ---
 
+### What exists now (#98, 2026-09-11) — ON HARDWARE: 4K DCI, THE WHOLE PATH
+
+The board captures and encodes the attached host at its native **4096x2160**,
+with no `OPENKVM_FORCE_GEOM` anywhere, and `/api/stream/mjpeg` serves it.
+Before this the shipped path could not stream from that source at all: the
+route held the connection open and sent **zero bytes**, forever.
+
+**The envelope is 4096x2400**, stated in four places that
+`.#checks.open-capture-envelope` now holds together — `OVC_MAX_*`
+(`open_vin_capture.c`), the CSI-2 receiver's clamp, `V4L2_MAX_*`
+(`kvm_capture_v4l2.c`) and `VCENC_GEOM_MAX_*` (`vcenc_geom.h`). The height
+went up as well as the width because the 16:10 EDID this project ships (#61)
+advertises 3840x2400 and the capture driver clamped it to 2160 — the same trap,
+already armed, one EDID selection away.
+
+#### What the ceiling was, and what it was not
+
+Nothing in the datapath was width-baked. The receiver is format-transparent and
+was already clamped at 4096. The golden ISP image parameterises exactly four
+words on geometry (`ovc_golden_4k.h`) and they carry width and height in
+separate 16-bit halves. The bridge locks 4096x2160 and `/proc/lt6911_info`
+has been reporting it all along. The MIPI link was never the constraint —
+`nDataRate=600` is a PHY band selector, not a per-lane ceiling.
+
+**What was real is the capture carveout, and it is not the constraint it
+looks like.** A declared coherent region is a bitmap allocator:
+`dma_alloc_from_dev_coherent()` calls `bitmap_find_free_region()` with
+`get_order(size)`, so a buffer costs `2^ceil(log2(size))` pages, aligned to
+itself. `ovc_queue_setup()` sized its cap with `PAGE_ALIGN()` instead and
+promised buffers the pool could not hold; vb2 then fails `REQBUFS` **entirely**,
+because it refuses below `min_queued_buffers + 1`. So round 1 raised every
+constant, negotiated 4096x2160 correctly, and still could not stream — with
+`coherent alloc of 17694720 bytes failed (carveout full?)` as the only clue.
+
+A `REQBUFS` sweep on the board, out of the old 56 MiB pool:
+
+| geometry | frame | allocation | buffers |
+|---|---|---|---|
+| 1920x1080 | 3.96 MiB | 4 MiB | 6+ |
+| 3840x2160 | 15.82 MiB | 16 MiB | 3 |
+| 3840x2400 | 17.58 MiB | 32 MiB | **REQBUFS fails** |
+| 4096x2160 | 16.88 MiB | 32 MiB | **REQBUFS fails** |
+| 4096x2400 | 18.75 MiB | 32 MiB | **REQBUFS fails** |
+
+The 16 MiB step is the whole story, and it means the 16:10 EDID had never been
+streamable either. The pool is **96 MiB** now — three 32 MiB slots — paid for
+by the encoder framebuf, 136 MiB down to 96 (production allocates one floorplan
+at a time and the largest is 70.43 MiB at the 4096x2400 corner). The carveouts
+are `venc-framebuf@73800000 +96 MiB`, `capture-pool@79800000 +96 MiB`,
+`venc-cmdbuf@7f800000 +8 MiB`: the same 200 MiB region, split differently.
+
+#### What the board measured
+
+Two generation switches, 50 s and 51 s to SSH, `bootcount` `0xB0010001` at the
+health gate both times and cleared to `0xB0010000`. No reflash, no power cycle.
+
+| Oracle | Value |
+|---|---|
+| Source | `/proc/lt6911_info` 4096x2160@29, `access` |
+| Pool | `DMA memory pool at 0x0000000079800000, size 96 MiB`; `capture carveout 0x6000000 bytes` |
+| `REQBUFS` after | 3 buffers at each of 3840x2160 / 3840x2400 / 4096x2160 / 4096x2400 (4 at 3840x2160 when libkvm asks) |
+| Capture | `capture up 4096x2160 YUYV stride=4096 px via /dev/video0, 3 buffers, bus[0]=0x79800000` |
+| Raw frame | 17 694 720 B, decoded on the host: the desktop UI, upright, no shear, correct colour |
+| Raw rate | 21.2 fps at 4096x2160 vs 21.5 at 3840x2160 — **the extra 256 columns cost nothing** |
+| Encoder | `H.264 4096x2160 framebuf 0x73800000+0x3f25000` — 63.13 MiB, exactly the floorplan `vcenc_geom` computes |
+| H.264 | 562 frames in 24.5 s (23.0 fps); host decode: 4096x2160, Main, level 5.1, **0 decoder errors** |
+| H.265 | 180 frames; host decode: 4096x2160, Main, level 5.1, 0 errors |
+| MJPEG, libkvm | 30 JPEGs in 12.3 s (2.4 fps — the software encoder, not the capture) |
+| MJPEG, the route | `code=200`, **8 245 496 bytes**, `multipart/x-mixed-replace`, 28 frames, each 4096x2160 `yuvj422p` |
+| direct websockets | `101` on `/api/stream/h264/direct` and `/api/stream/h265/direct` |
+
+The encoder geometry laws were fitted against vendor programs no wider than
+3840 and no vendor golden exists at 4096 — the source that could have produced
+one is the same one that only emits 4096. So 4096 rests on the laws
+extrapolating plus a decoded hardware encode, not on a vendor differential.
+That is weaker evidence than the 3840 ladder has, and it is what there is.
+
+#### The zero-byte MJPEG, and the edge that is still there
+
+Root cause: `libkvm.c` overwrites the caller's geometry with the live source
+before bringing anything up, `kvm_sys_init()` rejected 4096 at
+`kvm_capture_v4l2.c`, and `kvmv_read_img` returned `IMG_VENC_ERROR`. The MJPEG
+streamer's loop `continue`s on any failure and `mjpeg.Connect` blocks on the
+request context, so nothing ever called `writeFrame` — and because only
+`writeFrame` flushes, `net/http` never emitted the status line either. `curl`
+saw an open connection, no response, and zero bytes; the only trace was one
+`[openkvm-v4l2][FAIL] 4096x2160 outside 64x64..3840x2160` per attempt in the
+journal. Reproduced on the board before the fix, exactly so.
+
+Raising a ceiling does not remove the edge, so the failure has an answer now:
+`kvmv_read_img` returns `IMG_UNSUPPORTED_MODE` (-5) for an out-of-range source,
+`kvmv_source_state()` is a lock-free query the HTTP layer can call before it
+opens anything, and all three stream routes refuse with 503 and both numbers.
+**Watched firing** — a libkvm deliberately built with a 3840x2160 envelope,
+dropped into the server's tmpfs `dl_lib/` against the live 4096x2160 source:
+
+```
+mjpeg: code=503  ct=application/json
+{"code":-5,"msg":"the attached host outputs 4096x2160, which is outside the
+ range this device can capture (up to 3840x2160)"}
+h264 ws: code=503     h265 ws: code=503
+```
+
+and one line per route in the server log. The good library was restored by md5
+and the route went back to 200.
+
+#### Residuals
+
+- **MJPEG is 2.4 fps at 4096x2160.** The soft-JPEG path (#51) is a CPU encoder
+  doing 8.85 Mpixel per frame on two A53s. Correct, and slow; H.264/H.265 are
+  the 4K modes.
+- **Raw capture runs at ~21.5 fps from a 29 fps source**, identically at 3840
+  and 4096, so it is not a #98 regression — but nobody has explained it.
+- The browser side of the -5 path (`VideoStatus.UnsupportedMode`, the toast,
+  the MJPEG page's probe of the route) is wired and built but has not been put
+  in front of a real browser.
+- The standalone prover `ewl_encode` now reaches 3840x2160, not 4096: its
+  extra 4*W*H input region does not fit the 96 MiB encoder carveout above that.
+  Pinned as a fact in `.#checks.open-venc-geometry` rather than left to rot.
+
+---
+
 ## 9. Device reads wanted
 
 For the coordinator, once the device is back on the open stack. All read-only.
