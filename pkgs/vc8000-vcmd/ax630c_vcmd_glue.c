@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * THIS IS THE 4.19 COPY. The mainline port lives in the kernel tree, at
+ * pkgs/kernel-mainline/tree/drivers/media/platform/axera/ (#83, device-proven
+ * 2026-09-10). The TODO(mainline) comments below are DONE there; they are left
+ * here because this file still builds the shipped 4.19 image's module and
+ * nothing about it should move. Delete this copy when the 4.19 image retires.
+ */
+/*
  * AX630C platform glue for the VeriSilicon VC8000E VCMD command-engine driver.
  *
  * The eswin EIC7X copy of the VeriSilicon VCMD driver (eswin/vc8000_vcmd_driver.c,

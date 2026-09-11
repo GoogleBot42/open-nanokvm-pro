@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * THIS IS THE 4.19 COPY. The mainline port lives in the kernel tree, at
+ * pkgs/kernel-mainline/tree/drivers/media/platform/axera/ (#83, device-proven
+ * 2026-09-10). The TODO(mainline) comments below are DONE there; they are left
+ * here because this file still builds the shipped 4.19 image's module and
+ * nothing about it should move. Delete this copy when the 4.19 image retires.
+ */
+/*
  * open_vin_capture -- open V4L2 VIN/IFE capture video node for the Axera
  * AX630C (replaces the vendor ax_proton bypass/IFE-WDMA path). Epic #55 /
  * issue #59 (M2). Digital YUV422-8 over MIPI CSI-2 -> IFE bypass (MODE10 /
