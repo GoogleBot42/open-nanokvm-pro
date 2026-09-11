@@ -334,14 +334,14 @@ in
   };
 
   config = {
-    # 5g. Confirm the active A/B boot slot on every boot -- the S99checkboot
+    # Confirm the active A/B boot slot on every boot -- the S99checkboot
     # equivalent. The SPL CONSUMES the current slot's BOOTABLE bit on the way
     # in, so a boot that never re-arms it is a boot that falls back next time.
     # `bootsystem` is written uppercase A/B by U-Boot; the vendor's own script
     # writes lowercase in places, so both are accepted.
     #
     # This was inert in the 4.19 scaffold for want of /etc/fw_env.config. That
-    # file now ships (see section 4), so the unit is live -- and #79 is what
+    # file now ships (nixos/modules/identity.nix), so the unit is live -- and #79 is what
     # puts a health gate in front of it (After=nanokvm-healthy.target) instead
     # of re-arming unconditionally the way the vendor does.
     #
@@ -375,7 +375,7 @@ in
       '';
     };
 
-    # 5h. The rollback gate (#89 rung 5; this is what closes #79).
+    # The rollback gate (#89 rung 5; this is what closes #79).
     #
     # U-Boot increments `bootcount` in TOP_CHIPMODE_GLB_BACKUP1 on every boot
     # and, once it passes `bootlimit` (3), runs `altbootcmd` instead of

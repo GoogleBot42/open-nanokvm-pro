@@ -45,12 +45,13 @@ in
   };
 
   config = {
-    # 5d2. The mini-display's panel (#84). Two modules out of the generation's
+    # The mini-display's panel (#84). Two modules out of the generation's
     # own closure, then a check that /dev/fb0 actually appeared.
     #
-    # Same shape as nanokvm-video above and a SEPARATE unit from it on purpose:
-    # the two sets have different oracles, and a panel that did not come up
-    # must not read as a capture failure (or stop the server from starting).
+    # Same shape as nanokvm-video (nixos/modules/video.nix) and a SEPARATE unit
+    # from it on purpose: the two sets have different oracles, and a panel that
+    # did not come up must not read as a capture failure (or stop the server
+    # from starting).
     #
     # Why these two are modules at all is argued in pkgs/display-modules.nix:
     # loading fb_jd9853 runs the vendor's power-on sequence twice, ~560 ms of
@@ -146,7 +147,7 @@ in
         '';
     };
 
-    # 5e. Mini-display status daemon. Draws the status screen on /dev/fb0 and
+    # Mini-display status daemon. Draws the status screen on /dev/fb0 and
     # reads the knob's two evdev devices; the panel itself is nanokvm-panel
     # above, which is ordered before this.
     #

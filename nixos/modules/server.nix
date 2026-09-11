@@ -148,7 +148,7 @@ in
 
   config = {
     # =====================================================================
-    # 4. FHS accommodation
+    # FHS accommodation
     # =====================================================================
     # NanoKVM-Server and libkvm request /lib/ld-linux-aarch64.so.1.
     environment.ldso = "${pkgs.glibc}/lib/ld-linux-aarch64.so.1";
@@ -183,7 +183,7 @@ in
     # a rollback rolls the version back with everything else.
     environment.etc."nanokvm-version".text = "${nanokvm.version}\n";
 
-    # 5c. USB gadget -- STUB, but no longer for the reason it was written.
+    # USB gadget -- STUB, but no longer for the reason it was written.
     # #82 landed the dwc3 glue and the configfs function drivers, and a host has
     # enumerated a gadget off this board on a mainline kernel. What is missing is
     # the POLICY: `usbdev.sh` builds the whole gadget -- three HID report
@@ -208,7 +208,7 @@ in
       '';
     };
 
-    # 5d. The KVM server. Mirrors the vendor service model: the app tree is
+    # The KVM server. Mirrors the vendor service model: the app tree is
     # copied to tmpfs at boot and the binary runs from there
     # (docs/architecture.md "Service model").
     #

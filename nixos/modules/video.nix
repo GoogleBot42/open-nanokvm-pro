@@ -46,7 +46,7 @@ in
   };
 
   config = {
-    # 5a. The video stack (#83). Six modules out of the generation's own
+    # The video stack (#83). Six modules out of the generation's own
     # closure, in the order the kernel build's depmod resolved, then a check
     # that the pipeline actually came up.
     #

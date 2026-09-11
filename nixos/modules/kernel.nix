@@ -44,14 +44,14 @@ in
 
   config = {
     # =====================================================================
-    # 1. Platform, and everything NixOS must NOT do
+    # Platform, and everything NixOS must NOT do
     # =====================================================================
     # mkDefault so a consumer's own `nixosSystem { system = ...; }` wins; the
     # SoC is arm64 and nothing else will run on it.
     nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
 
     # =====================================================================
-    # 1a. The kernel, the device tree, and the bootloader (#99)
+    # The kernel, the device tree, and the bootloader (#99)
     # =====================================================================
     # THE KERNEL IS THE GENERATION'S. `pkgs/kernel-mainline` with no embedded
     # initramfs, wrapped by `linuxPackagesFor` so NixOS's own machinery --
@@ -176,7 +176,7 @@ in
     boot.consoleLogLevel = 8;
 
     # =====================================================================
-    # 2. The initrd -- what replaces the vendor /init
+    # The initrd -- what replaces the vendor /init
     # =====================================================================
     # Classic (script) stage 1, not systemd-in-initrd. The failure mode of a
     # stage 1 that dies on this board is a board with no console and no
@@ -311,7 +311,7 @@ in
     '';
 
     # =====================================================================
-    # 3. Filesystems -- all three numbers derived from the blkdevparts clause
+    # Filesystems -- all three numbers derived from the blkdevparts clause
     # =====================================================================
     fileSystems."/" = {
       device = cfg.rootDevice;

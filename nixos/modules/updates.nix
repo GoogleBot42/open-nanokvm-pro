@@ -320,7 +320,7 @@ in
     };
 
     # =====================================================================
-    # 7. Nix (#100)
+    # Nix (#100)
     # =====================================================================
     # THIS IS A NixOS SYSTEM, SO NIX IS ON IT. The #78 appliance shipped
     # `nix.enable = false` and a fixed closure, and every consequence of that

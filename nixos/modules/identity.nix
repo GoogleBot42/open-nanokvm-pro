@@ -173,7 +173,7 @@ in
     # update_cmdline), so a userspace fw_setenv must not race a reboot.
     environment.etc."fw_env.config".text = parts.fwEnvConfig;
 
-    # 5f. Per-device identity (MAC + hostname) from the SoC UID.
+    # Per-device identity (MAC + hostname) from the SoC UID.
     #
     # The vendor initramfs derives this on EVERY boot and writes it into files
     # a NixOS root does not have: `/etc/network/interfaces` gets
