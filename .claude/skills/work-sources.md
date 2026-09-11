@@ -601,6 +601,20 @@ propose SG2002 work without flagging this gap up front.
   update), **#97** remove the legacy 4.19 build (after #84/#86/#100),
   **#98** 4096-wide capture cap. **#86** closes after #100's hardware rounds
   prove the checkbox/idle path. Then **#84**, **#85**, **#87**, **#95**.
+  **2026-09-11, end of the campaign: every agent-able child of #26 is CLOSED
+  on hardware** — #83, #84 (display; audio card probes, the bench host sends
+  no audio), #85 (AIC8801 scans), #86, #87 (nixosModules, `docs/modules.md`),
+  #97 (legacy build gone), #98 (4096x2400 envelope), #99, #100, #101, #102
+  (libkvm's own header). The board runs generation 24 with nix, WiFi, the
+  panel, video at 4K DCI and the nix-native updater. **Open, and every one
+  needs Jeremy:** #95 (the one-way raw boot-chain write; offline half merged,
+  gzip chain stays default + recovery), #96 (attic endpoint/key/token — the
+  blocker for a real update and the first tagged release), #103 (upstreaming,
+  blocked on the Axera prefix), a host with HDMI audio for #84's capture
+  proof, and the older `needs-human` items (#5 CI, #7/#9 SD image, #8 docs,
+  #31/#32 signing and the default password, #34, #61 EDIDs, #88 logo). #26
+  itself stays open until #95 and #96 land; #55 (deblob epic) can close on
+  #102's evidence — closed content on the image is the aic8800 firmware only.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing

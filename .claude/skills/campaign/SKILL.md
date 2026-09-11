@@ -119,3 +119,20 @@ cd .claude/worktrees/agent-<id> && nix flake check --no-build && nix build .#<th
   chainload slot (`nanokvm-uboot-test`), never into the partition.
 - An arming condition for a dangerous test must not live in state the
   recovery action clears. Ask "what clears this?" of every guard.
+- **An offline half never flips a boot-chain default.** The AXDL recovery
+  image is whatever `.#nixos-firmware-image-mainline` builds; if an unproven
+  SPL/TF-A/U-Boot becomes its default before a board has booted it, the
+  recovery for a failed write is the same failed write. Unproven chains ship
+  as `-raw`/`-candidate` variants with their own checks, and a follow-up
+  commit flips the default after the round (#95, 2026-09-11).
+- **A peripheral unit must never gate the boot counter.** WiFi and the
+  panel each failed on a board that was otherwise healthy, `is-system-running`
+  went `degraded`, mark-good withheld the clear, and three reboots later the
+  rollback would have landed on the same generation. Optional units exit 0
+  with a journal line; `nanokvm.markGood.tolerateFailed` is the backstop
+  (#85, #84, 2026-09-11).
+- **A pure refactor has a free oracle: the toplevel store path.** #87 split a
+  2,100-line module into nine and proved it changed nothing by the path being
+  identical; two regressions (list-option ordering, a comment inside a build
+  string) were found by that diff alone. Demand it of every "no functional
+  change" branch.
