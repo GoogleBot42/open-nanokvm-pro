@@ -279,7 +279,7 @@ let
           [ -e "$l" ] || continue
           n=$(basename "$l"); n=''${n#system-}; n=''${n%-link}
           case "$n" in (*[!0-9]*) continue ;; esac
-          [ "$n" -gt "$max" ] && max=$n
+          if [ "$n" -gt "$max" ]; then max=$n; fi
         done
         echo $((max + 1))
       }
@@ -424,8 +424,12 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
       # running, and the two generations the boot configs name. The FALLBACK is
       # on that list for the same reason the whole rollback exists -- it is the
       # thing that gets used precisely when the default does not work.
-      pinned=""
-      add_pin() { [ -n "$1" ] && [ -e "$1" ] && pinned="$pinned $(readlink -f "$1")"; return 0; }
+      # A FILE, one path per line, so a store path can never match another by
+      # being a prefix of it.
+      pinned="$(mktemp)"
+      live=""; present=""; dead=""
+      trap 'rm -f "$pinned" "$live" "$present" "$dead"' EXIT
+      add_pin() { [ -n "$1" ] && [ -e "$1" ] && readlink -f "$1" >> "$pinned"; return 0; }
       add_pin "$prof/system"
       add_pin "$(P /run/booted-system)"
       add_pin "$(P /run/current-system)"
@@ -447,7 +451,7 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
       droptops=""
       for g in $gens; do
         t=$(readlink -f "$prof/system-$g-link")
-        if printf '%s\n' "$keepgens" | grep -qx "$g" || printf '%s' "$pinned" | grep -qF "$t"; then
+        if printf '%s\n' "$keepgens" | grep -qx "$g" || grep -qxF "$t" "$pinned"; then
           keeptops="$keeptops $t"
         else
           droptops="$droptops $t"
@@ -464,7 +468,6 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
       # every deletion a guess. Do nothing at all in that case; a store that is
       # too full is recoverable, a store missing one path is a bench trip.
       live="$(mktemp)"
-      trap 'rm -f "$live" "$present" "$dead"' EXIT
       for t in $keeptops; do
         f="$closures/$(basename "$t").txt"
         [ -r "$f" ] || die "no closure list for kept generation $t ($f) -- refusing to collect anything"
