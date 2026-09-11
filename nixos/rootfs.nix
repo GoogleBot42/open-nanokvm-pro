@@ -6,6 +6,9 @@
 , nanokvm-gpio
 , nanokvm-web
 , nanokvm-display
+, kernel # pkgs/kernel-mainline.nix, no embedded initramfs -- boot.kernelPackages
+, dtb # pkgs/dtb-mainline.nix -- hardware.deviceTree.dtbSource
+, video-modules # pkgs/video-modules.nix: the open capture/encode .ko set
 , version ? "0.0.0-dev"
 , applianceModules ? [ ]
 , variant ? "emmc"
@@ -19,8 +22,8 @@
 
 # ===========================================================================
 # The NanoKVM-Pro NixOS appliance (issue #78, epic #26) -- nixos/appliance.nix
-# evaluated into a system closure, packed into a rootless ext4, with the
-# stage-1 initrd exposed separately so pkgs/kernel-mainline.nix can embed it.
+# evaluated into a system closure, packed into a rootless ext4, with the /boot
+# tree that generation boots from exposed beside it.
 #
 # ONE nixpkgs pin. The predecessor of this file evaluated against a second,
 # older pin (nixos-24.11) because systemd's declared kernel floor had risen
@@ -42,15 +45,15 @@
 # THE BOOT CONTRACT this image owes the boot chain (docs/mainline-port.md
 # section 5, and section 8's #78 entry):
 #
-#   U-Boot `booti`s our Image, which carries the NixOS initrd inside it. The
-#   command line comes from the U-Boot ENVIRONMENT -- not from the device tree,
-#   which fdt_chosen overwrites -- so we cannot put `init=` on it. NixOS stage 1
-#   then falls back to its built-in default, `switch_root $targetRoot /init`.
-#   Hence /init at the root of this image, pointing at the system profile.
-#   Updating that profile is therefore the whole of a generation switch: no
-#   bootloader, no config file, no partition write.
+#   U-Boot's `bootcmd` runs `sysboot` on /boot/extlinux/extlinux.conf, which
+#   NixOS's own generic-extlinux-compatible builder wrote. It names this
+#   generation's kernel, initrd and dtb under /boot/nixos/, and pins
+#   `init=<generation>/init` on the APPEND line -- so a generation switch IS a
+#   /boot write, done by `switch-to-configuration boot` and by nothing else.
+#   /init at the root of this image still points at the system profile, as a
+#   backstop for a command line that carries no `init=`.
 #
-# The artifacts themselves -- the initrd cpio and the ext4, with all their
+# The artifacts themselves -- the /boot tree and the ext4, with all their
 # offline contract checks -- live in nixos/lib/appliance-artifacts.nix, as pure
 # functions of the system closure. They are called from here (flake level) and
 # from nixos/image-axp.nix (inside the module system, where the .axp builder
@@ -65,7 +68,7 @@ let
 
   nanokvm = {
     inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
-      version;
+      kernel dtb video-modules version;
     image = imageBuilder;
     # The three open libraries libkvm DT_NEEDEDs, taken from crossPkgs -- the
     # exact builds it was compiled and linked against (pkgs/kvm-encoder.nix),
@@ -90,17 +93,22 @@ let
 
   toplevel = eval.config.system.build.toplevel;
 
-  initrd = artifacts.mkInitrd {
-    inherit (eval.config.system.build) initialRamdisk;
-    inherit (eval.config.system.boot.loader) initrdFile;
+  # The /boot this generation carries, written by NixOS's own extlinux builder
+  # against the three options that shape it -- so the image's /boot and the one
+  # `switch-to-configuration boot` writes on the device cannot disagree.
+  bootDir = artifacts.mkBootDir {
+    inherit toplevel;
+    inherit (eval.config.boot.loader.generic-extlinux-compatible) configurationLimit;
+    inherit (eval.config.boot.loader) timeout;
+    dtbName = eval.config.hardware.deviceTree.name;
   };
 in
 (artifacts.mkRootfs {
-  inherit toplevel initrd version variant;
+  inherit toplevel bootDir version variant;
   rootDevice = eval.config.fileSystems."/".device;
 }).overrideAttrs (_: {
   passthru = {
-    inherit toplevel initrd eval;
+    inherit toplevel bootDir eval;
     inherit (eval) config;
   };
 })

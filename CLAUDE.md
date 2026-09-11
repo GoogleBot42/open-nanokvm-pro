@@ -204,9 +204,9 @@ that is arbitration, not a bug.
   board never reset, `bootcount` never climbed, `altbootcmd` was never reached,
   and recovery was AXDL. **Never trust a safety net you have not watched fire.**
   Set the variable from `preDeviceCommands` (which depends on no string) AND
-  emit the bare `boot.panic_on_fail` plus `stage1panic=1`; and note the initrd
-  is inside the kernel Image here, so applying that fix means writing `/boot`
-  from a board that still boots.
+  emit the bare `boot.panic_on_fail` plus `stage1panic=1`. (Until #99 the
+  initrd was inside the kernel Image, so applying that fix meant writing `/boot`
+  from a board that still boots; now it is an ordinary generation switch.)
 - **Three separate things decide the appliance's identity, and each looks
   sufficient alone.** `hostnamectl` must be `--transient` (the plain call writes
   `/etc/hostname`, a read-only store symlink); `networking.hostName` must be
@@ -283,25 +283,39 @@ board past WDT0) has never measured anything.
 `devmem 0x02390030 32` -- `0xB0010000` healthy, `0xB001000N` = N attempts
 since the last healthy boot -- and `bootlimit` is 3, so the FOURTH attempt
 runs `altbootcmd`, sets milestone bit 30 and boots
-`/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`. Those two
-files name two **(generation, kernel) pairs** — `init=` is pinned, and since
-#86 the kernel and dtb are content-addressed (`/boot/Image-<16 hex of its
-sha256>`), so a kernel change rolls back too and `/boot/Image` no longer
-exists. `nanokvm-mark-good` (timer, `OnBootSec=60s`) clears the counter and
-regenerates the fallback from `/run/booted-system` plus the `nanokvmboot=`
-token on the command line — the only thing that says which kernel U-Boot
-loaded — once the system is `running`, routed and serving, then deletes the
-`/boot` files neither config names. To force
-a fallback by hand: `devmem 0x02390030 32 0xB001000A; reboot` -- and **that is
-the way to exercise the rollback, not a broken generation**: it proves
-`bootcount_error()`, `altbootcmd`, bit 30 and the fallback config in one boot
-and cannot strand the board. Details: `docs/nixos-rootfs.md` §4b.
+`/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`.
+
+**Since #99 the kernel, the initrd and the dtb are part of the NixOS
+generation** (`boot.kernelPackages` + `hardware.deviceTree`), and
+`boot.loader.generic-extlinux-compatible` — NixOS's own builder, run by
+`switch-to-configuration boot` — is the **only** writer of
+`/boot/extlinux/extlinux.conf` and `/boot/nixos/*`. Nothing in this repo renders
+an extlinux.conf any more; `pkgs/extlinux.nix`, `pkgs/boot-payload.nix`,
+`nixos/lib/install-boot.nix`, the `nanokvmboot=` token and the `Image-<hash>`
+naming are all deleted. The two configs carry the SAME labels — one per
+generation, each with its own kernel and pinned `init=` — and differ only in
+which one `DEFAULT` selects. `nanokvm-mark-good` (timer, `OnBootSec=60s`) clears
+the counter and then DERIVES the fallback by copying `extlinux.conf` and setting
+`DEFAULT` to the label of the generation `/run/booted-system` resolves to; it
+**refuses**, loudly, leaving the previous fallback, if that label is not in the
+file — a `DEFAULT` U-Boot cannot match falls through to the FIRST label, which
+is the generation the rollback exists to escape. It deletes nothing: the
+extlinux builder collects its own obsolete kernels.
+`boot.loader.timeout` must stay 0 (any other value makes the builder emit a
+top-level `MENU TITLE`, and `parse_pxefile_top()` then sets `cfg->prompt = 1`
+and U-Boot reads this board's unreachable console forever) and
+`configurationLimit` is 3, bounded above by a 272 MiB `/boot` at ~50 MB per
+generation. To force a fallback by hand: `devmem 0x02390030 32 0xB001000A;
+reboot` -- and **that is the way to exercise the rollback, not a broken
+generation**: it proves `bootcount_error()`, `altbootcmd`, bit 30 and the
+fallback config in one boot and cannot strand the board. Details:
+`docs/nixos-rootfs.md` §1 and §4b.
 
 Hardware-proven 2026-09-09: the board rolled itself back onto the fallback
 generation, unattended, after four boot-chain attempts. What triggered it was
-**#91**, not a bad generation — U-Boot sometimes cannot read the 51 MB `Image`
-inside `bootcmd`'s four tries, and that now costs a rollback instead of a power
-cycle.
+**#91**, not a bad generation — U-Boot sometimes could not read the 51 MB
+`Image` inside `bootcmd`'s four tries, and that cost a rollback instead of a
+power cycle. Since #99 the Image is 42 MB with a 7.6 MB initrd beside it.
 
 **Nix is on the appliance, and an update is a signed closure (#100, 2026-09-11;
 supersedes #86's tar bundle).** The release publishes ~200 bytes —

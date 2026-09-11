@@ -40,9 +40,19 @@
     }
   ];
 
+  # The three bootloader options are passed through rather than read inside the
+  # builder, because they are what shapes the /boot tree it writes -- and the
+  # same three are read by nixos/rootfs.nix at flake level. One definition,
+  # two callers, one store path (#99).
   system.build.axpImage = nanokvm.image {
-    inherit (config.system.build) toplevel initialRamdisk;
-    inherit (config.system.boot.loader) initrdFile;
+    inherit (config.system.build) toplevel;
+    # For the VENDOR-layout image's `kernel`/`kernel_b` members only. Since #99
+    # that Image carries no initramfs, and the vendor U-Boot has no way to pass
+    # one -- see the NOTES that image ships.
+    kernelImage = "${config.boot.kernelPackages.kernel}/Image";
+    inherit (config.boot.loader.generic-extlinux-compatible) configurationLimit;
+    inherit (config.boot.loader) timeout;
+    dtbName = config.hardware.deviceTree.name;
     rootDevice = config.fileSystems."/".device;
   };
 }

@@ -40,7 +40,15 @@
 #define AX630C_RST_COMM_BT_DPI0_CM_DPU_NX              2
 #define AX630C_RST_COMM_BT_DPI1_CM_DPU_1X              3
 #define AX630C_RST_COMM_BT_DPI1_CM_DPU_NX              4
-#define AX630C_RST_COMM_NR                             5
+/*
+ * The dphyrx TLB soft reset (#83). It is NOT from the 144-line vendor DT
+ * survey this file was transcribed from -- no vendor DT node binds it. It
+ * comes from the MIPI RX specification (spec-dphy-writes section 5 row 7),
+ * where the vendor driver deasserts it by writing bit 7 to the CLR alias of
+ * this same value word, 0x5c. Our CSI-2 receiver is its only consumer.
+ */
+#define AX630C_RST_COMM_DPHYRX_TLB                     5
+#define AX630C_RST_COMM_NR                             6
 
 /* vpu clock-controller@4030000 -- value word 0x0c */
 #define AX630C_RST_VPU_JENC                            0

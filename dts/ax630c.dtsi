@@ -343,6 +343,43 @@
 					input-schmitt-disable;
 				};
 			};
+
+			/*
+			 * The MIPI CSI-2 receiver's twelve lane pads (#83).
+			 * Six differential pairs; the board uses four of them
+			 * for data and one for the clock, and the D-PHY's own
+			 * lane-swap fields decide which is which -- so the
+			 * whole group is claimed, not a subset.
+			 *
+			 * Every value here reproduces what the boot chain's own
+			 * pad table writes: 0x00000000, which is mux 0
+			 * (dphy_rx, the pads' only real function), drive code
+			 * 0, no pull, no schmitt. That is also the pads' reset
+			 * state, so this state is a no-op in value on this
+			 * board. The point is OWNERSHIP: on 4.19 the vendor
+			 * boot chain and then ax_pinmux replayed the SDK pad
+			 * table, and nothing replays it on mainline.
+			 *
+			 * VI_D7 is deliberately absent, and so is every other
+			 * VI_* pad. VI_D7 carries SW_PWR (GPIO0_A7) on this
+			 * board -- the vendor capture stack re-muxed it at
+			 * every pipeline init and that is the whole SW_PWR
+			 * trap. The MIPI path does not need it.
+			 */
+			mipi_rx_pins: mipi-rx-pins {
+				mipi-rx-lanes {
+					pins = "CDRX_L0N", "CDRX_L0P",
+					       "CDRX_L1N", "CDRX_L1P",
+					       "CDRX_L2N", "CDRX_L2P",
+					       "CDRX_L3N", "CDRX_L3P",
+					       "CDRX_L4N", "CDRX_L4P",
+					       "CDRX_L5N", "CDRX_L5P";
+					function = "dphy_rx";
+					drive-strength = <0>;
+					bias-disable;
+					input-schmitt-disable;
+				};
+			};
 		};
 
 		cpu_clk: clock-controller@1900000 {
@@ -928,6 +965,146 @@
 				 <&periph_clk AX630C_RST_PERIPH_WDT0_PRST>;
 			reset-names = "wdt", "apb";
 			status = "okay";
+		};
+
+		/*
+		 * ===============================================================
+		 * Video (#83). The KVM's data path: HDMI bridge -> CSI-2 -> VIN
+		 * -> DDR -> VC8000E. Everything here is disabled by default and
+		 * enabled by the board, because only a board knows whether it
+		 * has a bridge on the other end of the lanes.
+		 * ===============================================================
+		 */
+
+		/*
+		 * The ISP syscon. This is the vendor's ninth clock window, the
+		 * one the #80 model dropped because nothing has ever
+		 * implemented it as a clock provider -- and that is still true.
+		 * What it actually carries, for our purposes, is the CSI
+		 * receiver's clock gates and soft resets (+0xc8..+0xe4), its
+		 * deskew-lock status (+0xc4), the controller select (+0x218),
+		 * and, in its first 0x100, the VIN/ISP clock-source mux and the
+		 * two reset groups the capture driver sweeps.
+		 *
+		 * So it is a plain syscon shared by the two drivers, each
+		 * writing single-bit SET/CLR or VALUE/MASK strobes -- never a
+		 * read-modify-write of a shared word. A `syscon` node maps
+		 * nothing until someone asks for the regmap, so declaring it
+		 * cannot itself touch an unclocked block.
+		 */
+		isp_syscon: syscon@2500000 {
+			compatible = AX630C_ISP_SYSCON_COMPAT, "syscon";
+			reg = <0x0 0x2500000 0x0 0x10000>;
+		};
+
+		/*
+		 * MIPI CSI-2 receiver. Two reg windows: the protocol
+		 * controllers (two of them, 0x2000 apart, of which this board
+		 * uses dev0) and the D-PHY global file. On 4.19 the second was
+		 * an ioremap of a literal address, which is exactly the kind of
+		 * thing a port is supposed to delete.
+		 *
+		 * The error interrupt is per controller. csictrl1 is described
+		 * because the hardware has it; the driver claims only
+		 * csictrl0, because dev1 is unused here.
+		 *
+		 * One clock and one reset, both bits in the common syscon that
+		 * the 4.19 driver strobed by hand. Taking them properly is not
+		 * cosmetic: clk_disable_unused() gates an unclaimed clock on
+		 * mainline, and mainline U-Boot enables nothing.
+		 */
+		mipi_rx: csi2-rx@2600000 {
+			compatible = AX630C_CSI2RX_COMPAT;
+			reg = <0x0 0x2600000 0x0 0x4000>,
+			      <0x0 0x23f0000 0x0 0x1000>;
+			reg-names = "csi", "dphy";
+			interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "csictrl0", "csictrl1";
+			clocks = <&common_clk AX630C_CLK_DPHYRX_TLB_EB>;
+			clock-names = "dphyrx_tlb";
+			resets = <&common_clk AX630C_RST_COMM_DPHYRX_TLB>;
+			reset-names = "dphyrx_tlb";
+			axera,isp-syscon = <&isp_syscon>;
+			axera,common-syscon = <&common_clk>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&mipi_rx_pins>;
+			status = "disabled";
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				/*
+				 * From the board's source. Empty here on
+				 * purpose: what feeds these lanes, and which
+				 * physical lane carries which logical one, is
+				 * a board fact, and the receiver reads its
+				 * lane map out of this endpoint.
+				 */
+				csi2_port0: port@0 {
+					reg = <0>;
+				};
+
+				/* To the VIN capture block. */
+				port@1 {
+					reg = <1>;
+
+					csi2_out: endpoint {
+						remote-endpoint = <&vin_in>;
+					};
+				};
+			};
+		};
+
+		/*
+		 * VIN/IFE capture. One 1 MiB window covering the whole ISP
+		 * register file; the driver uses the SIF front end, the IFE
+		 * bypass path and one WDMA channel of it.
+		 *
+		 * Two interrupts, both described, of which the driver claims
+		 * the first: the frame-done line. The VI and ISP-MM domain
+		 * gates are clocks here for the same reason the receiver's is.
+		 *
+		 * memory-region is the capture buffer pool -- see the board's
+		 * reserved-memory for why it sits where it does.
+		 */
+		vin: video-capture@2400000 {
+			compatible = AX630C_VIN_COMPAT;
+			reg = <0x0 0x2400000 0x0 0x100000>;
+			interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&common_clk AX630C_CLK_VI_EB>,
+				 <&common_clk AX630C_CLK_ISP_MM_EB>;
+			clock-names = "vi", "isp_mm";
+			axera,isp-syscon = <&isp_syscon>;
+			status = "disabled";
+
+			port {
+				vin_in: endpoint {
+					remote-endpoint = <&csi2_out>;
+				};
+			};
+		};
+
+		/*
+		 * VC8000E encoder command engine. The core register file sits
+		 * at +0x1000 inside this window; the engine reports
+		 * hw_version_id 0x43421500 (VCMD v1.5.0).
+		 *
+		 * The block comes out of a cold boot IN RESET, and its clock
+		 * alone is not enough -- clocked but held in reset the whole
+		 * window reads the 0xDEADBEEF bus poison (device-proven
+		 * 2026-08-31). So `resets` here is load-bearing, and it is the
+		 * first consumer of the #80 reset provider's .deassert.
+		 */
+		venc: video-encoder@4010000 {
+			compatible = AX630C_VC8000E_COMPAT;
+			reg = <0x0 0x4010000 0x0 0x10000>;
+			interrupts = <GIC_SPI 93 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&vpu_clk AX630C_CLK_VENC_EB>;
+			resets = <&vpu_clk AX630C_RST_VPU_VENC>;
+			status = "disabled";
 		};
 	};
 

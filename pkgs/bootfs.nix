@@ -6,11 +6,16 @@
 , version ? "0.0.0-dev"
 , files ? { }
 , payload ? { }
-, # A whole directory tree copied into the filesystem root, for a payload whose
-  # FILE NAMES are computed at build time and so cannot be an eval-time attrset
-  # -- which is what content-addressing the kernel made of the boot payload
-  # (#86, pkgs/boot-payload.nix).
+, # A whole directory tree copied into the filesystem root: since #99 that is
+  # the /boot NixOS's own extlinux builder wrote for the generation being
+  # imaged (nixos/lib/appliance-artifacts.nix, `mkBootDir`). Its file names are
+  # store hashes computed at build time, so it cannot be an eval-time attrset.
   payloadDir ? null
+, # How many generations the extlinux config may name. Every DISTINCT
+  # kernel/initrd pair in that menu is a separate copy under /boot/nixos/, so
+  # this is the multiplier in the headroom assertion below, and it must be the
+  # same number `generic-extlinux-compatible.configurationLimit` is.
+  configurationLimit ? 5
 , ...
 }:
 
@@ -38,13 +43,13 @@
 #
 # SINCE #89 RUNG 3 IT IS ALSO THE BOOT PAYLOAD. Mainline U-Boot's bootcmd runs
 # `sysboot mmc 0:<bootpart> any ... /extlinux/extlinux.conf`, so the kernel,
-# the device tree and the command line all live here rather than in the signed
-# `kernel` and `dtb` partitions the vendor chain loads by byte offset.
-# `payload` is the attrset that carries them; a name may contain `/` and the
-# directory is created. `extlinux-fallback.conf` is what `altbootcmd` boots
-# when `bootcount` passes `bootlimit`; it ships as a copy of `extlinux.conf`,
-# which is the correct initial state -- the only known-good generation is the
-# one being installed.
+# the initrd, the device tree and the command line all live here rather than in
+# the signed `kernel` and `dtb` partitions the vendor chain loads by byte
+# offset. Since #99 that whole tree is written by NixOS's own extlinux builder
+# and arrives here as `payloadDir` -- nothing in this file knows the shape of
+# it. `extlinux-fallback.conf`, which `altbootcmd` boots when `bootcount`
+# passes `bootlimit`, ships as a copy of `extlinux.conf`: the only known-good
+# generation on a freshly flashed board is the one being flashed.
 #
 # EXT4 SINCE #89 RUNG 4. The minimal layout puts /boot on ext4, which retires
 # the CONFIG_VFAT_FS + NLS-codepage trap in docs/nixos-rootfs.md (without those
@@ -133,22 +138,25 @@ let
     ${payloadCopyExt}
     ${payloadDirCopyExt}
 
-    # ROOM FOR THREE KERNELS, and that is the sizing rule (#86). A kernel
-    # rollback means /boot holds the running kernel AND the fallback one; an
-    # update stages a third before `nanokvm-mark-good` collects whatever neither
-    # extlinux config names. Nothing on the device can grow this partition, and
-    # a /boot that fills up mid-update is a board that has written half a boot
-    # payload -- so the headroom is asserted here, at build time.
-    img=$(ls -S root/Image-* 2>/dev/null | head -1 || true)
-    if [ -n "$img" ]; then
+    # ROOM FOR `configurationLimit + 1` GENERATIONS, and that is the sizing
+    # rule (#99). The extlinux builder copies one kernel + initrd + dtbs set
+    # per DISTINCT generation in the menu, and it writes the new set BEFORE it
+    # collects the obsolete one -- so the peak, at the moment of a switch, is
+    # the whole menu plus the set being replaced. Nothing on the device can
+    # grow this partition, and a /boot that fills up mid-switch is a board with
+    # half a boot payload, so the headroom is asserted here at build time from
+    # the sizes this image actually carries.
+    if [ -d root/nixos ]; then
       used=$(du -sb root | cut -f1)
-      kb=$(stat -Lc%s "$img")
-      need=$(( used + 2 * kb + 16777216 ))
-      echo "/boot sizing: content $used B + two more kernels ($kb B each) + 16 MiB slack = $need B of ${toString size} B"
+      gen=$(du -sb root/nixos | cut -f1)
+      need=$(( used + ${toString configurationLimit} * gen + 16777216 ))
+      echo "/boot sizing: content $used B + ${toString configurationLimit} more generations ($gen B each) + 16 MiB slack = $need B of ${toString size} B"
       [ "$need" -le ${toString size} ] || {
-        echo "ERROR: /boot (${toString (size / 1048576)} MiB) cannot hold three kernels." >&2
-        echo "       Grow \`boot\` in nixos/lib/emmc-layout.nix -- which means a new GPT," >&2
-        echo "       an SPL rebuild and an AXDL flash, so do it deliberately." >&2
+        echo "ERROR: /boot (${toString (size / 1048576)} MiB) cannot hold ${toString (configurationLimit + 1)} generations." >&2
+        echo "       Either lower boot.loader.generic-extlinux-compatible.configurationLimit" >&2
+        echo "       (it must stay above nanokvm.update.keepGenerations), or grow \`boot\`" >&2
+        echo "       in nixos/lib/emmc-layout.nix -- which means a new GPT, an SPL rebuild" >&2
+        echo "       and an AXDL flash, so do that deliberately." >&2
         exit 1
       }
     fi

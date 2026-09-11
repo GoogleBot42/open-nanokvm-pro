@@ -59,12 +59,11 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
 | `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |
 | `rootfs` | overlaid `ubuntu_rootfs_sparse.ext4` | vendor base + our libkvm + modules + service selection |
-| `nixos-appliance` | NixOS `ext4` (+ sparse, + initrd) | the pure-Nix rootfs, #78. One nixpkgs pin, mainline kernel, **boot-proven on hardware from slot B**. See [nixos-rootfs.md](nixos-rootfs.md) |
+| `nixos-appliance` | NixOS `ext4` (+ sparse, + the generation's `/boot` tree) | the pure-Nix rootfs, #78. One nixpkgs pin, mainline kernel, **boot-proven on hardware from slot B**. See [nixos-rootfs.md](nixos-rootfs.md) |
 | **`firmware-image`** | **`…-selfbuilt.axp`** | **the flashable eMMC image (default output)** |
 | **`nixos-firmware-image`** | **`…-nixos.axp`** | **the NixOS appliance's flashable eMMC image** — packed from scratch, no vendor bundle; `system.build.axpImage` on `nixosConfigurations.nanokvm-pro` |
-| `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` is built from `boot-payload` and asserts room for three kernels |
-| `boot-payload` | `Image-<hash>`, `<dtb>-<hash>.dtb`, both extlinux configs | the `/boot` payload, **content-addressed** so the two configs can name two kernels and a kernel change rolls back (#86) |
-| **`system-manifest`** | `nanokvm_pro_sys_latest.json` | **the update artefact** — ~200 bytes naming the toplevel store path a release offers (#100). The payload is that closure, pushed to the binary cache and substituted by the device. [updates.md](updates.md) |
+| `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` carries the `/boot` tree NixOS's own extlinux builder wrote for the imaged generation (#99) and asserts room for `configurationLimit + 1` of them |
+| **`system-manifest`** | `nanokvm_pro_sys_latest.json` | **the update artefact** — ~200 bytes naming the toplevel store path a release offers (#100). The payload is that closure — kernel, initrd and dtb included as store paths since #99 — pushed to the binary cache and substituted by the device. [updates.md](updates.md) |
 | `appliance-toplevel` | the appliance's system closure | what a release pushes to the cache, and what `nix copy --to ssh://` sends to a board |
 | `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
 | `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
@@ -88,14 +87,16 @@ boot ──────> {kernel,dtb}-slot-image ──────────�
 image path builds from it.)
 
 `nix flake check` evaluates the whole tree without building the heavy leaves.
-Three of its gates belong to the update path (#86, #100) and are worth running
-by name after touching anything under `nixos/lib/` or
-`pkgs/{system-manifest,boot-payload}`:
+Five of its gates belong to the update and boot path (#86, #99, #100) and are
+worth running by name after touching anything under `nixos/lib/`,
+`pkgs/bootfs.nix` or `pkgs/system-manifest*`:
 
 ```bash
-nix build .#checks.x86_64-linux.nanokvm-updater-loop -L     # a real signed closure into a real store
-nix build .#checks.x86_64-linux.nanokvm-update-idle -L      # the checkbox, the markers, the idle gate
-nix build .#checks.x86_64-linux.nanokvm-system-manifest -L  # the artefact, read back
+nix build .#checks.x86_64-linux.nanokvm-updater-loop -L        # a real signed closure into a real store
+nix build .#checks.x86_64-linux.nanokvm-update-idle -L         # the checkbox, the markers, the idle gate
+nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L  # the derived rollback config
+nix build .#checks.x86_64-linux.nanokvm-boot-dir -L            # the /boot NixOS writes
+nix build .#checks.x86_64-linux.nanokvm-system-manifest -L     # the artefact, read back
 ```
 
 The first two run **real nix inside the build sandbox** — a signed `file://`

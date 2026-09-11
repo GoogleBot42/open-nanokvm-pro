@@ -5,15 +5,14 @@
 , boot # pkgs/boot.nix -- the whole from-source boot chain + the FDL agents
 , uboot-env # pkgs/uboot-env.nix
 , logo # pkgs/logo.nix
-, mkBootfsFor # layoutName -> kernel Image -> pkgs/bootfs.nix (/boot + payload)
+, mkBootfsFor # layoutName -> /boot payload dir (or null) -> pkgs/bootfs.nix
 , atf-mainline # pkgs/atf-mainline.nix -- mainline TF-A BL31, signed
 , uboot-mainline # pkgs/uboot-mainline.nix -- mainline U-Boot BL33, signed
 , spl-minimal # pkgs/spl-minimal.nix -- the SPL rebuilt for the minimal layout
 , gpt-image # pkgs/gpt-image.nix -- the generated GPT (primary + alternate)
 , dtbSlotImage # the signed mainline dtb partition image
 , artifacts # nixos/lib/appliance-artifacts.nix
-, mkKernel # initrd cpio -> the appliance kernel
-, mkSlotImage # kernel -> its signed partition image
+, mkSlotImage # kernel Image -> its signed partition image (vendor layout only)
 , bootChain ? "vendor" # "vendor" | "mainline" -- see below
 , ...
 }:
@@ -50,8 +49,10 @@
 # ===========================================================================
 
 { toplevel
-, initialRamdisk
-, initrdFile
+, kernelImage
+, configurationLimit
+, timeout
+, dtbName
 , rootDevice
 , variant ? "emmc"
 }:
@@ -63,11 +64,12 @@ let
   layoutName = if bootChain == "mainline" then "minimal" else "vendor";
   parts = import ./emmc-partitions.nix { inherit lib; layout = layoutName; };
 
-  initrd = artifacts.mkInitrd { inherit initialRamdisk initrdFile; };
-  rootfs = artifacts.mkRootfs { inherit toplevel initrd version variant rootDevice; };
+  bootDir = artifacts.mkBootDir {
+    inherit toplevel configurationLimit timeout dtbName;
+  };
+  rootfs = artifacts.mkRootfs { inherit toplevel bootDir version variant rootDevice; };
 
-  kernel = mkKernel initrd;
-  kernelSlotImage = mkSlotImage kernel;
+  kernelSlotImage = mkSlotImage kernelImage;
 
   bootImg = f: "${boot}/images/${f}";
 
@@ -113,7 +115,7 @@ let
   # Image on p16 would be dead weight.
   bootfs =
     if mainlineChain
-    then mkBootfsFor layoutName "${kernel}/Image"
+    then mkBootfsFor layoutName bootDir
     else mkBootfsFor layoutName null;
 
   # Member names say which chain is inside, so a bundle can be identified from
@@ -124,7 +126,7 @@ let
   ubootName = if mainlineChain then "MAINLINE U-Boot 2026.07" else "vendor-fork U-Boot 2020.04";
   bootfsName =
     if mainlineChain
-    then "FAT32 /boot + extlinux + Image + dtb  pkgs/bootfs.nix"
+    then "ext4 /boot + the NixOS extlinux tree  pkgs/bootfs.nix"
     else "FAT32 /boot                           pkgs/bootfs.nix";
 
   # partition name -> the member the manifest points at. `rawSize` is the size
@@ -252,15 +254,18 @@ let
         logo/logo_b     800x480 24-bpp BMP                  pkgs/logo.nix
         optee/optee_b   OP-TEE bl32, signed                 pkgs/boot.nix
         dtb/dtb_b       mainline DT from dts/               pkgs/dtb-mainline.nix
-        kernel/kernel_b mainline Linux + NixOS stage 1      pkgs/kernel-mainline.nix
+        kernel/kernel_b mainline Linux, NO initramfs        pkgs/kernel-mainline.nix
         boot            ${bootfsName}
         rootfs          NixOS appliance ext4 (sparse)       nixos/appliance.nix
 
-      This is the VENDOR-layout image, and it is the AXDL recovery for a board
-      whose minimal-layout SPL did not come up: it restores the 17-partition
-      map, the vendor SPL that is compiled for it, and a NixOS that is built
-      for it. OP-TEE stays only because this SPL build hangs without a BL32 it
-      can verify; nothing running on the board uses it.
+      This is the VENDOR-layout image, and it is a LAYOUT RESTORE, not a
+      bootable system. Since #99 the kernel carries no embedded initramfs --
+      its initrd is a file the extlinux bootmeth loads -- and the vendor U-Boot
+      has no extlinux path and calls `booti` with `-` for the ramdisk, so the
+      `kernel` partition here boots to a kernel that cannot find a root. Use it
+      to put the 17-partition map and the vendor SPL back on a board whose
+      minimal-layout SPL did not come up, then flash the mainline image. OP-TEE
+      stays only because this SPL build hangs without a BL32 it can verify.
       ''}
       Flash-time only, never stored on the eMMC: FDL1 and FDL2, the download
       agents the flasher pushes into BootROM RAM -- also from pkgs/boot.nix.

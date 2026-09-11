@@ -1,21 +1,37 @@
 { pkgs
 , crossPkgs
 , initramfsMainline ? null
-  # The cpio embedded in the Image via CONFIG_INITRAMFS_SOURCE. Defaults to the
-  # #75 bring-up initramfs; #78 passes the NixOS stage-1 initrd instead, and
-  # that substitution is the whole difference between "a kernel that proves it
-  # booted" and "a kernel that boots the appliance". There is no other way to
-  # get an initrd onto this board: U-Boot's `booti` is called with `-` for the
-  # ramdisk argument and no partition holds one (docs/mainline-port.md § 5).
-, initramfsCpio ? "${initramfsMainline}/initramfs-mainline.cpio"
+  # The cpio embedded in the Image via CONFIG_INITRAMFS_SOURCE, or `null` for
+  # no embedded initramfs at all.
+  #
+  # `null` IS WHAT THE APPLIANCE USES SINCE #99. The kernel belongs to a NixOS
+  # generation now: `boot.loader.generic-extlinux-compatible` writes an
+  # `INITRD` line, and mainline U-Boot's `bootmeth_extlinux` loads that file to
+  # `ramdisk_addr_r` and hands it to `booti`. Embedding was a workaround for
+  # the VENDOR U-Boot, which called `booti` with `-` for the ramdisk argument
+  # and had no partition to hold one; nothing has needed it since #89 rung 3.
+  #
+  # The #75 bring-up variant still embeds, and always will: its `/init` is the
+  # only userspace that can exist, because there is no rootfs to switch to.
+, initramfsCpio ?
+    (if initramfsMainline == null
+     then null
+     else "${initramfsMainline}/initramfs-mainline.cpio")
   # NONE for the tiny bring-up cpio: a single *.cpio source is embedded byte
   # for byte, which keeps the kernel reproducible and costs nothing at 100 KB.
-  # ZSTD for the NixOS initrd, which is tens of megabytes and shares a 64 MiB
-  # partition with the kernel.
 , initramfsCompression ? "NONE"
-  # Names the derivation and the slot image, so the two kernels never collide
-  # in a store path or in `nix build` output.
+  # Names the derivation, so two kernels never collide in a store path or in
+  # `nix build` output.
 , variant ? "bringup"
+  # `boot.kernelPackages`'s `apply` (nixos/modules/system/boot/kernel.nix)
+  # calls `kernel.override` and reads `kernel.features`, so this file is
+  # instantiated through `lib.makeOverridable` and has to absorb the three
+  # arguments NixOS passes. None of them means anything here: there is one
+  # config fragment, no randstruct plugin, and our patches are `patches` below
+  # in upstream-submission shape rather than a nixpkgs kernelPatches list.
+, randstructSeed ? ""
+, kernelPatches ? [ ]
+, features ? { }
 , ...
 }:
 
@@ -27,11 +43,19 @@
 # SDK tree, no vendor defconfig, no vermagic contract, no prebuilt .ko to stay
 # ABI-compatible with. It has booted this silicon since #75.
 #
-# TWO VARIANTS, differing only in the initramfs baked into the Image:
+# TWO VARIANTS, differing only in whether an initramfs is baked into the Image:
 #   bringup   (#75-#77) -- a static musl /init that leaves boot evidence in the
 #                          A/B slot register and reserved DRAM, then reboots.
-#   appliance (#78)     -- the NixOS stage-1 initrd (nixos/rootfs.nix), which
-#                          mounts the real root and switch_roots into it.
+#   appliance (#99)     -- no embedded initramfs. This is the kernel of a NixOS
+#                          generation: `boot.kernelPackages` names it, the
+#                          extlinux builder copies it and the matching initrd
+#                          into /boot/nixos/, and U-Boot loads both.
+#
+# TWO OUTPUTS. `out` is what a generation carries -- the `Image` and its
+# release string, nothing else. `dev` holds vmlinux, System.map, the resolved
+# .config and the dt-bindings headers pkgs/dtb-mainline.nix compiles against;
+# those are diagnostics and build inputs, and a hundred megabytes of them has
+# no business inside an OTA bundle or on the appliance's rootfs.
 #
 # It exists ALONGSIDE pkgs/kernel.nix (Linux 4.19.125, still the shipped
 # kernel). No shipped firmware/rootfs/update output references this file yet.
@@ -58,6 +82,10 @@ let
   localversion = "-nanokvm";
   release = "${version}${localversion}";
 
+  # The video stack's modules (#83). Only the appliance variant can load
+  # them; see the buildPhase.
+  buildModules = variant != "bringup";
+
   crossCC = crossPkgs.buildPackages.gcc;
   crossBinutils = crossPkgs.buildPackages.binutils;
   crossPrefix = crossPkgs.stdenv.cc.targetPrefix;
@@ -68,9 +96,56 @@ in
 assert lib.assertMsg (lib.versionOlder version "7.3")
   "kernel-mainline: ${kernelAttr} is ${version}, above the 7.2 aic8800 ceiling (#85). Either pin a lower kernel or record the WiFi drop decision first.";
 
-pkgs.stdenv.mkDerivation {
+pkgs.stdenv.mkDerivation (finalAttrs: {
   pname = "nanokvm-pro-kernel-mainline-${variant}";
   version = release;
+
+  # `out` = the Image a generation boots; `dev` = vmlinux, System.map, the
+  # resolved .config and the dt-bindings headers. Splitting them is what keeps
+  # the system closure (and therefore the OTA bundle) from carrying an
+  # unstripped vmlinux -- see the header.
+  outputs = [ "out" "dev" ];
+
+  # What NixOS reads off a kernel derivation. `features` is the important one:
+  # nixos/modules/system/boot/kernel.nix skips the `system.requiredKernelConfig`
+  # assertions entirely when the kernel advertises it, which is right here --
+  # our config is asserted line by line against the fragment in configurePhase,
+  # not against a nixpkgs structuredExtraConfig.
+  passthru = {
+    features = { };
+    inherit release version;
+    modDirVersion = release;
+    # The file NixOS copies as the kernel (`system.boot.loader.kernelFile`),
+    # and the name it lands under in /boot/nixos/. `Image` is what arm64's
+    # `booti` wants and what installPhase produces.
+    target = "Image";
+    # `linuxPackagesFor` inherits these off the kernel (linux-kernels.nix,
+    # `packagesFor`) and NixOS modules test against them. They are cheap and
+    # true; leaving them out makes the eval fail deep inside nixpkgs with
+    # "attribute 'kernelAtLeast' missing".
+    kernelOlder = lib.versionOlder version;
+    kernelAtLeast = lib.versionAtLeast version;
+    isLTS = false;
+    isZen = false;
+    isHardened = false;
+    isLibre = false;
+    # The kernel is CROSS-COMPILED (see crossCC below), but out-of-tree module
+    # packages are the only consumer of this and there are none -- the six
+    # modular drivers this kernel has are IN-tree (#83).
+    inherit (pkgs) stdenv;
+    # No /lib/modules tree in this output. The six video modules are laid out
+    # as one by pkgs/video-modules.nix, which is what the appliance's closure
+    # names; `system.modulesTree` therefore stays empty and
+    # `boot.extraModulePackages` is not the mechanism here.
+    hasModules = false;
+    # `hardware.deviceTree.enable` defaults to this; the appliance sets both
+    # explicitly, and our dtbs come from dts/ rather than the kernel tree.
+    buildDTBs = false;
+    # THE RESOLVED .config, which nixos/modules/config/sysctl.nix greps for
+    # CONFIG_ARCH_MMAP_RND_BITS_MAX on every system. It lives in `dev`, so
+    # naming it needs the finished package -- hence the finalAttrs form.
+    configfile = "${finalAttrs.finalPackage.dev}/config";
+  };
 
   src = mainline.src;
 
@@ -85,6 +160,11 @@ pkgs.stdenv.mkDerivation {
   ] ++ (with pkgs; [
     gnumake bc bison flex openssl ncurses perl elfutils kmod cpio
     gzip lzop which gawk bash zstd rsync
+    # `make modules` builds every driver arm64 defconfig leaves modular,
+    # which is a thousand drivers for other people's hardware -- and some of
+    # them generate headers with a host tool. drivers/gpu/drm/msm wants
+    # python3 and fails with a bare `Error 127` without it.
+    python3
   ]);
 
   # Modifications to files that already exist upstream. Unlike treeGraft below
@@ -153,6 +233,23 @@ pkgs.stdenv.mkDerivation {
 
     graft_into clk     aspeed "$(printf '\t\t\t\t\t')"
     graft_into pinctrl aspeed "$(printf '\t\t\t\t')"
+
+    # --- graft the video stack (#83) -------------------------------------
+    # drivers/media/platform is a directory of per-vendor directories, so this
+    # is the same shape as clk/pinctrl above but with different anchors: the
+    # Kconfig sources each vendor's file by full path and the Makefile lists
+    # `obj-y += <vendor>/`. `axera` sorts between `atmel` and `broadcom` in
+    # both. Assert each insertion -- a missed hook builds a kernel with no
+    # capture and no encoder, which is a working appliance that serves a black
+    # stream.
+    sed -i 's|^source "drivers/media/platform/atmel/Kconfig"|&\nsource "drivers/media/platform/axera/Kconfig"|' \
+      drivers/media/platform/Kconfig
+    grep -q '^source "drivers/media/platform/axera/Kconfig"' drivers/media/platform/Kconfig \
+      || { echo "ERROR: could not hook drivers/media/platform/axera into Kconfig" >&2; exit 1; }
+
+    sed -i 's|^obj-y += atmel/$|&\nobj-y += axera/|' drivers/media/platform/Makefile
+    grep -qF 'obj-y += axera/' drivers/media/platform/Makefile \
+      || { echo "ERROR: could not hook drivers/media/platform/axera into the Makefile" >&2; exit 1; }
 
     # --- graft the flat watchdog driver (#75) ----------------------------
     # Not a directory graft: drivers/watchdog is flat upstream, so this is one
@@ -286,27 +383,36 @@ pkgs.stdenv.mkDerivation {
     # what a bring-up must not lose.
     make O=build defconfig
 
-    # ---- Embedded initramfs (#75 bring-up, #78 appliance) ----------------
+    # ---- Embedded initramfs (#75 bring-up only, since #99) ---------------
     # For the bring-up variant this cpio's /init is the ONLY userspace that can
-    # exist (there is no rootfs to switch to) and proving userspace was reached
-    # is the whole point; for the appliance variant it is NixOS stage 1 and it
-    # is the only stage-1 the board has, because U-Boot passes no initrd.
+    # exist -- there is no rootfs to switch to -- and proving userspace was
+    # reached is the whole point of that kernel.
+    #
+    # The appliance passes `null`: its initrd is a FILE in /boot that U-Boot
+    # loads, because it is a NixOS generation's initrd now. Leaving
+    # INITRAMFS_SOURCE empty also restores the kernel's built-in
+    # usr/default_cpio_list, which is what creates /dev/console before PID 1 --
+    # the trap documented in nixos/lib/appliance-artifacts.nix until #99.
     #
     # Set BEFORE the fragment is merged, on purpose: the
     # INITRAMFS_COMPRESSION_* choice is `depends on INITRAMFS_SOURCE != ""`, so
     # merging a compression choice into a config with no source silently drops
     # it and the next olddefconfig picks the choice's first member, gzip.
-    initramfsCpio="${initramfsCpio}"
-    case "$initramfsCpio" in
-      *.cpio) ;;
-      *) echo "ERROR: INITRAMFS_SOURCE must end in .cpio -- usr/Makefile only" >&2
-         echo "       uses a single source verbatim when it does." >&2
-         exit 1 ;;
-    esac
-    echo "embedded initramfs (${variant}): $(stat -Lc%s "$initramfsCpio") bytes ($initramfsCpio)"
-    ./scripts/config --file build/.config \
-      --set-str INITRAMFS_SOURCE "$initramfsCpio" \
-      --enable INITRAMFS_COMPRESSION_${initramfsCompression}
+    ${if initramfsCpio == null then ''
+      echo "embedded initramfs (${variant}): none -- the initrd is a /boot file"
+    '' else ''
+      initramfsCpio="${initramfsCpio}"
+      case "$initramfsCpio" in
+        *.cpio) ;;
+        *) echo "ERROR: INITRAMFS_SOURCE must end in .cpio -- usr/Makefile only" >&2
+           echo "       uses a single source verbatim when it does." >&2
+           exit 1 ;;
+      esac
+      echo "embedded initramfs (${variant}): $(stat -Lc%s "$initramfsCpio") bytes ($initramfsCpio)"
+      ./scripts/config --file build/.config \
+        --set-str INITRAMFS_SOURCE "$initramfsCpio" \
+        --enable INITRAMFS_COMPRESSION_${initramfsCompression}
+    ''}
 
     ./scripts/kconfig/merge_config.sh -m -O build \
       build/.config "$configFragment"
@@ -352,16 +458,29 @@ pkgs.stdenv.mkDerivation {
     grep -q '^CONFIG_STRICT_DEVMEM=y' build/.config \
       && { echo "ERROR: STRICT_DEVMEM blocks the bring-up init's log stash" >&2; exit 1; }
 
-    # --- assert the embedded initramfs actually landed --------------------
+    # --- assert the initramfs decision actually landed ---------------------
     # A kernel that boots to no userspace looks exactly like a kernel that
     # died, and this is the only thing that tells the two apart.
-    grep -q "^CONFIG_INITRAMFS_SOURCE=\"$initramfsCpio\"" build/.config \
-      || { echo "ERROR: INITRAMFS_SOURCE is not our cpio" >&2; exit 1; }
-    # ...and with the compression we asked for. The choice's first member is
-    # GZIP, so a dropped selection is silent and only shows up as an Image that
-    # is the wrong size -- or, for a *.cpio source, as a double compression.
-    grep -q '^CONFIG_INITRAMFS_COMPRESSION_${initramfsCompression}=y' build/.config \
-      || { echo "ERROR: INITRAMFS_COMPRESSION_${initramfsCompression} did not survive olddefconfig" >&2; exit 1; }
+    ${if initramfsCpio == null then ''
+      grep -q '^CONFIG_INITRAMFS_SOURCE=""' build/.config \
+        || { echo "ERROR: this variant must embed NO initramfs, but" >&2
+             grep '^CONFIG_INITRAMFS_SOURCE=' build/.config >&2; exit 1; }
+      # The initrd arrives as a separate file, so the decompressors the
+      # bootloader's payload might use have to be compiled in. NixOS's default
+      # compressor is zstd; gzip is kept because a hand-built initrd often is.
+      for d in CONFIG_RD_ZSTD CONFIG_RD_GZIP; do
+        grep -q "^$d=y" build/.config \
+          || { echo "ERROR: $d is off -- the /boot initrd would not unpack" >&2; exit 1; }
+      done
+    '' else ''
+      grep -q "^CONFIG_INITRAMFS_SOURCE=\"$initramfsCpio\"" build/.config \
+        || { echo "ERROR: INITRAMFS_SOURCE is not our cpio" >&2; exit 1; }
+      # ...and with the compression we asked for. The choice's first member is
+      # GZIP, so a dropped selection is silent and only shows up as an Image
+      # that is the wrong size -- or, for a *.cpio source, a double compression.
+      grep -q '^CONFIG_INITRAMFS_COMPRESSION_${initramfsCompression}=y' build/.config \
+        || { echo "ERROR: INITRAMFS_COMPRESSION_${initramfsCompression} did not survive olddefconfig" >&2; exit 1; }
+    ''}
     grep -q '^CONFIG_DEBUG_INFO_BTF=y' build/.config \
       && { echo "ERROR: BTF is on; the build will need pahole" >&2; exit 1; }
 
@@ -379,12 +498,21 @@ pkgs.stdenv.mkDerivation {
 
   buildPhase = ''
     runHook preBuild
-    # Image only. `make dtbs` would build every arm64 vendor's dtbs; ours is
-    # compiled from dts/ by pkgs/dtb-mainline.nix, out of tree, on purpose.
-    # No modules are built: every driver this board has is built in, so the
-    # appliance ships no /lib/modules tree at all. The first thing that needs
-    # one is the video stack (#83).
-    make O=build -j$NIX_BUILD_CORES Image
+    # `make dtbs` would build every arm64 vendor's dtbs; ours is compiled from
+    # dts/ by pkgs/dtb-mainline.nix, out of tree, on purpose.
+    #
+    # `modules` for the appliance only. Six of them ship (#83): the video
+    # stack plus the videobuf2 modules it imports. Everything else this board
+    # has is built in, and that is deliberate -- these are modular so a
+    # capture or encoder fix is a file copy and an insmod on the running
+    # board rather than a /boot write and a reboot into a kernel with no
+    # automatic rollback.
+    #
+    # The bring-up variant skips it. Its userspace is a static /init in a cpio
+    # with no insmod path, so the .ko would be unloadable -- and
+    # pkgs/dtb-mainline.nix depends on that variant purely for its
+    # dt-bindings headers, which is not a reason to build a thousand modules.
+    make O=build -j$NIX_BUILD_CORES Image ${lib.optionalString buildModules "modules"}
     runHook postBuild
   '';
 
@@ -397,26 +525,69 @@ pkgs.stdenv.mkDerivation {
       exit 1
     fi
 
+    # `out` carries the Image and nothing else that costs bytes: it is a
+    # runtime dependency of every NixOS generation built on this kernel, so it
+    # is also inside every OTA bundle and on the appliance's rootfs.
     mkdir -p "$out"
     cp build/arch/arm64/boot/Image "$out/Image"
-    cp build/vmlinux "$out/vmlinux"
-    cp build/System.map "$out/System.map"
-    cp build/.config "$out/config"
     echo "${release}" > "$out/kernelrelease"
 
-    # dt-bindings headers, so pkgs/dtb-mainline.nix compiles dts/ against the
-    # exact kernel it will boot on rather than unpacking the tarball twice.
-    # -L: a few dt-bindings headers are symlinks into include/uapi (e.g.
-    # input/linux-event-codes.h), which we do not ship. Dereference them.
-    mkdir -p "$out/include"
-    cp -rL include/dt-bindings "$out/include/"
+    # --- the video stack's modules (#83) ---------------------------------
+    # `make modules` builds everything arm64 defconfig leaves modular, which
+    # is a thousand drivers for other people's SoCs. Exactly six of them are
+    # ours or are needed by ours, and only those are installed -- flat, in
+    # $out/modules, with a load order beside them.
+    #
+    # FLAT, not a /lib/modules tree: pkgs/video-modules.nix copies these ~280 KB
+    # out into a proper tree for the appliance's closure, so a systemd unit
+    # names that package and not this one. #83 had a second reason -- the
+    # appliance's initrd was inside this Image, so a unit referencing the
+    # kernel would have made the closure and the kernel depend on each other --
+    # and #99 retired it: the initrd is the generation's now, and the KERNEL is
+    # in the generation too, which also closes the seam #83 documented (a
+    # generation and its kernel could disagree, and nothing could catch it).
+    #
+    # The order is depmod's, resolved at build time and asserted below:
+    # videobuf2-common <- memops, v4l2 <- open_vin_capture; the receiver and
+    # the encoder import nothing.
+    ${lib.optionalString buildModules ''
+      make O=build INSTALL_MOD_PATH="$TMPDIR/modstage" INSTALL_MOD_STRIP=1 \
+        DEPMOD=${pkgs.kmod}/bin/depmod modules_install
 
-    # The slot-image cap is on the COMPRESSED payload, but an Image that
-    # already exceeds it uncompressed is a design error worth catching here.
+      mkdir -p "$out/modules"
+      for ko in videobuf2-common videobuf2-memops videobuf2-v4l2 \
+                open_vin_csi2 open_vin_capture ax630c_venc_vcmd; do
+        src=$(find "$TMPDIR/modstage/lib/modules/${release}" -name "$ko.ko")
+        [ -n "$src" ] \
+          || { echo "ERROR: $ko.ko was not built as a module" >&2; exit 1; }
+        install -m 0644 "$src" "$out/modules/$ko.ko"
+        echo "$ko.ko" >> "$out/modules/load-order"
+      done
+      echo "video modules: $(tr '\n' ' ' < "$out/modules/load-order")"
+    ''}
+
+    # `dev` is the diagnostics half, plus the dt-bindings headers
+    # pkgs/dtb-mainline.nix compiles dts/ against -- so the DT is always built
+    # against the exact kernel that will boot it, without unpacking the tarball
+    # twice. -L: a few dt-bindings headers are symlinks into include/uapi (e.g.
+    # input/linux-event-codes.h), which we do not ship. Dereference them.
+    mkdir -p "$dev/include"
+    cp build/vmlinux "$dev/vmlinux"
+    cp build/System.map "$dev/System.map"
+    cp build/.config "$dev/config"
+    echo "${release}" > "$dev/kernelrelease"
+    cp -rL include/dt-bindings "$dev/include/"
+
+    # 64 MiB is two limits that happen to coincide: the vendor layout's
+    # `kernel` partition (the bring-up variant is flashed into it), and the gap
+    # between `kernel_addr_r` (0x4a000000) and `ramdisk_addr_r` (0x4e000000) in
+    # mainline U-Boot's environment -- an Image larger than that would be
+    # loaded straight over the initrd's landing address.
     size=$(stat -c %s "$out/Image")
     echo "Image: $size bytes (${release})"
     if [ "$size" -gt $((64 * 1024 * 1024)) ]; then
-      echo "ERROR: Image exceeds the 64 MiB kernel partition even before ax_gzip" >&2
+      echo "ERROR: Image exceeds 64 MiB -- the vendor kernel partition, and the" >&2
+      echo "       kernel_addr_r..ramdisk_addr_r gap in U-Boot's environment." >&2
       exit 1
     fi
 
@@ -430,4 +601,4 @@ pkgs.stdenv.mkDerivation {
     description = "Mainline Linux ${version} for the Axera AX630C (NanoKVM-Pro), ${variant} variant (#26)";
     platforms = [ "x86_64-linux" ];
   };
-}
+})

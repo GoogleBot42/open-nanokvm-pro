@@ -270,6 +270,8 @@ tools/kvmssh 'mount -o remount,rw /nix/store 2>/dev/null || true
               tar -C /nix/store -xzf /root/newsys.tar.gz'
 
 # 3. Set the profile the way `nix-env --set` would, then activate.
+#    `boot`, not `switch`: on this board the reboot is what arms the rollback,
+#    and it is also what makes a new kernel take effect.
 tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-2-link
               ln -sfn system-2-link /nix/var/nix/profiles/system
               $NEW/bin/switch-to-configuration boot && reboot"
@@ -285,3 +287,26 @@ Step 4 is not optional. A path on disk that the database does not know is not a
 store path: `nix-env --set` on one tries to *download* it, and
 `nix-collect-garbage` would happily delete it. A flashed image does not need
 this — `nixos/lib/appliance-artifacts.nix` builds the database into the image.
+
+**`switch-to-configuration` WRITES `/boot` NOW (#99).** It runs NixOS's
+`generic-extlinux-compatible` builder, which copies this generation's kernel,
+initrd and dtbs into `/boot/nixos/` and rewrites `/boot/extlinux/extlinux.conf`
+— and removes the boot files no menu entry names any more. Three consequences
+for a hand switch:
+
+- `/boot` must be mounted, or the builder writes into the rootfs's own `/boot`
+  directory and U-Boot sees nothing. `mountpoint -q /boot` first.
+- Nothing else has to be copied. A configuration whose kernel changed needs no
+  extra step; step 2's tar carries the kernel, because it is a store path in
+  the closure.
+- `extlinux-fallback.conf` is **not** written by it. That is deliberate — it
+  still names whatever last booted healthy, which is the way back if the new
+  generation does not come up. `nanokvm-mark-good` promotes it ~60 s after a
+  healthy boot; check with `journalctl -u nanokvm-mark-good`.
+
+`/init` is a symlink to `/nix/var/nix/profiles/system/init`, and each extlinux
+entry pins `init=` besides, so the profile and the boot config agree.
+
+`nanokvm-update gc` reclaims the old generations afterwards: it pins every
+generation a boot config's `DEFAULT` entry names — above all the fallback's —
+and refuses to collect anything when a config resolves to no generation.

@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * THIS IS THE 4.19 COPY. The mainline port lives in the kernel tree, at
- * pkgs/kernel-mainline/tree/drivers/media/platform/axera/ (#83, device-proven
- * 2026-09-10). The TODO(mainline) comments below are DONE there; they are left
- * here because this file still builds the shipped 4.19 image's module and
- * nothing about it should move. Delete this copy when the 4.19 image retires.
- */
-/*
  * open_vin_csi2 - V4L2 CSI-2 receiver subdev for the Axera AX630C MIPI CSI-2
- * host. Open replacement for the vendor ax_mipi_rx blob (epic #55, issue #57).
+ * host. Open replacement for the vendor ax_mipi_rx blob (epic #55, issue #57);
+ * ported to the mainline kernel by #83.
  *
  * CLEAN-ROOM: written solely from the behavioral specification
  * docs/reference/deblob-scope/specs/spec-mipi-rx.md ("spec" below). Register
@@ -19,47 +13,58 @@
  *   - CSI-2 protocol controller: CUSTOM Axera register map, DWC-derived error
  *     core only. Do NOT confuse with mainline dw-mipi-csi2 - offsets differ.
  *   - Two RX controllers, 0x02600000 (dev0) / 0x02602000 (dev1), stride
- *     0x2000, both inside this platform device's single reg bank. The
- *     NanoKVM-Pro uses dev0 only, fed by a fixed HDMI-to-MIPI bridge:
- *     4 data lanes, digital YUV422-8, comboMode 4, DataLaneMap [0,1,3,4],
- *     ClkLane [2,5]. This driver drives dev0.
+ *     0x2000, both inside this device's first reg bank. The NanoKVM-Pro uses
+ *     dev0 only, fed by a fixed HDMI-to-MIPI bridge: 4 data lanes, digital
+ *     YUV422-8, comboMode 4, DataLaneMap [0,1,3,4], ClkLane [2,5].
  *   - IRQ is ERROR-ONLY (spec section 5): no frame/packet interrupt exists in
  *     this block. Frame timing belongs to the downstream VIN capture driver.
  *
- * Global register blocks NOT in this device's DT reg (mapped by fixed
- * physical address below; TODO(mainline): move these behind DT/syscon
- * phandles for the mainline port):
- *   - isp_sys_glb  0x02500000  csirx clock gates, soft resets, deskew lock
- *   - D-PHY global 0x023f0000  analog/PPI lane config, HS-RX timing, PHY en
- *   - common_glb   0x02340000  VI subsystem: D-PHY power, dphyrx TLB clock
+ * WHAT THE MAINLINE PORT CHANGED (#83), and nothing else did:
  *
- * Shared-owner discipline (spec section 7): isp_sys_glb and common_glb are
- * also touched by the in-tree axera clk/reset providers and (in a vendor
- * boot) by the VIN stack. All writes below use the hardware's SET/CLR and
- * VALUE/MASK shadow registers - never a read-modify-write of a whole shared
- * word - so concurrent owners of *other* bits are safe.
+ *   - The three shared global blocks are no longer ioremapped at a fixed
+ *     physical address. isp_sys_glb (0x02500000) and the VI common syscon
+ *     (0x02340000, the same window the clock/reset provider owns) arrive as
+ *     syscon phandles and are reached through a shared regmap, so the two
+ *     owners of those words share one lock. The D-PHY global file
+ *     (0x023f0000) is a real second `reg` entry.
+ *   - The dphyrx TLB clock gate (common syscon +0x24 bit 9) and its soft
+ *     reset (+0x54 bit 7) are a CCF clock and a reset-controller line now,
+ *     not hand-written SET/CLR strobes. Mainline U-Boot programs nothing and
+ *     clk_disable_unused() would gate an unclaimed clock, so taking them
+ *     properly is not cosmetic here - it is what makes the block live.
+ *   - The MIPI RX pads are claimed through a pinctrl state (dphy_rx function
+ *     over the twelve CDRX_* pads). On 4.19 the vendor boot chain's pad table
+ *     left them muxed; nothing replays that on mainline.
+ *   - Subdev binding is the fwnode graph. The sink endpoint's lane map comes
+ *     from v4l2_fwnode_endpoint(); the source endpoint is what the capture
+ *     driver's notifier matches.
  *
- * The pinmux block (0x02300000) is deliberately NOT touched: it is owned by
- * pinctrl and carries the SW_PWR pad trap. The MIPI pads must be muxed by
- * firmware/pinctrl before streaming. Verified: a cold boot of the purged
- * image (#54, no vendor module anywhere) streams 4K30 through this receiver,
- * so the boot chain muxes the MIPI pads without ax_mipi_rx. Revisit only for
- * the mainline port (spec section 6a step 12).
+ * Shared-owner discipline (spec section 7): isp_sys_glb and the common syscon
+ * are also touched by the in-tree axera clk/reset providers. Every write below
+ * uses the hardware's SET/CLR and VALUE/MASK shadow registers - never a
+ * read-modify-write of a whole shared word - so concurrent owners of *other*
+ * bits are safe.
  */
 
+#include <linux/bitops.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
+#include <linux/reset.h>
 #include <linux/spinlock.h>
 
 #include <media/media-entity.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
+#include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
 #define OPENVIN_CSI2_NAME		"open_vin_csi2"
@@ -70,7 +75,7 @@
 
 /*
  * ---------------------------------------------------------------------------
- * CSI-2 protocol controller (DT reg 0x02600000, 0x4000; dev stride 0x2000)
+ * CSI-2 protocol controller (reg[0] = 0x02600000, 0x4000; dev stride 0x2000)
  * Spec section 2. Offsets relative to the per-dev controller base.
  * ---------------------------------------------------------------------------
  */
@@ -123,15 +128,18 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 
 /*
  * ---------------------------------------------------------------------------
- * isp_sys_glb (phys 0x02500000) - csirx clock gates, soft resets, deskew lock
+ * isp_sys_glb - csirx clock gates, soft resets, deskew lock.
+ * Reached through the "axera,isp-syscon" phandle (0x02500000).
  * Spec section 3. SET/CLR pairs: write 1 to SET asserts, 1 to CLR deasserts.
  * VALUE/MASK pairs: write field mask to MASK, then value to VALUE.
+ *
+ * This window has no clock or reset provider of its own, in the vendor tree or
+ * ours (dt-bindings/reset/ax630c-reset.h says so explicitly), so these gates
+ * and resets stay driver-owned register writes. They are single-bit SET/CLR
+ * strobes, which is why that is safe.
  * ---------------------------------------------------------------------------
  */
-#define ISP_SYS_GLB_PHYS		0x02500000
-#define ISP_SYS_GLB_SIZE		0x1000
-
-#define ISP_GLB_CSIRX_STATUS		0xc4	/* deskew status: bits[1:0]==3 locked, 2 = recovery trigger (spec-dphy-writes s5) */
+#define ISP_GLB_CSIRX_STATUS		0xc4	/* deskew status: bits[1:0]==3 locked */
 #define ISP_GLB_CSIRX_LOCK_MASK		0x3
 #define ISP_GLB_CSIRX_LOCKED		0x3
 
@@ -161,30 +169,24 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 
 #define ISP_GLB_CSI_CTRL_SEL_VAL	0x218
 #define ISP_GLB_CSI_CTRL_SEL_MASK	0x21c
-#define ISP_GLB_CSI_CTRL_SEL_DEV0_MASK	0x3	/* dev0 field; dev1 = 0x30 */
 
 /*
  * csi_ctrl_sel (spec-dphy-writes section 3): a masked-write pair, 0x21c =
  * mask/write-enable, 0x218 = value; field [1:0] = controller-0 select,
  * [5:4] = controller-1 select. For "4 lanes on one PHY" (lane_divide_mode
  * 0, our HDMI case) the vendor selects mode 4 = {mask 3, value 0} then
- * {mask 0x30, value 0x30}, once, at the top of the D-PHY global init. The
- * first draft wrote {mask 3, value 3} (mode 0) and a second "running" value
- * that does not exist on the vendor path.
+ * {mask 0x30, value 0x30}, once, at the top of the D-PHY global init.
  */
 
 /*
  * ---------------------------------------------------------------------------
- * D-PHY global config (phys 0x023f0000) - lane swap, HS-RX timing, PHY enable
+ * D-PHY global config - reg[1] = 0x023f0000, lane swap, HS-RX timing, PHY en.
  * Spec section 4 + spec-dphy-writes sections 2-4 (instruction-level list).
  * Every config register is a write-only SET (0xc0 + 8k) / CLR (+4) pair with
  * a readable mirror at 0x34 + (SET - 0xc8) / 2. Vendor idiom: CLR(mask) then
  * SET(value << shift).
  * ---------------------------------------------------------------------------
  */
-#define DPHY_GLB_PHYS			0x023f0000
-#define DPHY_GLB_SIZE			0x1000
-
 #define DPHY_LANE_CFG_SET		0xc8	/* lane swap fields, databus16, 1d2c */
 #define DPHY_LANE_CFG_CLR		0xcc
 #define DPHY_DPDN_SWAP_MASK		0x0000003f
@@ -197,17 +199,24 @@ static const u32 csi_lane_table[4] = { 0x1, 0x3, 0x7, 0xf };
 #define DPHY_D0_SWAP_SHIFT		21
 #define DPHY_DATABUS16_SEL		BIT(24)
 #define DPHY_1D2C_EN			BIT(25)
+
 /*
  * Physical lane slot feeding each logical lane {d0, d1, d2, d3, c0, c1}.
  * Board wiring for the LT6911UXC bridge on the NanoKVM-Pro: clock on
- * physical slot 2, data on 0,1,3,4 (the "map[0,1,3,4]/clk[2,5]" this
- * repo's kvm_pipeline.h has always documented). DEVICE-CONFIRMED
- * 2026-09-01: the vendor streaming state reads 0x0005c540 in the +0x34
- * mirror; the first draft's naive 0..5 map read 0x00053940 and produced a
- * locked PHY that forwarded only short packets (no pixel data).
+ * physical slot 2, data on 0,1,3,4. DEVICE-CONFIRMED 2026-09-01: the vendor
+ * streaming state reads 0x0005c540 in the +0x34 mirror; a naive 0..5 map
+ * reads 0x00053940 and produces a locked PHY that forwards only short
+ * packets (no pixel data).
+ *
+ * On mainline this array is the FALLBACK: openvin_parse_endpoint() rebuilds
+ * it from the sink endpoint's data-lanes/clock-lanes, which say exactly the
+ * same thing in the device tree where a board fact belongs.
  */
-static const u8 openvin_lane_swap[6] = { 0, 1, 3, 4, 2, 5 };
-static const u8 openvin_lane_swap_shift[6] = {
+#define OPENVIN_NUM_PHY_LANES		6
+static const u8 openvin_lane_swap_default[OPENVIN_NUM_PHY_LANES] = {
+	0, 1, 3, 4, 2, 5
+};
+static const u8 openvin_lane_swap_shift[OPENVIN_NUM_PHY_LANES] = {
 	DPHY_D0_SWAP_SHIFT, DPHY_D1_SWAP_SHIFT, DPHY_D2_SWAP_SHIFT,
 	DPHY_D3_SWAP_SHIFT, DPHY_C0_SWAP_SHIFT, DPHY_C1_SWAP_SHIFT,
 };
@@ -218,8 +227,8 @@ static const u8 openvin_lane_swap_shift[6] = {
 #define DPHY_MODE_MIPI			0x00000820
 #define DPHY_PRE_TIME_SET		0xd8	/* mirror +0x3c: 4 x 8-bit pre-times */
 #define DPHY_PRE_TIME_CLR		0xdc
-#define DPHY_PRE_TIME_VAL		8	/* all four groups, fixed (no rate scaling) */
-#define DPHY_DESKEW_DBG_SET		0xe8	/* mirror +0x44: debug-ctrl deskew reset */
+#define DPHY_PRE_TIME_VAL		8	/* all four groups, fixed */
+#define DPHY_DESKEW_DBG_SET		0xe8	/* mirror +0x44: deskew reset */
 #define DPHY_DESKEW_DBG_CLR		0xec
 #define DPHY_DESKEW_DBG_4LANE		0x3c00
 
@@ -230,30 +239,20 @@ static const u8 openvin_lane_swap_shift[6] = {
 
 /*
  * ---------------------------------------------------------------------------
- * common_glb (phys 0x02340000) - VI subsystem controller
- * Spec sections 3/6/7. HAZARD: shared with the VIN stack and the in-tree
- * axera reset provider; only ever write single bits via SET/CLR.
+ * VI common syscon (0x02340000) - the D-PHY analog power triple.
  *
- * D-PHY power registers follow the bank's (STATUS, SET, CLR) triple layout,
- * the same shape as the clock gate at +0x24/+0x28/+0x2c. DEVICE-CONFIRMED
- * 2026-09-01 (our own /dev/mem observation on a base-only boot vs the
- * vendor streaming state): power_off = {status 0x1e8, SET 0x1ec, CLR 0x1f0},
- * power_ready = {status 0x1f4, SET 0x1f8, CLR 0x1fc}. The first draft's
- * "CLR ready" write went to 0x1f8, which is the SET strobe: 0x1f4 read 1
- * afterwards (vendor streaming reads 0) and the ISP pixel clocks stayed
- * dead (isp_sys_glb +0xc4 = 0 instead of 0xf0f). Writing 1 to 0x1fc clears
- * it and the pixel clocks come up immediately.
+ * The dphyrx TLB clock gate (+0x24 bit 9) and its soft reset (+0x54 bit 7)
+ * that this driver used to strobe by hand now arrive as a CCF clock and a
+ * reset line from the provider that owns this window; only the power triple
+ * is left, because no framework describes it.
+ *
+ * DEVICE-CONFIRMED 2026-09-01 (/dev/mem on a base-only boot vs the vendor
+ * streaming state): power_off = {status 0x1e8, SET 0x1ec, CLR 0x1f0},
+ * power_ready = {status 0x1f4, SET 0x1f8, CLR 0x1fc}. An early draft's
+ * "CLR ready" write went to 0x1f8, which is the SET strobe: the ISP pixel
+ * clocks then stayed dead (isp_sys_glb +0xc4 = 0 instead of 0xf0f).
  * ---------------------------------------------------------------------------
  */
-#define COMMON_GLB_PHYS			0x02340000
-#define COMMON_GLB_SIZE			0x1000
-
-#define CGLB_CLK_EB_SET			0x28
-#define CGLB_CLK_EB_CLR			0x2c
-#define CGLB_CLK_DPHYRX_TLB_EB		BIT(9)
-#define CGLB_RST_CLR			0x5c	/* comm_sys_reset deassert (async pair 0x58 SET / 0x5c CLR) */
-#define CGLB_RST_DPHYRX_TLB		BIT(7)
-
 #define CGLB_DPHY_POWER_OFF_STATUS	0x1e8
 #define CGLB_DPHY_POWER_OFF_SET		0x1ec
 #define CGLB_DPHY_POWER_OFF_CLR		0x1f0	/* spec section 6a step 18 */
@@ -293,7 +292,8 @@ static const char *const csi_err0_names[32] = {
  * Private V4L2 controls exposing M1 health telemetry (PHY lock + error
  * counters) on the subdev node, so link bring-up is checkable from userspace
  * without the capture pipeline.
- * TODO(mainline): request an official control range before submission.
+ * TODO(upstream): request an official control range before submission (#87).
+ * Cosmetic for the port -- nothing in the shipped stack reads these.
  */
 #define OPENVIN_CID_BASE		(V4L2_CID_USER_BASE + 0x10a0)
 #define OPENVIN_CID_LINK_LOCKED		(OPENVIN_CID_BASE + 0)
@@ -310,22 +310,26 @@ struct openvin_csi2 {
 	struct device *dev;
 
 	void __iomem *csi;		/* CSI-2 protocol controller, dev0 */
-	void __iomem *isp_glb;		/* isp_sys_glb 0x02500000 */
-	void __iomem *dphy_glb;		/* D-PHY global 0x023f0000 */
-	void __iomem *common_glb;	/* common_glb 0x02340000 */
+	void __iomem *dphy;		/* D-PHY global file, reg[1] */
+	struct regmap *isp_glb;		/* isp_sys_glb syscon */
+	struct regmap *cglb;		/* VI common syscon */
+
+	struct clk *tlb_clk;		/* dphyrx TLB gate */
+	struct reset_control *tlb_rst;	/* dphyrx TLB soft reset */
 
 	int irq;
 
 	struct v4l2_subdev sd;
 	struct media_pad pads[OPENVIN_NUM_PADS];
 	struct v4l2_ctrl_handler ctrls;
-	struct v4l2_mbus_framefmt fmt;
 
 	/* Standalone-mode owner of the subdev (M1 bring-up without M2). */
 	struct v4l2_device v4l2_dev;
 	bool standalone;
 
-	struct mutex lock;		/* start/stop + format */
+	u8 lane_swap[OPENVIN_NUM_PHY_LANES];
+
+	struct mutex lock;		/* start/stop */
 	bool streaming;
 
 	/* IRQ telemetry (spec section 5): counters + last latched status. */
@@ -340,12 +344,12 @@ struct openvin_csi2 {
 static bool standalone;
 module_param(standalone, bool, 0444);
 MODULE_PARM_DESC(standalone,
-	"Own a private v4l2_device and expose /dev/v4l-subdev* without a bridge (M1 bench mode). Default 0: register with v4l2-async for the open_vin_capture bridge, which starts/stops the receiver with its stream (M2 link).");
+	"Own a private v4l2_device and expose /dev/v4l-subdev* without a bridge (bench mode). Default 0: register with v4l2-async for the open_vin_capture bridge, which starts/stops the receiver with its stream.");
 
 static bool start_on_probe;
 module_param(start_on_probe, bool, 0444);
 MODULE_PARM_DESC(start_on_probe,
-	"Run the full RX bring-up at probe time (M1 hardware milestone: prove PHY lock without the capture pipeline).");
+	"Run the full RX bring-up at probe time (bench milestone: prove PHY lock without the capture pipeline).");
 
 static inline struct openvin_csi2 *sd_to_openvin(struct v4l2_subdev *sd)
 {
@@ -353,8 +357,9 @@ static inline struct openvin_csi2 *sd_to_openvin(struct v4l2_subdev *sd)
 }
 
 /* --------------------------------------------------------------------------
- * Register helpers. Plain writes for the CSI controller (sole owner);
- * SET/CLR or VALUE/MASK shadow writes only for the shared glb blocks.
+ * Register helpers. Plain writes for the CSI controller and the D-PHY file
+ * (sole owner); SET/CLR or VALUE/MASK shadow writes only for the shared
+ * syscon windows.
  */
 
 static inline u32 csi_rd(struct openvin_csi2 *priv, u32 off)
@@ -375,22 +380,25 @@ static inline void csi_rmw(struct openvin_csi2 *priv, u32 off, u32 mask,
 
 static inline u32 isp_glb_rd(struct openvin_csi2 *priv, u32 off)
 {
-	return readl(priv->isp_glb + off);
+	unsigned int val = 0;
+
+	regmap_read(priv->isp_glb, off, &val);
+	return val;
 }
 
 static inline void isp_glb_wr(struct openvin_csi2 *priv, u32 off, u32 val)
 {
-	writel(val, priv->isp_glb + off);
+	regmap_write(priv->isp_glb, off, val);
 }
 
 static inline void dphy_wr(struct openvin_csi2 *priv, u32 off, u32 val)
 {
-	writel(val, priv->dphy_glb + off);
+	writel(val, priv->dphy + off);
 }
 
 static inline void cglb_wr(struct openvin_csi2 *priv, u32 off, u32 val)
 {
-	writel(val, priv->common_glb + off);
+	regmap_write(priv->cglb, off, val);
 }
 
 /* VALUE/MASK shadow write into isp_sys_glb (spec section 0 access idiom). */
@@ -410,8 +418,7 @@ static bool openvin_link_locked(struct openvin_csi2 *priv)
 /* --------------------------------------------------------------------------
  * D-PHY global init -- spec-dphy-writes section 3, rows 1-33, resolved for
  * dev 0 / MIPI / 4 lanes on one PHY. Exact vendor order; every D-PHY config
- * write is CLR(field mask) then SET(value). One pass (the vendor start path
- * calls it once).
+ * write is CLR(field mask) then SET(value). One pass.
  */
 static void openvin_dphy_glb_init(struct openvin_csi2 *priv)
 {
@@ -428,11 +435,11 @@ static void openvin_dphy_glb_init(struct openvin_csi2 *priv)
 		dphy_wr(priv, i, 0);
 
 	/* rows 6-17: lane swap, one 3-bit field per logical lane */
-	for (i = 0; i < ARRAY_SIZE(openvin_lane_swap); i++) {
+	for (i = 0; i < OPENVIN_NUM_PHY_LANES; i++) {
 		dphy_wr(priv, DPHY_LANE_CFG_CLR,
 			DPHY_SWAP_FIELD << openvin_lane_swap_shift[i]);
 		dphy_wr(priv, DPHY_LANE_CFG_SET,
-			(u32)openvin_lane_swap[i] << openvin_lane_swap_shift[i]);
+			(u32)priv->lane_swap[i] << openvin_lane_swap_shift[i]);
 	}
 	/* row 18: 1d2c_en = 0 (single clock) */
 	dphy_wr(priv, DPHY_LANE_CFG_CLR, DPHY_1D2C_EN);
@@ -452,7 +459,7 @@ static void openvin_dphy_glb_init(struct openvin_csi2 *priv)
 	dphy_wr(priv, DPHY_PRE_TIME_CLR, 0x0000ff00);
 	dphy_wr(priv, DPHY_PRE_TIME_SET, DPHY_PRE_TIME_VAL << 8);
 
-	/* rows 30-31: the MIPI mode word (the first draft missed this pair) */
+	/* rows 30-31: the MIPI mode word */
 	dphy_wr(priv, DPHY_MODE_CLR, DPHY_MODE_FIELD_MASK);
 	dphy_wr(priv, DPHY_MODE_SET, DPHY_MODE_MIPI);
 
@@ -501,9 +508,9 @@ static void openvin_csi_ctrl_init(struct openvin_csi2 *priv)
 
 	/*
 	 * 12-13. Clear the stop bit, set the start bit. Device-confirmed
-	 * running state: +0x100 == 0x1. Vendor semantics observed 2026-09-04
-	 * (spec section 9 item 6): 1 = running, 2 = stopped, the value is
-	 * retained across clock gating, and no srst pulse is ever issued.
+	 * running state: +0x100 == 0x1. Vendor semantics observed 2026-09-04:
+	 * 1 = running, 2 = stopped, the value is retained across clock gating,
+	 * and no srst pulse is ever issued.
 	 */
 	csi_rmw(priv, CSI_CTRL_STREAM_CTRL, CSI_STREAM_CTRL_STOP, 0);
 	csi_rmw(priv, CSI_CTRL_STREAM_CTRL, CSI_STREAM_CTRL_START,
@@ -525,12 +532,8 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	int ret;
 
 	/*
-	 * Step 1 (fastboot check) is skipped: common_glb_check_fastboot_mode
-	 * guards against re-initialising a block the boot firmware already
-	 * streams from. On an open-stack boot nothing has touched the RX.
-	 * TODO(bringup): if boot firmware ever pre-starts the RX (vendor
-	 * fastboot images), identify the common_glb fastboot flag and skip
-	 * re-init here (spec sections 6a/7).
+	 * Step 1 (fastboot check) is skipped: on an open-stack boot nothing
+	 * has touched the RX.
 	 */
 
 	/* Steps 2-5: deassert the csirx0 sub-resets (CLR = deassert). */
@@ -548,8 +551,17 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	isp_glb_wr(priv, ISP_GLB_SWRST_CLR, ISP_GLB_RST_DESKEW(1));
 	dphy_wr(priv, DPHY_DESKEW_DBG_CLR, DPHY_DESKEW_DBG_4LANE);
 
-	/* Step 7: common_glb dphyrx TLB soft-reset deassert (row 7). */
-	cglb_wr(priv, CGLB_RST_CLR, CGLB_RST_DPHYRX_TLB);
+	/*
+	 * Step 7: the common-syscon dphyrx TLB soft-reset deassert (row 7).
+	 * On 4.19 this was a raw CLR strobe of +0x5c bit 7; it is a reset
+	 * line now and lands on exactly the same bit.
+	 */
+	ret = reset_control_deassert(priv->tlb_rst);
+	if (ret) {
+		dev_err(priv->dev, "dphyrx TLB reset deassert failed: %d\n",
+			ret);
+		return ret;
+	}
 
 	/* Step 8: settle. */
 	udelay(10);
@@ -557,15 +569,6 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	/* Steps 9-10: csirx0 pclk + pixel clock enables (SET = enable). */
 	isp_glb_wr(priv, ISP_GLB_CLK_EB1_SET, ISP_GLB_CSIRX_PCLK_EB(0));
 	isp_glb_wr(priv, ISP_GLB_CLK_EB1_SET, ISP_GLB_SYS_PIXEL_CLK_EB(0));
-
-	/*
-	 * The vendor start path runs the D-PHY global init exactly ONCE, after
-	 * the power-up and lane disable below (spec-dphy-writes section 5 row
-	 * 20); the earlier two-pass reading of the older spec was wrong.
-	 * Step 12 (dphy_pin_mux_config): NOT performed - see the pinmux note
-	 * in the header comment. Step 13 (ax_dvp_bt_soc_init, 0x02303000) is
-	 * omitted: not on the MIPI data path (spec section 0).
-	 */
 
 	/* Step 14: csirx cfg clock select. */
 	isp_glb_field_wr(priv, ISP_GLB_CLK_SEL_VAL, ISP_GLB_CLK_SEL_MASK,
@@ -576,15 +579,22 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	isp_glb_wr(priv, ISP_GLB_CLK_EB0_SET, ISP_GLB_CFG_PHY_CLK_EB);
 	isp_glb_wr(priv, ISP_GLB_CLK_EB0_SET, ISP_GLB_DPHY_RX_REF_CLK_EB);
 
-	/* Step 17: dphyrx TLB clock enable (common_glb, single-bit SET). */
-	cglb_wr(priv, CGLB_CLK_EB_SET, CGLB_CLK_DPHYRX_TLB_EB);
+	/*
+	 * Step 17: dphyrx TLB clock enable. The 4.19 driver strobed the
+	 * common syscon's gate word by hand, twice (here and again after the
+	 * controller init); the CCF gate is refcounted, so one enable is the
+	 * whole of it.
+	 */
+	ret = clk_prepare_enable(priv->tlb_clk);
+	if (ret) {
+		dev_err(priv->dev, "dphyrx TLB clock enable failed: %d\n", ret);
+		return ret;
+	}
 
 	/*
 	 * Steps 15-18 (spec-dphy-writes section 5): D-PHY power-up -- release
 	 * power_off, settle, release power_ready, settle. Both are CLR strobes
-	 * of the (status, SET, CLR) triples; the ready/off SET writes belong
-	 * to the vendor's reset/PM path (mipi_rx_reset), which our teardown
-	 * mirrors, not to the start path.
+	 * of the (status, SET, CLR) triples.
 	 */
 	cglb_wr(priv, CGLB_DPHY_POWER_OFF_CLR, CGLB_DPHY_POWER_BIT);
 	udelay(100);
@@ -607,20 +617,17 @@ static int openvin_rx_start(struct openvin_csi2 *priv)
 	/* Step 25: CSI-2 protocol controller init, ends with stream start. */
 	openvin_csi_ctrl_init(priv);
 
-	/* Step 26: TLB clock enable again (pinmux write skipped, as above). */
-	cglb_wr(priv, CGLB_CLK_EB_SET, CGLB_CLK_DPHYRX_TLB_EB);
-
 	/*
 	 * Deskew/lock status is valid only after step 25 (spec section 6a).
-	 * Poll it (spec section 5: ~20 retries). Lock needs a live source on
-	 * the bridge, so a timeout is a warning, not a failure: the link
-	 * comes up when the host starts driving HDMI.
+	 * Poll it. Lock needs a live source on the bridge, so a timeout is a
+	 * warning, not a failure: the link comes up when the host starts
+	 * driving HDMI.
 	 */
-	ret = readl_poll_timeout(priv->isp_glb + ISP_GLB_CSIRX_STATUS, val,
-				 (val & ISP_GLB_CSIRX_LOCK_MASK) ==
-				 ISP_GLB_CSIRX_LOCKED,
-				 OPENVIN_LOCK_POLL_US,
-				 OPENVIN_LOCK_TIMEOUT_US);
+	ret = read_poll_timeout(isp_glb_rd, val,
+				(val & ISP_GLB_CSIRX_LOCK_MASK) ==
+				ISP_GLB_CSIRX_LOCKED,
+				OPENVIN_LOCK_POLL_US, OPENVIN_LOCK_TIMEOUT_US,
+				false, priv, ISP_GLB_CSIRX_STATUS);
 	if (ret)
 		dev_warn(priv->dev,
 			 "link not locked after start (status 0x%08x) - no source?\n",
@@ -655,7 +662,7 @@ static void openvin_rx_stop(struct openvin_csi2 *priv)
 
 	/* Deskew reset asserted, TLB clock off. */
 	isp_glb_wr(priv, ISP_GLB_SWRST_SET, ISP_GLB_RST_DESKEW(0));
-	cglb_wr(priv, CGLB_CLK_EB_CLR, CGLB_CLK_DPHYRX_TLB_EB);
+	clk_disable_unprepare(priv->tlb_clk);
 
 	/* Stream stop, last (spec section 6d). */
 	csi_rmw(priv, CSI_CTRL_STREAM_CTRL, CSI_STREAM_CTRL_START, 0);
@@ -769,18 +776,28 @@ static int openvin_csi2_log_status(struct v4l2_subdev *sd)
 	return 0;
 }
 
-static struct v4l2_mbus_framefmt *
-openvin_get_pad_fmt(struct openvin_csi2 *priv,
-		    struct v4l2_subdev_pad_config *cfg, unsigned int pad,
-		    u32 which)
+static void openvin_default_fmt(struct v4l2_mbus_framefmt *fmt)
 {
-	if (which == V4L2_SUBDEV_FORMAT_TRY)
-		return v4l2_subdev_get_try_format(&priv->sd, cfg, pad);
-	return &priv->fmt;
+	fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
+	fmt->width = 1920;
+	fmt->height = 1080;
+	fmt->field = V4L2_FIELD_NONE;
+	fmt->colorspace = V4L2_COLORSPACE_SRGB;
+}
+
+static int openvin_csi2_init_state(struct v4l2_subdev *sd,
+				   struct v4l2_subdev_state *state)
+{
+	unsigned int pad;
+
+	for (pad = 0; pad < OPENVIN_NUM_PADS; pad++)
+		openvin_default_fmt(v4l2_subdev_state_get_format(state, pad));
+
+	return 0;
 }
 
 static int openvin_csi2_enum_mbus_code(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *state,
 				       struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
@@ -789,39 +806,32 @@ static int openvin_csi2_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int openvin_csi2_get_fmt(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
-{
-	struct openvin_csi2 *priv = sd_to_openvin(sd);
-
-	mutex_lock(&priv->lock);
-	fmt->format = *openvin_get_pad_fmt(priv, cfg, fmt->pad, fmt->which);
-	mutex_unlock(&priv->lock);
-	return 0;
-}
-
 static int openvin_csi2_set_fmt(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *state,
 				struct v4l2_subdev_format *fmt)
 {
-	struct openvin_csi2 *priv = sd_to_openvin(sd);
 	struct v4l2_mbus_framefmt *format;
+	unsigned int pad;
 
 	/*
 	 * The receiver is format-transparent: it forwards whatever the fixed
-	 * HDMI->MIPI bridge emits (digital YUV422-8). Only the frame size is
-	 * negotiable; geometry enforcement is the capture driver's job.
+	 * HDMI->MIPI bridge emits (digital YUV422-8) and programs no geometry
+	 * anywhere. Only the frame size is negotiable, and it is carried so
+	 * the media graph reads correctly; geometry enforcement is the capture
+	 * driver's job.
 	 */
-	mutex_lock(&priv->lock);
-	format = openvin_get_pad_fmt(priv, cfg, fmt->pad, fmt->which);
-	format->code = MEDIA_BUS_FMT_UYVY8_1X16;
-	format->width = clamp_t(u32, fmt->format.width, 64, 4096);
-	format->height = clamp_t(u32, fmt->format.height, 64, 2160);
-	format->field = V4L2_FIELD_NONE;
-	format->colorspace = V4L2_COLORSPACE_SRGB;
-	fmt->format = *format;
-	mutex_unlock(&priv->lock);
+	fmt->format.code = MEDIA_BUS_FMT_UYVY8_1X16;
+	fmt->format.width = clamp_t(u32, fmt->format.width, 64, 4096);
+	fmt->format.height = clamp_t(u32, fmt->format.height, 64, 2160);
+	fmt->format.field = V4L2_FIELD_NONE;
+	fmt->format.colorspace = V4L2_COLORSPACE_SRGB;
+
+	/* Sink format propagates to the source pad: nothing in between. */
+	for (pad = 0; pad < OPENVIN_NUM_PADS; pad++) {
+		format = v4l2_subdev_state_get_format(state, pad);
+		*format = fmt->format;
+	}
+
 	return 0;
 }
 
@@ -835,7 +845,7 @@ static const struct v4l2_subdev_video_ops openvin_csi2_video_ops = {
 
 static const struct v4l2_subdev_pad_ops openvin_csi2_pad_ops = {
 	.enum_mbus_code = openvin_csi2_enum_mbus_code,
-	.get_fmt = openvin_csi2_get_fmt,
+	.get_fmt = v4l2_subdev_get_fmt,
 	.set_fmt = openvin_csi2_set_fmt,
 };
 
@@ -845,8 +855,12 @@ static const struct v4l2_subdev_ops openvin_csi2_subdev_ops = {
 	.pad = &openvin_csi2_pad_ops,
 };
 
+static const struct v4l2_subdev_internal_ops openvin_csi2_internal_ops = {
+	.init_state = openvin_csi2_init_state,
+};
+
 /* --------------------------------------------------------------------------
- * Controls: read-only volatile health telemetry (M1 milestone checks).
+ * Controls: read-only volatile health telemetry.
  */
 static int openvin_csi2_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -914,12 +928,96 @@ static const struct v4l2_ctrl_config openvin_csi2_ctrl_cfgs[] = {
  * Probe / remove
  */
 
+/*
+ * The sink endpoint is where the board's lane wiring belongs. data-lanes /
+ * clock-lanes name the PHYSICAL lane slot feeding each logical lane, which is
+ * exactly what the D-PHY swap fields take; an absent or malformed endpoint
+ * falls back to the device-confirmed constant, loudly.
+ */
+static void openvin_parse_endpoint(struct openvin_csi2 *priv)
+{
+	struct v4l2_fwnode_endpoint vep = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY,
+	};
+	struct fwnode_handle *ep;
+	unsigned int i, used = 0;
+	int ret;
+
+	memcpy(priv->lane_swap, openvin_lane_swap_default,
+	       sizeof(priv->lane_swap));
+
+	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(priv->dev),
+					     OPENVIN_PAD_SINK, 0,
+					     FWNODE_GRAPH_ENDPOINT_NEXT);
+	if (!ep) {
+		dev_warn(priv->dev,
+			 "no sink endpoint; using the default lane map\n");
+		return;
+	}
+
+	ret = v4l2_fwnode_endpoint_parse(ep, &vep);
+	fwnode_handle_put(ep);
+	if (ret) {
+		dev_warn(priv->dev,
+			 "sink endpoint parse failed (%d); using the default lane map\n",
+			 ret);
+		return;
+	}
+
+	if (vep.bus.mipi_csi2.num_data_lanes != OPENVIN_LANE_NUM) {
+		dev_warn(priv->dev,
+			 "sink endpoint declares %u data lanes, this receiver is wired for %u; using the default lane map\n",
+			 vep.bus.mipi_csi2.num_data_lanes, OPENVIN_LANE_NUM);
+		return;
+	}
+
+	for (i = 0; i < OPENVIN_LANE_NUM; i++) {
+		u8 phys = vep.bus.mipi_csi2.data_lanes[i];
+
+		if (phys >= OPENVIN_NUM_PHY_LANES) {
+			dev_warn(priv->dev,
+				 "data-lane %u is physical slot %u, out of range; using the default lane map\n",
+				 i, phys);
+			return;
+		}
+		priv->lane_swap[i] = phys;
+		used |= BIT(phys);
+	}
+
+	if (vep.bus.mipi_csi2.clock_lane >= OPENVIN_NUM_PHY_LANES) {
+		dev_warn(priv->dev,
+			 "clock-lane %u out of range; using the default lane map\n",
+			 vep.bus.mipi_csi2.clock_lane);
+		memcpy(priv->lane_swap, openvin_lane_swap_default,
+		       sizeof(priv->lane_swap));
+		return;
+	}
+	priv->lane_swap[4] = vep.bus.mipi_csi2.clock_lane;
+	used |= BIT(vep.bus.mipi_csi2.clock_lane);
+
+	/*
+	 * c1 is the second clock slot of the 1d2c ("one D-PHY, two
+	 * controllers") mode this board does not use. It still has to name a
+	 * slot, and the vendor names the one nothing else claims.
+	 */
+	for (i = 0; i < OPENVIN_NUM_PHY_LANES; i++) {
+		if (!(used & BIT(i))) {
+			priv->lane_swap[5] = i;
+			break;
+		}
+	}
+
+	dev_info(priv->dev,
+		 "lane map from DT: d[%u %u %u %u] c[%u %u]\n",
+		 priv->lane_swap[0], priv->lane_swap[1], priv->lane_swap[2],
+		 priv->lane_swap[3], priv->lane_swap[4], priv->lane_swap[5]);
+}
+
 static int openvin_csi2_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct openvin_csi2 *priv;
 	struct resource *res;
-	void __iomem *csi_bank;
 	unsigned int i;
 	int ret;
 
@@ -931,32 +1029,46 @@ static int openvin_csi2_probe(struct platform_device *pdev)
 	mutex_init(&priv->lock);
 	spin_lock_init(&priv->err_lock);
 
-	/* CSI-2 protocol controller bank from the DT node's reg (both devs;
-	 * this driver uses dev0 at +0x0000). */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	csi_bank = devm_ioremap_resource(dev, res);
-	if (IS_ERR(csi_bank))
-		return PTR_ERR(csi_bank);
-	priv->csi = csi_bank;	/* dev0; dev1 would be csi_bank + CSI_DEV_STRIDE */
-
 	/*
-	 * Global blocks. The axera,mipi DT node carries no reg/clocks/resets
-	 * for these (the in-tree clk/reset providers own the same physical
-	 * ranges via their own syscon nodes), so they are mapped by fixed
-	 * physical address, SET/CLR access only.
-	 * TODO(mainline): describe these as syscon phandles (isp_sys_glb is
-	 * the existing isp_clk/isp_reset syscon at 0x2500000, common_glb the
-	 * common_clk syscon at 0x2340000) and add a proper reg entry for the
-	 * D-PHY file at 0x23f0000.
+	 * reg[0] = the CSI-2 protocol controller bank (both devs; this driver
+	 * drives dev0 at +0x0000), reg[1] = the D-PHY global file. On 4.19 the
+	 * second was an ioremap of a literal address.
 	 */
-	priv->isp_glb = devm_ioremap(dev, ISP_SYS_GLB_PHYS, ISP_SYS_GLB_SIZE);
-	priv->dphy_glb = devm_ioremap(dev, DPHY_GLB_PHYS, DPHY_GLB_SIZE);
-	priv->common_glb = devm_ioremap(dev, COMMON_GLB_PHYS, COMMON_GLB_SIZE);
-	if (!priv->isp_glb || !priv->dphy_glb || !priv->common_glb)
-		return -ENOMEM;
+	priv->csi = devm_platform_get_and_ioremap_resource(pdev, 0, &res);
+	if (IS_ERR(priv->csi))
+		return PTR_ERR(priv->csi);
 
-	/* Error IRQ for controller 0 (GIC 31, "csictrl0"). Controller 1 is
-	 * unused on this board; its "csictrl1" line is left unclaimed. */
+	priv->dphy = devm_platform_ioremap_resource_byname(pdev, "dphy");
+	if (IS_ERR(priv->dphy))
+		return dev_err_probe(dev, PTR_ERR(priv->dphy),
+				     "no D-PHY global reg\n");
+
+	priv->isp_glb = syscon_regmap_lookup_by_phandle(dev->of_node,
+							"axera,isp-syscon");
+	if (IS_ERR(priv->isp_glb))
+		return dev_err_probe(dev, PTR_ERR(priv->isp_glb),
+				     "axera,isp-syscon\n");
+
+	priv->cglb = syscon_regmap_lookup_by_phandle(dev->of_node,
+						     "axera,common-syscon");
+	if (IS_ERR(priv->cglb))
+		return dev_err_probe(dev, PTR_ERR(priv->cglb),
+				     "axera,common-syscon\n");
+
+	priv->tlb_clk = devm_clk_get(dev, "dphyrx_tlb");
+	if (IS_ERR(priv->tlb_clk))
+		return dev_err_probe(dev, PTR_ERR(priv->tlb_clk),
+				     "dphyrx_tlb clock\n");
+
+	priv->tlb_rst = devm_reset_control_get_exclusive(dev, "dphyrx_tlb");
+	if (IS_ERR(priv->tlb_rst))
+		return dev_err_probe(dev, PTR_ERR(priv->tlb_rst),
+				     "dphyrx_tlb reset\n");
+
+	openvin_parse_endpoint(priv);
+
+	/* Error IRQ for controller 0. Controller 1 is unused on this board;
+	 * its "csictrl1" line is left unclaimed. */
 	priv->irq = platform_get_irq_byname(pdev, "csictrl0");
 	if (priv->irq < 0)
 		return priv->irq;
@@ -967,14 +1079,8 @@ static int openvin_csi2_probe(struct platform_device *pdev)
 	/* Enabled only while streaming (balanced in s_stream). */
 	disable_irq(priv->irq);
 
-	/* Default active format: 1080p from the HDMI bridge. */
-	priv->fmt.code = MEDIA_BUS_FMT_UYVY8_1X16;
-	priv->fmt.width = 1920;
-	priv->fmt.height = 1080;
-	priv->fmt.field = V4L2_FIELD_NONE;
-	priv->fmt.colorspace = V4L2_COLORSPACE_SRGB;
-
 	v4l2_subdev_init(&priv->sd, &openvin_csi2_subdev_ops);
+	priv->sd.internal_ops = &openvin_csi2_internal_ops;
 	priv->sd.owner = THIS_MODULE;
 	priv->sd.dev = dev;
 	priv->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
@@ -1000,16 +1106,18 @@ static int openvin_csi2_probe(struct platform_device *pdev)
 	}
 	priv->sd.ctrl_handler = &priv->ctrls;
 
+	ret = v4l2_subdev_init_finalize(&priv->sd);
+	if (ret)
+		goto err_ctrls;
+
 	if (priv->standalone) {
 		/*
-		 * M1 bring-up mode: own a private v4l2_device so the subdev
-		 * node exists without the M2 capture bridge. The M2 driver
-		 * will instead take this subdev over v4l2-async
-		 * (standalone=0).
+		 * Bench mode: own a private v4l2_device so the subdev node
+		 * exists without the capture bridge.
 		 */
 		ret = v4l2_device_register(dev, &priv->v4l2_dev);
 		if (ret)
-			goto err_ctrls;
+			goto err_subdev;
 		ret = v4l2_device_register_subdev(&priv->v4l2_dev, &priv->sd);
 		if (ret)
 			goto err_v4l2_dev;
@@ -1019,7 +1127,7 @@ static int openvin_csi2_probe(struct platform_device *pdev)
 	} else {
 		ret = v4l2_async_register_subdev(&priv->sd);
 		if (ret)
-			goto err_ctrls;
+			goto err_subdev;
 	}
 
 	platform_set_drvdata(pdev, priv);
@@ -1039,6 +1147,8 @@ static int openvin_csi2_probe(struct platform_device *pdev)
 
 err_v4l2_dev:
 	v4l2_device_unregister(&priv->v4l2_dev);
+err_subdev:
+	v4l2_subdev_cleanup(&priv->sd);
 err_ctrls:
 	v4l2_ctrl_handler_free(&priv->ctrls);
 err_entity:
@@ -1046,7 +1156,7 @@ err_entity:
 	return ret;
 }
 
-static int openvin_csi2_remove(struct platform_device *pdev)
+static void openvin_csi2_remove(struct platform_device *pdev)
 {
 	struct openvin_csi2 *priv = platform_get_drvdata(pdev);
 
@@ -1058,14 +1168,13 @@ static int openvin_csi2_remove(struct platform_device *pdev)
 	} else {
 		v4l2_async_unregister_subdev(&priv->sd);
 	}
+	v4l2_subdev_cleanup(&priv->sd);
 	v4l2_ctrl_handler_free(&priv->ctrls);
 	media_entity_cleanup(&priv->sd.entity);
-
-	return 0;
 }
 
 static const struct of_device_id openvin_csi2_of_match[] = {
-	{ .compatible = "axera,mipi" },
+	{ .compatible = "axera,ax630c-csi2-rx" },
 	{ /* sentinel */ },
 };
 MODULE_DEVICE_TABLE(of, openvin_csi2_of_match);
@@ -1081,5 +1190,5 @@ static struct platform_driver openvin_csi2_driver = {
 module_platform_driver(openvin_csi2_driver);
 
 MODULE_AUTHOR("open-nanokvm-pro contributors");
-MODULE_DESCRIPTION("Open V4L2 CSI-2 receiver subdev for AX630C (ax_mipi_rx replacement, #57)");
+MODULE_DESCRIPTION("Open V4L2 CSI-2 receiver subdev for AX630C (ax_mipi_rx replacement, #57/#83)");
 MODULE_LICENSE("GPL v2");

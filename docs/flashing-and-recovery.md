@@ -186,10 +186,11 @@ AXDL re-flashing it is the way back, and it needs hands on the board.
 **Rollback is live and it covers the kernel.** U-Boot counts boot attempts in
 `0x02390030`; the fourth runs `altbootcmd`, which boots
 `/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`. Those two
-files name two **(generation, kernel) pairs** — the kernel and dtb in `/boot`
-are content-addressed (`Image-<hash>`) since #86 — and `nanokvm-mark-good`
-promotes the pair that booted healthy. So a generation that does not come up,
-*including one with a new kernel*, is undone unattended.
+files carry the same per-generation labels and differ only in which one
+`DEFAULT` selects; the kernel, initrd and dtb belong to the generation since
+#99, so an entry that names a generation names its kernel. `nanokvm-mark-good`
+promotes the generation that booted healthy. So a generation that does not come
+up, *including one with a new kernel*, is undone unattended.
 [nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate)
 and [updates.md](updates.md).
 

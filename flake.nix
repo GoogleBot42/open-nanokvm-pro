@@ -124,6 +124,13 @@
 
         callPkg = path: extra: import path (callArgs // extra);
 
+        # The same, but overridable. `boot.kernelPackages`'s `apply` in
+        # nixos/modules/system/boot/kernel.nix calls `kernel.override`, so the
+        # kernel -- and only the kernel -- has to be instantiated through
+        # `makeOverridable` rather than a bare `import` (#99).
+        callPkgOverridable = path: extra:
+          pkgs.lib.makeOverridable (import path) (callArgs // extra);
+
         toolchain = callPkg ./pkgs/toolchain.nix { };
 
         axera-libs = callPkg ./pkgs/axera-libs.nix { };
@@ -144,26 +151,24 @@
 
         # /boot, and since rung 3 the whole boot payload: mainline U-Boot's
         # bootcmd runs `sysboot ... /extlinux/extlinux.conf` off this
-        # partition, so the kernel and the device tree ride in it rather than
-        # in the signed `kernel`/`dtb` partitions the vendor chain loaded by
-        # byte offset. `extlinux-fallback.conf` starts as a copy: the only
-        # known-good generation is the one being installed.
-        # The kernel + dtb + both extlinux configs, with the kernel and dtb
-        # CONTENT-ADDRESSED (#86) so `extlinux.conf` and
-        # `extlinux-fallback.conf` can name two different kernels and a kernel
-        # update gets the same automatic rollback a generation switch has.
-        mkBootPayload = kernelImage: callPkg ./pkgs/boot-payload.nix {
-          inherit kernelImage;
-          dtb = "${dtb-mainline}/dtb/ax630c-nanokvm-pro.dtb";
-        };
+        # partition, so the kernel, the initrd and the device tree ride in it
+        # rather than in the signed `kernel`/`dtb` partitions the vendor chain
+        # loaded by byte offset.
+        #
+        # SINCE #99 NOTHING HERE GENERATES THAT TREE. `payloadDir` is the
+        # directory NixOS's own extlinux builder wrote for the generation being
+        # imaged (nixos/lib/appliance-artifacts.nix, `mkBootDir`), so the image
+        # and a `switch-to-configuration boot` on the device produce /boot of
+        # the same shape from the same program.
+        #
         # `null` = /boot with `ver` alone, which is what the vendor-derived
         # chain wants: it loads the kernel from the signed `kernel` partition
         # and never looks here.
         #
         # SIZE AND FILESYSTEM COME FROM THE LAYOUT (#89 rung 4): 128 MiB of
-        # FAT32 under the vendor 17-partition map, 275 MiB of ext4 under the
+        # FAT32 under the vendor 17-partition map, 272 MiB of ext4 under the
         # minimal six. nixos/lib/emmc-layout.nix is the single definition.
-        mkBootfsFor = layoutName: kernelImage:
+        mkBootfsFor = layoutName: bootDir:
           let l = import ./nixos/emmc-partitions.nix {
             inherit (pkgs) lib;
             layout = layoutName;
@@ -173,16 +178,15 @@
             inherit version;
             size = l.bootfs.size;
             fsType = if layoutName == "vendor" then "vfat" else "ext4";
-            payloadDir =
-              if kernelImage == null then null
-              else "${mkBootPayload kernelImage}/boot";
+            payloadDir = bootDir;
+            # Read off the system being imaged, so the headroom assertion can
+            # never be computed from a different number than the bootloader's.
+            configurationLimit =
+              nixos-appliance-mainline-chain.eval.config
+                .boot.loader.generic-extlinux-compatible.configurationLimit;
           };
         mkBootfs = mkBootfsFor "minimal";
-        bootfs = mkBootfs "${kernel-mainline-appliance}/Image";
-        # The same payload as a first-class output: #99 is moving it into the generation;
-        # the checks read its NAMES file, and a hardware run can copy one file
-        # onto /boot from it.
-        boot-payload = mkBootPayload "${kernel-mainline-appliance}/Image";
+        bootfs = mkBootfs nixos-appliance-mainline-chain.bootDir;
         boot-fsbl = callPkg ./pkgs/boot-fsbl.nix { inherit boot; };
         boot-atf = callPkg ./pkgs/boot-atf.nix { inherit boot; };
         boot-optee = callPkg ./pkgs/boot-optee.nix { inherit boot; };
@@ -220,12 +224,37 @@
         # update output references it, and the 4.19 outputs are untouched.
         #
         # This is the BRING-UP variant: it carries the #75 evidence initramfs
-        # and reboots itself. The appliance variant, which carries the NixOS
-        # stage-1 initrd instead, is defined below the appliance itself --
-        # a mainline kernel is the only place an initrd can live on this board
-        # (U-Boot passes none and no partition holds one).
+        # and reboots itself. Nothing else embeds an initramfs any more --
+        # see `kernel-mainline-appliance` below.
         kernel-mainline = callPkg ./pkgs/kernel-mainline.nix {
           inherit initramfsMainline;
+        };
+
+        # THE APPLIANCE'S KERNEL, and it embeds NOTHING (#99). It is
+        # `boot.kernelPackages` for nixos/appliance.nix, so the initrd and the
+        # dtb that go with it are the GENERATION's -- NixOS's extlinux builder
+        # copies all three into /boot and U-Boot loads them. One kernel for
+        # every root variant, because the initrd is no longer inside it.
+        #
+        # Overridable, because `boot.kernelPackages` insists on calling
+        # `.override` (see callPkgOverridable).
+        kernel-mainline-appliance = callPkgOverridable ./pkgs/kernel-mainline.nix {
+          initramfsCpio = null;
+          variant = "appliance";
+        };
+
+        # The video stack's modules, copied out of that kernel (#83). A
+        # BUILD-time dependency on it, so the appliance's closure carries the
+        # ~280 KB of .ko rather than a second reference to the Image.
+        #
+        # #83 had to write a careful note here about not creating a cycle: the
+        # kernel embedded that configuration's initrd, and the configuration
+        # loaded these modules. #99 removed the first half -- the kernel is a
+        # function of nothing but its own sources now -- so the dependency runs
+        # one way and the generation's kernel and its modules are built from
+        # the same derivation by construction.
+        video-modules = callPkg ./pkgs/video-modules.nix {
+          kernel = kernel-mainline-appliance;
         };
 
         # NOTE (#49, resolved 2026-08-30): there is deliberately NO CMA kernel
@@ -496,7 +525,14 @@
           # numbers are not stable on mainline, so the sysfs build cannot come
           # here. The shipped 4.19 image keeps the sysfs one, byte-identical.
           nanokvm-server = nanokvm-server-libgpiod;
+          # The kernel and the device tree are part of the generation now
+          # (#99): `boot.kernelPackages` and `hardware.deviceTree.dtbSource`.
+          kernel = kernel-mainline-appliance;
+          dtb = dtb-mainline;
           inherit nanokvm-gpio nanokvm-web nanokvm-display version;
+          # The open capture/encode modules (#83), built against the kernel
+          # the appliance boots and carried in the generation's closure.
+          inherit video-modules;
         };
         # The shipped variant also carries the .axp builder: nixos/image-axp.nix
         # defines `system.build.axpImage` from this configuration's own closure,
@@ -552,33 +588,6 @@
           applianceModules = [ ./nixos/qemu-test.nix ];
         });
 
-        # The mainline kernel with the appliance's stage-1 initrd baked into
-        # the Image, and the slot-B pair that flashes it. One kernel build per
-        # root variant, because the initrd differs.
-        # Takes the initrd CPIO rather than the appliance derivation, so the
-        # .axp builder can call it from inside the module system with the
-        # initrd that configuration produces -- and land on the same store path
-        # as `.#kernel-mainline-appliance` here.
-        mkApplianceKernel = initrdCpio: variant:
-          callPkg ./pkgs/kernel-mainline.nix {
-            initramfsCpio = "${initrdCpio}";
-            initramfsCompression = "ZSTD";
-            inherit variant;
-          };
-        # THE MINIMAL-LAYOUT INITRD, and that is load-bearing (#89 rung 4).
-        # Stage 1 mounts root BY DEVICE, so an initrd built for the vendor
-        # layout looks for /dev/mmcblk0p17 -- which does not exist once the
-        # layout changes. This kernel is what `.#bootfs` and therefore
-        # `.#migrate-layout` put on /boot, so it has to be the one that knows
-        # root is p6. The .axp builders take the initrd of the configuration
-        # they are imaging, so they were never at risk.
-        kernel-mainline-appliance =
-          mkApplianceKernel nixos-appliance-mainline-chain.initrd "appliance";
-        kernel-mainline-appliance-loop =
-          mkApplianceKernel nixos-appliance-loop.initrd "appliance-loop";
-        kernel-mainline-appliance-qemu =
-          mkApplianceKernel nixos-appliance-qemu.initrd "appliance-qemu";
-
         # `nix run .#nixos-appliance-qemu-run` -- boots the appliance under
         # qemu-system-aarch64 on a throwaway copy of the rootfs image. The one
         # place the NixOS boot can be watched on a console, since the real
@@ -596,10 +605,15 @@
             truncate -s +512M "$work/root.img"
             resize2fs "$work/root.img" >/dev/null
 
+            # The kernel and the initrd are the GENERATION's (#99), so they are
+            # taken out of the toplevel rather than from a kernel built around
+            # this variant's initrd -- exactly the two files U-Boot loads off
+            # /boot on the board.
             exec qemu-system-aarch64 \
               -M virt -cpu cortex-a53 -smp 2 -m 1024 -nographic \
-              -kernel ${kernel-mainline-appliance-qemu}/Image \
-              -append "console=ttyAMA0,115200 loglevel=8 root=/dev/vda rw panic=10" \
+              -kernel ${nixos-appliance-qemu.toplevel}/kernel \
+              -initrd ${nixos-appliance-qemu.toplevel}/initrd \
+              -append "console=ttyAMA0,115200 loglevel=8 root=/dev/vda rw panic=10 init=${nixos-appliance-qemu.toplevel}/init" \
               -drive file="$work/root.img",format=raw,if=none,id=hd0 \
               -device virtio-blk-device,drive=hd0 \
               -netdev user,id=n0 -device virtio-net-device,netdev=n0 \
@@ -607,34 +621,33 @@
           '';
         };
 
-        mkApplianceSlotImage = kern: variant: callPkg ./pkgs/slot-image.nix {
-          payload = "${kern}/Image";
-          pname = "nanokvm-pro-kernel-mainline-${variant}-slot-image";
-          version = "ax630c-kernel-mainline-${variant}-b";
+        # The signed `kernel`/`kernel_b` member of the VENDOR-layout .axp, and
+        # nothing else uses it any more (#99). That image is a layout restore:
+        # this Image embeds no initramfs and the vendor U-Boot has no way to
+        # pass one, so the partition exists to be occupied, not to be booted.
+        # See the NOTES in nixos/axp-image.nix.
+        mkApplianceSlotImage = kernelImage: callPkg ./pkgs/slot-image.nix {
+          payload = kernelImage;
+          pname = "nanokvm-pro-kernel-mainline-appliance-slot-image";
+          version = "ax630c-kernel-mainline-appliance-b";
           artifact = "kernel_b.bin";
           partSize = 64 * 1024 * 1024;
           loadAddr = "0x40200000";
-          title = "mainline appliance kernel partition image (slot B, #78)";
+          title = "mainline appliance kernel partition image (vendor layout, #78)";
           flashNotes = ''
             TARGET partition: kernel_b  (A/B slot B), 64M
               eMMC device   : /dev/mmcblk0p15   (p14 = slot A / shipped 4.19 kernel)
 
-            Carries the NixOS stage-1 initrd inside the Image: U-Boot passes no
-            initrd address and no partition holds one, so this is the only way
-            an initrd reaches this board. Stage 1 mounts the root filesystem
-            and switch_roots to /init on it -- there is no `init=` on the
-            command line, because the command line comes from the U-Boot
-            environment, not from the device tree.
-
-            Flash together with the matching mainline dtb (p13). Reversible
-            slot-B test:
-              dd if=kernel_b.bin of=/dev/mmcblk0p15 bs=1M conv=fsync
+            SINCE #99 THIS IMAGE DOES NOT BOOT A SYSTEM. The kernel carries no
+            embedded initramfs -- its initrd is a file on /boot that the
+            extlinux bootmeth loads -- and the vendor U-Boot calls `booti` with
+            `-` for the ramdisk. It ships so the vendor-layout .axp has a
+            `kernel` member; boot the board with the mainline chain and
+            /boot/extlinux/extlinux.conf.
           '';
         };
         kernel-mainline-appliance-slot-image =
-          mkApplianceSlotImage kernel-mainline-appliance "appliance";
-        kernel-mainline-appliance-loop-slot-image =
-          mkApplianceSlotImage kernel-mainline-appliance-loop "appliance-loop";
+          mkApplianceSlotImage "${kernel-mainline-appliance}/Image";
 
         # ---- the NixOS appliance's .axp, built FROM SCRATCH (#78/#26) -------
         #
@@ -655,8 +668,7 @@
             inherit pkgs;
             nixpkgs = inputs.nixpkgs;
           };
-          mkKernel = initrd: mkApplianceKernel initrd "appliance";
-          mkSlotImage = kern: mkApplianceSlotImage kern "appliance";
+          mkSlotImage = mkApplianceSlotImage;
         };
         applianceAxpImage = mkApplianceAxpImage "vendor";
         applianceAxpImageMainline = mkApplianceAxpImage "mainline";
@@ -669,8 +681,10 @@
         # dev box wants exactly this path.
         #
         # It is the closure of the SAME appliance `.#nixos-firmware-image-
-        # mainline` is built from, so a release cannot offer an update that
-        # disagrees with the image flashed from the same commit.
+        # mainline` and `.#bootfs` are built from -- and since #99 that closure
+        # contains the kernel, the initrd and the dtb as well -- so a release
+        # cannot offer an update that disagrees with the image flashed from the
+        # same commit.
         appliance-toplevel =
           nixos-appliance-mainline-chain.eval.config.system.build.toplevel;
 
@@ -887,12 +901,10 @@
             initramfs kernel vc8000-vcmd vcenc-ewl ax-stub dtb dtb-slot-image
             initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-slot-image dtb-mainline-slot-image
-            kernel-mainline-appliance kernel-mainline-appliance-loop
-            kernel-mainline-appliance-qemu
+            kernel-mainline-appliance
             kernel-mainline-appliance-slot-image
-            kernel-mainline-appliance-loop-slot-image
             nixos-appliance-qemu nixos-appliance-qemu-run
-            open-vin-csi2 open-vin-capture
+            open-vin-csi2 open-vin-capture video-modules
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test
@@ -901,7 +913,7 @@
             nanokvm-web nanokvm-display libsns-dummy
             base-axp rootfs nixos-appliance nixos-appliance-mainline-chain
             nixos-appliance-loop nixos-appliance-loop-nofixes
-            uboot-env logo bootfs boot-payload system-manifest appliance-toplevel
+            uboot-env logo bootfs system-manifest appliance-toplevel
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
             uboot-mainline-spldrv uboot-mainline-hangtest
@@ -979,6 +991,14 @@
             inherit system-manifest version;
             toplevel = "${appliance-toplevel}";
           };
+          # The fallback derivation (#99), run for real against a fake /boot:
+          # promote, and check that exactly the DEFAULT line moved -- then that
+          # it REFUSES when the booted generation has no LABEL in the file.
+          nanokvm-mark-good-fallback = callPkg ./nixos/lib/mark-good-test.nix { };
+          # The /boot tree the flashed image carries, as a first-class check:
+          # one extlinux.conf, no top-level MENU keyword, and LINUX/INITRD/FDT
+          # lines whose files are actually there.
+          nanokvm-boot-dir = nixos-appliance-mainline-chain.bootDir;
           emmc-partition-map =
             let
               l = import ./nixos/lib/emmc-layout.nix { inherit (pkgs) lib; };

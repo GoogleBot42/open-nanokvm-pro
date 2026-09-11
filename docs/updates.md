@@ -47,9 +47,11 @@ edits on GitHub directly** — all git data flows one way, Gitea → GitHub.
 > attic secrets do not exist. A device builds and boots but refuses to update,
 > and says so at build time. See [Caveats](#caveats).
 >
-> **One residual (#99):** the kernel, initrd and dtb are not part of the
-> generation yet, so an update transports the closure and **cannot change the
-> kernel**. See [Rollback](#rollback).
+> **The kernel rides along (#99, merged).** The kernel, the initrd and the dtb
+> are store paths inside the generation, so they arrive with the closure like
+> anything else and `switch-to-configuration boot` — NixOS's own extlinux
+> builder — is what copies them into `/boot`. An update can change the kernel,
+> and the rollback covers it. See [Rollback](#rollback).
 
 ## The idea
 
@@ -259,9 +261,10 @@ Two details that are not obvious:
   store file, so a rollback rolls the version back with everything else and
   there is no mutable stamp to get out of sync. (The web UI reads
   `/kvmapp/version`, likewise a store symlink.)
-- **`/nix/store` is a read-only bind mount**, and `remount,ro` alone silently
-  does nothing on a bind — it needs `remount,bind,ro`. The updater flips it
-  around the `nix copy` and back again.
+- **If `/nix/store` is ever a read-only bind mount**, `remount,ro` alone
+  silently does nothing on one — it needs `remount,bind,ro`. The updater flips
+  it around the `nix copy` and back, and the flip is a no-op on this image,
+  where the store is an ordinary directory on a writable root.
 
 ---
 
@@ -363,9 +366,10 @@ Unchanged by #100, and described in
 [nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate):
 two files in `/boot`, `extlinux.conf` and `extlinux-fallback.conf`, chosen by
 U-Boot's `bootcmd` and `altbootcmd`, with `bootcount` in `0x02390030` and
-`bootlimit` 3. `nanokvm-mark-good` clears the counter and regenerates the
-fallback from `/run/booted-system` once the system is running, routed and
-serving. Hardware-proven unattended on 2026-09-09.
+`bootlimit` 3. `nanokvm-mark-good` clears the counter and derives the fallback
+from the official config — one `DEFAULT` line moved to the label of the
+generation that just booted — once the system is running, routed and serving.
+Hardware-proven unattended on 2026-09-09.
 
 **To exercise it, do not install a broken generation.** Force the counter
 instead — one boot, nothing to strand:
@@ -375,14 +379,16 @@ devmem 0x02390030 32 0xB001000A
 reboot
 ```
 
-> **The kernel is not in the generation yet — #99.** `switch-to-configuration
-> boot` runs the existing `boot.loader.external` hook
-> (`nixos/lib/install-boot.nix`), which pins the new generation's `init=` into
-> `extlinux.conf` and names the **running** kernel, because that is the only
-> kernel it knows about. So a nix-native update transports the closure and
-> **cannot change the kernel, initrd or dtb**; a kernel change needs #99 or a
-> reflash. The updater writes nothing in `/boot` by design, and the offline
-> check asserts that it does not.
+> **The kernel rolls back with everything else (#99).** `switch-to-configuration
+> boot` runs NixOS's `generic-extlinux-compatible` builder, which copies this
+> generation's kernel, initrd and dtb into `/boot/nixos/` and writes one LABEL
+> per generation into `extlinux.conf`, each pinning its own `init=`.
+> `nanokvm-mark-good` derives `extlinux-fallback.conf` from that file by moving
+> one `DEFAULT` line. So a kernel change is just another store path in the
+> closure, and the generation the counter falls back to boots the kernel it was
+> built with. **The updater writes nothing in `/boot`** — there is one writer
+> and it is the official one, and the offline check asserts our code did not
+> touch it.
 
 ---
 
@@ -397,11 +403,19 @@ must stay reachable. **Two steps, and the order is the safety property:**
 
 1. **Pin.** Write a gc root into `/nix/var/nix/gcroots/nanokvm/` for every
    toplevel that `/run/booted-system`, `/run/current-system`, the system profile
-   **or any `init=` in any `/boot/extlinux/*.conf`** names. The **fallback** is
-   the one that matters: it is what gets used precisely when the default does
-   not work, it is named by a text file rather than by a profile link, and
-   nothing in nix knows about it unless we say so. The roots are rewritten from
-   scratch every run, so a generation that stops being named stops being pinned.
+   **or the `DEFAULT` entry of any `/boot/extlinux/*.conf`** names. The
+   **fallback** is the one that matters: it is what gets used precisely when the
+   default does not work, it is named by a text file rather than by a profile
+   link, and nothing in nix knows about it unless we say so. The roots are
+   rewritten from scratch every run, so a generation that stops being named
+   stops being pinned.
+
+   **The `DEFAULT` entry, not every `init=` in the file.** Since #99 both
+   configs list one LABEL per generation and differ only in which one `DEFAULT`
+   selects; pinning all of them would collect nothing, ever, and pinning the
+   first would pin whichever the builder emitted first and leave the fallback's
+   own generation collectable. A config that resolves to no generation is a
+   config we do not understand: `gc` refuses and deletes nothing.
 2. **Then delete**, and only then: `nix-env --delete-generations <numbers>` for
    everything but the newest `nanokvm.update.keepGenerations` (default 3) and
    never one whose toplevel is pinned, followed by `nix-collect-garbage`.
@@ -497,12 +511,15 @@ cat result/nanokvm_pro_sys_latest.json
 head result/closure.txt
 ```
 
-The three gates that run in `nix flake check`:
+The gates that run in `nix flake check` (the last two are #99's, and belong to
+the same contract: what writes `/boot`, and what the rollback reads):
 
 ```bash
 nix build .#checks.x86_64-linux.nanokvm-updater-loop -L
 nix build .#checks.x86_64-linux.nanokvm-update-idle -L
 nix build .#checks.x86_64-linux.nanokvm-system-manifest -L
+nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L
+nix build .#checks.x86_64-linux.nanokvm-boot-dir -L
 ```
 
 **`nanokvm-updater-loop`** (`nixos/lib/updater-test.nix`) runs the real
@@ -518,9 +535,11 @@ real chroot stores (`--store local?root=...`), a real `nix copy`, `nix-env`,
 4. `switch-to-configuration boot` is called — and `switch` never is;
 5. a second update fetches **exactly the 2 paths it adds**;
 6. re-installing the same closure fetches nothing;
-7. `gc --keep 2` keeps the generation the **fallback** config names and the
-   paths only it uses, because it was pinned by name before anything was
-   deleted; `gc --keep 1` collects them once nothing names it;
+7. `gc --keep 2` keeps the generation the **fallback** config's `DEFAULT` names
+   and the paths only it uses, because it was pinned by name before anything
+   was deleted; `gc --keep 1` collects them once nothing names it — and the
+   decoy generation, which appears as a non-`DEFAULT` LABEL in both configs, is
+   collected, so the pin really is the DEFAULT entry and not the file;
 8. the store passes `nix-store --verify --check-contents` after every step.
 
 **`nanokvm-update-idle`** (`nixos/lib/update-idle-test.nix`) drives the policy
@@ -705,8 +724,10 @@ way back. The reboot *is* the test.
   when a cache is set with no keys; `nanokvm-update` refuses rather than
   installing anything unverified. Standing up the attic server and holding the
   signing key are Jeremy's.
-- **An update cannot change the kernel** until #99 lands
-  ([above](#rollback)). A kernel change is a reflash.
+- **`/boot` has to be mounted for an install to mean anything.** The bootloader
+  builder writes into whatever `/boot` is, and an unmounted one is a directory
+  in the rootfs that U-Boot never reads. The install still succeeds, the
+  profile still moves, and the board still boots the old generation.
 - **The URL is baked in twice.** `nanokvm.update.stableUrl` (the updater) and
   `updateBaseUrl` in `flake.nix` (the server, compiled in). Changing where you
   host means a rebuild — and for the server half, an update carrying the new
