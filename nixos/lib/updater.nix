@@ -97,8 +97,8 @@ let
 
       check                    what is installed, and what the channel offers
       update                   check, download, install, reboot when idle
-                               (what the timer runs; a no-op unless the web
-                               UI's "Automatic updates" box is ticked)
+                               (what the timer runs; a no-op unless the
+                               "Automatic updates" box is ticked in the web UI)
       install <bundle.tar.gz>  verify + unpack + install a bundle from a file
       install-staged <dir> [v] install an already-unpacked bundle (the web UI path)
       pending                  the installed-but-not-yet-booted update, if any
@@ -108,8 +108,8 @@ let
       status                   generations, boot configs, /boot payload
 
     ONLY TAGGED RELEASES ARE EVER INSTALLED. Both channels are GitHub releases
-    cut from a vX.Y.Z tag -- stable is `releases/latest/download` (which never
-    serves a prerelease) and preview is the rolling `preview` release, which
+    cut from a vX.Y.Z tag -- stable is releases/latest/download, which never
+    serves a prerelease, and preview is the rolling "preview" release, which
     only a tag-triggered run refreshes. Nothing publishes from a branch, so no
     device can be offered the tip of main.
 

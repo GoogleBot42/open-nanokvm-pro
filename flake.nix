@@ -932,6 +932,12 @@
           # things survived -- including that gc REFUSES when it cannot know
           # the live set. Everything an update does except meeting hardware.
           nanokvm-updater-loop = callPkg ./nixos/lib/updater-test.nix { };
+          # The policy wrapped around that loop (#86): the web UI's automatic-
+          # updates checkbox gating the timer, the pending markers, and the
+          # reboot that waits for an empty room -- including that an
+          # unanswerable idle question fails CLOSED. A fake release host and a
+          # fake idle route on loopback; everything else is the real scripts.
+          nanokvm-update-idle = callPkg ./nixos/lib/update-idle-test.nix { };
           # The release artefact itself, read back: the manifest hash against
           # the tarball, closure.txt against the toplevel's real closure, and
           # the /boot payload against the kernel the bundle carries.
