@@ -1,5 +1,17 @@
 # #55 — full deblob: replacing the capture/ISP kernel stack
 
+> **HISTORICAL (2026-09-11, #97).** The plan in this document was carried out
+> and the epic's goal is met: the shipped video stack is blob-free, the open
+> CSI-2 receiver and VIN capture driver are in the kernel tree at
+> `pkgs/kernel-mainline/tree/drivers/media/platform/axera/`, and they ship as
+> `.#video-modules`. The out-of-tree 4.19 builds this doc names
+> (`pkgs/open-vin-csi2`, `pkgs/open-vin-capture`, `pkgs/ax-stub`, the
+> `ax-load-drv.*.sh` loader variants) are deleted with the 4.19 image, as are
+> the vendor modules the plan was measured against. Kept as the scoping and
+> clean-room record — the specs it cites under `docs/reference/deblob-scope/`
+> are still the authority for what each register does.
+
+
 Working doc for the epic. Scoped 2026-08-31 from two clean-room reports:
 `docs/reference/deblob-scope/scope-static.md` (binary structure of the 10
 blobs, by a describing subagent) and `scope-known-abi.md` (everything the
