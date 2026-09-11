@@ -1,15 +1,10 @@
-{ pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder, axera-libs
-, # How the server actuates the ATX power/reset lines.
-  #   "sysfs"    (default) -- upstream's /sys/class/gpio writes on the global
-  #               numbers 7/35/74/75, plus our per-press pinmux re-assert. This
-  #               is what the SHIPPED 4.19 image runs, and this build must stay
-  #               byte-identical, so every libgpiod-only step below is gated.
-  #   "libgpiod" -- shell out to nanokvm-gpio (pkgs/nanokvm-gpio) by device-tree
-  #               line name. For the mainline stack (#81), where global GPIO
-  #               numbers are not stable and the GPIO request programs the pad
-  #               mux by itself. Requires the `nanokvm-gpio` argument.
-  gpioBackend ? "sysfs"
-, nanokvm-gpio ? null
+{ pkgs, crossPkgs, nanokvm-pro-src, kvm-encoder
+, # The ATX power/reset lines are driven by shelling out to nanokvm-gpio
+  # (pkgs/nanokvm-gpio) by device-tree line NAME (#81). Global GPIO numbers are
+  # not stable on mainline, and requesting a line is what programs the pad mux;
+  # upstream's /sys/class/gpio writes on the numbers 7/35/74/75 -- and the
+  # per-press VI_D7 pinmux re-assert they needed -- went with the 4.19 image.
+  nanokvm-gpio
 , # What the web UI's "update" button does (#86, #100, #101).
   #
   # NO CHANNEL URL IS COMPILED INTO THIS BINARY. Since #101 the server asks
@@ -19,20 +14,11 @@
   # button installs come from one place. What is left to choose here is which
   # installer install() is:
   #
-  #   "closure"  hand off to `nanokvm-update` (install-update.go.in): it
-  #              substitutes the release's system closure from our signed
-  #              binary cache, makes it a generation, and reboots. The mainline
-  #              appliance, and the only update path this project publishes.
-  #   "retired"  refuse (install-retired.go.in). The 4.19 image's rootfs-
-  #              overlay OTA is gone (#86, 2026-09-10) and no release publishes
-  #              a payload for it; install() refuses rather than letting the
-  #              vendor's dpkg installer pull three .debs off Sipeed's CDN.
-  #              A vendor-layout device moves forward by an AXDL reflash, and
-  #              its version route -- finding no updater -- reports the running
-  #              version as the latest one, which the page renders as
-  #              "up to date".
-  updateMode ? "closure"
-, ...
+  # install() hands off to `nanokvm-update` (install-update.go.in): it
+  # substitutes the release's system closure from our signed binary cache,
+  # makes it a generation, and reboots. That is the only update path this
+  # project publishes.
+  ...
 }:
 
 # ---------------------------------------------------------------------------
@@ -46,40 +32,27 @@
 # So this binary hard-links libkvm.so (kvm-encoder) and libopus. Upstream copies
 # the built libkvm.so into server/dl_lib/ and patchelf-adds rpath $ORIGIN/dl_lib;
 # we instead stage libkvm.so into dl_lib/ pre-build and let Nix set rpath.
-# libkvm (kvm-encoder.nix) is the capture+encode backend; the server binary
-# links it and its full AX_VENC dependency graph.
+# libkvm (kvm-encoder.nix) is the capture+encode backend, and since #97 there is
+# exactly one build of it -- the blob-free V4L2 + open-VC8000E one the appliance
+# ships -- so what this binary links against is what it loads on the device.
 # ---------------------------------------------------------------------------
 
-assert builtins.elem gpioBackend [ "sysfs" "libgpiod" ];
-assert gpioBackend == "libgpiod" -> nanokvm-gpio != null;
-assert builtins.elem updateMode [ "closure" "retired" ];
-
 let
-  installOverride =
-    if updateMode == "closure" then ./nanokvm-server/install-update.go.in
-    else ./nanokvm-server/install-retired.go.in;
+  installOverride = ./nanokvm-server/install-update.go.in;
   # The two lines that replace update()'s fetch/download/verify/untar half --
   # see step 3b of postPatch.
   updateFragment = ./nanokvm-server/update-nix.go.in;
   # The whole of service/application/version.go: the version route, asking the
   # updater instead of a compiled-in URL (#101).
   versionOverride = ./nanokvm-server/version-updater.go.in;
-  # `os/exec` is used ONLY by install() in this file, so the retired variant --
-  # which execs nothing -- would leave an unused import, and an unused import is
-  # a Go compile error.
-  dropExecImport = updateMode == "retired";
 
   # postPatch below is written at 4-space indentation, and Nix strips NOTHING
   # from it (it contains column-0 lines, so the common indent is zero). A step
-  # spliced in from up here must therefore re-indent itself to 4, or the sysfs
-  # build's script text -- and with it the shipped server's store path -- would
-  # move for no reason. That store path is a regression test: adding a backend
-  # option for the mainline appliance must not touch the shipped image.
+  # spliced in from up here must therefore re-indent itself to 4.
   step = s: pkgs.lib.replaceStrings [ "\n" ] [ "\n    " ] (pkgs.lib.removeSuffix "\n" s);
 
   # ---- Step 6 of postPatch: the ATX GPIO backend ---------------------------
-  gpioPatch =
-    if gpioBackend == "libgpiod" then ''
+  gpioPatch = ''
       # 6. ATX lines over libgpiod, by device-tree NAME (#81). Mainline has a
       #    real GPIO driver and a pin controller, so both vendor-era
       #    workarounds are deleted rather than ported: the boot-time
@@ -118,19 +91,6 @@ let
 
       substituteInPlace service/vm/gpio.go \
         --replace-fail '@nanokvmGpio@' '${nanokvm-gpio}/bin/nanokvm-gpio'
-    '' else ''
-      # 6. Re-assert the SW_PWR pinmux before every power press. The closed
-      #    capture stack re-muxes the VI_D7 pad (= gpio7, the ATX power line)
-      #    back to camera-data function on every pipeline init (boot, restart,
-      #    idle resume), leaving the power button dead while reset works; the
-      #    vendor never muxed it correctly anywhere (their gpio.sh pokes the
-      #    wrong register). See pkgs/nanokvm-server/pinmux-power.go.in and
-      #    docs/mini-display.md ("ATX GPIO setup").
-      cp ${./nanokvm-server/pinmux-power.go.in} service/vm/pinmux_power.go
-      sed -i 's|device = conf.GPIOPower$|device = conf.GPIOPower\n\t\tmuxPowerPin()|' \
-        service/vm/gpio.go
-      grep -q 'muxPowerPin()' service/vm/gpio.go \
-        || { echo "ERROR: muxPowerPin hook failed to apply to service/vm/gpio.go" >&2; exit 1; }
     '';
 
   # Cross buildGoModule: emits aarch64 binaries and wires the cross CC for cgo.
@@ -193,8 +153,7 @@ buildGoModule {
       || { echo "ERROR: a Sipeed CDN update URL survived in service/application" >&2; exit 1; }
 
     # 3. Replace the vendor dpkg-based install() with ours -- the handoff to
-    #    `nanokvm-update` (install-update.go.in) or the refusal
-    #    (install-retired.go.in), per `updateMode` above.
+    #    `nanokvm-update` (install-update.go.in).
     #    install() is the LAST function in update.go: truncate at its signature
     #    and append ours. appNames/getFileInfo become unused package-level decls,
     #    which Go permits (only unused imports / locals are errors).
@@ -207,19 +166,13 @@ buildGoModule {
       || { echo "ERROR: update.go has declarations after install() — the truncation would silently drop them" >&2; exit 1; }
     sed -i '/^func install(dir string, version string) error {/,$d' service/application/update.go
     cat ${installOverride} >> service/application/update.go
-    ${pkgs.lib.optionalString dropExecImport ''
-      sed -i '/^\t"os\/exec"$/d' service/application/update.go
-      ! grep -q 'exec\.' service/application/update.go \
-        || { echo "ERROR: update.go still uses os/exec after dropping its import" >&2; exit 1; }
-    ''}
     # 3b. ...and cut everything update() did BEFORE install() out with it.
     #     There is no payload to download (#100 -- the manifest names a store
     #     path and `nanokvm-update` substitutes that closure from the signed
     #     cache), and no manifest to fetch either (#101 -- `install-now`
     #     fetches the device's own channel, and the getLatest() this used to
     #     call fetched a URL compiled into the binary). So the whole sequence
-    #     from the version check to the install call goes, in both modes: the
-    #     retired image has no payload to download either.
+    #     from the version check to the install call goes.
     #
     #     Insert the replacement AFTER the block's last line, then delete the
     #     block -- two passes, because mixing sed's `r` and `d` on one address
@@ -416,7 +369,7 @@ EOF
 
     # 8. Expose the 720p60 EDID in the UI. Our clean-room EDID set ships
     #    NanoKVM-720P60.bin (byte 12 = 0x72, installed as
-    #    /kvmcomm/edid/NanoKVM-720P60.bin by pkgs/rootfs.nix), but upstream's
+    #    /kvmcomm/edid/NanoKVM-720P60.bin, but upstream's
     #    EDIDMap has no 0x72 key, so GetEdid could not name the mode and the web
     #    dropdown never offered it -- only a raw POST /api/vm/edid could select
     #    it (#62). The map value is the bin's basename, which is what SwitchEdid
@@ -604,15 +557,11 @@ EOF
   env.CGO_ENABLED = "1";
   env.GOEXPERIMENT = "boringcrypto";
 
-  # opus for -lopus; kvm-encoder provides libkvm.so + kvm_vision.h. axera-libs is
-  # needed at LINK time only: the real libkvm.so has DT_NEEDED on libax_venc/sys/
-  # proton/mipi/ivps, and libax_proton in turn NEEDs libax_engine, so ld must be
-  # able to find the whole AX graph to validate the cgo link (see rpath-link below).
+  # opus for -lopus; kvm-encoder provides libkvm.so + kvm_vision.h.
   buildInputs = [
     crossPkgs.libopus
     crossPkgs.alsa-lib
     kvm-encoder
-    axera-libs
   ];
 
   # The cgo directive is `-L../dl_lib -lkvm` (relative to server/common). Stage
@@ -624,12 +573,18 @@ EOF
     cp ${kvm-encoder}/lib/libkvm.so dl_lib/libkvm.so.0
     export CGO_CFLAGS="-I$PWD/include -I${crossPkgs.libopus.dev}/include $CGO_CFLAGS"
     # -rpath-link (NOT -L): resolve libkvm.so's transitive deps at link time
-    # WITHOUT adding them as DT_NEEDED to the server binary. libkvm DT_NEEDEDs the
-    # AX graph (libax_engine via libax_proton, ...) AND libasound.so.2 (its real
-    # ALSA HDMI-audio path), so ld must be able to find BOTH to validate the cgo
-    # link. On-device the AX libs load from /opt/lib via libkvm's RPATH and
-    # libasound from the standard multiarch path.
-    export CGO_LDFLAGS="-L$PWD/dl_lib -L${crossPkgs.libopus}/lib -Wl,-rpath-link,${axera-libs}/lib -Wl,-rpath-link,${crossPkgs.alsa-lib}/lib $CGO_LDFLAGS"
+    # WITHOUT adding them as DT_NEEDED to the server binary. The blob-free
+    # libkvm DT_NEEDEDs libasound.so.2 (its ALSA HDMI-audio path) and
+    # libjpeg.so.8 (the soft-MJPEG path, #51), so ld must be able to find both
+    # to validate the cgo link. On-device both come from /opt/lib, which
+    # nixos/appliance.nix stages from these same builds.
+    #
+    # The AX graph used to be here too, because the server was linked against
+    # the VENDOR-backend libkvm while the image staged the open one -- two
+    # libkvms, and the closed library set in this derivation's inputs for a
+    # binary that never loaded it. One libkvm now (#97): the one the appliance
+    # ships, which links no vendor library at all.
+    export CGO_LDFLAGS="-L$PWD/dl_lib -L${crossPkgs.libopus}/lib -Wl,-rpath-link,${crossPkgs.alsa-lib}/lib -Wl,-rpath-link,${pkgs.lib.getLib kvm-encoder.libjpeg8}/lib $CGO_LDFLAGS"
   '';
 
   ldflags = [
@@ -643,8 +598,8 @@ EOF
   # bakes the nix-store glibc as the ELF interpreter and a nix-store RUNPATH, which
   # do not exist on the target -- so retarget both to on-device paths (matching the
   # vendor binary: interpreter /lib/ld-linux-aarch64.so.1, RUNPATH $ORIGIN/dl_lib).
-  # We add /opt/usr/lib (libopus.so.0) and /opt/lib (Axera libs) because, unlike the
-  # vendor server, ours DT_NEEDEDs libopus directly. Device glibc is 2.35 and our
+  # We add /opt/usr/lib (libopus.so.0) and /opt/lib because, unlike the vendor
+  # server, ours DT_NEEDEDs libopus directly. Device glibc is 2.35 and our
   # binary's highest required symbol is GLIBC_2.34, so there is no ABI gap.
   # dontPatchELF stops nix's fixup from shrinking the RUNPATH we set here.
   dontPatchELF = true;

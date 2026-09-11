@@ -1,5 +1,16 @@
 # #49 resolved: the open VC8000E driver runs on the SHIPPING kernel — no flash
 
+> **HISTORICAL (2026-09-11, #97).** "The shipping kernel" here is the vendor's
+> Linux 4.19.125, and the whole argument is about not breaking the ABI of the
+> closed `ax_*.ko` modules that had to load beside the open encoder. Neither
+> exists any more: the appliance boots a mainline kernel and loads no vendor
+> module at all, so the CMA prohibition this document won is moot and
+> `pkgs/vc8000-vcmd/` has moved into the kernel tree at
+> `pkgs/kernel-mainline/tree/drivers/media/platform/axera/vc8000e/`. Kept for
+> the lesson, which generalises: **a vermagic match is not ABI safety** — a
+> config flag can add an `#ifdef` field to a struct a prebuilt module touches.
+
+
 **Outcome (2026-08-30, all device-proven):** the open VCMD driver
 (`.#vc8000-vcmd`) fully initialises on the unmodified shipping kernel —
 coherent pools allocated, clock enabled, real IRQ wired, init self-test

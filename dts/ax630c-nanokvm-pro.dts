@@ -309,7 +309,7 @@
 		 *
 		 * They are ABOVE what the kernel treats as RAM, and that is
 		 * deliberate rather than accidental. The command line carries
-		 * `mem=512M` (pkgs/extlinux.nix), so memblock ends at
+		 * `mem=512M` (boot.kernelParams, nixos/appliance.nix), so memblock ends at
 		 * 0x60000000 and none of this is System RAM; `no-map` regions
 		 * outside memory are explicitly supported
 		 * (drivers/of/of_reserved_mem.c: "don't worry if the region

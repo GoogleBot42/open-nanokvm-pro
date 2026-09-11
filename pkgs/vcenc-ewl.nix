@@ -12,7 +12,8 @@
 # This proves the ioctl/cmdbuf ABI, the mmap path, hardware execution, IRQ
 # completion, and status readback -- everything a real IDR (Stage B) builds on.
 #
-# The ABI is transcribed from the open driver (pkgs/vc8000-vcmd) in
+# The ABI is transcribed from the open driver
+# (pkgs/kernel-mainline/tree/drivers/media/platform/axera/vc8000e) in
 # vcmd_abi.h; the cmdbuf layout in vcenc_cmdbuf.h matches the driver's
 # create_read_all_registers_cmdbuf word-for-word.
 #

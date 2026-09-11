@@ -116,10 +116,11 @@ moves a few percent of that, and the UI shows it as an honest upper bound comput
 before asking the store what it is missing.
 
 **The manifest FILENAME is the channel.** `nanokvm_pro_sys_latest.json` is the
-appliance's; the retired 4.19 image polls `nanokvm_pro_latest.json`, which nothing
+appliance's; any surviving 4.19 board polls `nanokvm_pro_latest.json`, which nothing
 publishes any more, so it is offered nothing rather than a store closure no Ubuntu
-rootfs could apply. `pkgs/nanokvm-server.nix`'s `updateMode` (now `"closure"`) picks
-both the manifest name and the `install()` body, and they move together.
+rootfs could apply. The 4.19 build itself was deleted from this repo in #97;
+`nanokvm.update.manifestName` is the only place the name is chosen, and
+`pkgs/nanokvm-server.nix` has one installer — the handoff to `nanokvm-update`.
 
 Beside it, not published: `closure.txt` — what the release pushed to the cache, so a
 hardware run or a `nix build --rebuild` can diff a device's store against a release
@@ -880,12 +881,11 @@ copied verbatim over `/`, plus an optional `partitions/` set of vendor-format si
 images written to both A/B slots — B first, compare-first, read-back verified — and was
 hardware-proven end to end on 2026-08-16 with `v2.0.0`. It is gone because the product
 is the mainline NixOS appliance and a store closure is not something an Ubuntu rootfs
-can apply, so the 4.19 server build keeps an `install()` that refuses and points at
-AXDL rather than falling back to the vendor's dpkg installer and its three CDN `.deb`s.
-**There is no migration path from the vendor layout, by decision** (Jeremy,
+can apply. **There is no migration path from the vendor layout, by decision** (Jeremy,
 2026-09-10): nobody runs the alpha releases, so a migration OTA would have been built
 for no users, and a vendor-layout board is reflashed over AXDL — a bench trip, not a
-brick.
+brick. #97 then deleted the 4.19 build itself (`fb77209`): the image, its A/B slot
+packaging and the vendor boot chain are no longer in this repo at all.
 
 **The #86 tar system bundle (2026-09-10 → 2026-09-11).** Because the #78 appliance
 shipped `nix.enable = false`, an update had to be a ~460 MB

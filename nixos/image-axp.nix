@@ -21,16 +21,6 @@
 {
   assertions = [
     {
-      assertion = !config.nanokvm.rootImage.enable;
-      message = ''
-        nixos/image-axp.nix builds a .axp that flashes the eMMC rootfs
-        partition directly. The loop-image variant's root is a file on a
-        carrier filesystem, so an .axp of it would flash a rootfs whose stage 1
-        then goes looking for a carrier that is no longer there. Build the
-        eMMC variant instead.
-      '';
-    }
-    {
       assertion = config.fileSystems."/".autoResize;
       message = ''
         The .axp's rootfs member is shrunk to its contents by make-ext4-fs.

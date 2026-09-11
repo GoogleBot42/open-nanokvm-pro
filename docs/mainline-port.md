@@ -23,10 +23,31 @@ inferences.
 - [10. Verified vs inferred; corrections to other docs](#10-verified-vs-inferred-corrections-to-other-docs)
 - [11. #89: mainline U-Boot and the minimal layout — investigation, 2026-09-07](#11-89-mainline-u-boot-and-the-minimal-layout--investigation-2026-09-07)
 
-Source trees referenced below: `[K]` = the Sipeed 4.19.125 kernel (flake input
-`maix_ax620e_sdk_kernel`, `linux/linux-4.19.125/`), `[SDK]` = `maix_ax620e_sdk`
-(boot chain, `build/projects/AX630C_emmc_arm64_k419_sipeed_nanokvm/`), `[UB]` =
+Source trees referenced below: `[K]` = the Sipeed 4.19.125 kernel, `[SDK]` =
+`maix_ax620e_sdk` (boot chain,
+`build/projects/AX630C_emmc_arm64_k419_sipeed_nanokvm/`), `[UB]` =
 `[SDK]/boot/uboot/u-boot-2020.04`.
+
+> **2026-09-11 — #97: the port is finished and the 4.19 product is gone.**
+> `fb77209` deleted everything that built, flashed or documented the
+> vendor-derived Ubuntu / Linux 4.19.125 image: `firmware-image`, the rootfs
+> overlay, `base-axp`, the 4.19 kernel/dtb/initramfs, the vendor boot chain
+> (`boot-fsbl`/`-atf`/`-optee`/`-uboot`), the A/B `*-slot-image` packaging,
+> `sd-image`, `migrate-layout`, `ax-ko-blobs`, `libsns-dummy`, `ax-stub`, and
+> the `deploy-iterate` / `mainline-boot-test` / `sd-flash-remote` skills. The
+> mainline NixOS appliance is the only product; `.#nixos-firmware-image-mainline`
+> is `packages.default`. The `maix_ax620e_sdk_kernel` input went with it, so
+> `[K]` is a reference to a tree this flake no longer fetches.
+>
+> **Read §§1–10 as the plan and the analysis they were**, written against the
+> vendor chain while it still ran this board. Where they describe the vendor
+> SPL/ATF/OP-TEE/U-Boot, the 17-partition A/B map, slot-B kernel testing or a
+> `pkgs/` file that is not there, that is the record of what the port replaced —
+> not a description of the device. Current truth is
+> **"Handoff after rung 5"** in §11 (the device contract),
+> `docs/nixos-rootfs.md` §1 and §4b (the boot and rollback contract) and
+> `docs/flashing-and-recovery.md` (flashing, testing a generation, the one-shot
+> U-Boot chainload slot).
 
 ---
 
@@ -222,11 +243,18 @@ have / can be dropped).
 
 ### Video path (ours)
 
+All three are ours and all three are **DONE (#83)**: since the port they live in
+the kernel tree at
+`pkgs/kernel-mainline/tree/drivers/media/platform/axera/` and ship as
+`.#video-modules` in the generation's closure, loaded by `nanokvm-video.service`
+off the `load-order` file beside them. The out-of-tree `pkgs/open-vin-csi2`,
+`pkgs/open-vin-capture` and `pkgs/vc8000-vcmd` copies were deleted in #97.
+
 | Block | DT | Driver | Port needs | Effort | Gates |
 |---|---|---|---|---|---|
-| CSI-2 / D-PHY receiver | `axera,mipi` @`0x2600000`, IRQs `csictrl0/1` — no clocks/resets in the node | `pkgs/open-vin-csi2` (1078 LOC, ours, M1 #57). The controller half looks **Cadence CSI2RX-derived** (I: blob symbols `csi2rx_soft_reset/static_cfg`; lane map at `+0x08` and stream ctrl at `+0x100` match mainline `cdns-csi2rx`'s `STATIC_CFG_DLANE_MAP` / `STREAM_BASE(0)`) — worth a compare against `cdns-csi2rx.c` before upstreaming; the D-PHY glue stays Axera-custom | §3 | M | KVM |
-| VIN/IFE bypass capture | `axera,proton` @`0x2400000`, `GIC_SPI 27/28`, clocks | `pkgs/open-vin-capture` (1664 LOC, ours, M2 #59) | §3 | M | KVM |
-| VC8000E encoder (VCMD) | `"axera, venc-encoder"` @`0x4010000`, `GIC_SPI 93` | `pkgs/vc8000-vcmd` (eswin 6.6 VCMD core 4970 LOC + our 292+280 LOC glue, #25) | §3 | S–M | KVM |
+| CSI-2 / D-PHY receiver | `axera,mipi` @`0x2600000`, IRQs `csictrl0/1` — no clocks/resets in the node | `open_vin_csi2.c` (1078 LOC, ours, M1 #57). The controller half looks **Cadence CSI2RX-derived** (I: blob symbols `csi2rx_soft_reset/static_cfg`; lane map at `+0x08` and stream ctrl at `+0x100` match mainline `cdns-csi2rx`'s `STATIC_CFG_DLANE_MAP` / `STREAM_BASE(0)`) — worth a compare against `cdns-csi2rx.c` before upstreaming; the D-PHY glue stays Axera-custom | §3 | M | KVM |
+| VIN/IFE bypass capture | `axera,proton` @`0x2400000`, `GIC_SPI 27/28`, clocks | `open_vin_capture.c` (1664 LOC, ours, M2 #59) | §3 | M | KVM |
+| VC8000E encoder (VCMD) | `"axera, venc-encoder"` @`0x4010000`, `GIC_SPI 93` | `vc8000e/` (eswin 6.6 VCMD core 4970 LOC + our 292+280 LOC glue, #25) | §3 | S–M | KVM |
 | Unused video IP | `axera,jpeg-encoder` (we soft-JPEG), `"axera, video-decoder"`, `vpp`, `gdc`, `ive`, `tdp`, `npu`, `drm/crtc/vo/dsi/lvds/bt-dpi`, `mipi_switch`, `vfb` | vendor blobs (deleted, #54) | **drop** — never touched by the KVM path | — | — |
 
 The vendor defconfig also lacks what NixOS' systemd needs (`# CONFIG_NAMESPACES
@@ -417,7 +445,10 @@ to the other slot. U-Boot re-reads the register (`bootsystem=A|B`, uppercase,
 `env_save()`d every boot) and picks `kernel`/`dtb` vs `_b`. Userspace re-arms
 the current slot every boot (`devmem 0x2390028 32 0x10|0x20`). A dead kernel
 never re-arms → watchdog reset → SPL flips. Hardware-proven for the kernel
-half ([flashing-and-recovery.md](flashing-and-recovery.md#slot-b-kernel-testing-proven-procedure-2026-08-30)).
+half. **None of this is live any more:** #89 rung 4 left one copy of every
+stage, both `_BAK` bases point at the A bases, and rollback is
+`bootcount` + two extlinux configs
+([nixos-rootfs.md](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate)).
 
 Three properties that shape the NixOS design:
 
@@ -717,9 +748,11 @@ ramoops reservations. Every other peripheral arrives with the issue that ports
 its driver — a DT node without a driver is a DT that lies. All axera-prefixed
 compatibles live in `dts/ax630c-compat.h` so #87 can rename them in one place.
 
-`.#kernel-mainline-slot-image` and `.#dtb-mainline-slot-image` wrap those in the
-vendor signed-header format for the **slot-B** partitions (p15 / p13, 64 MiB /
-1 MiB caps), which is what makes #75's first boot a reversible flash.
+`.#kernel-mainline-slot-image` and `.#dtb-mainline-slot-image` wrapped those in
+the vendor signed-header format for the **slot-B** partitions (p15 / p13,
+64 MiB / 1 MiB caps), which is what made #75's first boot a reversible flash.
+Both outputs went with the A/B layout in #97; a candidate is an extlinux
+generation now.
 
 The build asserts what a serial-less board cannot show you: the config fragment
 survived `olddefconfig`, the release string is stable, the Image fits its
@@ -1170,10 +1203,10 @@ Four more things landed with it.
 - **`nanokvm-gpio` is a program now**, not the name of a systemd unit that
   exported four global numbers through `/sys/class/gpio` and poked a pad
   register with `devmem`. It resolves a line by its DT name over libgpiod, and
-  the request is what programs the mux. `nanokvm-server` gains a `gpioBackend`
-  argument defaulting to `sysfs`, whose build is byte-identical to before — the
-  shipped 4.19 image does not move — while the NixOS appliance takes the
-  `libgpiod` build and drops the unit.
+  the request is what programs the mux. `nanokvm-server` gained a `gpioBackend`
+  argument so the 4.19 image could keep its byte-identical `sysfs` build while
+  the appliance took the `libgpiod` one and dropped the unit; #97 deleted the
+  4.19 image and with it the argument, so there is one server build now.
 
 **The reset provider's `.status` got its first real use** and reports what the
 syscon says: `SW_RST0` = `0x00000001`, every GPIO reset bit clear. `.assert`
@@ -1322,7 +1355,8 @@ keyboard can have, but copied from the kernel's own documentation.
 
 #### How this was measured, and how to re-measure it
 
-Standard slot-B loop (`.claude/skills/mainline-boot-test`), with the mask at
+Standard slot-B loop (the `mainline-boot-test` skill, deleted with the A/B
+machinery in #97), with the mask at
 `0x1FFF000`. Two oracles, and they answer different questions:
 
 - **Device-side, no host needed.** From the mainline shell during the dwell:
@@ -1480,9 +1514,9 @@ sibling issues landed while this was being written, and each moved the line
 differently:
 
 - **#81 removed the GPIO stub outright.** There is no GPIO unit at all now.
-  The appliance ships `nanokvm-gpio` on PATH and takes the
-  `gpioBackend = "libgpiod"` server build, and the ATX lines are addressed by
-  their device-tree names rather than exported through sysfs.
+  The appliance ships `nanokvm-gpio` on PATH and the ATX lines are addressed by
+  their device-tree names rather than exported through sysfs. (The server build
+  was selected by a `gpioBackend` argument until #97 deleted the sysfs one.)
 - **#82 moved the USB stub's reason.** The dwc3 glue is in-tree and the config
   builds `USB_CONFIGFS` plus all five function drivers, so the kernel half is
   done and a host has enumerated a gadget off this board. What the appliance
@@ -3150,7 +3184,7 @@ nixos-<n>` per generation, and `LINUX ../nixos/<hash>-Image` / `INITRD` /
 
 `/boot` moves from vfat to **ext4**: the kernel needs ext4 anyway, so this
 retires the `CONFIG_VFAT_FS` + NLS-codepage trap documented in
-[nixos-rootfs.md](nixos-rootfs.md#4-boot--p16-vfat-and-it-must-stay-writable)
+[nixos-rootfs.md](nixos-rootfs.md#4-boot--the-boot-payload-and-it-must-stay-writable)
 (without those tables the mount fails `-EINVAL` and every USB-gadget flag
 silently reads as absent). The flag-file contract is unchanged.
 
@@ -3378,9 +3412,9 @@ Slot B selects the `_b` copy of *every* A/B stage, so `uboot_b` (p6),
 run. The board runs the flashed NixOS appliance (2026-09-07), whose `.axp`
 wrote the same appliance kernel, dtb and vendor-derived U-Boot to both slots,
 so they are correct as flashed; a previous slot-B kernel test may have left
-them otherwise — restore from the backups the boot-test skill has you take
-(`.claude/skills/mainline-boot-test/SKILL.md`, "from a flashed NixOS
-appliance"). The vendor system and its `/root/pre75` backups are gone.
+them otherwise — restore from the backups the boot-test skill had you take.
+The vendor system and its `/root/pre75` backups are gone, and so is the skill:
+this layout and this procedure ended at rung 4.
 
 1. Build and copy: `nix build .#atf-mainline`, then
    `tools/kvmscp result/images/atf_bl31_mainline_signed.bin :/root/`.
@@ -5298,14 +5332,16 @@ or the writes stop reaching DRAM once the dcache comes on.
 
 #### The image
 
-`.#nixos-firmware-image` still stores the vendor-derived chain.
-`.#nixos-firmware-image-mainline` (`bootChain = "mainline"` in
-`nixos/axp-image.nix`) stores mainline BL31 in `atf`/`atf_b`, mainline U-Boot
-in `uboot`/`uboot_b`, and the extlinux payload on p16; `kernel`/`dtb` stay
-packed as a rescue copy nothing loads. The mainline one is **not** the default
-for a concrete reason: an in-place promotion has the vendor U-Boot on slot B
-to fall back to, and a flashed image has the same U-Boot in both slots and no
-fallback at all. #91 is the gate on flipping the default.
+At the time of this rung there were two images: `.#nixos-firmware-image`, which
+stored the vendor-derived chain, and `.#nixos-firmware-image-mainline`, which
+stored mainline BL31 in `atf`/`atf_b`, mainline U-Boot in `uboot`/`uboot_b` and
+the extlinux payload on p16, with `kernel`/`dtb` still packed as a rescue copy
+nothing loaded. The mainline one was deliberately **not** the default: an
+in-place promotion had the vendor U-Boot on slot B to fall back to, and a
+flashed image had the same U-Boot in both slots and no fallback at all. #91 was
+the gate on flipping it. Both of those conditions are gone — rung 4 removed the
+A/B twins, #91 is fixed, and #97 deleted the vendor-chain image;
+`.#nixos-firmware-image-mainline` is `packages.default`.
 
 #### Device end state
 
@@ -5474,10 +5510,11 @@ asserts it.
 two-entry `blkdevparts=` clause. From those come the SPL's compiled-in
 `ATF_HEADER_FLASH_BASE`/`UBOOT_HEADER_FLASH_BASE`, U-Boot's
 `CONFIG_EFI_PARTITION_BASE_LBA` and `bootpart`, `/etc/fw_env.config`,
-`CONFIG_ENV_SIZE`, the NixOS `fileSystems` devices, the extlinux `APPEND`, the
-`/boot` image's size and filesystem, and `tools/migrate-layout.sh`'s `dd
-seek=`. Nine assertions in that file cover the agreements that would otherwise
-only fail on a board that stopped booting.
+`CONFIG_ENV_SIZE`, the NixOS `fileSystems` devices, the extlinux `APPEND` and
+the `/boot` image's size and filesystem. (It also drove
+`tools/migrate-layout.sh`'s `dd seek=`, until #97 deleted the migration kit.)
+The assertions in that file cover the agreements that would otherwise only fail
+on a board that stopped booting.
 
 #### The rebuilt SPL (`.#spl-minimal`)
 
@@ -5570,7 +5607,8 @@ measured free before any of this was written.
 
 #### The migration, and how it was verified
 
-`.#migrate-layout` is a self-contained kit: the script with every offset
+`.#migrate-layout` was a self-contained kit (deleted in #97 with the vendor
+layout it converted from): the script with every offset
 substituted from the layout, the signed images padded to 4 KiB (so each write
 can be read back and hashed at block granularity), the generated GPT, and the
 272 MiB `/boot` compressed to 23 MB for the copy over. `backup` saved the whole
@@ -5854,9 +5892,17 @@ for three rungs, and it had never once worked.
 
 ### Handoff after rung 5
 
-Current as of 2026-09-11, after rung 5, #99 and #100. No history; read "What
-exists now (rung 4)", "(rung 5)", "(#99)" and "(#100)" above if a claim here
-surprises you.
+Current as of 2026-09-11, after rung 5, #99, #100 and #97. No history; read
+"What exists now (rung 4)", "(rung 5)", "(#99)" and "(#100)" above if a claim
+here surprises you.
+
+**#97 removed the legacy build** (`fb77209`, 2026-09-11): the 4.19 image, its
+A/B slot packaging and the vendor boot chain are gone from the repo, and the
+mainline appliance is the only product. `.#nixos-firmware-image-mainline` is
+`packages.default`; there is no `.#firmware-image`, no `*-slot-image`, no
+`.#migrate-layout`, no `.#sd-image`, and no `deploy-iterate` /
+`mainline-boot-test` / `sd-flash-remote` skill. Nothing on the board changed —
+the store paths of every boot-chain artefact are unchanged across the removal.
 
 **The board boots, and it now recovers from a boot that does not.** The eMMC is
 unchanged from rung 4 — `spl` plus a GPT-carrying `disk`, root `/dev/loop0p5`,
@@ -6052,8 +6098,9 @@ It was never the image.
 #### The image carries the bytes the board has booted
 
 `.#migrate-layout` and `.#nixos-firmware-image-mainline` put down the same boot
-chain, and `.#checks.axp-migration-parity` (`pkgs/axp-migration-parity.nix`)
-asserts it at build time rather than leaving it to be re-derived:
+chain, and `.#checks.axp-migration-parity` asserted it at build time rather than
+leaving it to be re-derived. (Both the kit and the parity check went with the
+vendor layout in #97; the table below is the measurement they produced.)
 
 | region | `.axp` member | vs the migration kit |
 |---|---|---|

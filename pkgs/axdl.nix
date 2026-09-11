@@ -6,8 +6,8 @@
 # Rust reimplementation of Axera's proprietary download protocol by Kenta Ida
 # (ciniml, https://github.com/ciniml/axdl-rs, Apache-2.0). Talks the BootROM USB
 # download protocol (VID:PID 32c9:1000) to push a .axp firmware bundle onto an
-# AX630C in download mode -- the host-side flasher for our firmware-image /
-# base-axp .axp outputs:
+# AX630C in download mode -- the host-side flasher for
+# `.#nixos-firmware-image-mainline`, and for a stock Sipeed bundle:
 #
 #     nix run .#axdl -- --file result/*.axp --wait-for-device
 #

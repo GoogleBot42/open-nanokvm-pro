@@ -1,8 +1,5 @@
 { pkgs
 , size ? 128 * 1024 * 1024
-, # "vfat" is what the vendor layout carries; "ext4" is what the minimal
-  # layout carries (#89 rung 4).
-  fsType ? "vfat"
 , version ? "0.0.0-dev"
 , files ? { }
 , payload ? { }
@@ -51,16 +48,16 @@
 # passes `bootlimit`, ships as a copy of `extlinux.conf`: the only known-good
 # generation on a freshly flashed board is the one being flashed.
 #
-# EXT4 SINCE #89 RUNG 4. The minimal layout puts /boot on ext4, which retires
-# the CONFIG_VFAT_FS + NLS-codepage trap in docs/nixos-rootfs.md (without those
-# tables the mount fails -EINVAL and every USB-gadget flag silently reads as
-# absent) and lets NixOS generations live here without a case-folding
-# filesystem underneath them. U-Boot reads it with the same `sysboot`, because
-# `bootmeth_extlinux` goes through the filesystem layer and mainline U-Boot has
-# ext4 support compiled in. The flag-file contract is unchanged.
+# EXT4 SINCE #89 RUNG 4, and FAT32 is gone with the vendor layout (#97). ext4
+# retires the CONFIG_VFAT_FS + NLS-codepage trap in docs/nixos-rootfs.md
+# (without those tables the mount fails -EINVAL and every USB-gadget flag
+# silently reads as absent) and lets NixOS generations live here without a
+# case-folding filesystem underneath them. U-Boot reads it with `sysboot`,
+# because `bootmeth_extlinux` goes through the filesystem layer and mainline
+# U-Boot has ext4 support compiled in.
 #
-# Deterministic in both modes: a fixed volume id / UUID, no timestamps that
-# vary, and every source file carries the store's epoch-0 mtime.
+# Deterministic: a fixed UUID, no timestamps that vary, and every source file
+# carries the store's epoch-0 mtime.
 # ===========================================================================
 
 let
@@ -74,13 +71,6 @@ let
 
   # payload: "path/under/boot" -> store path. Copied in verbatim, so an Image
   # or a dtb goes in without a round trip through a Nix string.
-  payloadCopyFat = lib.concatStringsSep "\n" (lib.mapAttrsToList
-    (name: src:
-      let dir = builtins.dirOf name; in
-      lib.optionalString (dir != ".") "mmd -i bootfs.fat32 \"::/${dir}\" || true"
-      + "\n  mcopy -i bootfs.fat32 ${lib.escapeShellArg src} \"::/${name}\"")
-    payload);
-
   payloadCopyExt = lib.concatStringsSep "\n" (lib.mapAttrsToList
     (name: src:
       let dir = builtins.dirOf name; in
@@ -92,37 +82,6 @@ let
     cp -r --no-preserve=mode,ownership,timestamps ${payloadDir}/. root/
     find root -type d -exec chmod 0755 {} +
     find root -type f -exec chmod 0644 {} +
-  '';
-
-  payloadDirCopyFat = lib.optionalString (payloadDir != null) ''
-    (cd ${payloadDir} && find . -type d ! -name .) | sed 's|^\./||' | while read -r d; do
-      mmd -i bootfs.fat32 "::/$d" || true
-    done
-    (cd ${payloadDir} && find . -type f) | sed 's|^\./||' | while read -r f; do
-      mcopy -i bootfs.fat32 "${payloadDir}/$f" "::/$f"
-    done
-  '';
-
-  fat = pkgs.runCommand "nanokvm-bootfs.fat32"
-    {
-      nativeBuildInputs = [ pkgs.dosfstools pkgs.mtools ];
-      meta.description = "NanoKVM-Pro /boot partition image (FAT32, ${toString (size / 1048576)} MiB)";
-    } ''
-    truncate -s ${toString size} bootfs.fat32
-    mkfs.fat -F 32 -S 512 -s 1 -R 32 -n BOOT -i 4E4B564D bootfs.fat32
-
-    for f in ${stage}/*; do
-      mcopy -i bootfs.fat32 "$f" "::/$(basename "$f")"
-    done
-
-    ${payloadCopyFat}
-    ${payloadDirCopyFat}
-
-    echo "=== /boot contents ==="
-    mdir -i bootfs.fat32 -/ ::
-    mtype -i bootfs.fat32 ::/ver
-
-    cp bootfs.fat32 "$out"
   '';
 
   ext = pkgs.runCommand "nanokvm-bootfs.ext4"
@@ -186,6 +145,4 @@ let
     cp bootfs.ext4 "$out"
   '';
 in
-if fsType == "ext4" then ext
-else if fsType == "vfat" then fat
-else throw "bootfs: unknown fsType '${fsType}' (want \"vfat\" or \"ext4\")"
+ext

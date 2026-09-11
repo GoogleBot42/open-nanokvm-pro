@@ -54,14 +54,15 @@ are the only source of truth.)
 Scanned `docs/{updates,mini-display,architecture,blob-replacement}.md`
 for pending/TODO/unverified markers still present in the tree:
 
-- **`docs/updates.md`, "Hardware validation TODO" callout (now near line
-  246):** the SPL→U-Boot A/B slot-B failover path was reasoned from
-  source. **2026-08-30: now EXERCISED on hardware** (during #49) — slot B
-  boots via `/etc/init.d/S99checkboot systemB`+reboot, and a kernel that
-  dies on slot B auto-fails-over to slot A in ~40s (BOOTABLE bits are
-  consume-once). Procedure in `docs/flashing-and-recovery.md` "Slot-B kernel
-  testing". Issue #10's *deliberate slot-corruption* failover is still not
-  the exact thing tested, but the failover mechanism itself is now proven.
+- **The A/B slot-B failover** was reasoned from source, then EXERCISED on
+  hardware 2026-08-30 (during #49): slot B booted via
+  `/etc/init.d/S99checkboot systemB`+reboot, and a kernel that died on slot B
+  auto-failed-over to slot A in ~40 s (BOOTABLE bits are consume-once).
+  **Historical.** #89 rung 4 removed the A/B twins and rung 5 replaced the
+  whole mechanism with `bootcount` + two extlinux configs
+  (`docs/nixos-rootfs.md` §4b, unattended rollback hardware-proven);
+  #97 deleted the slot packaging and the `docs/updates.md` callout this entry
+  used to cite.
 - **2026-09-04 STATUS.** Jeremy's decisions: WiFi stays, the aic8800 firmware is
   the ONLY closed content ever permitted (#28 closed); NixOS goes STRAIGHT to
   mainline (#26 stage 1 skipped; #10 closed obsolete); #17/#25 closed
@@ -604,3 +605,52 @@ propose SG2002 work without flagging this gap up front.
   against `build/include/config/kernel.release` after the build, not `make
   kernelrelease` before it (they disagree); and `dtc` chokes on a `*/` appearing
   inside a block comment, which a phrase like `TEEC_*/tee_*` produces.
+
+  **2026-09-11 — #97 LANDED: the legacy build is gone.** `fb77209` (code) and
+  `fdfe9d6` (skills + CLAUDE.md) deleted everything that only existed to build,
+  flash, update or document the vendor-derived Ubuntu 22.04 / Linux 4.19.125
+  image. The mainline NixOS appliance is the only product.
+  **Every mention of one of these in the log above is history, not a live
+  reference:**
+
+  - Flake outputs: `firmware-image`, `rootfs`, `base-axp`, the 4.19
+    `kernel`/`dtb`/`initramfs`, `sd-image`, all five `*-slot-image`
+    packagings, `migrate-layout`, `ax-ko-blobs`, `libsns-dummy`, `ax-stub`,
+    `open-vin-csi2`, `open-vin-capture`, `vc8000-vcmd`, `boot-fsbl`/`-atf`/
+    `-optee`/`-uboot`, `logo`, the four closed-backend `kvm-encoder` variants
+    (the blob-free build is just `.#kvm-encoder`), `nanokvm-server-libgpiod`
+    (just `.#nanokvm-server`), `nixos-appliance`, `nixos-firmware-image`,
+    `nixos-appliance-loop(-nofixes)`, the two `uboot-mainline-probe-mb*`
+    images, the `axp-migration-parity` check, and the
+    `nanokvm-pro-vendor-layout` / `nanokvm-pro-loop` nixosConfigurations.
+    `.#nixos-firmware-image-mainline` is `packages.default`.
+  - Files: `pkgs/{rootfs,image,base-axp,kernel,initramfs,dtb,sd-image,slot-image,ax-ko-blobs,libsns-dummy,ax-stub,logo,migrate-layout,axp-migration-parity,boot-atf,boot-fsbl,boot-optee,boot-uboot}.nix`,
+    `pkgs/rootfs/`, `pkgs/ax-stub/`, the out-of-tree
+    `pkgs/{open-vin-csi2,open-vin-capture,vc8000-vcmd}/` (those drivers live in
+    the kernel tree at
+    `pkgs/kernel-mainline/tree/drivers/media/platform/axera/` and ship as
+    `.#video-modules`), `tools/migrate-layout.sh.in`, `nixos/loop-test.nix`,
+    and the `install-retired.go.in` / `pinmux-power.go.in` server overrides.
+  - Skills: `deploy-iterate`, `mainline-boot-test`, `sd-flash-remote`.
+  - Concepts: one eMMC layout (`nixos/lib/emmc-layout.nix`, no
+    `nanokvm.emmcLayout`, no `nanokvm.rootImage`), `/boot` always ext4, no A/B
+    twins, no slot-B testing, and no `gpioBackend`/`updateMode` arguments on
+    `pkgs/nanokvm-server.nix`.
+
+  **So: iterating on the device is a generation switch**, not a hot patch —
+  `nix copy --to ssh://root@<board>` then `nanokvm-update install-toplevel`
+  (kvm-device skill), with `bootcount` rollback as the escape; a U-Boot
+  candidate goes through the one-shot chainload slot.
+
+  **The open list after #97** (`tea issues list --state open`, read
+  2026-09-11): **#84** mini-display + audio on mainline — packaged, never run
+  on the board, and the biggest remaining functional gap; **#95**
+  `SUPPPORT_GZIPD=FALSE` (retires `ax_gzip`, the last prebuilt x86-64 host
+  tool); **#96** the binary cache — Jeremy provides the endpoint, cache name,
+  token and public key, and it is the one blocker on a real update; **#88**
+  boot logo; **#87** nixosModules split and upstreaming; **#98** the 4096-wide
+  capture cap. #86, #83, #85, #89, #91, #99, #100 and #101 are closed;
+  **#76/#80/#81/#82 are delivered but still open** — bookkeeping, with the
+  residuals in their comments. **#7/#9 (the SD image) now have nothing to build
+  on**: #97 deleted the vendor-layout `sd-image`, so an SD story for the NixOS
+  appliance is new work, not a fix.

@@ -17,18 +17,19 @@ public:
   output preceded it, to hang past the tool timeout — both are the reboot
   working, not a failure. Then poll for return with a background
   until-loop (`until tools/kvmssh 'echo up' | grep -q up; do sleep 5;
-  done`); SSH is typically back within ~60-90 s. Warm reboots are safe:
-  `/kvmapp` hot-patches persist (tmpfs tree is re-copied at boot) and a
-  warm reboot is a watchdog reset (does NOT reset the USB2 PHY — only a
-  cold power cycle does).
+  done`); a mainline boot is **71 s to SSH** and anything past ~3 minutes
+  is worth investigating (`bootcount`, below). A warm reboot is a watchdog
+  reset and does NOT reset the USB2 PHY — only a cold power cycle does.
+  It boots whatever generation `/boot/extlinux/extlinux.conf` selects, so
+  a `switch-to-configuration boot` takes effect here and nowhere else.
 - `tools/kvmscp <local-files...> <remote-path>` — copy files to the device
   (remote path is a path on the device, e.g. `/tmp/`; the script adds the
   `root@<ip>:` prefix itself).
   **Copy first, verify, then edit — never chain a device edit after the copy in
   one `set -e` script:** a mis-invoked `kvmscp` (e.g. with a `root@…:` prefix)
-  fails silently, and a following `cat /root/new > /opt/scripts/wifi.sh` still
-  TRUNCATES the target to 0 bytes before `set -e` aborts (2026-09-03). Land the
-  file, `sha256sum` it on the device, then install it in a separate command.
+  fails silently, and a following `cat /root/new > <target>` still TRUNCATES
+  the target to 0 bytes before `set -e` aborts (2026-09-03). Land the file,
+  `sha256sum` it on the device, then install it in a separate command.
   (Repeated 2026-09-04 — the `root@…:` prefix mistake again. Read the usage line.)
   **It can also exit 0 having copied nothing** (2026-09-06: a leading bare
   `:` on the remote path). Never treat `kvmscp`'s exit status as proof —
@@ -37,8 +38,13 @@ public:
   `tools/kvmssh 'cat /path/on/device' > local-file` — binary-safe, works for
   register dumps and `.ko`s alike.
 - **`cp -n` / `cp -an` exits 1 when it skips an existing file** (coreutils ≥ 9.2
-  on the device) and silently aborts a `set -e` script at that line (2026-09-04:
-  a vendor-stack restore stopped half-way). Use plain `cp -a` or drop `set -e`.
+  on the device) and silently aborts a `set -e` script at that line. Use plain
+  `cp -a` or drop `set -e`.
+- **Almost nothing on the appliance is writable.** It is NixOS: `/etc`, `/bin`
+  and the whole system are read-only store symlinks, and `/nix/store` is a
+  read-only bind mount (`boot.readOnlyNixStore`). `/root`, `/tmp`, `/var` and
+  `/boot` are writable; everything else is a configuration change
+  (nixos/appliance.nix) and a generation switch, not an edit.
 
 Both scripts read credentials from `~/.config/nanokvm/device.env` (chmod
 600). Never inline the IPs or passwords into any tracked file — if you find
@@ -50,23 +56,35 @@ wrapper instead.
 Proven one-liner (run via `tools/kvmssh '<the whole thing>'`):
 
 ```
-uname -r; systemctl is-active kvmcomm nanokvm; curl -sk -o /dev/null -w "%{http_code}\n" https://127.0.0.1/; [ -b /dev/mmcblk1 ] && echo present || echo absent
+uname -r; systemctl is-system-running; systemctl is-active nanokvm; curl -sk -o /dev/null -w "%{http_code}\n" https://127.0.0.1/; devmem 0x02390030 32; readlink -f /run/booted-system
 ```
 
 What each part tells you:
-- `uname -r` — kernel is up and SSH works at all.
-- `systemctl is-active kvmcomm nanokvm` — exactly one of these two should be
-  `active` and the other `inactive`. `nanokvm` active is the healthy state
-  for our from-source stack; if `kvmcomm` is active instead, the web UI will
-  not be reachable (see Gotchas below).
-- `curl ... https://127.0.0.1/` — expect HTTP `200` from the web UI once
-  `nanokvm.service` is up.
-- `[ -b /dev/mmcblk1 ]` — whether an SD card is currently inserted. Absent is
-  normal when the device is running from eMMC with no card in the slot.
+- `uname -r` — kernel is up and SSH works at all. Mainline 7.1.x.
+- `systemctl is-system-running` — `running` is healthy; `degraded` means a
+  unit failed, and `systemctl --failed` names it.
+- `systemctl is-active nanokvm` — the Go server. `active` is the healthy
+  state; without it the web UI is down.
+- `curl ... https://127.0.0.1/` — expect HTTP `200` once `nanokvm.service`
+  is up.
+- `devmem 0x02390030 32` — `bootcount`. `0xB0010000` is healthy (cleared by
+  `nanokvm-mark-good` ~60 s in); `0xB001000N` means N boot attempts since the
+  last healthy boot, and anything above 1 is worth investigating. The fourth
+  attempt runs `altbootcmd` and boots the fallback generation.
+- `readlink -f /run/booted-system` — which generation is actually running.
+  Compare it with `/nix/var/nix/profiles/system`: they differ after a
+  `switch-to-configuration boot` that has not been rebooted into yet, and
+  after a rollback.
 
 # Targeted diagnostics (all validated on device 2026-08-15)
 
-**USB HID / gadget path** ("keyboard/mouse not reaching the host"):
+**USB HID / gadget path** ("keyboard/mouse not reaching the host"). On the
+appliance the gadget is a STUB: #82 landed the dwc3 glue and the configfs
+function drivers, but the POLICY half — the script that builds the three HID
+report descriptors, the Microsoft OS descriptors and the NCM link — was vendor
+rootfs and is not reimplemented (`nanokvm-usb.service` says so in the journal).
+Everything below still decodes the CONTROLLER's state; the `usbdev.sh`
+escalations were the vendor image's and no longer exist.
 
 ```
 cat /sys/class/udc/8000000.dwc3/state; cat /sys/class/usb_role/8000000.dwc3-role-switch/role
@@ -97,14 +115,11 @@ those:
   host suspend/resume). They co-time with udhcpd re-ACKs on the NCM usb0
   link in the nanokvm journal.
 - Escalation ladder, all tried-and-safe: UDC unbind/rebind
-  (`.../usb_gadget/g0/UDC`), `soft_connect` toggle, vendor full rebuild
-  `usbdev.sh restart` (NOTE: rebinds only the dwc3 CORE), then the one
-  usbdev.sh misses — rebind the Axera GLUE (re-runs USB clock init):
+  (`.../usb_gadget/g0/UDC`), `soft_connect` toggle, and — the one a gadget
+  rebuild misses — rebind the Axera GLUE, which re-runs USB clock init:
   `echo "soc:axera_dwc3" > "/sys/bus/platform/drivers/axera dwc3/unbind"`
-  (space in dir name is real), then `bind`, then `usbdev.sh start`.
-  Descriptor A/B: `usbdev.sh hid-only` drops NCM + OS descriptors.
-  Stop nanokvm.service before glue rebind / hid-only; `usbdev.sh restart` +
-  `systemctl start nanokvm` restores the normal stack.
+  (the space in the directory name is real), then `bind`. Stop
+  `nanokvm.service` before a glue rebind and start it afterwards.
 - Board facts (from source, issue #42): no VBUS sense (VBUSVALID is
   force-set in device mode), the USB ID pad is a never-muxed floating mic
   pad, and NO software path pulses the USB2 PHY reset — only a cold power
@@ -147,10 +162,11 @@ those:
   byte-identical — a per-frame differing offset means a capture-address
   bug, not encoder noise.
 - Physical-memory inspection: `read()` on `/dev/mem` fails (EFAULT) but
-  **mmap works** — use python3 `mmap.mmap(fd, LEN, offset=BASE)` to dump
-  CMM regions (pool bases from `/proc/ax_proc/mem_cmm_info`). This is how
+  **mmap works** — use python3 `mmap.mmap(fd, LEN, offset=BASE)`. This is how
   the comm_pool block layout was proven (docs/blob-replacement.md,
-  2026-08-17 section). Zero-run analysis of a dump discriminates
+  2026-08-17 section); the vendor's `/proc/ax_proc/*` pool listing is gone
+  with the vendor stack, so the carveout bases now come from the device tree
+  and the open drivers' own dmesg. Zero-run analysis of a dump discriminates
   meta/unwritten pages from live YUYV (real video is never long zero runs;
   glibc memset/memcpy on such a mapping SIGBUSes -- DC ZVA on Device memory --
   so zero/copy with plain word loops, and never read 0x04403000 on a base-only
@@ -166,12 +182,13 @@ those:
 - **Phantom refcount on the open encoder module (2026-09-05):** after a
   session with capture re-inits, `/sys/module/ax630c_venc_vcmd/refcnt` can
   read 2 with `nanokvm` stopped and no process holding `/dev/es_venc`, so
-  `rmmod` says "in use" and `/soc/scripts/auto_load_all_drv.sh -r` cannot
-  unload the open stack. Only a reboot clears it (refcnt 0 afterwards). Check
-  it BEFORE any module-swap experiment, not after the swap half-fails.
-- On-device tools: `gcc`, `python3` (3.13) are present; `ffmpeg`/`ffprobe`
-  are NOT — pull bitstreams to the host (`tools/kvmssh 'cat f' > f`, a
-  75 MB tar pulled fine) and decode with `nix shell nixpkgs#ffmpeg-full`.
+  `rmmod` says "in use". Only a reboot clears it (refcnt 0 afterwards). Check
+  it BEFORE any module experiment, not after one half-fails.
+- Pull bitstreams to the host (`tools/kvmssh 'cat f' > f`, a 75 MB tar pulled
+  fine) and decode with `nix shell nixpkgs#ffmpeg-full`. Only add a tool to
+  the appliance by adding it to `environment.systemPackages` in
+  nixos/appliance.nix and switching a generation — there is no package
+  manager on the board.
 
 # Gotchas
 
@@ -182,11 +199,16 @@ those:
   right after a fresh reflash it reverts to the vendor factory default. Both
   scripts try the configured password first, then the factory default — you
   don't need to know which state the device is in.
-- **Web KVM requires `nanokvm.service`, NOT vendor `kvmcomm.service`.** The
-  two stacks are mutually exclusive and fight over the same capture
-  hardware; only one is ever meant to be active. Full comparison table and
-  why the vendor default is wrong for us: `docs/architecture.md`,
-  section "The two app stacks: nanokvm vs kvmcomm".
+- **There is no vendor app stack any more (#97).** `kvmcomm.service` went with
+  the 4.19 image; `nanokvm.service` is the only thing that serves the web UI.
+  The PATH `/kvmcomm/scripts/wifi.sh` still exists, as a compat shim the Go
+  server execs (`nixos/wifi.nix`) — a path, not a service.
+- **One capture channel serves every viewer**, gated by the global
+  `KvmVision.StreamType`. A second viewer in another mode — another tab, a
+  `curl /api/stream/mjpeg`, a stray mode POST — takes the stream and starves
+  the first, which the page reports as "inconsistent video mode". That is
+  arbitration, not a bug; `service/stream/claims.go` hands the stream back to
+  whoever still has clients when a consumer empties.
 
 ## Power-cycling the board yourself (2026-09-09)
 
@@ -198,17 +220,20 @@ interactive prompt no longer needs Jeremy:
 SW=~/.claude/skills/power-switch/switch.sh
 $SW "nanokvm switch" state          # {"state":"ON","power":3.4,...}  idle appliance ≈ 3.5 W
 $SW "nanokvm switch" off; sleep 5; $SW "nanokvm switch" state   # power 0, state OFF
-$SW "nanokvm switch" on             # mainline chain: SSH in 2-3.5 min (measured
-                                    # 2026-09-09 over six boots, cold and warm)
+$SW "nanokvm switch" on             # SSH back in ~90 s (#91 fixed 2026-09-10;
+                                    # it was 3-18 min before)
 ```
 
-Rules: read every volatile channel first (slot register `devmem 0x02390024`,
-the U-Boot pre-console buffer, ramoops/pstore) — a cold cycle clears DRAM and the
+Rules: read every volatile channel first (milestone register
+`devmem 0x02390024`, `bootcount` `devmem 0x02390030 32`, the chainload oracle
+`CHLD` at `0x480EE000`, the U-Boot pre-console ring at `0x480E8000`,
+ramoops/pstore) — a cold cycle clears DRAM and the
 register. Confirm with `state`, not with the publish. Do not cycle during a
 block write (`dd` to an eMMC partition) — wait for the hash-verify. One cycle per
-failed boot; give the mainline chain **8 minutes** before deciding it is dark --
-most of that is the single-block eMMC read of a 51 MB `Image` (#91), and one
-rung-4 boot came back only after a cycle at eight minutes.
+failed boot. Since #91 was fixed (2026-09-10, the eMMC node asks for 200 MHz)
+SSH is back ~90 s after `on`; still poll **30 minutes** before calling a board
+dark, because a candidate that hangs costs a 300 s watchdog cycle and ten
+minutes of patience is what made #94 look like a bad flash.
 
 **Pre-probe caveat (2026-09-09):** `tools/kvmssh` skips an address whose
 `bash -c 'echo > /dev/tcp/$ip/22'` probe fails. In a subagent sandbox that

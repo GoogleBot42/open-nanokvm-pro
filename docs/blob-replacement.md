@@ -1,5 +1,19 @@
 # Replacing the Axera video blobs — findings & test plan
 
+> **HISTORICAL (2026-09-11, #97).** This is the reverse-engineering record of
+> how the closed capture and encode stack was replaced, written against the
+> vendor-derived 4.19 image while that work was going on. That image, the
+> vendor `ax_*.ko` modules and the Axera userspace libraries are **gone from
+> this repo**, so the recipes here cannot be run as written and the flake
+> outputs they name (`.#ax-ko-blobs`, `.#axera-libs`' library half,
+> `.#base-axp`, `.#kvm-encoder-openvenc`, the `pkgs/rootfs.nix` loader) no
+> longer exist. What survives is the RESULT: the open drivers now live in the
+> kernel tree at `pkgs/kernel-mainline/tree/drivers/media/platform/axera/` and
+> ship as `.#video-modules`, and `libkvm.so` (`.#kvm-encoder`) is the one
+> blob-free build. Read this for the evidence and the reasoning behind those;
+> read `docs/architecture.md` for what the pipeline is today.
+
+
 Status: **DONE — a real 1080p YUV frame was captured with ZERO vendor libraries
 (Stage 6, 2026-07-21).** Open userspace (libc only; `ldd` = libc) drives the whole
 capture path end-to-end: allocator/CMM/pool + MIPI-RX PHY bring-up + VIN

@@ -19,7 +19,9 @@
 # which is what makes `tools/kvmssh` reach the mainline system with the same
 # address and the same password as the vendor one.
 #
-# Distinct from pkgs/initramfs.nix, which is the SHIPPING 4.19 initramfs
+# The only initramfs this repo builds by hand. The appliance's initrd is the
+# NixOS generation's, written by the extlinux builder (#99). Once distinct from
+# the 4.19 image's embedded initramfs
 # (vendor /init + busybox). Nothing is shared between them on purpose: this one
 # must not depend on anything the mainline port has not yet built.
 # ---------------------------------------------------------------------------
@@ -67,7 +69,7 @@ staticPkgs.stdenv.mkDerivation {
     install -m0755 ${dropbear}/bin/dropbearkey   "$tree/bin/dropbearkey"
     $STRIP "$tree/bin/busybox" "$tree/bin/dropbear" "$tree/bin/dropbearkey"
 
-    # Applet symlinks, same recipe as pkgs/initramfs.nix. /init execs busybox
+    # Applet symlinks. /init execs busybox
     # by absolute path for the two applets it needs, but a login shell wants
     # the usual names on PATH.
     applets=$(find ${busybox}/bin ${busybox}/sbin -mindepth 1 -maxdepth 1 \
@@ -94,7 +96,7 @@ staticPkgs.stdenv.mkDerivation {
       fi
     done
 
-    # Deterministic archive, same recipe as pkgs/initramfs.nix: epoch mtimes,
+    # Deterministic archive: epoch mtimes,
     # sorted entries, --reproducible, root:root. The Image embeds this, so a
     # non-reproducible cpio would make the kernel non-reproducible.
     find "$tree" -exec touch -h -d @0 {} +

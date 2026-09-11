@@ -17,7 +17,8 @@
 # ===========================================================================
 # make-axp-image -- an AXDL `.axp` firmware bundle, built FROM SCRATCH.
 #
-# `pkgs/image.nix` (the shipping 4.19 `firmware-image`) takes the vendor's
+# The retired `pkgs/image.nix` (the 4.19 `firmware-image`, deleted in #97) took
+# the vendor's
 # release .axp and rewrites members inside it. This builder takes no vendor
 # bundle at all: it emits the partition manifest and every stored member
 # itself, so nothing that lands on the eMMC comes from a binary we did not

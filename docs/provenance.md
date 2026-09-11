@@ -1,328 +1,193 @@
 # Provenance & approval baseline
 
-This is the authoritative list of everything in the firmware that is **not** built
-from source in this repo: every pinned binary blob (shipped or build-time) and
-every network endpoint the device contacts at runtime. Each entry has an explicit
-status. The rule this enforces: nothing ships as a blob, and nothing phones out,
-without a line here that approves it.
+The authoritative list of everything in the firmware that is **not** built from
+source in this repo, and every network endpoint the device contacts at runtime.
+The rule it enforces: nothing ships as a blob, and nothing phones out, without a
+line here that approves it.
 
-It is the output of a three-part audit (build provenance, shipped-image
-inventory, runtime network behaviour). Re-run the audit when a flake input is
-re-pinned or the vendor base `.axp` changes.
+Since #97 there is one product — the mainline NixOS appliance — and the list is
+short. Re-run the audit when a flake input is re-pinned.
 
-- [What builds from source](#what-builds-from-source)
-- [Approved binary blobs](#approved-binary-blobs)
-- [Blobs pending a decision](#blobs-pending-a-decision)
+- [The blob policy](#the-blob-policy)
+- [The one closed payload on the image](#the-one-closed-payload-on-the-image)
+- [Build-time-only vendor inputs](#build-time-only-vendor-inputs)
+- [What the image stores](#what-the-image-stores)
+- [What used to be here](#what-used-to-be-here)
 - [Runtime network endpoints](#runtime-network-endpoints)
 - [Verified absent](#verified-absent)
 
 ---
 
-## What builds from source
+## The blob policy
 
-Genuinely compiled from pinned sources — verified, no prebuilt artifact
-substituted: the **boot chain** (SPL/ATF/OP-TEE/U-Boot), the **kernel** + DTS +
-`lt6911_manage.ko`, the **embedded kernel initramfs** (`pkgs/initramfs.nix`),
-the **whole open video stack** — `ax630c_venc_vcmd.ko` (`pkgs/vc8000-vcmd/`),
-`open_vin_csi2.ko` + `open_vin_capture.ko` (`pkgs/open-vin-{csi2,capture}/`)
-and our **`libkvm.so`** (`pkgs/kvm-encoder/src/`) — the **Go server** (pinned
-upstream `NanoKVM-Pro/server`, patched at build), the **React web UI** (our
-in-tree fork of `NanoKVM-Pro/web`, `web/` — provenance in `web/FORK.md`), and
-the **`axdl`** host flasher.
+**Approved 2026-09-04 (Jeremy, #28): the aic8800 wireless firmware is the ONLY
+closed content permitted on the image. No closed userspace, no closed `.ko`,
+ever.**
 
-The initramfs baked into the `Image` used to be the vendor SDK's prebuilt tree —
-five aarch64 blobs (`busybox` 1.37.0, `e2fsck`, `ld-linux-aarch64.so.1`,
-`libc.so.6`, `libuuid.so.1.3.0`). Since issue #27 it is built by
-`pkgs/initramfs.nix` from **static (musl) nixpkgs busybox 1.37.0 + e2fsprogs
-`e2fsck`**; being static, the loader and both libraries are gone rather than
-replaced. The vendor `/init` and `/show_iostat` **shell scripts** are still used
-byte-for-byte — they encode the board's boot contract (partition numbers, LED
-triggers, USB-MSC recovery gadget, `device_key`/MAC derivation), and they are
-source, not blobs.
+Everything else on the device is compiled from pinned sources: the boot chain
+(the SPL, mainline TF-A BL31, mainline U-Boot), the mainline kernel and its
+device tree, the open video stack (`ax630c_venc_vcmd.ko`, `open_vin_csi2.ko`,
+`open_vin_capture.ko` — all in `pkgs/kernel-mainline/tree/`), our `libkvm.so`
+(`pkgs/kvm-encoder/src/`), the Go server (pinned upstream `NanoKVM-Pro/server`,
+patched at build), the React web UI (our in-tree fork, `web/FORK.md`), the
+mini-display stack, the EDID set (`pkgs/edid/mkedid.py` — no vendor bytes), the
+`aic8800_bsp`/`aic8800_fdrv` GPL drivers, and the `axdl` host flasher. The whole
+rootfs is nixpkgs.
 
-The only `fetch*` calls outside the four pinned flake inputs are
-`pkgs/base-axp.nix` (`fetchurl`, sha256-pinned) and `pkgs/axdl.nix`
-(`fetchFromGitHub`, rev + `Cargo.lock` pinned). Every other source comes from the
-four pinned inputs or `pkgs/kvm-encoder/src/`.
+The closure is asserted blob-free at build time: `nixos/appliance.nix` fails the
+build if `libkvm.so`, `libkvm.so.0` or `NanoKVM-Server` still carries an
+`axera-libs` store path, which is what would drag the closed Axera media
+libraries into an image that is supposed to contain none of them.
 
 ---
 
-## Approved binary blobs
-
-### Ship on the device
+## The one closed payload on the image
 
 | Blob | Origin | License | Why approved |
 |---|---|---|---|
-| **aic8800 radio firmware** | `pkgs/aic8800-firmware.nix` (#85) — 62 `.bin` files, 5.1 MB, from `radxa-pkg/aic8800` at `516e3b0`, shipped through `hardware.firmware` and reachable at `/run/current-system/firmware/aic8800_fw/SDIO/<chip>/`. **Every file is MD5-pinned, both ways**, against AICsemi's own `src/firmware_version.md`: a manifest row with no file and a file with no row are each a failed build. Loaded by our from-source GPL `aic8800_bsp.ko` (`pkgs/aic8800.nix`), which opens the path directly — the SDK builds with `CONFIG_USE_FW_REQUEST = n`, so the package opts out of `hardware.firmwareCompression`. *(4.19 image: `/opt/firmware/aic8800/*.bin`, modules from the SDK kernel tree, `/opt/scripts/wifi.sh` — `pkgs/rootfs/wifi.sh`.)* | closed firmware, redistributable | **APPROVED 2026-09-04 (Jeremy, #28): WiFi stays, and the wireless firmware is the ONLY closed content permitted on the image — no closed userspace, no closed `.ko`, ever.** It executes on the radio, not the CPU. It survived the mainline move: #85 packages the GPL driver against the 7.1 kernel and pins the firmware. **Hardware-proven 2026-09-11**: the part is an AIC8801 and the driver loads these files from `/run/current-system/firmware/aic8800_fw/SDIO/aic8800/` — see [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS". |
-| `libax_*.so` (Axera media/NPU userspace) | **shipped** by the retained vendor rootfs at `/opt/lib` (part of the base `.axp`); `pkgs/axera-libs.nix` supplies the ABI-matched headers + link stubs at **build time only** — it stages nothing into the image | BSD-3, redistributable | Unavoidable on this SoC; the documented "link, don't rebuild" stance. **Since #25 (2026-08-31) the shipped `libkvm.so` `DT_NEEDED`s ZERO `libax_*` — 0 vendor libs on the video path**; since #55 M3 (2026-09-02) that build is `.#kvm-encoder-v4l2` (V4L2 capture over our open drivers + open VC8000E encode; only `-ljpeg`/`-lopus`/`-lasound` remain, all on the Ubuntu base). All **33 `/opt/lib/libax_*.so`** (~8.3 MB) are therefore dead weight and are now **PURGED from the flashed image** (`pkgs/rootfs.nix` step 5d1, enumerated + build-asserted empty; device-proven safe — the open stack captures + streams with every libax removed). Sipeed's original closed **`libkvm.so.0.1.0`** (2.3 MB, `DT_NEEDED`s the full libax closure) is likewise removed. The rest of the closed media payload went out in **#54 (2026-09-03, step 5d2)**: the vendor `libsns_*.so` (13 files, ~24 MB), the NPU/AI-ISP model data and the `/opt/etc` ISP sensor-tuning set — see [REMOVED from the image](#closed-binaries--removed-from-the-image). (The 4.19 overlay OTA could not delete, so a device upgraded by one kept all of this until reflash; there is no overlay OTA since #86.) (`libsns_dummy.so` is no longer in this bucket — built from SDK source since 2026-08-16, `pkgs/libsns-dummy.nix`, issue #30.) |
-| ~~`ax_*.ko` (media kernel modules)~~ — **NO LONGER SHIPS** (#54, 2026-09-03) | was carried by the retained **vendor rootfs at `/soc/ko`** (part of the base `.axp`) | GPL-tagged, source unpublished | The two ENCODE blobs `ax_venc.ko` + `ax_jenc.ko` left the loader (and the image) in **#25**; the loader stopped insmod'ing the rest in **#55 M3 (#60, 2026-09-02)**; **#54 deletes the whole `/soc/ko` vendor set** — all 22 `ax_*.ko` (`sys`/`cmm`/`pool`/`base`/`npu`/`ivps`/`vpp`/`gdc`/`tdp`/`vo`/`fb`/`venc`/`jenc`/`vdec`/`mipi_rx`/`proton`/`mipi_switch`/`audio`/`ddr_dfs`/`ive`/`avs`/`perf_monitor`) and the vendor `/soc/ko` copies of `aic8800_{bsp,btlpm,fdrv}.ko` + `hynitron_touch.ko` (we build those four from the SDK kernel tree into `/usr/lib/modules/4.19.125`, where udev autoloads them — device-proven). `pkgs/rootfs.nix` step 5d2 enumerates them from the vendor image and build-asserts them gone: 26 files, ~32 MB. `/soc/scripts/auto_load_all_drv.sh` is **ours** since issue #39 (`pkgs/rootfs/ax-load-drv.sh`) and insmods exactly three from-source modules — `ax630c_venc_vcmd.ko` (open VC8000E encode), `open_vin_csi2.ko` (open MIPI CSI-2 receiver), `open_vin_capture.ko` (open VIN capture → V4L2) — which are now the entire contents of `/soc/ko`. **No rollback loader ships** (nothing left for one to insmod): reverting to the vendor stack is a reflash of the vendor `.axp`. The autoload guard survives the purge — `ax_*.ko` must never be overlaid into `/usr/lib/modules`; `pkgs/ax-ko-blobs.nix` stays a pinned bench reference and is deliberately not merged into the modules tree, because `depmod` then emits `of:` aliases that udev autoloads parameter-less → `ax_cmm` panic → boot loop (bricked a device once; guard in `pkgs/rootfs.nix` step [4]). Keep/drop history: [blob-replacement.md](blob-replacement.md#module-curation-12-of-22-issue-39). |
-| Vendor `.axp` overlay base (whole Ubuntu-arm64 rootfs + kept vendor boot members) | `pkgs/base-axp.nix`, sha256-pinned v1.0.15 | mixed (GPL/misc) | v1 low-risk base; a pure-nix rootfs is the long-term goal — feasibility + scaffold in [nixos-rootfs.md](nixos-rootfs.md) (`.#nixos-rootfs` builds, not yet booted). Its retained *contents* are inventoried below. |
+| **aic8800 radio firmware** | `pkgs/aic8800-firmware.nix` (#85) — 62 `.bin` files, ~5.1 MB, from `radxa-pkg/aic8800` at `516e3b0`. Shipped through `hardware.firmware`, reachable at `/run/current-system/firmware/aic8800_fw/SDIO/<chip>/`. Loaded by our from-source GPL `aic8800_bsp.ko` (`pkgs/aic8800.nix`), which opens the path with `filp_open` — the SDK builds with `CONFIG_USE_FW_REQUEST = n`, so the package opts out of `hardware.firmwareCompression`. | closed firmware, redistributable | **APPROVED (#28).** It executes on the radio's own core, never on the A53s. **Hardware-proven 2026-09-11**: the part is an AIC8801 and the driver loads these files from `/run/current-system/firmware/aic8800_fw/SDIO/aic8800/` — see [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS". Gated by `nanokvm.wifi.enable`; turning that off drops the firmware and the drivers from the closure entirely, which is what the QEMU harness does. |
 
-### Build-time only (do not ship, but shape outputs)
-
-| Blob | Origin | Role | Why approved |
-|---|---|---|---|
-| `ax_gzip` (Axera x86-64 static ELF) | `maix_ax620e_sdk` `tools/ax_gzip_tool/` | `-9` compresses the kernel/dtb/boot payloads; its "axgzip" LZ77 is what the SPL gzipd HW decompresses. Executed by `pkgs/boot.nix` + `pkgs/slot-image.nix`. | No source available; its format is mandatory for the on-device loader. This is the reason those packages are `x86_64-linux`-only. |
-| `@esbuild/linux-x64`, `@rollup/rollup-linux-x64-gnu` (+ cross-platform siblings) | `nanokvm-web` `pnpmDeps` FOD (hash-pinned) | Vite bundler/minifier | Standard JS build tooling; the shipped `dist/` is static JS/CSS/HTML only — **no native code enters the bundle**. Pinned by the `pnpmDeps` hash. |
-
-### Provenance-relevant (not binaries)
-
-- **RSA signing keys** `tools/imgsign/{public,private}.pem` + `aes-256.key` — the
-  SDK's committed dev/test keys (public modulus is a visible repeating pattern).
-  Used to sign every partition image. Signatures are **not enforced** on retail
-  boards (`SECURE_BOOT_EN` efuse unburned; confirmed on our unit). See
-  `pkgs/boot.nix`.
+**Pinned by per-file MD5, both ways.** `src/firmware_version.md` in the driver
+tree is AICsemi's own manifest. Every `.bin` shipped is checked against it at
+build time, and every row for a directory we ship must have a file — a manifest
+row with no file and a file with no row are each a failed build, asserted by
+count (62) as well as by sum. A firmware swap upstream is a broken build, not a
+silent change in what runs on the radio.
 
 ---
 
-## The NixOS appliance image (`.#nixos-firmware-image`)
+## Build-time-only vendor inputs
 
-The shipping 4.19 `.#firmware-image` is an **overlay**: it rewrites members
-inside Sipeed's release `.axp` and keeps five of them. The NixOS appliance image
-is packed **from scratch** (`nixos/lib/make-axp-image.nix`) and keeps none —
-there is no `base-axp` anywhere in its inputs, and the packer fails the build if
-a store path from it appears.
+**None of these is closed content on the image.** They shape outputs, or they
+run on the host, or they run from RAM during a flash and are never stored.
 
-**Stored on the eMMC** — one row per partition, in the order they are written:
-
-| p | Partition | Member | Source |
+| Input | Origin | Role | Status |
 |---|---|---|---|
-| 7 | `env` | `uboot_env.bin` | `pkgs/uboot-env.nix` — `mkenvimage` over mainline U-Boot's own compiled-in default environment (`make u-boot-initial-env`, which dumps `.rodata.default_environment` out of the linked object) plus the three-line delta in `pkgs/uboot-env.txt` (`bootcount`, `upgrade_available`, `bootsystem`). Since #89 rung 3 U-Boot itself does not read it (`CONFIG_ENV_IS_NOWHERE`); `fw_printenv`/`fw_setenv` on the appliance do |
-| 2 | `ddrinit` | `ddrinit_…_signed.bin` | `pkgs/boot.nix` |
-| 3/4 | `atf` / `atf_b` | `atf_bl31_signed.bin`, `atf_b_bl31_signed.bin` | `pkgs/boot.nix` (vendor-fork TF-A 2.7). `.#nixos-firmware-image-mainline` stores `atf_mainline_bl31_signed.bin` instead: **mainline TF-A 2.15** with our own `plat/axera/ax630c` (`pkgs/atf-mainline.nix`, #89). Hardware-proven since rung 1; not yet the default, see `nixos/axp-image.nix` |
-| 5/6 | `uboot` / `uboot_b` | `u-boot_signed.bin`, `u-boot_b_signed.bin` | `pkgs/boot.nix` (U-Boot 2020.04). **Blob-free since #90 (2026-09-08).** It used to carry the closed EIP-130 crypto-engine firmware (`cmd/axera/cipher/eip130_fw.h`, 19632 words = 78528 B), pulled in by `CONFIG_CMD_AXERA_CIPHER=y` + `CONFIG_AXERA_SECURE_BOOT=y`; both are now `is not set` in the defconfig patch. Nothing on any path we use called it — every call site is `#if defined(CONFIG_AXERA_SECURE_BOOT) && defined(CONFIG_CMD_AXERA_CIPHER)`, `update_verify_image()` has a `return 0` stub, and `axera_secboot_image_check()` returns 0 unless the `SECURE_BOOT_EN` efuse is burned (it is not on this board). `u-boot.bin` 1774909 → 1650957 B; the signed (ax_gzip'd) partition 649688 → 542728 B. Asserted at build. `.#nixos-firmware-image-mainline` stores `u-boot_mainline_signed.bin` instead: **mainline U-Boot 2026.07** plus this repo's twenty-patch AX630C port (`pkgs/uboot-mainline.nix`, #89), 184 KB of the 1536 KB partition, with no vendor code and no EIP-130 question at all. Hardware-proven on slot A in rung 3; not yet the default because #91 costs it about two boots in three |
-| 8/9 | `logo` / `logo_b` | `logo.bmp`, `logo_b.bmp` | `pkgs/logo.nix` — generated 800×480 24-bpp BMP |
-| 10/11 | `optee` / `optee_b` | `optee_signed.bin`, `optee_b_signed.bin` | `pkgs/boot.nix` (OP-TEE 3.21) |
-| 12/13 | `dtb` / `dtb_b` | `…_signed.dtb`, `…_b_signed.dtb` | `dts/` → `pkgs/dtb-mainline.nix` → `pkgs/slot-image.nix` |
-| 14/15 | `kernel` / `kernel_b` | `kernel.bin`, `kernel_b.bin` | mainline Linux 7.1.3 + the NixOS stage-1 initrd (`pkgs/kernel-mainline.nix`) |
-| 16 | `boot` | `bootfs.fat32` | `pkgs/bootfs.nix` — FAT32 carrying `ver` |
-| 17 | `rootfs` | `nixos_rootfs_sparse.ext4` | `nixos/appliance.nix` → `nixos/lib/appliance-artifacts.nix` |
-| 1 | `spl` | `spl_…_signed.bin` | `pkgs/spl-minimal.nix` (written last, deliberately) for the mainline image; `pkgs/boot.nix` for the vendor-layout recovery one. **BLOB-FREE SINCE 2026-09-09 (#90 closed).** The vendor sign tool splices `build/tools/imgsign/eip_ax620e.bin` — byte-identical to the U-Boot `eip130_firmware[]` array, 78528 B — into the SPL *package* at `fw_flash_addr` 0xCC00 and `fw_bak_flash_addr` 0x2CC00, and the signed `spl_header` declares its `fw_size`/`fw_check_sum`. That is a BootROM contract (`spl_AX620E_sign.py`, `-fw` in `boot/bl1/{spl,sd}/Makefile`), not a build option — but `-fw` takes a *file*, and an EMPTY file gives `fw_size = 0`, `fw_check_sum = 0` and nothing spliced. The BootROM accepts it: hardware-proven across two warm reboots and a cold power cycle (#89 rung 4), each reaching SSH with register `0x30000014` and web 200. `.#spl-minimal` therefore ships with **zero** copies of the firmware, build-asserted; `.#spl-minimal-eip` rebuilds the vendor-shaped container with exactly two at exactly those offsets, kept as a `dd`-away fallback should a unit ever refuse the empty one. The SPL code itself was always clean (`spl_…nanokvm.bin` scans blob-free). |
+| `ax_gzip` | `maix_ax620e_sdk` `tools/ax_gzip_tool/` — an Axera **x86-64 static ELF** | `-9` compresses each signed boot payload; its "axgzip" LZ77 is the format the SPL's gzipd hardware decompresses. Driven by `pkgs/ax-sign.nix` and `pkgs/boot.nix`. | **The only closed binary left anywhere in the build.** No source exists and the format is a BootROM/SPL contract. It is why every flashable output of this flake is `x86_64-linux`-only. |
+| `imgsign` + its keys | `maix_ax620e_sdk` `build/tools/imgsign/`, `tools/imgsign/{public,private}.pem`, `aes-256.key` | Wraps each payload in the 1 KiB container the SPL loads: magic `0x55543322`, header and payload checksums, a capability word, an RSA-2048 key/signature pair. `pkgs/ax-sign.nix` drives it for anything built outside the vendor makefiles. | Python, not a binary. The keys are the SDK's **committed dev/test keys** (the public modulus is a visible repeating pattern; `aes-256.key` is ASCII zeros). Enforcement is a runtime decision the SPL makes from the `SECURE_BOOT_EN` efuse, which is unburned on retail units — so the signature satisfies a check that never runs. |
+| bl1/SPL C source | `maix_ax620e_sdk` `boot/bl1/` | `.#spl-minimal` recompiles it for our eMMC layout's byte offsets (#89 rung 4). | Source, built here. **Blob-free since #90** — see below. |
+| Axera `ax_*.h` headers | `maix_ax620e_sdk_msp` | Our blob-free `libkvm.so` compiles against them for the SDK's frame and stream types. | Headers only. **No library out of this tree is linked or shipped**, and the image closure is asserted to contain none of it. |
+| FDL1 / FDL2 download agents | built from SDK source by `pkgs/boot.nix` | The AXDL flasher pushes them into BootROM RAM (`0x3000000` and `0x5C000000`) to get a programmer running. FDL2 **is** a U-Boot build. | Compiled here, from source. **Never stored on the eMMC.** Nothing out of `pkgs/boot.nix` ever boots on the board; the `atf-mainline` check additionally reads the vendor `atf_bl31_signed.bin` out of that derivation only to compare header fields. |
+| `@esbuild/linux-x64`, `@rollup/rollup-linux-x64-gnu` (+ siblings) | `nanokvm-web` `pnpmDeps` FOD, hash-pinned | Vite bundler/minifier | Standard JS build tooling. The shipped `dist/` is static JS/CSS/HTML — no native code enters the bundle. |
 
-**Flash-time only, never stored on the eMMC:**
+### The EIP-130 firmware is gone (#90, closed 2026-09-09)
 
-| Member | Source | Role |
-|---|---|---|
-| `fdl_…_signed.bin` (FDL1) | `pkgs/boot.nix` | pushed into BootROM RAM at `0x3000000` |
-| `fdl2_signed.bin` (FDL2) | `pkgs/boot.nix` | the programmer, at `0x5C000000`. FDL2 **is** our U-Boot build, so it inherited the EIP-130 blob and lost it in the same change (#90): 1775933 → 1651981 B. It never needed it — the download path integrity-checks with plain 32-bit sums (`fdl_engine.c` `fdl_checksum32`/`calc_image_checkSum`, `fdl_frame.c` `frame_checksum`), never with the crypto engine. |
-
-**`eip_ax620e.bin` is not in this image.** It is the standalone copy of the
-closed EIP-130 crypto-engine firmware the vendor bundle carries as its own
-member. The host flasher never reads it: `axdl-rs` writes only `Type=CODE`
-images and finds the FDLs by their `name` attribute, so an `EIP` entry is dead
-weight. Left out rather than shipped. `.#firmware-image` still passes the
-vendor's copy through, because that image is a rewrite of the vendor bundle.
-The same firmware still reaches the chip from inside the signed SPL package on
-both images (p1 above) — that one is the BootROM's, not ours.
-
-The rootfs closure is asserted blob-free at build time — any store path matching
-`axera-libs`, `ax-ko-blobs` or `libsns-dummy` fails the build
-([nixos-rootfs.md](nixos-rootfs.md#the-blob-policy-assertion)). The aic8800 radio
-firmware is the one closed thing on it, and the one closed thing the policy
-allows: 5.1 MB, MD5-pinned, gated by `nanokvm.wifi.enable` (#85). Turning that
-option off removes it and the driver from the closure entirely, which is what
-the QEMU harness does.
-
-Every partition image except the logo, the environment and `/boot` still carries
-the SDK's dev-key RSA signature (see
-[Provenance-relevant](#provenance-relevant-not-binaries)); those three are raw
-formats with no header.
+The closed EIP-130 crypto-engine firmware (78528 B) used to be spliced into the
+SPL *package* at `fw_flash_addr` `0xCC00` and `fw_bak_flash_addr` `0x2CC00`,
+with the signed header declaring its `fw_size`/`fw_check_sum`. That is a BootROM
+contract, not a build option — but the sign tool's `-fw` argument takes a
+*file*, and an **empty** file gives `fw_size = 0`, `fw_check_sum = 0` and
+nothing spliced. The BootROM accepts it: hardware-proven across two warm reboots
+and a cold power cycle. `.#spl-minimal` is build-asserted to carry **zero**
+copies; `.#spl-minimal-eip` rebuilds the vendor-shaped container with exactly
+two at exactly those offsets, kept only as a fallback should a unit ever refuse
+the empty one. U-Boot and FDL2 lost their own copies in the same change
+(`CONFIG_CMD_AXERA_CIPHER` and `CONFIG_AXERA_SECURE_BOOT` are `is not set`), and
+mainline U-Boot never had the question at all.
 
 ---
 
-## Blobs pending a decision
+## What the image stores
 
-These are **not** in the approved-from-the-start set. They are either closed
-vendor code that executes in our stack, or inert closed binaries carried by the
-retained base rootfs. Listed here until explicitly approved or removed.
+`.#nixos-firmware-image-mainline` is packed from scratch by
+`nixos/lib/make-axp-image.nix`. There is no vendor bundle behind it and the
+packer fails the build if a store path from one appears. Five stored partitions,
+in the GPT order (`nixos/lib/emmc-layout.nix`; full offsets in
+[flashing-and-recovery.md](flashing-and-recovery.md#the-emmc-map)):
 
-### Closed vendor code that executes today (beyond the approved ax libs/modules)
-
-No closed code executes on the A53s. The aic8800 firmware moved to the approved
-table on 2026-09-04; what is left below runs on a coprocessor or at flash time.
-
-| Component | Path | Runs when | Note |
-|---|---|---|---|
-| **EIP-130 crypto-engine firmware** | **GONE from the mainline image (#90 closed 2026-09-09).** Still spliced into the vendor-layout recovery image's `spl_…_signed.bin` at `0xCC00` + `0x2CC00`; source `build/tools/imgsign/eip_ax620e.bin`, 78528 B | boot, on the EIP-130 core (loaded by the BootROM per the signed `spl_header`'s `fw_size`/`fw_check_sum`) | #90 removed it from U-Boot/FDL2 (defconfig) and from `pkgs/boot.nix`'s exports, and then from the SPL itself: the sign tool's `-fw` argument takes an empty file, `fw_size` becomes 0, and the ROM boots that — proven on hardware, two warm reboots and a cold cycle. `.#spl-minimal` is build-asserted to carry **zero** copies; `.#spl-minimal-eip` carries exactly two at exactly those offsets and exists only as a fallback. **The aic8800 wireless firmware is now the only closed content on the shipped image**, which is exactly the one exception the blob policy allows. |
-| `eip_ax620e.bin` | kept vendor member of the **4.19 overlay** `.axp` only | never — dead weight | The same firmware as a standalone member. Not a download helper, as this row used to say. `pkgs/boot.nix` stopped exporting its own copy in #90 and the NixOS `.axp` never had it; the overlay image passes the vendor bundle's member through because that image is a rewrite of the bundle. |
-
-### `/opt/lib` dead weight — cleared
-
-The retained vendor rootfs shipped **50** `.so` files in `/opt/lib`. **Since #25
-(2026-08-31) our runtime needs ZERO of them** — the shipped `libkvm.so`
-(`.#kvm-encoder-v4l2` since #55 M3: V4L2 capture + open VC8000E encode)
-`DT_NEEDED`s no `libax_*` at all (only `libjpeg`/`libopus`/`libasound`, all on
-the Ubuntu base). So **all 33 `libax_*.so` were PURGED** in #25
-(`pkgs/rootfs.nix` step 5d1) together with Sipeed's leftover closed
-`libkvm.so.0.1.0`, and the **13 vendor `libsns_*.so`** (~24 MB) followed in
-**#54** (step 5d2) — also unreferenced (our `libsns_dummy.so` is dlopen'd only
-on the unshipped closed-capture path). Device-proven safe: with every
-`/opt/lib/libax_*.so` moved aside the open stack still captures + streams
-(0 libax maps). Historical note (pre-#25): the vendor-MPI `libkvm`
-`DT_NEEDED`ed 7 of them (`libax_venc/sys/proton/mipi/ivps` + transitive
-`libax_engine` → `libax_interpreter`).
-
-**What is left in `/opt/lib`** is the Ubuntu-base/third-party remainder the
-vendor dropped there (opus and friends) plus **our from-source
-`libsns_dummy.so`** — the build asserts `libsns_dummy.so` is the *only*
-`libsns_*` survivor. `libax_syslog.so` left this bucket by deletion, below.
-
-### Closed binaries — REMOVED from the image
-
-Decided: these closed binaries and closed data sets are deleted by the
-`pkgs/rootfs.nix` debugfs overlay (and won't return — each purge is enumerated
-from the vendor image, floor-asserted, and asserted gone afterwards; the build
-fails if any survive). The 4.19 overlay OTA could not delete, so a device
-upgraded by one kept them until a reflash; since #86 there is no overlay OTA at
-all, and the appliance image contains none of this in the first place.
-
-| Artifact | Size | Was |
+| GPT # | Partition | Source |
 |---|---|---|
-| `/usr/bin/axbox` (+ `/usr/sbin/{axsyslogd,axklogd}` and `/usr/bin/axdmesg` symlinks, `/etc/init.d/{axsyslogd,axklogd}`) | 44K | closed Axera BusyBox-1.32.0 syslog/klog multicall, started by `/etc/rc.local`. **Replaced by stock `rsyslogd`**, which the base already runs (`rsyslog.service` enabled in `multi-user.target.wants`, `Alias=syslog.service`) with `imuxsock` + `imklog` and `50-default.conf` writing `/var/log/{syslog,kern.log,auth.log}`. We ship `/etc/rc.local` without the two launch lines (`pkgs/rootfs/rc.local`, vendor original byte-pinned as `rc.local.vendor`). The base's other caller, `/etc/init.d/rcS`, is dead — `rcS.service`/`rc.service` are symlinks to `/dev/null`. `axdmesg` is a caller-less third symlink dropped so it doesn't dangle. |
-| `libax_syslog.so` (`/usr/lib` 35K + `/opt/lib` 256K) | 291K | axbox's only non-libc `DT_NEEDED`. Nothing else on the image links or dlopens it (checked against every `/opt/lib` `.so`, our `libkvm.so`, and `NanoKVM-Server`). |
+| 1 | `atf` | `pkgs/atf-mainline.nix` — **mainline TF-A 2.15** with our own `plat/axera/ax630c`, signed |
+| 2 | `uboot` | `pkgs/uboot-mainline.nix` — **mainline U-Boot 2026.07** plus this repo's AX630C patch series, signed |
+| 3 | `env` | `pkgs/uboot-env.nix` — `mkenvimage` over U-Boot's own compiled-in default environment plus the delta in `pkgs/uboot-env.txt`. U-Boot itself does not read it (`CONFIG_ENV_IS_NOWHERE`); `fw_printenv`/`fw_setenv` on the appliance do |
+| 4 | `boot` | `pkgs/bootfs.nix` — ext4 carrying the extlinux tree, the kernel, the initrd and the dtb of each generation |
+| 5 | `rootfs` | `nixos/appliance.nix` → `nixos/lib/appliance-artifacts.nix` — the NixOS system, sparse ext4 |
 
-> The retained base image's `/etc/ld.so.cache` (and `/var/cache/ldconfig/aux-cache`)
-> still list the deleted `libax_syslog.so` — harmless (nothing resolves it) and it
-> self-heals on the next on-device `ldconfig` run.
-| `/usr/bin/kvm_ui_setup` | 6.5M | closed Sipeed C++ (dev-tree RPATH, links the closed `libax_*`/`libsns_dummy` set). A **stray** — not dpkg-owned, not in `kvmcomm.sh`'s target list, its only mention on the image was a string inside `/kvmcomm/ui/kvm_ui` (itself deleted). Zero callers. |
-| `/usr/bin/ax_clk`, `/usr/bin/ax_lookat` | 29K | closed Axera diagnostics (clock poke; `/dev/mem` peek/poke). No boot caller; `ax_lookat` is named only by `/soc/scripts/busmonitor.sh`, a manual debug script never run at boot. |
-| `/kvmcomm/ui/kvm_ui` | 8.5M | closed OSD app, only launched by disabled `kvmcomm.service` |
-| `/kvmcomm/vin/kvm_vin` | 792K | closed capture daemon |
-| `/kvmcomm/ui/frameforge` | 988K | closed compositor |
-| `/kvmcomm/ko/{fbtft,fb_jd9853,f_udisp_drv,gpio_keys,rotary_encoder,wireguard}.ko` | ~2.7M | mini-display / knob / wireguard module *copies*. All five display/input modules turned out to exist **as source** in the SDK kernel tree and are built by our own kernel (`CONFIG_FB_TFT_JD9853` etc. are `=m` in the defconfig we already use) — the mini-display now runs on those from-source builds ([mini-display.md](mini-display.md)); these prebuilt copies stay deleted. |
-| `/opt/swupdate/bin/swupdate` | ~500K | vendor OTA binary; its `S99checkota` call is commented out. We replaced it, and since #86 retired that too -- the appliance updates by substituting a signed system closure (`nanokvm-update`, #100) |
-| `/opt/lib/libax_*.so` (33) + `/opt/lib/libkvm.so.0.1.0` | ~10.6M | the Axera userspace media closure + Sipeed's closed libkvm. **#25** (step 5d1); nothing we ship links or `dlopen`s them |
-| `/soc/ko/*.ko` — all 22 `ax_*.ko` (incl. `ax_venc`/`ax_jenc`, dropped by the loader in #25, and the never-loaded `ax_perf_monitor`) + `aic8800_{bsp,btlpm,fdrv}.ko` + `hynitron_touch.ko` — 26 files | ~32M | **#54** (step 5d2). The `ax_*` set has been loaded by nothing since #55 M3; the aic8800/hynitron entries were vendor copies of modules we build from the SDK kernel tree into `/usr/lib/modules/4.19.125` (udev autoloads them). `/soc/ko` now holds exactly our three open modules |
-| `/opt/lib/libsns_*.so` (13, `libsns_dummy.so` kept) | ~24M | **#54**. Real-sensor ISP libs; the only `libsns_*` any binary on the image names is `libsns_dummy.so`, which is **ours** from source (#30) |
-| `/opt/etc/models` (AI-ISP), `/opt/etc/skelModels`, `/opt/data/npu` — 62 files | ~167M | **#54**. NPU / AI-ISP `.axmodel` model data. Inert since the #50 nr138 gate, and its only referrer (`libax_opal.so`) went out with the #25 libax purge |
-| `/opt/etc/*.{ini,bin}` — 254 files | ~26M | **#54**. Vendor ISP sensor-tuning tables for ~30 real sensors (os04a10, sc450ai, imx678, …), read only by the purged ISP libs. The `opencc` `*.ocd2` and `*.json` in the same directory are kept |
+Plus the `spl` region in front of the GPT: `pkgs/spl-minimal.nix`, written last,
+deliberately. And two members that are **flash-time only, never stored**: FDL1
+and FDL2, above.
 
-**Kept** (live dependencies, not blobs to chase): `/kvmcomm/scripts/*` (wifi,
-mount_emmc) and `fw_printenv`/`fw_setenv` (`S99checkboot` uses them). (The
-vendor `/kvmcomm/ko/lt6911_manage.ko` copy is **deleted** — our from-source
-module loads from `/usr/lib/modules` via `/etc/modules-load.d`; `/kvmcomm/ko`
-is now empty.)
+There is no `kernel`, `dtb`, `optee`, `logo` or `ddrinit` partition and no `_b`
+twin. The kernel is loaded by `sysboot` from `/boot/extlinux/extlinux.conf` and
+belongs to the generation (#99).
 
-**`/kvmcomm/edid/*` — fully replaced from source (2026-08-31).** Sipeed's
-EDID bins are data, not code, but they carry real defects: all six share
-one monitor identity (only the serial LSB, byte 12, differs — the value the
-web UI uses as the mode selector), so a host that caches per-display settings
-may not re-probe on a mode switch (`E63-Ultrawide` is worse — it carries a
-real Philips PnP id); they fail `edid-decode --check`; and `E48-4K39FPS`
-declares an HDMI `Max_TMDS_Clock` of 300 MHz while listing a 336 MHz 4K39
-DTD. **All six** are now generated from source (`pkgs/edid/mkedid.py`,
-E-EDID 1.3 + CTA-861, no vendor bytes — every mode re-derived from
-porch/pixel-clock arithmetic; `pkgs/edid.nix` enforces `--check` PASS in the
-build) with distinct product-id + serial but the same byte 12 and the same
-filename, so `NanoKVM-Server`'s `EDIDMap` and the web UI's mode list keep
-naming them; a from-source `NanoKVM-720P60.bin` is added, and both maps gain a
-matching entry (`EDIDMap` `0x72` → `NanoKVM-720P60`, plus the dropdown's
-"1280 x 720 60Hz") so 720p60 is selectable from the UI like every other mode.
-No vendor EDID bytes remain in the image.
+`atf`, `uboot` and `spl` carry the SDK dev-key RSA signature; `env`, `boot` and
+`rootfs` are raw formats with no header.
 
-`E54-1080P60FPS.bin` and `E18-4K30FPS.bin` are hardware-validated: written to
-the LT6911 SPI flash via `/proc/lt6911_info/edid`, served back byte-identical,
-accepted by the driver `check_edid`, and the 4K30 bin drives a real 4K30 host
-to lock + clean blob-free capture. The four exotic replacements
-(`E48-4K39FPS`, `E56-2K60FPS`, `E58-4K16-10`, `E63-Ultrawide`) are
-spec-conformant and `--check`-clean but **not yet hardware-validated** — they
-need a source that can drive those modes. Two of them deliberately change the
-*preferred* timing to the mode their UI label promises (the vendor bins
-preferred 4K30 and 1080p60 respectively, making "4K39" and "2K60" no
-different from E18/E54); the previously-preferred timing stays as DTD 2, so a
-source that cannot reach the headline mode still locks.
+---
 
-The `kvm_ui` `srcs/*` bitmaps and the inert
-`/kvmapp/cua` Python are harmless non-binaries, left in place.
+## What used to be here
 
-> **Provenance nuance:** since #54 nothing vendor-origin *remains* on the media
-> path — the `libax_*.so`, the `libsns_*.so`, every `ax_*.ko` and the NPU/ISP
-> data sets are deleted, not merely unloaded, so no copies are kept for
-> rollback. Rolling back to the vendor stack means reflashing the vendor `.axp`.
-> The `ax-ko-blobs` / `axera-libs` derivations still exist, but they only feed
-> the build/link step and the bench harness — they stage nothing into the image.
-> The base `.axp` is sha256-pinned, so a vendor reflash is still reproducible.
+This document used to run to several hundred lines of vendor inventory. That
+content described the 4.19 Ubuntu-derived image, which no longer exists. In
+order:
+
+**#25 (2026-08-31)** purged all 33 `/opt/lib/libax_*.so` (~8.3 MB) and Sipeed's
+closed `libkvm.so.0.1.0` once our `libkvm.so` `DT_NEEDED`ed zero vendor
+libraries. **#60 / #55 M3 (2026-09-02)** stopped the loader insmod'ing the
+vendor media modules. **#54 (2026-09-03)** deleted the rest of the closed media
+payload from the image rather than merely unloading it: all 22 `ax_*.ko`
+(~32 MB with the vendor aic8800/hynitron copies), the 13 vendor `libsns_*.so`
+(~24 MB), the NPU/AI-ISP `.axmodel` model data (~167 MB) and the ISP
+sensor-tuning set (~26 MB). **#90 (2026-09-09)** removed the EIP-130 crypto
+firmware from U-Boot, FDL2 and finally the SPL itself. **#97 (2026-09-11)**
+deleted the 4.19 build outright — the vendor Ubuntu rootfs base
+(`pkgs/base-axp.nix`), the vendor-fork TF-A/U-Boot/OP-TEE chain, the A/B slot
+packaging, the logo BMP, the SD-card image and the `ax-ko-blobs` / `libsns-dummy`
+/ `ax-stub` derivations went with it.
+
+Rolling back to the vendor stack means flashing a stock Sipeed `.axp`. Nothing
+in this repo keeps a copy for that purpose.
 
 ---
 
 ## Runtime network endpoints
 
-Everything the device contacts. At idle the flashed unit had **zero** outbound
-connections; all of the below fire on boot, a timer, or an explicit user action.
+Everything the device contacts. All of it fires on boot, on a timer, or on an
+explicit user action.
 
-### Our server — approved (patched to our host)
+### Updates — one channel, ours
 
 | Endpoint | Trigger | Status |
 |---|---|---|
-| `github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download/nanokvm_pro_sys_latest.json` | web UI version check, and `nanokvm-update check`/`update` | **APPROVE** — our release host (the public downstream mirror of the Gitea source of truth, see `docs/updates.md`); `cdn.sipeed.com` patched out at build (`nanokvm-server.nix`), verified by `--replace-fail`. |
-| `nanokvm.update.cacheUrl` — our Nix binary cache (attic; the URL is #96 and unset today) | user clicks update, or the daily timer fires on a device whose owner has ticked **Automatic updates** in the web UI (`/etc/kvm/auto_updates`; absent by default) | **APPROVE** — where the update's payload comes from since #100: `nix copy --from <cache>` fetches the NARs of the toplevel the manifest names, and **only** those the device is missing. Reached with `require-sigs = true` and an explicit `trusted-public-keys` on nix's command line, so a NAR this device's own keys did not sign is refused — the cache is a transport, not a trust root. Set in exactly one place, `nanokvm.update.cacheUrl` (`nixos/appliance.nix`); empty means no update egress at all. |
-| ~~`…/nanokvm_pro_sys_<ver>.tar.gz`~~ | the #86 tar bundle | **DEAD (#100, 2026-09-11)** — no release publishes a payload asset any more. |
-| ~~`…/nanokvm_pro_latest.json`~~ | the 4.19 image's version check | **DEAD (#86, 2026-09-10)** — nothing publishes that manifest any more, and the 4.19 build's `install()` refuses rather than falling back to the vendor's dpkg installer. The 4.19 image has no update egress that can succeed. |
-| preview channel (`…/download/preview/…`) | only if `/etc/kvm/preview_updates` exists (absent) | **APPROVE (dormant)** — leave the flag file absent. |
+| `github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download/nanokvm_pro_sys_latest.json` | `nanokvm-update check`/`update`, and the web UI's version route and update button, which both go through that tool | **APPROVE** — `nanokvm.update.stableUrl`, the **only channel this device knows** since #101. The Gitea source of truth is Tailscale-only, so devices poll the public GitHub mirror's releases. |
+| `nanokvm.update.cacheUrl` — our Nix binary cache | user clicks update, or the daily timer fires on a device whose owner ticked **Automatic updates** (`/etc/kvm/auto_updates`, absent by default) | **APPROVE** — where the payload comes from since #100: `nix copy --from <cache>` fetches only the NARs the device is missing, with `require-sigs = true` and an explicit `trusted-public-keys`, so a NAR this device's own keys did not sign is refused. The cache is a transport, not a trust root. Empty by default (#96) — empty means no update egress at all. |
+| preview channel (`…/releases/download/preview/…`) | only if `/etc/kvm/preview_updates` exists (absent) | **APPROVE (dormant)** — leave the flag file absent. |
 
-### Auto-egress inherited from the retained vendor Ubuntu rootfs
+**No channel URL is compiled into `NanoKVM-Server` any more.** `pkgs/nanokvm-server.nix`
+step 1 replaces `service/application/version.go` wholesale so the version route
+asks the updater; step 2 deletes the two `cdn.sipeed.com/nanokvm` base URLs and
+then **greps to prove it** — a surviving reference fails the build.
 
-| Endpoint | Unit | Trigger | Status |
-|---|---|---|---|
-| `motd.ubuntu.com` | `motd-news.timer` | ~daily + login | **REMOVED** — `rootfs.nix` ships `/etc/default/motd-news` with `ENABLED=0`. |
-| `ports.ubuntu.com` | `apt-daily{,-upgrade}.timer` | daily | **APPROVED (kept)** — periodic apt index/upgrade left enabled by decision. |
-| `time.{windows,apple,google}.com`, `time.cloudflare.com`, `pool.ntp.org` | `chrony.service` | boot + periodic | **APPROVED (kept as-is)** — time sync, host list left unchanged by decision. |
-| mDNS `224.0.0.251` (LAN only) | `avahi-daemon` | boot | **APPROVED** — LAN-local discovery, no internet egress. |
-
-### Our server — third-party, user-triggered only
+### User-triggered, third-party
 
 | Endpoint | Route | Status |
 |---|---|---|
-| `stun.l.google.com:19302` | WebRTC stream mode (`server.yaml` default) | **APPROVED (kept)** — needed for WebRTC NAT traversal. Leaks the reflexive IP to Google only when a user opens WebRTC mode; accepted by decision. |
-| `cdn.sipeed.com/nanokvm/resources/kvmadmin.tar.gz` | ~~POST `/api/kvmadmin/install`~~ | **REMOVED** — the `kvmadmin` extension route is dropped in `nanokvm-server.nix`; the endpoint no longer exists. |
-| `dashscope.aliyuncs.com` (+ `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`) | ~~POST `/api/assistant/start`~~ | **REMOVED** — the `assistant` extension route is dropped; endpoint gone. `/kvmapp/cua` left inert on disk. |
+| `stun.l.google.com:19302` | WebRTC stream mode (upstream `server.yaml` default) | **APPROVED (kept)** — needed for NAT traversal. Leaks the reflexive IP to Google only when a user opens WebRTC mode. |
 | `pkgs.tailscale.com/stable/tailscale_<ver>_arm64.tgz` | POST `/api/tailscale/install` | **APPROVED (kept)** — official upstream, opt-in mesh VPN. |
+| ~~`cdn.sipeed.com/nanokvm/resources/kvmadmin.tar.gz`~~ | ~~POST `/api/kvmadmin/install`~~ | **REMOVED** — `pkgs/nanokvm-server.nix` step 4 overwrites `extensions.go` and drops the route. It fetched and ran the closed NanoKVM-Admin binary. |
+| ~~`dashscope.aliyuncs.com`, `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`~~ | ~~POST `/api/assistant/start`~~ | **REMOVED** — same step; the assistant route is gone. |
+
+### System services
+
+| Endpoint | Unit | Status |
+|---|---|---|
+| `*.pool.ntp.org` (nixpkgs default) | `systemd-timesyncd` | **APPROVED** — replaces the vendor chrony and its `time.{windows,apple,google}.com` host list. |
+| mDNS `224.0.0.251` (LAN only) | `avahi-daemon`, publishing addresses + workstation | **APPROVED** — LAN-local discovery, no internet egress. |
+
+The whole vendor-Ubuntu egress set — `motd.ubuntu.com`, `ports.ubuntu.com` and
+its `apt-daily` timers, chrony's four-vendor host list — went with the rootfs in
+#97. A NixOS appliance runs no apt and no cron.
 
 The web UI's external URLs are all `href` links the user clicks (wiki, GitHub,
 socials) — no page-load egress.
 
 ---
 
-## Audited, present-but-inert (not closed blobs to chase)
-
-A full dpkg-ownership diff of the retained rootfs (`/usr/{bin,sbin,lib,libexec}`,
-`/usr/local`, `/usr/lib/aarch64-linux-gnu`) found the following. None is a closed
-blob our stack executes, so none blocks blobless userspace — recorded so the
-audit is reproducible:
-
-- **The entire PiKVM/`kvmd` stack is inert.** The base ships a Sipeed-built
-  `pikvm` dpkg package (kvmd + `janus` + µStreamer + `libgpiod`, ~1,900 files).
-  It runs **only** if `/etc/kvm/server.txt` says `pikvm`; that file is absent, so
-  `kvmcomm.sh` writes the default `nanokvm` and never starts it. No `kvmd*` unit
-  has a `.wants` symlink. `janus`/`ustreamer`/`libgpiod` are open source anyway.
-  (We disable `kvmcomm.service` outright — see `pkgs/rootfs.nix` 5c.)
-- **`/usr/local` CPython 3.13** (built into `/usr/local`, not dpkg-managed) is the
-  system `python3` via `/etc/alternatives`. Open source, but unmanaged — a
-  supply-chain surface worth replacing when the rootfs goes from-source. Every
-  `#!/usr/bin/python3` on the device runs under it.
-- **Open dropped-in tools** (not dpkg, but not vendor/closed): `/usr/bin/gdb`,
-  `/usr/bin/strace`, `/opt/e2fs-static/*` (e2fsprogs 1.46.6, no caller),
-  `/opt/swupdate/*` (SWUpdate + libubootenv `fw_printenv`/`fw_setenv`, GPL/LGPL;
-  `S99checkota`'s calls to it are commented out), `/opt/usr/bin/tiny*` (tinyalsa,
-  no caller). All are from-source gaps for a fully-blobless build, not runtime
-  closed blobs.
-- **`/usr/bin/fw_printenv`** (the one that DOES run, via `S99checkboot`) is the
-  classic U-Boot 2020.04 tool — GPL, open, kept.
-- **Left in `/opt` after the #54 purge** (out of scope, no referrer either):
-  `/opt/data/{avs,ives,skel,audio,ivps,uvc}`,
-  `/opt/data/mc20e_isp_reg_reset_value.bin`, and `/opt/e2fs-static`. Small,
-  inert vendor data; candidates for a later sweep, not blobs that execute.
-- `/usr/lib/aarch64-linux-gnu` (1,074 entries): **zero** unowned files — no vendor
-  `.so` was hidden there.
-
----
-
 ## Verified absent
 
-Checked for and **not** found anywhere in our server, web bundle, or the enabled
-vendor services: telemetry/analytics (Sentry, PostHog, Google Analytics/`gtag`,
-Umami), Google Fonts / external web fonts, frp/frpc, ngrok, ZeroTier, raw
-WireGuard tunnels, any boot-time phone-home in our server, and any hardcoded
-`cdn.sipeed.com` in the app-update path (survives only in the opt-in extensions
-above). Cron carries only stock Ubuntu jobs (`e2scrub_all`, `apt-compat`,
-`logrotate`) with no independent fetch.
+Checked for and **not** found in our server, the web bundle or the enabled
+units: telemetry/analytics (Sentry, PostHog, Google Analytics/`gtag`, Umami),
+Google Fonts or any external web font, frp/frpc, ngrok, ZeroTier, raw WireGuard
+tunnels, any boot-time phone-home, and any hardcoded `cdn.sipeed.com` in the
+update path.

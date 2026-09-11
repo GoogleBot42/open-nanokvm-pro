@@ -1,33 +1,33 @@
 # Pure-Nix rootfs — the NixOS appliance (#26, #78)
 
-The vendor Ubuntu 22.04 arm64 rootfs (`pkgs/base-axp.nix` → `pkgs/rootfs.nix`)
-replaced by a system built entirely from nixpkgs, on the mainline kernel.
+The vendor Ubuntu 22.04 arm64 rootfs replaced by a system built entirely from
+nixpkgs, on the mainline kernel. **Since #97 (`fb77209`) it is the only product
+this repo builds** — the 4.19 image, its A/B slot packaging and the vendor boot
+chain are deleted, not deprecated.
 
-**Status (2026-09-07, #78): it boots this board.** `nixos/appliance.nix`
-evaluates against the flake's one `nixos-unstable` pin and runs on
-`pkgs/kernel-mainline` (Linux 7.1.3), with the NixOS stage-1 initrd embedded in
-the kernel Image. Six slot-B hardware runs are banked in
-[`docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`](reference/mainline/nixos-appliance-20260907/HARDWARE.md);
-the last is a NixOS 26.11 system on the AX630C with **the board's own MAC, its
-own DHCP lease and its derived hostname**, zero failed units, `NanoKVM-Server`
-serving HTTPS, 26.3 s to multi-user. Two `qemu-system-aarch64 -M virt` boots are
-banked alongside them.
+**Status: it is what the board runs.** `nixos/appliance.nix` evaluates against
+the flake's one `nixos-unstable` pin and runs on `pkgs/kernel-mainline`
+(Linux 7.1.x), with the NixOS stage-1 initrd embedded in the kernel Image. Root
+is `/dev/loop0p5` on the eMMC's own GPT (#89 rung 4), boot to SSH is 71 s, the
+unattended `bootcount` rollback has fired on hardware, and video streams on this
+kernel (#83). The #78 bring-up — six hardware runs on a reversible loop image,
+the last a NixOS 26.11 system on the AX630C with **the board's own MAC, its own
+DHCP lease and its derived hostname**, zero failed units, `NanoKVM-Server`
+serving HTTPS, 26.3 s to multi-user — is banked in
+[`docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`](reference/mainline/nixos-appliance-20260907/HARDWARE.md),
+with two `qemu-system-aarch64 -M virt` boots beside it.
 
-**Two things are still unproven.** Every hardware run used the **loop-image**
-root — a file on the vendor rootfs — which is what kept them reversible; root on
-`p17` itself has not been booted. And no KVM hardware works on this kernel yet:
-video (#83), USB HID policy (#82), the mini-display (#84) and WiFi (#85).
+Still not on this kernel: the mini-display (#84) and WiFi (#85).
 
-`.#nixos-firmware-image` packs all of it into a flashable `.axp`
-([below](#the-image-builder--nixos-firmware-image)); flashing it is
-[flashing-and-recovery.md](flashing-and-recovery.md#flashing-the-nixos-appliance-image),
-and it overwrites the vendor system.
+`.#nixos-firmware-image-mainline` packs all of it into a flashable `.axp`
+([below](#the-image-builder--nixos-firmware-image-mainline)); flashing it is
+[flashing-and-recovery.md](flashing-and-recovery.md#axdl-usb-flashing).
 
 - [Verdict](#verdict)
 - [The boot contract](#the-boot-contract)
 - [The blob-policy assertion](#the-blob-policy-assertion)
 - [What is built](#what-is-built)
-- [The image builder](#the-image-builder--nixos-firmware-image)
+- [The image builder](#the-image-builder--nixos-firmware-image-mainline)
 - [Approaches weighed](#approaches-weighed)
 - [Known gaps](#known-gaps)
 - [Validation ladder](#validation-ladder)
@@ -65,7 +65,7 @@ The costs that remain:
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [gap 2](#known-gaps). |
 | ~~**WiFi**~~ — **packaged (#85), not hardware-proven** | `pkgs/aic8800.nix` builds the two SDIO modules out of tree from `radxa-pkg/aic8800` against this kernel; `pkgs/aic8800-firmware.nix` MD5-pins the radio firmware; `nixos/wifi.nix` is the option, the loader unit, the supplicant and the `/kvmcomm/scripts/wifi.sh` the server's WiFi routes exec. **The radio scans on hardware (2026-09-11)** — [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS". |
 | **The `rc.local` glue** | `S99checkboot` is now a unit and is live (below). `axemac.sh`, `npu_set_bw_limiter.sh` and a bare `devmem` poke are not. |
-| **No hardware yet** | Video (#83) and USB HID (#82) are stubs on this kernel, and the mini-display (#84) has no framebuffer to draw on. ATX works in principle — #81 landed, and the appliance ships `nanokvm-gpio` and the libgpiod server build — but has never been exercised on the board. The appliance boots, serves the web UI and answers SSH; it is not yet a working KVM. |
+| ~~**No hardware yet**~~ — **it is a working KVM** | Video streams on this kernel (#83, in-tree drivers, modules in the closure), USB HID is device-proven (#82), and ATX goes through `nanokvm-gpio` by device-tree line name (#81). What is left is the mini-display (#84). |
 | **Boot risk** | The rootfs is the one thing between U-Boot and a working device, `bootdelay=0` means there is no serial break-in, and recovery is physical AXDL. |
 
 ---
@@ -182,8 +182,8 @@ that carries no `init=`:
 /sbin/init -> /nix/var/nix/profiles/system/init
 ```
 
-`/sbin/init` costs a symlink and is what the vendor initramfs would exec if this
-image were ever booted by the 4.19 kernel. `/init` is stage 1's built-in
+`/sbin/init` costs a symlink and is what any initramfs that does not honour
+`init=` would exec. `/init` is stage 1's built-in
 default (`stage2Init=/init`, `switch_root`ed into `$targetRoot`), so a board
 whose `/boot` was hand-written during a hardware round still boots whatever the
 profile points at.
@@ -221,19 +221,23 @@ shows the two seconds apart:
 That also settles the question this eMMC raises: **there is no partition table
 to grow.** `systemd-growfs` only ever grows the *filesystem* to the size of the
 block device it is on — partition geometry is `systemd-repart`'s business, and
-nothing here runs it. `/dev/mmcblk0p17` exists because the kernel's
-`blkdevparts=` parser made it, and to `systemd-growfs` it is an ordinary block
-device of a known size. The QEMU run makes the same point from the other end: it
-grows a root on `/dev/vda`, a whole disk with no partition table at all.
+nothing here runs it. `/dev/loop0p5` exists because stage 1 put a loop over
+`/dev/mmcblk0p2` and the EFI parser read the GPT inside it; to
+`systemd-growfs` it is an ordinary block device of a known size. The QEMU run
+makes the same point from the other end: it grows a root on `/dev/vda`, a whole
+disk with no partition table at all.
 
 The image is packed by `make-ext4-fs`, which shrinks it to its contents, so an
-unresized root sits at ~1.3 GiB inside a ~29 GiB `p17`.
+unresized root sits at ~1.3 GiB inside a ~28 GiB `rootfs` partition. A GPT
+reserves a tail, so the first boot after #89 rung 4 also needed a one-time
+`resize2fs`.
 
 ### What the vendor `/init` did, for reference
 
 Kept only because it is what you are reading when you read a *vendor* boot. The
-script is `[SDK]/build/projects/<project>/initramfs/init`, carried verbatim by
-`pkgs/initramfs.nix` (extractable from `.#initramfs`). It mounted `/proc`,
+script is `[SDK]/build/projects/<project>/initramfs/init`; `pkgs/initramfs.nix`
+carried it verbatim until #97 deleted the 4.19 build, and git history has it.
+It mounted `/proc`,
 `/sys`, `/dev`; parsed `root=`; mounted `/boot`; offered USB-mass-storage
 recovery on `/boot/rec`; grew the rootfs if `/boot/check_resize2fs` existed, by
 copying `/realroot/opt/e2fs-static/{tune2fs,resize2fs}` out of the rootfs it was
@@ -455,8 +459,8 @@ said the MAC was a provisioning-time literal in `/etc/network/interfaces`. It is
 not. The vendor `/init` **recomputes it on every single boot** from
 `/proc/ax_proc/uid` and sed-writes the `hwaddress ether …` line back into that
 file. The file is a *cache*; the SoC UID is the source. The artifact that
-settles it is the vendor `/init` script itself, carried verbatim by
-`pkgs/initramfs.nix` and extractable from `.#initramfs`.
+settles it is the vendor `/init` script itself, in the SDK tree (and in
+`pkgs/initramfs.nix` before #97 deleted it).
 
 The derivation, which `nanokvm-identity.service` now reproduces byte for byte:
 
@@ -570,16 +574,17 @@ disk. `blkid` on the running board reports `PARTLABEL="rootfs"` and a stable
   `sysboot mmc 0:4` finds `boot` by GPT partition number and `part list` prints
   the device sectors `ext4load` will actually read.
 
-**One definition, seven consumers.** `nixos/lib/emmc-layout.nix` holds the list
+**One definition, every consumer derived from it.** `nixos/lib/emmc-layout.nix` holds the list
 and renders three views of it — the GPT (disk-relative LBAs, handed to `sgdisk`
 by `pkgs/gpt-image.nix`), the flash view (physical byte offsets, for the `.axp`
 manifest and for `dd`), and the two-entry `blkdevparts=` clause. From those come
 the SPL's compiled-in `ATF_HEADER_FLASH_BASE` / `UBOOT_HEADER_FLASH_BASE`,
 U-Boot's `gpt_base_lba` and `bootpart`, `/etc/fw_env.config`, the NixOS
-`fileSystems` devices, the extlinux `APPEND`, and `tools/migrate-layout.sh`'s
-`dd seek=`. The module asserts they agree, and asserts the invariant the whole
-migration rests on: **`rootfs` starts at the same byte, 0x115C0000, as it did
-under the vendor's 17-partition map.**
+`fileSystems` devices and the extlinux `APPEND`. The module asserts they agree,
+and asserts the invariant the in-place conversion rested on: **`rootfs` starts
+at byte 0x115C0000**, which is where the vendor's 17-partition map put it. The
+vendor map is gone and `.#migrate-layout` with it (#97), but the number stays
+pinned, because the SPL is compiled for these offsets.
 
 **`/etc/fw_env.config` is `/dev/mmcblk0 0x4C0000 0x100000`** — the `env`
 partition's PHYSICAL offset, so `fw_printenv`/`fw_setenv` address the raw eMMC
@@ -694,10 +699,9 @@ export, because consumers address lines by their device-tree name (`atx-power`,
 `atx-reset`, `atx-power-led`, `atx-hdd-led`); nothing to mux, because
 requesting a line runs through `gpio-ranges` → `gpio_request_enable()` and the
 pin controller programs the pad — the SW_PWR trap fixed at the root. The
-appliance instead takes the `gpioBackend = "libgpiod"` server build
-(`nanokvm-server-libgpiod`, because global GPIO numbers are not stable on
-mainline) and carries `nanokvm-gpio` in `environment.systemPackages`; the server
-reaches it by absolute store path, not through `PATH`.
+appliance carries `nanokvm-gpio` in `environment.systemPackages` and the server
+reaches it by absolute store path, not through `PATH`. Since #97 that is the
+only `nanokvm-server` there is: the sysfs backend went with the 4.19 image.
 
 **Dead weight deleted rather than ported**, all present and mostly enabled on
 the vendor rootfs: `sysdev.service` (a 14-line no-op sleep loop),
@@ -818,7 +822,7 @@ point is that its generation came from a tagged release. `max-jobs = 0`,
 **The image ships a registered store, not a directory of store paths.** A path
 on disk that the database does not know is not a store path: `nix-env --set` on
 one tries to *download* it, and `nix-collect-garbage` would delete it. See
-[the image builder](#the-image-builder--nixos-firmware-image).
+[the image builder](#the-image-builder--nixos-firmware-image-mainline).
 
 **What it costs, measured 2026-09-11:** the system closure is 748 paths /
 1,379,028,112 bytes with nix and the updater, against 696 paths /
@@ -835,34 +839,32 @@ Design, trust model, garbage collection and the hardware plan:
 
 ## The blob-policy assertion
 
-`nixos/rootfs.nix` walks the whole system closure and **fails the build** if any
-store path matches `axera-libs`, `ax-ko-blobs` or `libsns-dummy`. This is the
-blob policy from CLAUDE.md turned into a build error at the one point where the
-entire closure is visible, rather than a provenance audit finding six months
-later.
+`nixos/lib/appliance-artifacts.nix` walks the whole system closure and **fails
+the build** if any store path matches `axera-libs`, `ax-ko-blobs` or
+`libsns-dummy`. This is the blob policy from CLAUDE.md turned into a build error
+at the one point where the entire closure is visible, rather than a provenance
+audit finding six months later. (The last two derivations no longer exist —
+#97 deleted them — so only the first pattern can fire; the list is kept as the
+statement of what may never come back.)
 
 It exists because it already caught something. `pkgs/kvm-encoder.nix` sets
-libkvm's `DT_RPATH` to `/opt/lib:<axera-libs>/lib` so the same artifact also
-works in the vendor-encoder configuration. On an overlay rootfs that store path
-is a dead string. **In a Nix closure it is a reference**, and it dragged the
-entire closed Axera library set into an image whose whole point is to contain
-none of it. The V4L2/openVenc build links no vendor library at all, so the
+libkvm's `DT_RPATH` to `/opt/lib:<axera-libs>/lib`, because it compiles against
+the Axera SDK headers `axera-libs` supplies. On an overlay rootfs that store
+path was a dead string. **In a Nix closure it is a reference**, and it dragged
+the entire closed Axera library set into an image whose whole point is to
+contain none of it. The shipped build links no vendor library at all, so the
 appliance re-RPATHs libkvm at the three open libraries it actually needs.
 
 Two traps inside that fix:
 
 - **Both copies.** `pkgs/kvm-encoder.nix` installs `libkvm.so` and `libkvm.so.0`
   as two real files, not a symlink pair. Patch one and the store path survives in
-  the other and the closure is dragged in anyway. The `kvmapp` derivation patches
-  both and then `grep`s both plus `NanoKVM-Server` for the string `axera-libs`
-  as a belt-and-braces check.
+  the other and the closure is dragged in anyway. The `kvmapp` derivation
+  (`nixos/appliance.nix`) patches both and then `grep`s both plus
+  `NanoKVM-Server` for the string `axera-libs` as a belt-and-braces check.
 - **`--force-rpath`.** `DT_RPATH`, not `DT_RUNPATH`. libkvm is `dlopen`'d by the
   server and only `DT_RPATH` is inherited down the dependency chain — the trap in
-  [architecture.md](architecture.md#the-videoaudio-pipeline-our-libkvm).
-
-`libsns-dummy` is in the reject list even though it is our own from-source build
-(#30): it exists only to serve the closed-capture backend, which this image does
-not contain, and it compiles against the `axera-libs` headers.
+  [architecture.md](architecture.md#load-bearing-linker-detail).
 
 **The `lib.getLib` trap.** The three `/opt/lib` libraries are taken as
 `lib.getLib crossPkgs.<pkg>`, not as the bare derivation. libjpeg-turbo's
@@ -871,15 +873,15 @@ does not exist — and the only symptom is a `cp` with no source operand.
 
 ---
 
-## The image builder — `.#nixos-firmware-image`
+## The image builder — `.#nixos-firmware-image-mainline`
 
-A flashable `.axp`, built **from scratch**. The shipping 4.19 `.#firmware-image`
-takes Sipeed's release bundle and rewrites members inside it; this one takes no
-vendor bundle at all, and the packer fails the build if a `nanokvm-pro-base`
-store path turns up among its inputs. Per-member provenance:
-[provenance.md](provenance.md#the-nixos-appliance-image-nixos-firmware-image).
-How to flash it and what to expect:
-[flashing-and-recovery.md](flashing-and-recovery.md#flashing-the-nixos-appliance-image).
+A flashable `.axp`, built **from scratch** — no vendor bundle at all, and the
+packer fails the build if a `nanokvm-pro-base` store path turns up among its
+inputs. (The 4.19 `.#firmware-image` used to rewrite members inside Sipeed's
+release bundle; it is deleted, #97.) Per-member provenance:
+[provenance.md](provenance.md#what-the-image-stores). How to flash it and what
+to expect:
+[flashing-and-recovery.md](flashing-and-recovery.md#axdl-usb-flashing).
 
 ### Shape
 
@@ -893,19 +895,20 @@ nixos/axp-image.nix            the member list: which derivation feeds which par
 nixos/image-axp.nix            a module: system.build.axpImage
 ```
 
-`.#nixos-firmware-image` **is**
+`.#nixos-firmware-image-mainline` **is**
 `.#nixosConfigurations.nanokvm-pro.config.system.build.axpImage` — one
 derivation, reached two ways, so the image can never describe a system other
-than the one it contains.
+than the one it contains. It is also `packages.default`.
 
 ### The manifest is derived, not written
 
 `<Partitions>` and every `<Block id=>` come from
-[`nixos/emmc-partitions.nix`](#6-the-emmc-map-and-etcfw_envconfig), which parses
-the single `blkdevparts=mmcblk0:` clause in `dts/ax630c-nanokvm-pro.dts` — the
-same string U-Boot parses to find `kernel`/`dtb`/`rootfs` by name and the kernel
-turns into `/dev/mmcblk0pN`. The flasher's partition table and the kernel command
-line therefore cannot disagree; there is one source and it is the device tree.
+[`nixos/emmc-partitions.nix`](#6-the-emmc-map-spl--disk-and-a-real-gpt), which
+is `nixos/lib/emmc-layout.nix`. Since #89 rung 4 the direction runs from Nix
+outward: the list is Nix data, and the DT's `blkdevparts=` clause, the SPL's
+compiled-in stage offsets, U-Boot's `gpt_base_lba` and the GPT itself are all
+generated from it and asserted to agree. The flasher's partition table and the
+kernel command line therefore cannot disagree.
 
 The container format was learned from the SDK's own packer
 (`tools/mkaxp/make_axp_v2.py`), from the vendor bundle's central directory, and
@@ -972,8 +975,7 @@ reachability itself.
 
 At pack time: every member fits its partition; the Axera 1 KB signed header is
 present and its `img_size` fits (`<=`, not `==` — the SPL is padded to its flash
-slot and the DDR-init image is a header with no payload); each A/B pair is one
-image and is bound to the right partition; no input comes from the vendor
+slot); every member is inside its partition; no input comes from the vendor
 bundle.
 
 At `nix flake check` time, `nixos-axp-manifest` opens the finished `.axp` and
@@ -981,41 +983,35 @@ re-checks all of it against the partition map and the flasher's parsing rules �
 written from `axdl-rs` rather than from the packer, so the two failing to agree
 is a build failure.
 
-**A/B slots carry no slot identity.** Every A/B pair in the vendor v1.0.15
-bundle is byte-identical — kernel, dtb, OP-TEE, U-Boot and ATF alike — and the
-signed header has no slot field. A slot image is bound to its slot by the
-partition it lands in and by `bootsystem`; there is nothing else to get right,
-and `pkgs/slot-image.nix`'s `kernel_b.bin` file name is cosmetic.
+**There are no A/B twins.** The minimal layout has one `atf`, one `uboot`, one
+`boot` and one `rootfs`; the SPL's `_BAK` bases point at the A bases, so the
+slot register's SLOT bits select nothing. Generations, not slots, are what this
+image rolls back between — [§4b](#4b-rollback--two-config-files-a-register-and-a-health-gate).
 
-### The environment, the logo and `/boot`
+### The environment and `/boot`
 
-Three stored partitions had never been built from source, because the overlay
-image inherited them. All three now are, and each turned out to be simpler than
-expected:
+- **`env`** is `mkenvimage` over U-Boot's **entire** compiled-in default
+  environment — lifted from `config/u-boot-initial-env` of the image this flake
+  builds, not transcribed — plus the delta in `pkgs/uboot-env.txt`. The whole
+  default, because a stored environment *replaces* the built-in one wholesale
+  (`env_import()` with neither `H_NOCLEAR` nor `CONFIG_ENV_APPEND`), so an image
+  carrying only the delta would leave U-Boot with no `bootcmd` and no load
+  addresses. U-Boot itself no longer reads the partition at all
+  (`CONFIG_ENV_IS_NOWHERE`, patch `0020`); `fw_printenv`/`fw_setenv` on the
+  appliance do, through `/etc/fw_env.config`. The image is exactly
+  `CONFIG_ENV_SIZE`, which is the partition size, which is the number in
+  `fw_env.config` — all three from `nixos/lib/emmc-layout.nix`.
+- **`boot` is ext4 and carries the generations.** `extlinux/`, `nixos/` and
+  `ver` — the kernel, initrd and dtb of each generation live there because they
+  are in the closure (#99). It must stay writable: `switch-to-configuration
+  boot` writes it, and every USB-gadget feature is a flag file there —
+  [see the contract](#4-boot--the-boot-payload-and-it-must-stay-writable).
 
-- **`env` is not a member of the vendor bundle at all.** Its only env entry is a
-  disabled `ERASEENV`, so a stock flash leaves the partition as it found it and
-  U-Boot repopulates it — the download engine writes `bootargs` after the
-  repartition step, and `set_slot_ab`/`update_cmdline` write the rest on every
-  boot. Ours is `mkenvimage` over three committed lines, plus `bootargs` lifted
-  verbatim out of the `u-boot.bin` this flake builds. `bootdelay=0` and
-  `baudrate=115200` are U-Boot's *entire* compiled-in default environment (no
-  `CONFIG_USE_BOOTARGS`, no `CONFIG_BOOTCOMMAND`), asserted against that same
-  binary. A wrong env self-heals: `get_part_info()` falls back to the compiled-in
-  `BOOTARGS_EMMC` whenever `bootargs` is missing or has no `blkdevparts`, and a
-  bad CRC just loads the default. An all-zero env partition boots this board to
-  slot A.
-- **The logo is a plain BMP** — no Axera header, no signature. U-Boot's loader
-  checks `BM`, the bit depth, and a whitelist of six geometries, computes the
-  stride with no row padding, and **discards its own return value at the call
-  site**. So a bad logo costs a console line, the ` logomode=` cmdline suffix and
-  a reserved-memory node, nothing more; and the board's actual front panel (the
-  172×320 JD9853 SPI TFT) is painted from an array compiled into U-Boot and
-  never touches this partition.
-- **`/boot` ships `ver` and nothing else.** The vendor's other four files are a
-  MaixPy settings file and three flags consumed by the vendor `/init`. It must
-  stay writable — every USB-gadget feature is a flag file there —
-  [see the contract](#4-boot--p16-vfat-and-it-must-stay-writable).
+There is no `logo` partition, and no `kernel`, `dtb`, `optee` or `ddrinit`
+either: the kernel is loaded by `sysboot` from `extlinux.conf`, and the board's
+front panel (the 172×320 JD9853 SPI TFT) was never painted from a stored BMP —
+the vendor U-Boot drew it from a compiled-in array, and mainline U-Boot draws
+nothing (#88).
 
 ---
 
@@ -1023,10 +1019,11 @@ expected:
 
 Recorded because the reasoning outlived the constraint that produced it.
 
-**(a) Full NixOS — TAKEN.** `nixos/lib/eval-config.nix` → system closure →
-rootless ext4 via `nixos/lib/make-ext4-fs.nix` (`fakeroot mkfs.ext4 -d`, the
-same no-root constraint that forced the `debugfs` surgery in
-`pkgs/rootfs.nix`). Gets the module system, so `services.openssh`,
+**(a) Full NixOS — TAKEN, and since #97 the only thing this repo builds.**
+`nixos/lib/eval-config.nix` → system closure → rootless ext4 via
+`nixos/lib/make-ext4-fs.nix` (`fakeroot mkfs.ext4 -d`, the same no-root
+constraint that forced the old overlay's `debugfs` surgery). Gets the module
+system, so `services.openssh`,
 `services.avahi`, `services.logrotate`, journald limits and the unit definitions
 are declarative one-liners instead of overlay files poked into an ext4. Its one
 real cost — the frozen `nixos-24.11` pin — is gone with the kernel move.
@@ -1042,9 +1039,9 @@ unreachable appliance) stand undiminished. **Rejected, now unconditionally.**
 incrementally, and it took every easy win: `libkvm`, the modules, the module
 loader, the app, motd, the wifi override, the closed `kvmcomm` binaries, and
 finally the whole closed media stack (#54/#55/#60). What remains in the vendor
-base is exactly the part that cannot be replaced piecemeal: glibc, systemd, the
-init layout, `apt`. **Rejected as an endpoint**, and it stays the shipping
-configuration until (a) is hardware-proven.
+base was exactly the part that cannot be replaced piecemeal: glibc, systemd, the
+init layout, `apt`. **Rejected as an endpoint**, and deleted outright in #97
+once (a) was the thing the board ran.
 
 **(d) No nix on the appliance — TAKEN in #78, SUPERSEDED by #100.** The
 reasoning was that a package manager, a SQLite database and a daemon are the
@@ -1069,11 +1066,11 @@ and the board builds nothing (`max-jobs = 0`).
 
 ```
 nixos/appliance.nix           NixOS module: the NanoKVM-Pro appliance
-nixos/emmc-partitions.nix     the blkdevparts= parser: p16/p17, A/B slots, fw_env
+nixos/lib/emmc-layout.nix     the ONE layout: GPT, flash offsets, blkdevparts=, fw_env
+nixos/emmc-partitions.nix     a one-line re-export of it
 nixos/rootfs.nix              eval-config -> closure -> rootless ext4 (+ sparse, + /boot)
 nixos/lib/appliance-artifacts.nix  those two artifacts, as pure functions of the closure
 nixos/qemu-test.nix           the same appliance retargeted at qemu-system-aarch64
-nixos/loop-test.nix           the reversible on-device root: loop image, no re-arm
 nixos/image-axp.nix           system.build.axpImage
 nixos/axp-image.nix           the .axp's member list, per partition
 nixos/lib/make-axp-image.nix  the .axp packer (manifest + ZIP)
@@ -1081,9 +1078,8 @@ nixos/lib/verify-axp.py       reads the finished .axp back -- `nix flake check`
 ```
 
 ```bash
-nix build .#nixos-appliance        # root = the eMMC rootfs partition (p17)
-nix build .#nixos-appliance-loop   # root = an image FILE loop-mounted off p17
-nix build .#nixos-firmware-image   # the flashable .axp of the first one
+nix build .#nixos-appliance-mainline-chain   # the appliance's artifacts
+nix build .#nixos-firmware-image-mainline    # the flashable .axp (packages.default)
 nix run   .#nixos-appliance-qemu-run
 
 # result/nixos_rootfs.ext4          raw (dd / debugfs / QEMU)
@@ -1123,11 +1119,12 @@ Notable decisions inside `nixos/appliance.nix`:
   `MENU TITLE`, and U-Boot then reads a console nobody can reach) and that
   `hardware.deviceTree.name` is set.
 - `environment.ldso` materialises `/lib/ld-linux-aarch64.so.1`.
-- `nanokvm.rootImage.enable` switches root to a loop-mounted image file:
-  `postDeviceCommands` mounts the carrier filesystem read-**write** (`losetup`
-  opens the backing file `O_RDWR`; a read-only loop cannot carry a writable
-  root) and attaches `/dev/loop0`, leaving the carrier mounted for the life of
-  the system. `CONFIG_BLK_DEV_LOOP=y` in the kernel fragment exists for this.
+- Stage 1's `preLVMCommands` runs `losetup -P /dev/loop0 /dev/mmcblk0p2` so the
+  in-kernel EFI parser can bring up the GPT inside `disk`; root is `loop0p5`.
+  `CONFIG_BLK_DEV_LOOP=y` and `CONFIG_EFI_PARTITION=y` are both on the root
+  path. (#78's reversible bring-up used the same loop for a root *image file* on
+  the vendor rootfs, behind a `nanokvm.rootImage` option; that option and the
+  vendor rootfs are gone, #97.)
 - `nix.enable = true`, single-user, no daemon (#100) — the store is a real
   store with a real database, and an update is `nix copy` + `nix-env --set` +
   `switch-to-configuration boot`. Still never a `nixos-rebuild`: nothing on the
@@ -1155,7 +1152,7 @@ boot**, and both would have fired on hardware:
    cert half of the vendor supervisor. `nanokvm-cert.service` now generates it.
 
 Size: the QEMU variant's first fsck reports `333469/601663` 4 KiB blocks used —
-about **1.3 GiB of content**. For comparison the vendor rootfs *actually uses*
+about **1.3 GiB of content**. For comparison the vendor rootfs *used*
 4.5 GB on the device, 3.1 GB of it `/usr`, including **965 MB of
 `/usr/local/lib/python3.13` site-packages** (scipy, transformers, sympy,
 onnxruntime, numpy, openai) that exist only for the disabled `cua.service` AI
@@ -1255,7 +1252,7 @@ number, so closed gaps keep their slot and new ones are appended.
    vendor rootfs. The Go source references it at **three distinct literal paths**
    (`/kvmapp/scripts/usbdev.sh` twice, and `/dev/shm/kvmapp/scripts/usbdev.sh`
    in `service/storage/image.go`); fix all three. Every gadget feature is gated
-   on a flag file on the vfat `/boot` (`usb.ncm`, `usb.rndis`, `usb.disk0`,
+   on a flag file on `/boot` (`usb.ncm`, `usb.rndis`, `usb.disk0`,
    `usb.disk1.{sd,emmc}`, `usb.uac2`, `usb.acm`, `usb.udisp`, `ncm.dhcp`,
    `eth.nodhcp`), with every descriptor value overridable by
    `/boot/usb.{vid,pid,serialnumber,…}`. Either vendor the script (small,
@@ -1264,14 +1261,15 @@ number, so closed gaps keep their slot and new ones are appended.
 
    > **TODO (device capture, HID-critical).** The whole `/kvmapp/scripts/`
    > directory is vendor-only and absent from our `kvmapp` derivation. Capture
-   > it host-side once, e.g. `tools/kvmscp device:/kvmapp/scripts
-   > pkgs/rootfs/kvmapp-scripts/`, review + license-note the text, then stage it
-   > into `kvmapp` at `server/../scripts` so all three literal paths resolve
-   > after the tmpfs copy. Cannot be done from the build host alone.
+   > it host-side once with `tools/kvmscp` from a board that still has it,
+   > review + license-note the text, then stage it into the `kvmapp` derivation
+   > at `server/../scripts` so all three literal paths resolve after the tmpfs
+   > copy. Cannot be done from the build host alone — and since #97 there is no
+   > vendor rootfs in this repo to take it from either.
 3. **The remaining `rc.local` items — the `fw_env` half is CLOSED.**
    `/etc/fw_env.config` ships, derived from the `blkdevparts=` clause, and
    `nanokvm-checkboot.service` is live
-   ([above](#6-the-emmc-map-and-etcfw_envconfig)). A hexdump check of the real
+   ([above](#6-the-emmc-map-spl--disk-and-a-real-gpt)). A hexdump check of the real
    U-Boot environment at `0x4C0000` is still owed before the first `fw_setenv`.
    Still unimplemented, each needing the exact script text or register intent
    read off the device first: `axemac.sh` (eth0 RPS/RFS + `ethtool -A eth0 rx
@@ -1318,9 +1316,12 @@ number, so closed gaps keep their slot and new ones are appended.
    question on an overlay rootfs. The appliance stages **no vendor tree at all**,
    so there is nothing to audit. (`/kvmcomm/edid/*` is likewise settled: the
    whole set is generated from source by `pkgs/edid`.)
-9. **Hot patching changes shape.** `/kvmapp` is an immutable store symlink, so
-   on-device patches only apply to `/dev/shm/kvmapp` and vanish on reboot. The
-   `deploy-iterate` skill assumes a writable `/kvmapp`.
+9. **Hot patching is gone, by design.** `/kvmapp` is an immutable store symlink,
+   so an on-device edit only reaches `/dev/shm/kvmapp` and vanishes on reboot.
+   Iterating means building a generation and switching to it: `nix copy --to
+   ssh://root@<board>` then `nanokvm-update install-toplevel` (kvm-device
+   skill). The 4.19 `deploy-iterate` workflow, which assumed a writable
+   `/kvmapp`, is deleted.
 10. **`environment.ldso` alone is not an FHS.** See
     [the fallback ladder](#reaching-a-bare-name-dlopen--the-fallback-ladder).
 11. **Modules are loaded by us, not by NixOS — CLOSED (#83, #99).** Every
@@ -1340,8 +1341,11 @@ number, so closed gaps keep their slot and new ones are appended.
     `usbdev.sh` — the script that builds the gadget, its three HID report
     descriptors and the Microsoft OS descriptors — exists only in the vendor
     rootfs and is uncaptured (gap 2). The stub exits 0 and prints that. The
-    mini-display daemon (**#84**) is `ConditionPathExists=/dev/fb0` and simply
-    does not run. `nanokvm-video` is **not** on this list any more: #83 landed
+    mini-display (**#84**) is packaged but unproven: `.#display-modules` ships
+    `fbtft` + `fb_jd9853` in the closure and `nanokvm-panel.service` insmods
+    them, with the daemon behind `ConditionPathExists=/dev/fb0`; nothing has
+    run on the board — [mini-display.md](mini-display.md#mainline-84) has the
+    round plan. `nanokvm-video` is **not** on this list any more: #83 landed
     2026-09-10 and the board streams H.264 on mainline. ATX is not either: #81
     landed and the appliance drives it through `nanokvm-gpio` — but that tool has still
     never executed on hardware, because it targets this appliance and #81's own
@@ -1358,26 +1362,20 @@ number, so closed gaps keep their slot and new ones are appended.
     boot, where `/proc/ax_proc/uid` exists, and comparing the derived MAC with
     the one the device already has.
 
-14. **The appliance runs on half its RAM, and `mem=512M` is not ours to drop
-    yet.** The kernel command line the flashed board boots with carries
-    `mem=512M` -- `free -m` reports a total of **428 MB** on a 1 GiB board. It is
-    a vendor leftover for media carveouts the open stack does not use, and the
-    appliance never chose it: the **vendor-derived U-Boot injects it from its own
-    bootargs**, so it arrives with the kernel rather than from
-    `nixos/appliance.nix`.
+14. **The appliance runs on half its RAM.** `boot.kernelParams` in
+    `nixos/appliance.nix` carries `mem=512M`, so `free -m` reports **428 MB** on
+    a 1 GiB board. It is ours to set now — the whole chain is mainline — and it
+    started as a vendor leftover for media carveouts the open stack does not
+    use. It has not gone, because removing it was measured on 2026-09-08 (#89
+    rung 2p) and the board **hung past WDT0**, where the identical boot with
+    `mem=512M` reset itself at 337 s every time; a hang that also defeats the
+    watchdog is the AXI-stall signature on this SoC. Every `reserved-memory`
+    node is inside the first 512 MB (atf `0x40040000`, optee `0x44200000`,
+    pstore `0x48000000`, ramoops `0x480e0000`, bringup-log `0x480e8000`), so
+    whatever is above it is **not described in the device tree** — a TrustZone
+    or TZASC-protected window would not be.
 
-    Once the appliance kernel is loaded by **mainline** U-Boot the argument is
-    ours to set, and it should go -- but not blindly. Removing it was measured on
-    2026-09-08 (#89 rung 2p) and the board **hung past WDT0**, where the
-    identical boot with `mem=512M` reset itself at 337 s every time; a hang that
-    also defeats the watchdog is the AXI-stall signature on this SoC. Every
-    `reserved-memory` node is inside the first 512 MB (atf `0x40040000`, optee
-    `0x44200000`, vendor-pstore `0x48000000`, ramoops `0x480e0000`, bringup-log
-    `0x480e8000`), so whatever is above it is **not described in the device
-    tree** -- a TrustZone or TZASC-protected window would not be.
-
-    So: find where the vendor U-Boot injects `mem=`, and what the region above
-    512 MB is, before deleting it. Recorded for rung 3 of #26.
+    So: establish what the region above 512 MB is before deleting the clause.
 
 ---
 
@@ -1386,16 +1384,19 @@ number, so closed gaps keep their slot and new ones are appended.
 Strictly in this order. Nothing here touches eMMC until the step before it has
 passed.
 
-1. **Build.** `nix build .#nixos-appliance` (and `-loop`, and the matching
-   `.#kernel-mainline-appliance*`). No hardware.
-2. **Offline contract assertions — already in the build.** `nixos/rootfs.nix`
-   checks with `debugfs`, on the packed image, that `/init` and `/sbin/init` are
-   symlinks, that the system profile resolves, that stage 2 is in the closure
-   and is a `#!` script, and that **no closed Axera store path is in the
-   closure**. `nixos/emmc-partitions.nix` asserts the partition map it parsed.
-   `nix flake check` builds `emmc-partition-map`, which prints all 17 partitions
-   with offsets and the resulting `fw_env.config`. Every one of these would
-   otherwise be a silent non-boot on a board with `bootdelay=0` and no console.
+1. **Build.** `nix build .#nixos-appliance-mainline-chain` (and
+   `.#kernel-mainline-appliance`). No hardware.
+2. **Offline contract assertions — already in the build.**
+   `nixos/lib/appliance-artifacts.nix` checks with `debugfs`, on the packed
+   image, that `/init` and `/sbin/init` are symlinks, that the system profile
+   resolves, that stage 2 is in the closure and is a `#!` script, that the Nix
+   database is exactly the closure, and that **no closed Axera store path is in
+   the closure**. `nixos/lib/emmc-layout.nix` asserts its own three views agree.
+   `nix flake check` builds `emmc-partition-map`, which prints every region with
+   its offset and the resulting `fw_env.config`, plus `uboot-gpt` (sandbox
+   U-Boot against a model of the eMMC) and `nixos-axp-manifest` (the finished
+   `.axp`, read back). Every one of these would otherwise be a silent non-boot
+   on a board with `bootdelay=0` and no console.
 3. **QEMU boot — this is where the NixOS half is proven.**
 
    ```bash
@@ -1422,66 +1423,54 @@ passed.
    the A/B slot register are all QEMU's here, or absent.
 
    *(The old `tools/nixos-chroot-test` — systemd 256 chrooted on the running
-   4.19 device — is superseded. It existed to probe the systemd-kernel floor,
-   which no longer exists, and a real boot is strictly stronger. The script is
-   still in the tree.)*
-4. **The reversible on-device test: the loop-image root.** The eMMC is the
-   device's only writable medium and `p17` carries the running vendor system, so
-   the first hardware boot writes nothing it cannot take back:
+   4.19 device — existed to probe the systemd-kernel floor, which no longer
+   exists. There is no 4.19 device to chroot on any more; the script is still in
+   the tree and a real boot is strictly stronger.)*
+4. **The reversible on-device test: a generation.** The board runs this
+   appliance, so a candidate is installed the way an update is and the rollback
+   is the way back:
 
-   - `dd` an appliance kernel slot image to `/dev/mmcblk0p15` (`kernel_b`,
-     slot B — p14 is slot A and the shipped 4.19 kernel), plus the matching
-     mainline dtb to p13. **Historical:** this harness predates #99 and needed
-     an initrd inside the Image. The board has run the mainline chain on the
-     minimal layout since #89 rung 4, so a slot-B test now means the chainload
-     slot for U-Boot and an ordinary generation switch for everything else;
-   - drop `.#nixos-appliance-loop`'s `nixos_rootfs.ext4` on the vendor rootfs as
-     `/nixos-root.img`;
-   - stage 1 mounts p17, `losetup`s the image and boots a real NixOS root off
-     it. Nothing is overwritten.
+   ```bash
+   nix copy --to ssh://root@<board> $(nix build --no-link --print-out-paths .#appliance-toplevel)
+   ssh root@<board> nanokvm-update install-toplevel <store path>
+   ssh root@<board> reboot
+   ```
 
-   `nixos/loop-test.nix` is the module that variant carries, and it is where the
-   harness's safety property lives: **`nanokvm.checkboot.enable = false`**. The
-   SPL treats `SLOTB_BOOTABLE` as consume-once, so as long as nothing in the
-   slot-B image re-arms it, every exit path — clean boot, panic, hang, watchdog
-   reset — lands the *next* boot on slot A by itself. `nanokvm-checkboot` is
-   precisely the unit that would re-arm it, so on this variant it is not built.
-   The same module bind-mounts the carrier filesystem across the `switch_root`
-   at `/vendor-root` (stage 1 mounts it at `/nanokvm-host`, which `switch_root`
-   leaves alive but unreachable), which buys two things a test boot needs: root's
-   password hash is harvested from the vendor `/etc/shadow` at boot rather than
-   built into the image — no credential in the store or the repo, and
-   `tools/kvmssh` reaches the system with the password it already knows — and
-   the derived MAC can be compared against the `hwaddress ether` line the vendor
-   `/init` last wrote there, which is the one comparison
-   [gap 13](#known-gaps) exists to pass.
+   Nothing is overwritten: the previous generation is still in the store and
+   still in both extlinux configs. If the candidate does not come up, four
+   boot-chain attempts run `altbootcmd` and the board lands on
+   `extlinux-fallback.conf` **unattended** — [§4b](#4b-rollback--two-config-files-a-register-and-a-health-gate),
+   hardware-proven. To exercise the rollback deliberately, force it:
+   `devmem 0x02390030 32 0xB001000A; reboot`. The recipe and the device contract
+   are in the `kvm-device` skill and
+   [flashing-and-recovery.md](flashing-and-recovery.md#testing-a-kernel-or-a-whole-system).
 
-   Rollback is `rm /nixos-root.img` plus a slot-B restore. The proven slot-B
-   harness and the boot-evidence channel are in
-   [flashing-and-recovery.md](flashing-and-recovery.md#slot-b-kernel-testing-proven-procedure-2026-08-30)
-   and [mainline-port.md](mainline-port.md) §8; the `mainline-boot-test` skill
-   runs the loop ("Variant: booting the NixOS appliance from slot B").
+   **A U-Boot candidate is the one thing this does not cover**, because there is
+   one `uboot` partition and no twin. It goes through the one-shot chainload
+   slot instead: `nanokvm-uboot-test stage <raw u-boot.bin>` —
+   [flashing-and-recovery.md](flashing-and-recovery.md#testing-a-u-boot-candidate).
 5. **SD-card boot — blocked.** There is **no SD card in the device**, which also
    blocks root-on-SD in #76. Needs Jeremy.
-6. **eMMC `p17`, by flashing `.#nixos-firmware-image`.** Last, and only after 4,
-   and only with a stock vendor `.axp` on hand. This is the step that overwrites
-   the vendor system, and from here the way back is AXDL with hands on the
-   board. The image and its first-boot expectations are in
-   [flashing-and-recovery.md](flashing-and-recovery.md#flashing-the-nixos-appliance-image);
+6. **A fresh flash of `.#nixos-firmware-image-mainline`.** The way onto a board
+   that is not already running this, and the way back from a boot chain that a
+   generation switch cannot fix — AXDL, with hands on the board. The image and
+   its first-boot expectations are in
+   [flashing-and-recovery.md](flashing-and-recovery.md#axdl-usb-flashing);
    `nix flake check`'s `nixos-axp-manifest` is what stands between a build and
    that flash.
 
 ### Human-only actions
 
-These need Jeremy; nothing above can be done by an agent alone.
+These need Jeremy.
 
-- **Power-cycle the device** for any slot-B test (the slot register does not
-  survive a cold boot, so a stuck board is recovered by pulling power).
 - **Put an SD card in the unit** — it unblocks step 5 and the rest of #76.
-- Hold `User` ~10 s for AXDL download mode and re-flash a stock `.axp` if a boot
-  fails. This is the only recovery path.
+- Hold `User` ~10 s for AXDL download mode and re-flash. This is the only
+  recovery path once the boot chain itself is broken.
 - Attach serial to UART0 (hidden pads; an FT232, not a CH340) if a boot fails
   silently and the cause is not obvious from the network behaviour.
+
+Power-cycling is **not** on this list any more: the board hangs off the
+`nanokvm switch` zigbee plug and an agent can cycle it (leave it off ≥ 15 s).
 
 ### Risks
 
@@ -1500,10 +1489,11 @@ These need Jeremy; nothing above can be done by an agent alone.
   power-cycled between each failure never reaches the limit. The fallback
   *config* is on disk and does survive, so the state that matters is durable —
   only the count is not.
-- **A rollback rolls back userspace only.** One kernel `Image` in `/boot`,
-  shared by both entries; a kernel change has no automatic fallback.
-- **Silent-failure modes are the norm here.** The `/lib`-symlink bug in
-  `pkgs/rootfs.nix` shipped once precisely because a missing file produced a dead
+- ~~**A rollback rolls back userspace only.**~~ Closed by #99: the kernel, the
+  initrd and the dtb are part of the generation, each entry names its own, and a
+  rollback onto the old kernel was watched happening on hardware.
+- **Silent-failure modes are the norm here.** The `/lib`-symlink bug in the old
+  rootfs overlay shipped once precisely because a missing file produced a dead
   capture path rather than a build error. The build-time contract assertions
   exist for that reason; extend them rather than trusting inspection.
 

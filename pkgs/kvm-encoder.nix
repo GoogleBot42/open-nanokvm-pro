@@ -1,7 +1,7 @@
 { pkgs, crossPkgs, axera-libs, openCapture ? false, openVenc ? false, v4l2Capture ? false, axsysProbe ? false, ... }:
 
 # v4l2Capture (default false; requires openVenc): capture through the OPEN
-#   V4L2 driver (pkgs/open-vin-capture, #55 M3 / #60) instead of replaying
+#   V4L2 driver (in-kernel since #83, `.#video-modules`) instead of replaying
 #   vendor ax_proton ioctls: kvm_capture_v4l2.c does S_FMT/REQBUFS/EXPBUF/
 #   STREAMON and hands the encoder each frame's bus address via a dma-buf
 #   import on our open VCMD driver. Needs open_vin_csi2.ko + open_vin_capture.ko

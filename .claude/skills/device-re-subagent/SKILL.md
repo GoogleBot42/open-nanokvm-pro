@@ -1,6 +1,6 @@
 ---
 name: device-re-subagent
-description: Delegate a NanoKVM-Pro hardware reverse-engineering / on-device tracing / feasibility task to a Fable subagent — the safety envelope, content-filter framing, and verify-the-evidence discipline for it. Use when a task needs deep device probing (ioctl traces, /dev/mem register dumps, blob characterization) that genuinely requires Fable-tier skill.
+description: Delegate a NanoKVM-Pro hardware reverse-engineering / on-device tracing / feasibility task to an Opus subagent — the safety envelope, content-filter framing, and verify-the-evidence discipline for it. Use when a task needs deep device probing (ioctl traces, /dev/mem register dumps, blob characterization).
 ---
 
 Distilled from the 2026-08-22 VC8000E encoder RE campaign (docs/blob-replacement.md
@@ -12,17 +12,14 @@ A task needs **deep device reverse-engineering** — LD_PRELOAD ioctl traces,
 `/dev/mem` register/pool dumps, differential capture, binary disassembly, blob
 characterization, or a device-grounded feasibility call. This is high-skill work.
 
-If the SESSION is running on Opus (downgraded from Fable/Mythos), delegate it UP to
-a **Fable** subagent and keep orchestration + verification in the main session (the
-reciprocal of the save-usage Opus-delegation rule — memory
-`delegate-to-opus-subagents`). If the session is already Fable/Mythos, you may still
-fan this out to a Fable subagent to keep the deep trace logs out of the main context.
+**Subagents are always Opus** (Jeremy, 2026-09-11; CLAUDE.md). The older rule
+here — delegate UP to a Fable subagent for deep tracing — is withdrawn: Opus
+describing passes have proven sufficient (2026-09-01: spec-dphy-writes.md,
+spec-ife-start.md, both device-verified), and every #26 campaign rung since
+ran on Opus. If a task genuinely needs Fable-tier skill, it stays in the
+session, with the trace logs written to files rather than into the context.
 
-Launch: `Agent` with `subagent_type: "general-purpose"`, `model: "fable"` for on-device
-tracing/feasibility. For pure STATIC describing passes over an unstripped vendor .ko
-(instruction-level register write lists) `model: "opus"` has proven sufficient twice
-(2026-09-01: spec-dphy-writes.md, spec-ife-start.md -- both device-verified) -- use it
-and save the Fable budget. For a
+Launch: `Agent` with `subagent_type: "general-purpose"`, `model: "opus"`. For a
 multi-step campaign, resume the same agent with `SendMessage` (it keeps the tooling
 + offsets it built) rather than starting fresh.
 
@@ -74,64 +71,36 @@ multi-step campaign, resume the same agent with `SendMessage` (it keeps the tool
 - One unit (the ATX unit). (USB HID to the host works again since 2026-09-04;
   #42 was a physical-link fault — nothing in this envelope touches it.)
 - A bad trace can hang the block → watchdog reboot. That's a warm reset and SAFE
-  (hot-patches persist, PHY not reset): poll for return
+  (the PHY is not reset; the system comes back on the same generation): poll for
+  return
   (`until tools/kvmssh 'echo up' | grep -q up; do sleep 5; done`) and continue.
   NEVER attempt a cold power cycle — that needs the human.
 - The `tools/kvmssh` wrapper flakes intermittently (cycles IP/password combos);
   the device is usually NOT down — verify via uptime monotonicity and retry.
 - NEVER print or commit device IPs / passwords.
 
-# Vendor stack on a purged device (differential campaigns)
+# The vendor stack is no longer loadable (#97)
 
-The shipped image carries no vendor `.ko`/libs, but **no reflash is needed**:
-the vendor modules are `.#ax-ko-blobs` and the libax closure is `.#axera-libs`,
-so the vendor encoder can be loaded on the running open image for one session
-and discarded by a warm reboot (proven 2026-09-05, #64 HEVC campaign; scripts
-in `docs/reference/vcenc-open/vendor-diff-hevc-20260905/tools/`):
+Every differential campaign up to 2026-09-05 worked by putting the vendor
+encoder back on the running image for one session -- `.#ax-ko-blobs` + the libax
+closure + the stock-rootfs `libax_venc.so`, dropped on the Ubuntu base, unloaded
+by a reboot. **None of those inputs exists any more.** The 4.19 image, the vendor
+modules, the Axera libraries and the vendor loader went out with #97, and the
+appliance is NixOS on a mainline kernel that would not load a 4.19 `.ko` in any
+case.
 
-1. Stage on eMMC (`/root/<campaign>/{ko,lib,bin}`): `ax_{sys,cmm,pool,base,venc,
-   jenc}.ko` (**`ax_jenc` is required** — `AX_VENC_Init` returns
-   `0x80070210` SYS_NOTREADY without it), `libax_{sys,ivps,proton,engine,
-   interpreter}.so` from `.#axera-libs`, and **`libax_venc.so` from the stock
-   rootfs** (`unzip` the `.#base-axp`, `simg2img`, `debugfs -R "dump /opt/lib/
-   libax_venc.so"`): the SDK snapshot's `libax_venc.so` is a different build
-   that rejects pixel-unit strides (`SendFrame` → `0x8007020a`, `MissMatch`
-   in `/proc/ax_proc/venc`). Cross-build the driver tool with `nix develop -c
-   aarch64-unknown-linux-gnu-gcc -std=gnu17 …` then `patchelf --set-interpreter
-   /lib/ld-linux-aarch64.so.1 --force-rpath --set-rpath '$ORIGIN/../lib:/opt/lib'`.
-2. **Reboot first if the open encoder module cannot be unloaded**: after a
-   session with mode-change recovery `ax630c_venc_vcmd` sits at refcnt 2 with
-   no process holding `/dev/es_venc` (a leaked reference), `rmmod` says "in
-   use", and the vendor `ax_venc.ko` then loads *inert* (no `/dev/ax_venc`, no
-   `/proc/ax_proc/venc`, no dmesg). A fresh boot with `nanokvm` stopped shows
-   refcnt 0.
-3. `systemctl stop nanokvm nanokvm-display`; `/soc/scripts/auto_load_all_drv.sh
-   -r` (unloads the three open modules); insmod the vendor set with the
-   vendor's own `cmmpool=anonymous,0,<pool base>,<MB>M` (on the 1G board
-   `0x73800000,200M`; derive it from `/proc/cmdline mem=` as the vendor loader
-   does). Run the campaign with `LD_LIBRARY_PATH`/rpath at the staged libs.
-4. Return: `reboot` — the on-disk loader is the open one, so any reboot (also a
-   watchdog reboot mid-campaign) lands on the open stack. Rmmod-ing the vendor
-   set in place only works with the exact module list in dependency order;
-   after a partial rmmod the open `insmod` fails EPERM (IRQ/MMIO still owned).
-   Verify: `nanokvm` active, web 200, an MJPEG frame, `lsmod` = the three open
-   modules.
+The evidence those campaigns produced is kept and is still the authority:
+`docs/reference/vcenc-open/vendor-diff-20260904/`,
+`docs/reference/vcenc-open/vendor-diff-hevc-20260905/`,
+`docs/reference/vcenc-open/vendor-diff-rc-20260905/` and
+`docs/reference/deblob-scope/regdumps/` carry the raw dumps, the decoded
+register images and the tooling that produced them, and
+`docs/blob-replacement.md` is the narrative. Read those instead of trying to
+re-run a differential.
 
-**Real content into the vendor encoder** (2026-09-05 RC oracle, #46): the vendor
-capture modules stay purged. Record raw YUYV frames from the OPEN stack first
-(`/dev/video0`, service stopped; `vendor-diff-rc-20260905/tools/v4lrec.c`), keep
-them on eMMC, then re-blob and feed them to `AX_VENC_SendFrame` in a loop
-(`tools/vdrive.c`: `src=`, `motion=scroll|jump`, `chg=` for mid-stream
-retargets). A static HDMI desktop is byte-identical frame to frame, so a 30-frame
-clip is enough; label any software motion as such. Delete the clips before the
-return reboot. Staging dirs left on eMMC for reuse: `/root/hevc64`, `/root/rc65`.
-
-The older on-disk recipe (2026-09-04, `/root/purge54-backup` + vendor loader +
-vendor-MPI libkvm + reboot) is gone with the alpha.4 flash. Campaign tooling
-that drives the vendor encoder/receiver through the SDK API:
-`docs/reference/vcenc-open/vendor-diff-20260904/tools/`,
-`docs/reference/vcenc-open/vendor-diff-hevc-20260905/tools/` (H.264 + HEVC,
-`codec=`), `docs/reference/deblob-scope/regdumps/mipi-20260904/tools/`.
+If a future question genuinely needs the vendor stack observed live again, it
+needs a second unit flashed with a vendor `.axp` -- a bench decision for Jeremy,
+not something a subagent arranges.
 
 # Content-filter framing (load-bearing)
 
@@ -162,10 +131,12 @@ The subagent's report is a claim, not a result. Before recording anything:
   dumpers (`pool_asic3.py`), differential capture (`pool_asic_diff.py`), VCMD
   cmdbuf decoder (`pooldump2.py`), headless encode driver (`drive_rc.py`).
 - `kvm-device` skill, "Capture pipeline / video quality" — the device primitives:
-  driving `libkvm` via python3 ctypes without the Go server, `/dev/mem` mmap (plain
-  `read()` EFAULTs — use mmap), pool bases from `/proc/ax_proc/mem_cmm_info`.
-- Max GLIBC symbol on target is 2.17-era; avoid scanf/strtol (redirect to
-  `__isoc23_*@GLIBC_2.38`). Build device tools on-device with `gcc`, or cross.
+  driving `libkvm` via python3 ctypes without the Go server, and `/dev/mem` mmap
+  (plain `read()` EFAULTs — use mmap). `/proc/ax_proc/*` was the vendor stack's
+  and is gone; the open drivers expose their state through sysfs and dmesg.
+- Cross-build device tools with `nix develop -c aarch64-unknown-linux-gnu-gcc`.
+  The appliance is NixOS, so a binary built against nixpkgs glibc runs as-is --
+  the vendor Ubuntu's `patchelf --set-interpreter` dance is no longer needed.
 
 # After a positive/useful result — harvest and persist
 

@@ -1,4 +1,4 @@
-{ pkgs, crossPkgs, maix_ax620e_sdk, boot-atf
+{ pkgs, crossPkgs, maix_ax620e_sdk, boot
   # Build the milestone-instrumented variant (#89 rung 1). See "Milestone
   # instrumentation" below: identical BL31 plus seven register writes, used
   # only to find out how far a BL31 that never reaches BL33 actually got.
@@ -274,7 +274,7 @@ let
       set -eu
       elf="${atf-mainline}/debug/atf_bl31_mainline.elf"
       img="${atf-mainline}/images/atf_bl31_mainline_signed.bin"
-      vendor="${boot-atf}/atf_bl31_signed.bin"
+      vendor="${boot}/images/atf_bl31_signed.bin"
 
       echo "== ELF entry / link address =="
       ${crossPrefix}readelf -h "$elf" > headers.txt

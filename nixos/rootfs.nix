@@ -2,7 +2,7 @@
 , crossPkgs
 , inputs
 , kvm-encoder
-, nanokvm-server # MUST be the gpioBackend = "libgpiod" build -- see flake.nix
+, nanokvm-server # pkgs/nanokvm-server.nix -- ATX over nanokvm-gpio (#81)
 , nanokvm-gpio
 , nanokvm-web
 , nanokvm-display
@@ -31,19 +31,17 @@
 # ONE nixpkgs pin. The predecessor of this file evaluated against a second,
 # older pin (nixos-24.11) because systemd's declared kernel floor had risen
 # above the vendor's Linux 4.19.125 while the prebuilt ax_*.ko blobs held the
-# kernel there. Both halves of that argument are gone: the image has carried no
-# vendor kernel module since #54, and the kernel is now mainline 7.1.x, well
-# above systemd's 5.10 minimum. So `nixpkgs-rootfs` is retired and this
-# evaluates against the same unstable pin as everything else -- which also
-# retires the "two glibcs, one loader" hazard docs/nixos-rootfs.md warns about.
+# kernel there. Both halves of that argument are long gone, and since #97 so is
+# the 4.19 image itself: the kernel is mainline 7.1.x, well above systemd's
+# 5.10 minimum, and this evaluates against the same unstable pin as everything
+# else.
 #
 # BUILD MODEL: the appliance is evaluated as a NATIVE aarch64-linux system and
 # built through binfmt/qemu-user emulation (this host has
 # `extra-platforms = aarch64-linux`). Almost the whole closure substitutes from
 # cache.nixos.org, so emulation only pays for the handful of tiny system
 # derivations. The ext4 itself is packed by nixpkgs' make-ext4-fs on the BUILD
-# machine -- `fakeroot mkfs.ext4 -d`, no root and no loop mount, the same
-# constraint that forced the debugfs surgery in pkgs/rootfs.nix.
+# machine -- `fakeroot mkfs.ext4 -d`, no root and no loop mount.
 #
 # THE BOOT CONTRACT this image owes the boot chain (docs/mainline-port.md
 # section 5, and section 8's #78 entry):
