@@ -618,7 +618,25 @@ let
       # /boot is the one partition with no room to leak. A file named by EITHER
       # config is kept, so the worst case of a racing update is that a kernel
       # survives one cycle longer.
-      keep=$(sed -n 's|^[[:space:]]*\(LINUX\|FDT\)[[:space:]]\+/||p' "$conf" "$fallback" 2>/dev/null | sort -u)
+      #
+      # THE DELIMITER IS A COMMA, and that is not a style choice. With `s|...|`
+      # a `\|` inside the pattern is an ESCAPED DELIMITER -- a literal `|` --
+      # not alternation, so `\(LINUX\|FDT\)` matched the string "LINUX|FDT"
+      # and `keep` came out EMPTY. Every file matching the globs below was
+      # then "named by neither config", and on the first healthy boot this
+      # loop deleted the running kernel and device tree. Measured on hardware
+      # 2026-09-10 (#83's second round): GNU sed 4.10 removed
+      # /boot/ax630c-nanokvm-pro.dtb while both configs named it.
+      keep=$(sed -n 's,^[[:space:]]*\(LINUX\|FDT\)[[:space:]]\+/,,p' "$conf" "$fallback" 2>/dev/null | sort -u)
+      # A collector that has nothing to keep is a collector that deletes
+      # everything. If the configs parsed to nothing, something is wrong with
+      # them, and the safe move is to collect nothing at all.
+      if [ -z "$keep" ]; then
+        echo "mark-good: could not read any LINUX/FDT out of the configs --" >&2
+        echo "           collecting nothing rather than deleting everything." >&2
+        sync
+        exit 0
+      fi
       for f in /boot/Image-* /boot/*.dtb; do
         [ -e "$f" ] || continue
         b=$(basename "$f")
