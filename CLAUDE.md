@@ -50,7 +50,7 @@ that is arbitration, not a bug.
   commit, or tag on GitHub. Releases: write the `CHANGELOG.md` section first
   (mandatory), then Gitea web UI → Actions → `cut-release`
   with a version input (`tools/release` is the local fallback); the mirror +
-  GitHub Actions do the rest — docs/updates.md.
+  GitHub Actions do the rest — docs/releasing.md.
 - **Commit as you work; push after committing.** Never let finished work sit
   uncommitted or unpushed. (Standing instruction from Jeremy; a Stop hook also checks.)
 - This repo pushes directly to `main` (Jeremy's explicit instruction, 2026-08-15) —
@@ -170,8 +170,9 @@ that is arbitration, not a bug.
 - **A stale fixed-output hash is invisible on any host that already holds the
   output** (the store path comes from the hash alone, so the fetch never
   re-runs): the release OTA package built green here for two days while the
-  release runner died on `vendorHash`. `.#system-bundle` sits in exactly that
-  place now. `buildGoModule`'s vendor tree also depends on
+  release runner died on `vendorHash`. `.#appliance-toplevel` sits in exactly
+  that place now — it is what a release pushes to the cache.
+  `buildGoModule`'s vendor tree also depends on
   `postPatch` (a patch that drops an import drops a module). Validate
   release-critical FODs with `nix build --rebuild` before cutting --
   `docs/building.md` "Pinned hashes" (alpha.5, 2026-09-07).
@@ -348,21 +349,39 @@ generation, unattended, after four boot-chain attempts. What triggered it was
 `Image` inside `bootcmd`'s four tries, and that cost a rollback instead of a
 power cycle. Since #99 the Image is 42 MB with a 7.6 MB initrd beside it.
 
-**An update is a system bundle, and there is no OTA any more (#86, 2026-09-10).**
-`.#system-bundle` is the appliance's whole store closure (~450 MB), kernel and
-initrd and dtb included as ordinary store paths since #99 — there is no `boot/`
-half in the tarball;
-`nanokvm-update install <tarball>` unpacks what the board is missing, sets the
-profile, runs `switch-to-configuration boot` (which is what writes `/boot`) and
-leaves the reboot to arm the rollback, and
-`nanokvm-gc` reclaims old generations from the closure lists the installer
-records (it refuses to delete anything if one is missing). The 4.19 overlay OTA
-and `.#update-package` are **deleted** — a vendor-layout board is reflashed over
-AXDL, by decision, because nobody runs the alpha releases. **Unattended updates
-are a web-UI checkbox** (`/etc/kvm/auto_updates`, beside the preview flag — there
-is no `nanokvm.update.auto`), they install on the timer and **reboot only when
-the server's loopback `/api/update/idle` route says nobody is connected**, and
-both channels are tagged releases only. `docs/updates.md`.
+**Nix is on the appliance, and an update is a signed closure (#100, 2026-09-11;
+supersedes #86's tar bundle).** The release publishes ~200 bytes —
+`.#system-manifest`, naming a toplevel store path — and pushes that closure to
+the binary cache; the device runs `nix copy --from <cache>` with
+`require-sigs` and **its own** `trusted-public-keys` (passed on the command
+line, never read from `/etc/nix/nix.conf`), then `nix-env -p
+/nix/var/nix/profiles/system --set`, then `switch-to-configuration boot`. Only
+what the board is missing crosses the wire, and a NAR nobody trusted signed does
+not install. Nix runs **single-user** (the daemon socket is not wanted): one
+root user, no builds, and signature checking on a direct LocalStore has no
+trusted-user bypass. The image ships a **registered store** — the db is built
+from `closureInfo` at image-build time and asserted to equal the closure — because
+a directory of store paths is not a store (`nix-env --set` on an unregistered
+path tries to *download* it). GC is `nanokvm-update gc`: pin every generation a
+boot config names as a gcroot **first**, then `nix-env --delete-generations` and
+`nix-collect-garbage`. Costs 52 store paths / ~29 MiB of closure. The 4.19
+overlay OTA and `.#update-package` are **deleted** — a vendor-layout board is
+reflashed over AXDL, by decision, because nobody runs the alpha releases.
+**Unattended updates are a web-UI checkbox** (`/etc/kvm/auto_updates`, beside the
+preview flag — there is no `nanokvm.update.auto`), they install on the timer and
+**reboot only when the server's loopback `/api/update/idle` route says nobody is
+connected**, and both channels are tagged releases only. The cache URL and its
+key are **placeholders until #96** (`nanokvm.update.{cacheUrl,trustedPublicKeys}`,
+and the `ATTIC_*` Actions secrets; `flake.nix` carries the intended `nixConfig`
+as a **comment**, because a substituter listed there is contacted for every
+missing path on every host and an unreachable one is worse than none).
+**An unregistered store path is not a store path**: the generations a pre-#100
+board was given by `tar` are invisible to nix, `nix-env --set` on one fails and
+`nix-collect-garbage` DELETES it *with a gcroot naming it* (both measured) — so
+the bootstrap registers every generation the boot configs name
+(`nix-store --dump-db $(nix-store -qR …)` on the build host, `--load-db` on the
+board) and `nanokvm-update gc` refuses while one is unregistered.
+`docs/updates.md`.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
@@ -385,7 +404,8 @@ slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
 | Anything architectural (boot chain, pipeline, services) | `docs/architecture.md` |
 | Building components / hashes / vermagic | `docs/building.md` |
 | Flashing, backup, recovery, SD boot | `docs/flashing-and-recovery.md` |
-| OTA / releases / versioning | `docs/updates.md` |
+| How a device updates itself (channels, signing, rollback, GC) | `docs/updates.md` |
+| Cutting a release / the release workflow / versioning | `docs/releasing.md` |
 | Blob or network-endpoint questions | `docs/provenance.md` |
 | Mini-display | `docs/mini-display.md` |
 | Capture-pipeline internals / RE history | `docs/blob-replacement.md` |

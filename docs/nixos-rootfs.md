@@ -61,7 +61,7 @@ The costs that remain:
 
 | Cost | Detail |
 |---|---|
-| ~~**OTA redesign**~~ — **done (#86)** | An update is a **system bundle**: the toplevel's whole closure plus the kernel its initrd is baked into, unpacked into the store and booted into. The 4.19 overlay path is deleted, not ported. [updates.md](updates.md). |
+| ~~**OTA redesign**~~ — **done (#86, nix-native since #100)** | An update is a **signed system closure**: the release names a toplevel store path, the device substitutes it from our binary cache with `require-sigs` against its own keys, sets the system profile and runs `switch-to-configuration boot`. The 4.19 overlay path is deleted, not ported. [updates.md](updates.md). |
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [gap 2](#known-gaps). |
 | **WiFi** | `aic8800_*.ko` + `/opt/firmware/aic8800/*.bin`. Needs its own build against the mainline kernel — #85. |
 | **The `rc.local` glue** | `S99checkboot` is now a unit and is live (below). `axemac.sh`, `npu_set_bw_limiter.sh` and a bare `devmem` poke are not. |
@@ -635,9 +635,9 @@ What survives on the appliance:
   re-arms it is a boot that falls back next time. #79 is what puts a health gate
   in front of that instead of re-arming unconditionally the way the vendor does.
 - **`S99checkota`** (the OTA-commit `fw_setenv` clears) has nothing to commit
-  any more: #86 replaced the vendor-shaped OTA with a system bundle, and what
-  vouches for an update here is `nanokvm-mark-good` clearing `bootcount`, not an
-  environment variable.
+  any more: the vendor-shaped OTA is gone, an update is a signed store closure
+  (#86, #100), and what vouches for one here is `nanokvm-mark-good` clearing
+  `bootcount`, not an environment variable.
 - **The module loader is gone**, along with `/soc/ko` and `/soc/scripts`. There
   are no modules to load (below). The `#!/bin/sh`-but-actually-bash trap in the
   vendor `/soc/scripts/*.sh` set therefore no longer applies to anything the
@@ -730,11 +730,21 @@ leftover **PiKVM** accounts (`kvmd`, `kvmd-vnc`, `kvmd-janus`, …) and
   `ListenStream`-less socket, which systemd refuses to load, would be strictly
   worse.
 
-### 9. Kernel modules: there are none
+### 9. Kernel modules: almost none
 
-`boot.kernel.enable = false`, and the mainline kernel builds **no modules at
-all** — every driver this board has is built in. There is no `/lib/modules` tree
-on the image and none in the closure.
+`boot.kernel.enable` is **true** since #99 — the kernel, its initrd and its dtb
+are part of the generation — but NixOS's own module machinery still has nothing
+to work with: every driver this board needs to boot is built in, and stage 1
+carries no `/lib/modules` tree.
+
+The one exception is the video stack (#83): six modules — the three open
+drivers (`open_vin_csi2`, `open_vin_capture`, `ax630c_venc_vcmd`) and the three
+videobuf2 modules they import — copied out of the kernel derivation into
+`nanokvm.video-modules` (`pkgs/video-modules.nix`) as a `/lib/modules/<release>`
+tree. They are a store path in the closure like everything else, not a
+NixOS-managed module set, and since #99 they and the kernel they load into come
+from the same generation: `boot.kernelPackages` names the derivation they were
+copied from, so the pair cannot disagree.
 
 That has one non-obvious consequence in stage 1. `boot.initrd.kernelModules` and
 `availableKernelModules` must be `lib.mkForce [ ]`, not `[ ]`: option lists
@@ -744,8 +754,48 @@ two in place, and `makeModulesClosure` over an empty tree with a non-empty
 module list is a hard build failure ("Can not derive a closure of kernel
 modules").
 
-The first thing that will need a modules tree is the video stack, #83 — see
-[gap 11](#known-gaps).
+`system.modulesTree` stays empty all the same: `nanokvm-video.service` loads the
+six by `insmod` in the order that ships beside them, so nothing asks NixOS's
+module machinery for a tree it does not have.
+
+### 10. Nix — the appliance has a real store
+
+`nix.enable = true` (#100). This is a NixOS system, so an update is what an
+update is on any NixOS machine: `nix copy` a signed closure from our binary
+cache, `nix-env --set` the system profile, `switch-to-configuration boot`. The
+#78 appliance shipped `nix.enable = false` and had to rebuild every consequence
+of that by hand — a tar transport, a list of which store paths belonged to which
+generation, and a collector that refused to run whenever that list was missing.
+All three are gone.
+
+**Single-user, not the daemon.** There is one user here and it is root, and
+nothing on this board ever builds, so the daemon is a socket, a unit, 32
+`nixbld` accounts and a second process in the update path for nothing:
+`systemd.sockets.nix-daemon.wantedBy = lib.mkForce []`, `nix.nrBuildUsers = 0`,
+and `store = auto` resolves to the local store. It is also the **stricter** of
+the two — signature checking on a direct `LocalStore` has no trusted-user
+bypass, so `nix copy` cannot be talked into accepting an unsigned NAR the way a
+trusted client of a daemon can. `nix.channel.enable = false` and
+`system.disableInstallerTools = true`: nothing here evaluates nixpkgs, and a
+channel would be a second, mutable source of truth for a system whose whole
+point is that its generation came from a tagged release. `max-jobs = 0`,
+`sandbox = false`, `auto-optimise-store = false` (eMMC), `require-sigs = true`.
+
+**The image ships a registered store, not a directory of store paths.** A path
+on disk that the database does not know is not a store path: `nix-env --set` on
+one tries to *download* it, and `nix-collect-garbage` would delete it. See
+[the image builder](#the-image-builder--nixos-firmware-image).
+
+**What it costs, measured 2026-09-11:** the system closure is 748 paths /
+1,379,028,112 bytes with nix and the updater, against 696 paths /
+1,348,307,520 bytes for the same configuration with `nix.enable = false` and the
+updater removed — **52 store paths and ~29.3 MiB, about 2.2%**. That is less
+than the workarounds it replaced cost in complexity, and it bought the one
+property the tar transport could never have: an update is authenticated by an
+ed25519 signature the device checks against its own keys.
+
+Design, trust model, garbage collection and the hardware plan:
+[updates.md](updates.md).
 
 ---
 
@@ -855,6 +905,35 @@ entry naming a member and a file, and put the partition name in `imgOrder`
 where it should be written. Nothing else needs editing: the manifest, the
 size assertions and the check all follow from the map.
 
+### The rootfs carries a Nix database
+
+The image ships `/nix/var/nix/db` (#100), because **a directory of store paths
+is not a store**. `nix copy`, `nix-env --set` and `nix-collect-garbage` all ask
+the database what is valid, and a path that is on disk but unregistered does not
+exist as far as nix is concerned — `nix-env --set` on one tries to *download*
+it, which on a board whose only cache is our own release cache means an update
+that reinstalls the system it is already running.
+
+`nixos/lib/appliance-artifacts.nix`'s `mkStoreDb` builds it at **image-build**
+time: `nix-store --load-db` over `closureInfo`'s registration into a private
+`NIX_STATE_DIR`, `PRAGMA wal_checkpoint(TRUNCATE)` so no `-wal` is left for a
+first boot to recover, and a sqlite assertion that `ValidPaths` is **exactly**
+the closure — a db claiming a path the image lacks fails `nix-store --verify`,
+and a path the db lacks is one the collector would delete out from under the
+running system. `mkRootImage` copies it in beside the two profile symlinks, and
+the packed ext4 is then asserted with `debugfs` to carry
+`/nix/var/nix/db/db.sqlite` and its `schema`.
+
+nixpkgs' image builders do this on **first boot** instead (a
+`register-nix-paths` unit over `/nix-path-registration`). We do not: on this
+board that first boot is the one the `bootcount` rollback is judging, and a
+first boot that has to build a database before it can be a NixOS system is one
+more way to fail on a board with no console.
+
+The image no longer carries `/var/lib/nanokvm/closures` — the per-generation
+closure lists the #86 collector needed, now that `nix-collect-garbage` computes
+reachability itself.
+
 ### What is asserted
 
 At pack time: every member fits its partition; the Axera 1 KB signed header is
@@ -933,6 +1012,23 @@ base is exactly the part that cannot be replaced piecemeal: glibc, systemd, the
 init layout, `apt`. **Rejected as an endpoint**, and it stays the shipping
 configuration until (a) is hardware-proven.
 
+**(d) No nix on the appliance — TAKEN in #78, SUPERSEDED by #100.** The
+reasoning was that a package manager, a SQLite database and a daemon are the
+opposite of "the system is exactly what the flake says"; that the image had to
+fit beside a kernel in a fixed layout; and that a KVM's root account should not
+carry a general-purpose build tool. The cost of *not* having it was supposed to
+be one shell script.
+
+It was reversed on measurement. The workarounds came to a 460 MB tar transport,
+a hand-rolled store unpack, a per-generation closure list that was a database
+reimplemented badly, and a collector that refused to run whenever one of those
+lists was missing — against **52 store paths and ~29.3 MiB** for nix itself.
+And the tar could not authenticate anything: a SHA-512 out of our own manifest
+is integrity, not authenticity, where a signed NAR checked against the device's
+own keys is the real thing. Two of the three original objections also turned out
+not to apply — there is no daemon ([§10](#10-nix--the-appliance-has-a-real-store))
+and the board builds nothing (`max-jobs = 0`).
+
 ---
 
 ## What is built
@@ -998,9 +1094,10 @@ Notable decisions inside `nixos/appliance.nix`:
   opens the backing file `O_RDWR`; a read-only loop cannot carry a writable
   root) and attaches `/dev/loop0`, leaving the carrier mounted for the life of
   the system. `CONFIG_BLK_DEV_LOOP=y` in the kernel fragment exists for this.
-- `nix.enable = false` — no Nix on the appliance; the rootfs is a fixed closure
-  produced by the build host. An update is a new closure, not a `nixos-rebuild`
-  on the device (#86).
+- `nix.enable = true`, single-user, no daemon (#100) — the store is a real
+  store with a real database, and an update is `nix copy` + `nix-env --set` +
+  `switch-to-configuration boot`. Still never a `nixos-rebuild`: nothing on the
+  board evaluates nixpkgs or builds anything. See [§10](#10-nix--the-appliance-has-a-real-store).
 - `networking.firewall.enable = false` (appliance on a trusted LAN; 22/80/443),
   `services.journald` capped at 32M/16M because eMMC is the only writable medium
   and an unbounded journal is what chewed ~100 MB/week during the
@@ -1151,13 +1248,17 @@ number, so closed gaps keep their slot and new ones are appended.
    the mainline kernel, and their firmware is 28 files under
    `/opt/firmware/aic8800/` — the only closed content the blob policy still
    allows. Needs its own pinned derivation, or WiFi is dropped. **#85.**
-5. **OTA — CLOSED (#86, 2026-09-10).** An update is a **system bundle**: the
-   toplevel's whole closure plus the kernel its stage-1 initrd is baked into,
-   published as `.#system-bundle` and installed by `nanokvm-update` (no `nix` on
-   the device). `nanokvm-gc` collects old generations from the per-generation
-   closure lists the installer records. The 4.19 overlay OTA is deleted with no
-   replacement and no migration path — a vendor-layout board is reflashed over
-   AXDL. Design, offline proof and the hardware plan: [updates.md](updates.md).
+5. **OTA — CLOSED (#86, nix-native since #100).** An update is a **signed system
+   closure**: `.#system-manifest` publishes ~200 bytes naming a toplevel store
+   path, the release pushes that closure to our binary cache, and
+   `nanokvm-update` substitutes it with `require-sigs` against the keys this
+   system was built with, sets the profile and runs `switch-to-configuration
+   boot`. `nanokvm-update gc` pins every generation a boot config's `DEFAULT`
+   names — the rollback one above all — and then lets `nix-collect-garbage`
+   compute the rest. The 4.19 overlay OTA is deleted with no replacement and no
+   migration path — a vendor-layout board is reflashed over AXDL. Two
+   placeholders remain (#96): the cache URL and its trusted key. Design, offline
+   proof and the hardware plan: [updates.md](updates.md).
 6. **Timezone reporting is subtly wrong** (display-only; `timedatectl
    set-timezone` still works). `service/vm/datetime.go` reads the zone by
    `os.Readlink("/etc/localtime")` and slicing on the literal
@@ -1183,21 +1284,27 @@ number, so closed gaps keep their slot and new ones are appended.
    `deploy-iterate` skill assumes a writable `/kvmapp`.
 10. **`environment.ldso` alone is not an FHS.** See
     [the fallback ladder](#reaching-a-bare-name-dlopen--the-fallback-ladder).
-11. **No kernel module tree at all.** Every driver is built into the Image and
-    the closure has no `/lib/modules`. That is the right answer today and it
-    stops being one the moment something needs a module: the first such thing is
-    the video stack (#83), which will need `boot.kernel.enable` to stay false
-    while a modules tree is spliced into the system closure by hand — nixpkgs'
-    `kmod` is patched to search `/run/booted-system/kernel-modules/lib/modules`,
-    not `/lib/modules`, so it cannot simply be dropped into the filesystem.
-12. **The two hardware stubs, and what each costs the product.**
-    `nanokvm-video` (**#83**) — no `/dev/video0`: the web UI loads and streams
-    nothing. The three open drivers are 4.19 out-of-tree code and need porting to
-    current V4L2/dma APIs. `nanokvm-usb` (**#82**) — no keyboard, no mouse, no
-    mass storage, no NCM. The mini-display daemon (**#84**) is
-    `ConditionPathExists=/dev/fb0` and simply does not run. Both stubs exit 0 and
-    print which issue owns them. ATX is **not** on this list any more: #81 landed
-    and the appliance drives it through `nanokvm-gpio` — but that tool has still
+11. **Modules are loaded by us, not by NixOS — CLOSED (#83, #99).** Every
+    driver but six is built in, and the six the video stack needs ride in the
+    closure as `nanokvm.video-modules`, which `nanokvm-video.service` loads with
+    `insmod` off the `load-order` file that ships beside them (section 9 above).
+    `system.modulesTree` stays empty, so nothing consults
+    nixpkgs' `kmod` — which is patched to search
+    `/run/booted-system/kernel-modules/lib/modules`, not `/lib/modules`, and was
+    the reason a modules tree could not simply be dropped into the filesystem.
+    Anything that ever needs `modprobe` semantics — a second modular subsystem,
+    or udev autoloading — reopens this.
+12. **The one hardware stub left, and what it costs the product.**
+    `nanokvm-usb` (**#82**) — no keyboard, no mouse, no mass storage, no NCM.
+    The controller and the configfs function drivers are here and a host has
+    enumerated a gadget off this board; what is missing is the POLICY, because
+    `usbdev.sh` — the script that builds the gadget, its three HID report
+    descriptors and the Microsoft OS descriptors — exists only in the vendor
+    rootfs and is uncaptured (gap 2). The stub exits 0 and prints that. The
+    mini-display daemon (**#84**) is `ConditionPathExists=/dev/fb0` and simply
+    does not run. `nanokvm-video` is **not** on this list any more: #83 landed
+    2026-09-10 and the board streams H.264 on mainline. ATX is not either: #81
+    landed and the appliance drives it through `nanokvm-gpio` — but that tool has still
     never executed on hardware, because it targets this appliance and #81's own
     runs had no mainline userspace. QEMU gets as far as proving it is on the
     system PATH and resolving lines by name (`no gpiochip names line

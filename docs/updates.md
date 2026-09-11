@@ -1,8 +1,8 @@
 # Updates & releases
 
-How this firmware publishes its own updates and how a device installs them, so
-the web UI's "update" button pulls from **our** releases and a bad update rolls
-itself back. See [architecture.md](architecture.md) for the runtime,
+How this firmware publishes its own updates and how a device installs them, so the
+web UI's "update" button pulls from **our** releases and a bad update rolls itself
+back. See [architecture.md](architecture.md) for the runtime,
 [nixos-rootfs.md](nixos-rootfs.md) for the appliance and
 [mainline-port.md](mainline-port.md) for the boot chain.
 
@@ -10,155 +10,141 @@ itself back. See [architecture.md](architecture.md) for the runtime,
 ([git.neet.dev/zuckerberg/open-nanokvm-pro](https://git.neet.dev/zuckerberg/open-nanokvm-pro),
 Tailscale-only, locked down). A **public downstream mirror** at
 [github.com/GoogleBot42/open-nanokvm-pro](https://github.com/GoogleBot42/open-nanokvm-pro)
-exists solely for public distribution: it receives every branch and tag via
-Gitea's push mirror, its Actions build the release assets, and its Releases are
-what devices poll (public, no tailnet needed). **Never create commits, tags, or
-edits on GitHub directly** — all git data flows one way, Gitea → GitHub.
+exists solely for public distribution: it receives every branch and tag via Gitea's
+push mirror, its Actions build the release assets, and its Releases are what devices
+poll (public, no tailnet needed). **Never create commits, tags, or edits on GitHub
+directly** — all git data flows one way, Gitea → GitHub.
 
 - [The idea](#the-idea)
-- [The system bundle](#the-system-bundle)
+- [The manifest](#the-manifest)
 - [How the device updates itself](#how-the-device-updates-itself)
 - [How the device installs one](#how-the-device-installs-one)
-- [Rollback, including the kernel](#rollback-including-the-kernel)
-- [Garbage collection without nix](#garbage-collection-without-nix)
-- [Cutting a release](#cutting-a-release)
+- [Where the trust is](#where-the-trust-is)
+- [Nix on the appliance](#nix-on-the-appliance)
+- [Rollback](#rollback)
+- [Garbage collection](#garbage-collection)
+- [What a release publishes](#what-a-release-publishes)
 - [Local testing](#local-testing)
+- [What hardware still has to prove](#what-hardware-still-has-to-prove)
 - [Weighed and rejected](#weighed-and-rejected)
 - [Caveats](#caveats)
-- [History: the 4.19 overlay OTA](#history-the-419-overlay-ota)
+- [History](#history)
 
 ---
 
-> **Status (2026-09-11, #86 + #99): the BOOT half is hardware-proven; the
-> UPDATE half is not.** Rounds 1-3 below ran on the board on 2026-09-11 —
-> `switch-to-configuration boot` wrote `/boot`, U-Boot booted what it wrote,
-> a forced rollback took `altbootcmd` to the derived fallback, and a
-> kernel-only generation rolled back onto the OLD kernel. Six boots, 67-71 s
-> each, one U-Boot attempt every time; full oracles in
-> [mainline-port.md](mainline-port.md) "What exists now (#99)". Every
-> generation was shipped by the manual closure-tar recipe, not by a bundle.
-> Still unproven on hardware: `nanokvm-update install`, the web UI's update
-> button, `nanokvm-gc`, the automatic-update checkbox and the idle gate —
-> rounds 4 and 5 of the plan below, neither of which this run touched.
+> **Status (2026-09-11, #100): built and proven offline; not yet run on hardware.**
+> Five `nix flake check` gates cover it, two running **real nix** in the build sandbox
+> — a signed `file://` binary cache, two chroot stores, a real `nix copy`,
+> `nix-env --set` and `nix-collect-garbage`. Unproven is everything needing the board:
+> the real `switch-to-configuration`, the `/nix/store` remount, whether U-Boot boots
+> what was written, and whether the server's own idle answer is right. The board has
+> no nix yet, so round 1 is a bootstrap —
+> [the hardware plan](#what-hardware-still-has-to-prove).
 >
-> Four `nix flake check` gates cover the loop and the policy around
-> it — `nanokvm-updater-loop` applies a real bundle to a fake root with the real
-> scripts, `nanokvm-update-idle` drives the checkbox, the pending markers and
-> the idle reboot gate against a fake release host,
-> `nanokvm-mark-good-fallback` derives a rollback config and refuses the cases
-> it must, and `nanokvm-system-bundle` reads the published artefact back against
-> the closure it claims. Since #99 the appliance also boots end to end under
-> QEMU with the generation's own kernel and initrd, zero failed units.
-> See [the hardware plan](#what-hardware-still-has-to-prove).
+> **Two placeholders (#96):** `nanokvm.update.cacheUrl` and
+> `nanokvm.update.trustedPublicKeys` are empty and the release job's three attic
+> secrets do not exist, so a device builds and boots but refuses to update, and says
+> so at build time ([Caveats](#caveats)).
+>
+> **The kernel rides along (#99, merged):** kernel, initrd and dtb are store paths
+> inside the generation, so they arrive with the closure and
+> `switch-to-configuration boot` — NixOS's own extlinux builder — copies them into
+> `/boot`. An update can change the kernel, and the rollback covers it
+> ([Rollback](#rollback)).
+>
+> **That half IS hardware-proven (#99, 2026-09-11).** On the board, not in a
+> sandbox: the real `switch-to-configuration boot` wrote `/boot`, U-Boot booted the
+> file it wrote, a forced `bootcount` took `altbootcmd` to the derived fallback, and
+> a kernel-only generation rolled back onto the OLD kernel while the profile symlink
+> still pointed at the new one. Six boots, 67-71 s each, one U-Boot attempt every
+> time; oracles and end state in [mainline-port.md](mainline-port.md) "What exists
+> now (#99)". So `switch-to-configuration`, the `/nix/store` remount and "does
+> U-Boot boot what NixOS wrote" are answered — what the rounds below still have to
+> prove is everything from the *cache* to the profile, and the server's own idle
+> answer. Those rounds ran on generations shipped by hand with `tar`, on a board
+> with no nix; #100's round 1 is what puts nix there.
 
 ## The idea
 
-The appliance is a **NixOS system with no `nix` on it**
-([nixos-rootfs.md](nixos-rootfs.md)): the rootfs is a fixed store closure the
-build host produced, which is what keeps the image small and the running system
-exactly what the flake describes. So an update cannot be a `nixos-rebuild`, and
-since #78 it cannot be a file overlay either — there are no files to overlay,
-only store paths.
+The appliance is a NixOS system and **nix is on it** (#100), so an update is what an
+update is on any NixOS machine: put the new closure in the store, make it the system
+profile, run its `switch-to-configuration boot`. Every one of those is an official
+tool doing the thing it is for — no bundle format, no payload, no closure list, no
+hand-rolled collector, no hand-rolled store surgery. What is *ours* is the four things
+nixpkgs has no opinion about: **which channel** the closure comes from, **which keys**
+must have signed it ([Where the trust is](#where-the-trust-is)), **when** the reboot
+happens ([How the device updates itself](#how-the-device-updates-itself)), and **what
+catches** a generation that does not come up ([Rollback](#rollback)).
 
-An update is therefore a **system bundle**: the new toplevel's entire closure —
-its kernel, initrd and device tree included, as ordinary store paths (#99) —
-and a list saying which paths belong to it. The device unpacks what it does not
-already have, points the system profile at the new toplevel, runs
-`switch-to-configuration boot`, and reboots.
-
-**The reboot is the mechanism, not an afterthought.** The generation is
-installed with `switch-to-configuration boot`, so nothing about it is live until
-the board restarts; the restart is counted by U-Boot's `bootcount`, and
+**The reboot is the mechanism, not an afterthought.** `boot`, never `switch`: nothing
+is live until the board restarts, the restart is counted by U-Boot's `bootcount`, and
 `nanokvm-mark-good` clears that counter only once the **new** system is running,
 routed and serving. A generation that does not come up healthy is rolled back by
-`altbootcmd` on the fourth attempt with nobody watching — which is the only
-rollback story a box with no console and no autoboot interrupt window can have.
-`switch` would activate an untested userspace with no way back, and is never
-used.
+`altbootcmd` on the fourth attempt with nobody watching — the only rollback story a
+box with no console and no autoboot interrupt window can have.
 
-Two Nix outputs feed a release:
+Three Nix outputs feed a release:
 
-| Output | What it is | Published as |
+| Output | What it is | Where it goes |
 |---|---|---|
-| `system-bundle` | `nanokvm_pro_sys_<ver>.tar.gz` + `nanokvm_pro_sys_latest.json` | the update payload + the manifest devices poll |
-| `nixos-firmware-image-mainline` | the flashable `.axp` | the AXDL image — the only way onto a board that is not already running this |
+| `appliance-toplevel` | the NixOS system closure | pushed to the binary cache, signed |
+| `system-manifest` | `nanokvm_pro_sys_latest.json`, ~200 bytes | attached to the release; devices poll it |
+| `nixos-firmware-image-mainline` | the flashable `.axp` | the AXDL image — the only way onto a board not already running this |
 
-Publishing a release **is** the update push.
+Publishing a release **is** the update push, in two halves: the closure lands in the
+cache *first*, then the manifest that names it.
 
 ---
 
-## The system bundle
+## The manifest
 
-`pkgs/system-bundle.nix`. Two files, and their shape is the vendor OTA's on
-purpose — the server's download path (fetch the manifest, fetch `name`, check
-the base64 SHA-512, untar) is reused byte for byte, so the web UI's update
-button needed no change at all.
-
-**The manifest** `nanokvm_pro_sys_latest.json`:
+`pkgs/system-manifest.nix`. A version and a store path:
 
 ```json
-{ "version": "2.1.0", "name": "nanokvm_pro_sys_2.1.0.tar.gz",
-  "sha512": "<base64(StdEncoding) of the RAW SHA-512 of the tarball>",
-  "size": 459778288 }
+{
+  "format": "nanokvm-nix-closure/1",
+  "version": "2.3.0",
+  "toplevel": "/nix/store/rkcz8k4w6fzdz0bnpxg1pk1ka0qbl8bd-nixos-system-nanokvm-pro-2.3.0",
+  "size": 1379028112,
+  "closureCount": 748
+}
 ```
 
-`sha512` is base64 of the raw digest, **not** hex — the server enforces it.
-
-**The payload**, one top-level directory `nanokvm_pro_sys_<ver>/`, which is what
-the server's `UnTarGz` hands to `install()`:
-
-```
-MANIFEST.json     format, version, toplevel, closure count
-closure.txt       every store path in the toplevel's closure, one per line
-store/<base>/     those store paths, as ordinary directories
-```
-
-**There is no `boot/` half** (#99). The kernel, the initrd and the device tree
-are part of the generation, so they travel in `closure.txt` as ordinary store
-paths, and `switch-to-configuration boot` — NixOS's own extlinux builder — is
-what copies them onto `/boot`. `nanokvm-update` does not write a single byte of
-that partition, and `pkgs/system-bundle-check.nix` asserts both halves: the
-manifest declares no out-of-band payload, and `<toplevel>/{kernel,initrd,dtbs}`
-resolve to store paths that are in the closure *and* in the archive.
+No `sha512` and no `name`: there is no payload to hash. The bytes live in the binary
+cache, each NAR signed; the manifest only ever says *which store path to install*
+([Where the trust is](#where-the-trust-is)). `size` is the closure's **total NAR
+size**, not the download — the device has most of it already, so a typical update
+moves a few percent of that, and the UI shows it as an honest upper bound computed
+before asking the store what it is missing.
 
 **The manifest FILENAME is the channel.** `nanokvm_pro_sys_latest.json` is the
-appliance's; the 4.19 image polls `nanokvm_pro_latest.json`, which nothing
-publishes any more. A device is therefore never offered a payload its installer
-cannot apply. `pkgs/nanokvm-server.nix`'s `updateMode` picks both the manifest
-name and the `install()` body, and they move together.
+appliance's; the retired 4.19 image polls `nanokvm_pro_latest.json`, which nothing
+publishes any more, so it is offered nothing rather than a store closure no Ubuntu
+rootfs could apply. `pkgs/nanokvm-server.nix`'s `updateMode` (now `"closure"`) picks
+both the manifest name and the `install()` body, and they move together.
 
-**`--hard-dereference` is load-bearing.** The server's own extractor
-(`server/utils/untar.go`) handles `TypeDir`, `TypeReg` and `TypeSymlink` and
-**silently ignores `TypeLink`**. A tar that hardlinked two identical files in
-the closure would install one and leave the other missing, with no error
-anywhere and a generation that dies on a file that is not there. The bundle
-build dereferences them and then asserts the finished archive has no `h`
-entries.
-
-**It is ~460 MB** (690 store paths, 1.3 GB of content) and that is the honest
-cost of the design — see [Weighed and rejected](#weighed-and-rejected). The
-device only *writes* the paths it does not already have, so the eMMC cost is
-proportional to the change even though the download is not.
+Beside it, not published: `closure.txt` — what the release pushed to the cache, so a
+hardware run or a `nix build --rebuild` can diff a device's store against a release
+without re-evaluating the flake.
 
 ---
 
 ## How the device updates itself
 
-Three rules, and each of them is something a KVM gets wrong at its owner's
-expense.
+**The policy is unchanged from #86.** The transport under it was replaced wholesale
+and not one phase of it moved — that was #86's design claim, and
+`nixos/lib/update-idle-test.nix` is where it is cashed.
 
-**1. The switch is a checkbox, not a NixOS option.** Settings → Check for
-Updates carries **Automatic updates** beside **Preview updates**, and both are
-flag files in `/etc/kvm`: `auto_updates` and `preview_updates`, presence = on.
-The timer runs whenever `nanokvm.update.enable` is set and `nanokvm-update
-update` exits 0 doing nothing while the box is unticked, so ticking it takes
-effect immediately and without a rebuild. `nanokvm.update.auto` is gone.
+**1. The switch is a checkbox, not a NixOS option.** Settings → Check for Updates
+carries **Automatic updates** beside **Preview updates**, and both are flag files in
+`/etc/kvm`: `auto_updates` and `preview_updates`, presence = on. The timer runs
+whenever `nanokvm.update.enable` is set and `nanokvm-update update` exits 0 doing
+nothing while the box is unticked, so ticking it takes effect immediately and without
+a rebuild. There is no `nanokvm.update.auto`.
 
-**2. It installs on a timer; it reboots when the room is empty.** Nothing a
-`switch-to-configuration boot` installs is live until the board restarts, and
-a KVM is the machine you are using to fix the machine — so the restart waits.
-After a successful install the updater writes two markers and asks the server
-whether anybody is there:
+**2. It installs on a timer; it reboots when the room is empty**
+([why](#weighed-and-rejected)). After a successful install the updater writes two
+markers and asks the server whether anybody is there:
 
 | marker | says | cleared by |
 |---|---|---|
@@ -167,137 +153,210 @@ whether anybody is there:
 
 Idle → reboot now. In use → exit 0, leave the markers, and let
 `nanokvm-update-reboot` (every ten minutes) ask again. `nanokvm.update.rebootWindow`
-is an `OnCalendar` expression that *becomes* that timer's schedule when set, so
-it must fire repeatedly inside the window you want
-(`*-*-* 03..05:00/10:00` is every ten minutes between three and five); installs
-are unaffected. A second update never stacks on an unbooted one.
+is an `OnCalendar` expression that *becomes* that timer's schedule when set, so it
+must fire repeatedly inside the window you want (`*-*-* 03..05:00/10:00` is every ten
+minutes between three and five); installs are unaffected. A second update never stacks
+on an unbooted one.
 
 **"Idle" is what the server can actually see**, over a loopback-only route
-(`GET /api/update/idle`, `pkgs/nanokvm-server/update-status.go.in`), and every
-term is a zero except the last two:
+(`GET /api/update/idle`, `pkgs/nanokvm-server/update-status.go.in`). Every term is a
+zero except the last two:
 
-- video clients across all four consumers — the arbitration map from #69 keeps
-  the counts, `stream.TotalStreamClients()` reads them;
-- `/api/ws` HID sessions (`ws.GetManager().GetClients()`): a browser with
-  keyboard and mouse attached *is* the definition of at-the-console;
-- web-terminal sessions and the last web request from anywhere but loopback —
-  neither of which anything recorded before, hence `common/activity.go` and
-  `middleware/activity.go`. Loopback is filtered out or the mini-display's
-  once-a-second poll would keep the device permanently busy;
+- video clients across all four consumers — #69's arbitration map keeps the counts,
+  `stream.TotalStreamClients()` reads them;
+- `/api/ws` HID sessions (`ws.GetManager().GetClients()`) — a browser with keyboard
+  and mouse attached *is* at-the-console;
+- web-terminal sessions, and the last web request from anywhere but loopback; loopback
+  is filtered out or the mini-display's once-a-second poll would keep the device
+  permanently busy;
 - the mini-display's live-preview lease: somebody is standing at the device;
-- a mounted virtual-media image — rebooting yanks a USB disk out of a machine
-  that may be installing from it. **An image left mounted blocks the reboot
-  indefinitely**; unmount it, or press *Restart now*;
-- seconds since the last frame read, and since that last web request, both
-  against `nanokvm.update.idleQuietSec` (default 600).
+- a mounted virtual-media image — rebooting yanks a USB disk out of a machine that may
+  be installing from it. **An image left mounted blocks the reboot indefinitely**;
+  unmount it, or press *Restart now*;
+- seconds since the last frame read, and since that last web request, both against
+  `nanokvm.update.idleQuietSec` (default 600).
 
-**A server that does not answer is BUSY.** An unanswered question must never
-become a reboot, and the offline check asserts exactly that.
+**A server that does not answer is BUSY** — an unanswered question must never become a
+reboot, and the offline check asserts exactly that. The update page shows
+`<from> -> <version>`, "Update installed. It takes effect after a restart.", what it
+is waiting for, and a **Restart now** button, because the person reading that page is
+usually the person the device is waiting for.
 
-**None of this is tied to the tarball.** `update` is check → download/verify →
-one `install_staged` call → markers → idle-gated reboot, and `install_staged`
-reports what it installed through `STAGED_VERSION`/`STAGED_TOPLEVEL` rather than
-writing the markers itself. When #100 replaces the transport with `nix copy`
-from a binary cache, that one function and the download above it are what is
-replaced; the checkbox, the markers, the idle gate and the second timer do not
-move.
-
-The update page shows `<from> -> <version>`, "Update installed. It takes effect
-after a restart.", what it is waiting for, and a **Restart now** button — the
-person reading that page is usually the person the device is waiting for. It
-does not offer to install the pending version again.
-
-**3. No device ever follows a branch.** Both channels are GitHub releases cut
-from a `vX.Y.Z` tag: stable is `releases/latest/download`, which never serves a
-prerelease, and preview is the rolling `preview` release, which only a
-tag-triggered run refreshes. `.github/workflows/release.yml` triggers on tags
-only *and* asserts `GITHUB_REF_TYPE = tag` before it writes either channel,
-because that job is where the write happens and a trigger is something a future
-edit can widen. Nothing publishes from `main`; the alpha channel is prerelease
-**tags**.
+**3. No device ever follows a branch.** Both channels are GitHub releases cut from a
+`vX.Y.Z` tag: stable is `releases/latest/download`, which never serves a prerelease,
+and preview is the rolling `preview` release, refreshed only by a tag-triggered run.
+`.github/workflows/release.yml` triggers on tags only *and* asserts
+`GITHUB_REF_TYPE = tag` before writing either channel, because that job is where the
+write happens and a trigger is something a future edit can widen. Nothing publishes
+from `main`; the alpha channel is prerelease **tags**.
 
 ---
 
 ## How the device installs one
 
-`nanokvm-update` (`nixos/lib/updater.nix`) is the whole implementation, and it
-has two callers:
+`nanokvm-update` (`nixos/lib/updater.nix`) is the whole implementation, with two
+callers: the systemd timer runs `update`, and the web UI's button reaches
+`install-now` through the server's `install()` override
+(`pkgs/nanokvm-server/install-update.go.in`). Both end in the same function.
 
-- **the web UI button** → `POST /api/application/update` → the server downloads,
-  SHA-512-verifies and untars, then our `install()`
-  (`pkgs/nanokvm-server/install-bundle.go.in`) runs
-  `nanokvm-update install-staged <dir>` and reboots;
-- **the timer** → `nanokvm-update update` does the whole cycle itself, gated by
-  the web UI's *Automatic updates* checkbox and rebooting only once nobody is
-  using the device ([above](#how-the-device-updates-itself)).
+`update` refuses before it fetches anything, in this order: no
+`/etc/kvm/auto_updates`, exit 0 (the checkbox); a reboot already owed, exit 0 (never
+stack on an unbooted update); `bootcount` != `0xB0010000`, refuse — this boot is not
+marked good yet, and installing now would replace the very thing the counter is
+counting. Then it GETs `<base>/nanokvm_pro_sys_latest.json` (`<base>` is the preview
+channel if `/etc/kvm/preview_updates` exists), compares `.version` with
+`/run/current-system/etc/nanokvm-version`, and installs what it names — five steps,
+four of them somebody else's tool:
+
+| # | Step | Command |
+|---|---|---|
+| 1 | fetch the channel manifest | `curl -fsSL <base>/nanokvm_pro_sys_latest.json` |
+| 2 | substitute the closure | `nix copy --from <cache> --to auto --option require-sigs true --option trusted-public-keys <this system's keys> <toplevel>` |
+| 3 | make it a generation | `nix-env -p /nix/var/nix/profiles/system --set <toplevel>` |
+| 4 | write the bootloader | `<toplevel>/bin/switch-to-configuration boot` |
+| 5 | markers, then the idle-gated reboot | ours |
+
+Step 2 is skipped entirely when `nix path-info` already knows the path — and "already
+here" means **valid in the database**, not present on disk. A directory nix does not
+know about is not a store path, and `nix-env --set` on one tries to *download* it;
+hence the shipped database ([below](#nix-on-the-appliance)).
 
 ```
-nanokvm-update update
-  ├─ exit 0 unless /etc/kvm/auto_updates     the web UI's checkbox
-  ├─ exit 0 if a reboot is already owed      never stack on an unbooted update
-  ├─ refuse if `bootcount` != 0xB0010000     this boot is not marked good yet;
-  │                                          installing now would replace the
-  │                                          very thing the counter is counting
-  ├─ GET <base>/nanokvm_pro_sys_latest.json  (<base> is the preview channel if
-  │                                          /etc/kvm/preview_updates exists)
-  ├─ compare with /run/current-system/etc/nanokvm-version
-  ├─ download, verify base64 SHA-512, untar
-  └─ install-staged:
-      1. check EVERY closure path is installed or in the bundle   ← before any write
-      2. remount /nix/store rw, rename the missing ones in, remount bind,ro
-      3. record closure.txt as /var/lib/nanokvm/closures/<toplevel>.txt
-      4. profile: system-<N+1>-link -> toplevel, then rename `system` onto it
-      5. switch-to-configuration boot   → NixOS's extlinux builder copies THIS
-                                          generation's kernel, initrd and dtbs
-                                          into /boot/nixos/ and rewrites
-                                          /boot/extlinux/extlinux.conf
-      6. write the pending markers
-  └─ reboot IF the server says nobody is using the device; otherwise leave the
-     markers and let nanokvm-update-reboot take it later
+nanokvm-update check              what is installed, and what the channel offers
+                update            check, install, reboot when idle (the timer)
+                install-now       install what the channel offers, right now
+                                  (the web UI button; no checkbox, no idle gate)
+                install-manifest <file>    install what a manifest on disk names
+                install-toplevel <path> [version]   one store path, straight in
+                pending           the installed-but-not-yet-booted update
+                reboot-if-idle    what nanokvm-update-reboot runs
+                gc                delete old generations and collect the store
+                status            generations, boot configs, store health
+
+options: --root DIR  --cache URL  --trusted-key K  --keep N
+         --no-activate  --no-reboot
 ```
 
-Three details that are not obvious:
+`--root` prefixes every path and turns every nix invocation into
+`--store local?root=...`, which is the only reason any of this is provable before it
+meets hardware. `install-toplevel` is what a developer reaches for after
+`nix copy --to ssh://` from a build host — the switch recipe in the `kvm-device` skill.
 
-- **The version stamp is part of the closure.** `/etc/nanokvm-version` is a
-  store file, so a rollback rolls the version back with everything else and
-  there is no mutable stamp to get out of sync. (The web UI reads
-  `/kvmapp/version`, which is likewise a store symlink.)
-- **The paths are *renamed* into the store, not copied.** `/root/.kvmcache` and
-  `/nix/store` are the same filesystem, so unpacking costs one write of the
-  closure, not two.
-- **`/nix/store` is a read-only bind mount**, and `remount,ro` alone silently
-  does nothing on a bind — it needs `remount,bind,ro`.
+Two details that are not obvious:
+
+- **The version stamp is part of the closure.** `/etc/nanokvm-version` is a store
+  file, so a rollback rolls the version back with everything else and there is no
+  mutable stamp to get out of sync. (The web UI reads `/kvmapp/version`, likewise a
+  store symlink.)
+- **If `/nix/store` is ever a read-only bind mount**, `remount,ro` alone silently does
+  nothing on one — it needs `remount,bind,ro`. The updater flips it around the
+  `nix copy` and back; the flip is a no-op on this image, where the store is an
+  ordinary directory on a writable root.
 
 ---
 
-## Rollback, including the kernel
+## Where the trust is
 
-The generation half has been live since #89 rung 5 and is described in
+`nix copy` runs with `require-sigs = true` and an **explicit** `trusted-public-keys` —
+the keys this system was built with, passed on the command line, *not* read from
+`/etc/nix/nix.conf`. The gate between the network and this board's root filesystem is
+therefore an ed25519 signature over each NAR, made by the key that signed the release:
+a cache that is compromised, mirrored, or simply wrong serves paths this device
+refuses, and nothing an operator adds to the machine's nix config can widen what an
+update will install.
+
+The manifest itself is only TLS-authenticated, and does not need to be more. A
+tampered manifest can **name an older signed release** — a downgrade, which the boot
+counter and a deliberate re-point both already permit — or **name a path that does not
+exist**, an update that fails and installs nothing. It cannot make the device run
+unsigned code, because it never supplies bytes; anything not spelled as a store path is
+refused before `nix copy` ever sees it.
+
+That is strictly more than the #86 tar bundle had: a SHA-512 out of our own manifest
+is **integrity, not authenticity**, and whoever served the manifest controlled what
+the device installed, as root. This is the whole of **#31** for the appliance.
+
+---
+
+## Nix on the appliance
+
+**Single-user, not the daemon.** One user, root, and nothing on this board ever
+builds. The daemon exists to mediate between untrusted users and the store; with no
+untrusted users it is a socket, a unit, 32 `nixbld` accounts and a second process in
+the update path, for nothing.
+
+```nix
+nix.enable = true;
+systemd.sockets.nix-daemon.wantedBy = lib.mkForce [ ];
+nix.nrBuildUsers = 0;
+nix.channel.enable = false;
+system.disableInstallerTools = true;
+```
+
+`store = auto` then resolves to the local store, which is also **the stricter of the
+two**: signature checking on a direct `LocalStore` has no trusted-user bypass, so
+`nix copy` cannot be talked into accepting an unsigned NAR the way a trusted client of
+a daemon can. No channels, no registry, no `NIX_PATH` — nothing here evaluates
+nixpkgs, and a channel is a second, mutable source of truth for a system whose whole
+point is that its generation came from a tagged release. `nixos-rebuild`,
+`nixos-install` and `nixos-generate-config` would all be lies here, and are not small.
+
+| `nix.settings` | Why |
+|---|---|
+| `substituters` = the release cache (only) | the board fetches release closures and nothing else |
+| `trusted-public-keys` = `nanokvm.update.trustedPublicKeys` | the same keys the updater passes explicitly |
+| `require-sigs = true` | the gate |
+| `max-jobs = 0` | the board never builds — minutes per package on a 1.2 GHz A53, and eMMC wear |
+| `sandbox = false` | nothing to sandbox with no builds |
+| `auto-optimise-store = false` | a full store walk and a lot of small writes, to buy back space on a store holding three generations of one closure |
+| `experimental-features = nix-command` | `nix copy`, `nix path-info` |
+| `allowed-users` / `trusted-users` = `root` | only root exists; spelling it out keeps a future user from inheriting store-write |
+
+**The image ships a registered store, not a directory of store paths.**
+`nixos/lib/appliance-artifacts.nix`'s `mkStoreDb` runs `nix-store --load-db` over
+`closureInfo`'s registration at **image-build** time, checkpoints the WAL into the
+file, and asserts with sqlite that `ValidPaths` is the closure exactly — no more, no
+fewer; `mkRootfs` then asserts with `debugfs` that the packed ext4 carries
+`/nix/var/nix/db/db.sqlite` and its `schema`. nixpkgs' image builders do this on
+**first boot** instead (a `register-nix-paths` unit over `/nix-path-registration`); we
+do not, because that first boot is the one the `bootcount` rollback is judging, and a
+first boot that has to build a database before it can be a NixOS system is one more
+way to fail on a board with no console.
+
+**What it costs, measured on this branch (2026-09-11):**
+
+| Configuration | Store paths | Bytes |
+|---|---|---|
+| the appliance, with nix + the updater | 748 | 1,379,028,112 |
+| the same config, `nix.enable = false`, updater removed | 696 | 1,348,307,520 |
+
+**52 store paths and ~29.3 MiB — about 2.2% of the closure.** A chunk of that is the
+`aws-c-*` S3 libraries nix links; trimming them is
+[rejected below](#weighed-and-rejected).
+
+---
+
+## Rollback
+
+Unchanged by #100, and described in
 [nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate):
-two files in `/boot`, `extlinux.conf` and `extlinux-fallback.conf`, chosen by
-U-Boot's `bootcmd` and `altbootcmd`, with `bootcount` in `0x02390030` and
-`bootlimit` 3.
+two files in `/boot`, `extlinux.conf` and `extlinux-fallback.conf`, chosen by U-Boot's
+`bootcmd` and `altbootcmd`, with `bootcount` in `0x02390030` and `bootlimit` 3.
+Hardware-proven unattended on 2026-09-09.
 
-**#99 closes the kernel half, by deleting the question.** The kernel, the
-initrd and the device tree are part of the generation — `boot.kernelPackages`
-and `hardware.deviceTree` — so an entry that names a generation names its
-kernel by construction. NixOS's own extlinux builder writes one `LABEL` per
-generation with its own `LINUX`/`INITRD`/`FDT`/`init=`, and
-`nanokvm-mark-good` promotes by rewriting one `DEFAULT` line.
+Since #99 there is **one writer of `/boot`, and it is the official one**:
+`switch-to-configuration boot` runs NixOS's `generic-extlinux-compatible` builder,
+which copies this generation's kernel, initrd and dtb into `/boot/nixos/` and writes
+one LABEL per generation into `extlinux.conf`, each pinning its own `init=`.
+`nanokvm-mark-good` then clears the counter and derives `extlinux-fallback.conf` from
+that file by moving one `DEFAULT` line to the label of the generation that just booted,
+once the system is running, routed and serving. So a kernel change is just another
+store path in the closure, the generation the counter falls back to boots the kernel it
+was built with, and **the updater writes nothing in `/boot`** — the offline check
+asserts our code did not touch it.
 
-#86's scheme is worth recording because it worked and was still the wrong
-shape: content-addressed `/boot/Image-<hash>` files, a `nanokvmboot=` token on
-the command line so a running system could tell which one `sysboot` had loaded,
-a copier in the updater and a collector in the health gate. Four mechanisms to
-re-implement what the store already does. All four are gone.
-
-`/boot` is 272 MiB and a generation's kernel + initrd + dtbs is ~50 MB.
-`configurationLimit` is 3 and `pkgs/bootfs.nix` asserts room for four sets — the
-builder writes the new one before it collects the obsolete one, so the peak is
-the menu plus the set being replaced.
-
-**To exercise the rollback, do not install a broken generation.** Force the
-counter instead — one boot, nothing to strand:
+**To exercise it, do not install a broken generation.** Force the counter instead —
+one boot, nothing to strand:
 
 ```sh
 devmem 0x02390030 32 0xB001000A
@@ -306,250 +365,203 @@ reboot
 
 ---
 
-## Garbage collection without nix
+## Garbage collection
 
-`nanokvm-gc` keeps `nanokvm.update.keepGenerations` (default 3) generations and
-deletes the store paths no kept generation needs.
+`nanokvm-update gc`, on the `nanokvm-gc` systemd timer (`nanokvm.update.gcSchedule`,
+default weekly, `Persistent`, after `nanokvm-mark-good` so a boot still on trial never
+collects). `nix-collect-garbage` knows what is reachable; all we tell it is what must
+stay reachable. **Two steps, and the order is the safety property:**
 
-The problem it has to solve is that **nothing on the device can recompute a
-closure**. So every generation's closure list is recorded when it is installed
-(`/var/lib/nanokvm/closures/<toplevel basename>.txt`), and the image builder
-writes the flashed generation's list into `/var` so the very first one is not a
-blind spot. On top of `keepGenerations`, four things are always kept: the
-profile's target, `/run/booted-system`, `/run/current-system`, and the
-generation **each extlinux config's `DEFAULT` entry** names — the fallback most
-of all, since it is the one that gets used exactly when the default does not
-work.
+1. **Pin.** Write a gc root into `/nix/var/nix/gcroots/nanokvm/` for every toplevel
+   that `/run/booted-system`, `/run/current-system`, the system profile **or the
+   `DEFAULT` entry of any `/boot/extlinux/*.conf`** names. The **fallback** is the one
+   that matters: it gets used precisely when the default does not work, it is named by
+   a text file rather than a profile link, and nothing in nix knows about it unless we
+   say so. Roots are rewritten from scratch every run, so a generation that stops being
+   named stops being pinned.
 
-**The `DEFAULT` entry, not the first `init=` in the file.** Since #99 both
-configs list every generation in the menu and differ only in which `LABEL`
-their `DEFAULT` selects, so "the `init=` in this file" has several answers and
-only one of them is live. Reading the first would pin whichever generation the
-builder emitted first — `nixos-default`, the newest — and leave the fallback's
-own generation collectable.
+   **The `DEFAULT` entry, not every `init=` in the file.** Since #99 both configs list
+   one LABEL per generation and differ only in which one `DEFAULT` selects; pinning all
+   of them would collect nothing ever, and pinning the first would pin whichever the
+   builder emitted first and leave the fallback's own generation collectable. A config
+   that resolves to no generation is one we do not understand: `gc` refuses and deletes
+   nothing.
+2. **Then delete**, and only then: `nix-env --delete-generations <numbers>` for
+   everything but the newest `nanokvm.update.keepGenerations` (default 3) and never one
+   whose toplevel is pinned, followed by `nix-collect-garbage`.
 
-**If any kept generation has no closure list, or a boot config yields no
-generation at all, `nanokvm-gc` deletes nothing** and says so. An unknown live
-set makes every deletion a guess; a store that is too full is recoverable, a
-store missing one path is a bench trip.
+**A pin written after the collection is a pin that was not there when it mattered.**
+That ordering is what the offline check's two collection phases prove.
 
 ---
 
-## Cutting a release
+## What a release publishes
 
-Unchanged in shape from the 4.19 days. Everything starts on Gitea; GitHub only
-builds and hosts the assets.
+Two files and a closure, and the closure goes first:
 
-**First, write the release notes:** add a `## vX.Y.Z` section to `CHANGELOG.md`
-(newest first), commit, push. `cut-release` and `tools/release` both refuse to
-tag a version without one, and the GitHub release workflow lifts the section
-verbatim into the release description.
+1. **`attic push`** the appliance's whole toplevel closure to the binary cache.
+   This is the payload. A manifest naming a path no cache has is an update every
+   device on the channel fails, so nothing is published until it lands.
+2. **`nanokvm_pro_sys_latest.json`**, the manifest above, attached to the GitHub
+   release — and to the rolling `preview` release, which is the alpha channel.
+3. **the `.axp`**, the flashable image, which needs no cache and is the only way
+   onto a board that is not already running this.
 
-**Primary path — the `cut-release` workflow on Gitea.** Actions →
-**cut-release** → Run workflow → enter the version (e.g. `2.1.0`). The job
-(`.gitea/workflows/cut-release.yml`) validates, writes `VERSION`, commits, tags,
-pushes, and force-moves the rolling `preview` tag to the same commit — git work
-only, no nix. A `dry_run` input validates without pushing.
-
-The same workflow is dispatchable over the API, which is how an agent cuts a
-release without a browser. Always dry-run first:
-
-```bash
-TOK=$(grep -o 'token: .*' ~/.config/tea/config.yml | head -1 | cut -d' ' -f2)
-curl -X POST -H "Authorization: token $TOK" -H 'Content-Type: application/json' \
-  -d '{"ref":"main","inputs":{"version":"2.2.0","dry_run":"true"}}' \
-  https://git.neet.dev/api/v1/repos/zuckerberg/open-nanokvm-pro/actions/workflows/cut-release.yml/dispatches
-```
-
-**204 means accepted, not succeeded.** Poll
-`/api/v1/repos/zuckerberg/open-nanokvm-pro/actions/tasks?limit=1` for the run's
-`status` and `conclusion`, then re-dispatch with `dry_run` `"false"`. The
-booleans are passed as **strings**; a JSON boolean is rejected.
-
-**Alpha releases:** any semver prerelease suffix — `2.2.0-alpha.1` — makes
-GitHub publish it as a *prerelease*, which the stable channel's
-`releases/latest/download` alias never serves, while the rolling `preview`
-release picks it up immediately. Devices with the web-UI **preview updates**
-toggle on (`/etc/kvm/preview_updates`) get it; everyone else waits. Both the
-server and `nanokvm-update` read that same flag file, so the button and the
-timer can never install from different channels.
-
-**Fallback — locally:** `echo 2.2.0 > VERSION`, commit, push, `tools/release`.
-
-From there: the push mirror replicates the commit + tag to GitHub, and
-`.github/workflows/release.yml` fires on the mirrored tag, checks `VERSION` ==
-tag, builds `.#system-bundle` and `.#nixos-firmware-image-mainline`, and
-publishes
-
-- `nanokvm_pro_sys_latest.json` (manifest),
-- `nanokvm_pro_sys_<ver>.tar.gz` (the bundle),
-- the `.axp` (uploaded separately with retries — GitHub's large-asset path is
-  flaky),
-
-then refreshes the rolling `preview` release with the first two. A failed run is
-recovered by re-running it from the Actions tab; never fix a release by pushing
-to GitHub.
-
-> **The release job now needs binfmt.** The appliance is evaluated as a native
-> `aarch64-linux` system. Nearly all of it substitutes prebuilt from
-> `cache.nixos.org`, but its own configuration derivations (`etc`,
-> `system-path`, the units, the system closure) are built on the runner, so the
-> workflow installs the qemu handlers (`docker/setup-qemu-action`) and sets
-> `extra-platforms = aarch64-linux`. The dev box has always had this; **the
-> runner half is the one part of the release path #86 could not test.**
+The procedure — `cut-release` on Gitea, the alpha channel, the three attic
+secrets, and what the workflow does in what order — is
+[releasing.md](releasing.md).
 
 ---
 
 ## Local testing
 
 ```bash
-nix build .#system-bundle
+nix build .#system-manifest
 cat result/nanokvm_pro_sys_latest.json
-cat result/MANIFEST.json
 head result/closure.txt
-
-# what the device checks:
-openssl dgst -sha512 -binary result/*.tar.gz | base64 -w0
 ```
 
-The four gates that run in `nix flake check`:
+The gates that run in `nix flake check` (the last two are #99's, and belong to the
+same contract: what writes `/boot`, and what the rollback reads):
 
 ```bash
 nix build .#checks.x86_64-linux.nanokvm-updater-loop -L
 nix build .#checks.x86_64-linux.nanokvm-update-idle -L
+nix build .#checks.x86_64-linux.nanokvm-system-manifest -L
 nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L
-nix build .#checks.x86_64-linux.nanokvm-system-bundle -L
+nix build .#checks.x86_64-linux.nanokvm-boot-dir -L
 ```
 
 **`nanokvm-updater-loop`** (`nixos/lib/updater-test.nix`) runs the real
-`nanokvm-update` and `nanokvm-gc` against a fake root in a build sandbox —
-`--root` exists for exactly this — with a tiny synthetic bundle. It asserts,
-after an apply: both new store paths landed, the old generation is untouched,
-the profile advanced, the closure list was recorded, and **`/boot` is
-byte-for-byte untouched** (#99: the extlinux builder owns it, and this run is
-`--no-activate`). Then it collects twice against a pair of NixOS-shaped configs
-that list all three generations — once while the fallback's `DEFAULT` names
-generation 1 (nothing may be deleted) and once after it has been promoted
-(generation 1 and its exclusive paths go, the live set stays) — and finally
-checks the two refusals: a kept generation with no closure list, and a boot
-config whose `DEFAULT` resolves to no generation. Both must delete nothing.
+`nanokvm-update` against **real nix**: a real signed `file://` binary cache, two real
+chroot stores (`--store local?root=...`), a real `nix copy`, `nix-env`,
+`nix-collect-garbage` and `nix-store --verify`. Eight properties, in this order:
 
-**`nanokvm-mark-good-fallback`** (`nixos/lib/mark-good-test.nix`) runs the real
-`nanokvm-mark-good` against a fake `/boot` holding an official config with
-three labels, with `/run/booted-system` on the *older* generation — the state
-after an install and before the reboot. It asserts the fallback selects the
-**booted** generation's label and not the profile's, that exactly two lines
-differ from `extlinux.conf` and both are the `DEFAULT`, that a repeat run is a
-no-op, that a booted generation with no `LABEL` in the file is **refused** with
-the previous fallback intact, and that an absent `/boot/extlinux` is a clean
-skip rather than a write into the root filesystem.
+1. a closure signed by an **untrusted** key is refused ("lacks a signature by a trusted
+   key"), nothing lands, the profile does not move, and `switch-to-configuration`
+   never runs;
+2. a manifest naming a non-store path is refused;
+3. the closure substitutes and the profile advances to generation N+1;
+4. `switch-to-configuration boot` is called — and `switch` never is;
+5. a second update fetches **exactly the 2 paths it adds**;
+6. re-installing the same closure fetches nothing;
+7. `gc --keep 2` keeps the generation the **fallback** config's `DEFAULT` names and the
+   paths only it uses, pinned by name before anything was deleted; `gc --keep 1`
+   collects them once nothing names it — and the decoy generation, a non-`DEFAULT`
+   LABEL in both configs, is collected, so the pin really is the DEFAULT entry and not
+   the file;
+8. the store passes `nix-store --verify --check-contents` after every step.
 
-**`nanokvm-update-idle`** (`nixos/lib/update-idle-test.nix`) runs the same real
-scripts against a fake root, a fake release host and a fake idle route on
-loopback — a python `http.server` serving the manifest, the tarball and a JSON
-file the test rewrites between phases. Nine of them: an unticked checkbox
-installs nothing and is not an error; ticked-and-in-use installs, writes both
-markers and does **not** reboot; a second update refuses to stack on an unbooted
-one; the reboot timer waits while the room is full and takes it when it empties;
-an **unreachable** idle route fails closed; the note settles after the boot and
-says the update is live; ticked-and-idle installs and reboots in one run. Under
-`--root` the reboot is *recorded* in `/run/nanokvm-reboot-requested` rather than
-taken — `writeShellApplication` puts its own systemd first on `PATH`, so a stub
-could not catch it, and a build sandbox is no place to find out.
+**`nanokvm-update-idle`** (`nixos/lib/update-idle-test.nix`) drives the policy against
+a fake release host and a fake idle route on loopback: an unticked checkbox installs
+nothing and is not an error; ticked-and-in-use installs, writes both markers and does
+not reboot; a second update refuses to stack on an unbooted one; the reboot timer waits
+while the room is full and takes it when it empties; an **unreachable** idle route
+fails closed; the note settles after the boot; ticked-and-idle installs and reboots in
+one run.
 
-**`nanokvm-system-bundle`** (`pkgs/system-bundle-check.nix`) opens the published
-artefact: the manifest's SHA-512 and size against the tarball, the digest's
-form (base64 of a raw SHA-512, 88 chars — a hex digest would be a channel that
-can never install anything), one top-level directory, no hardlink entries,
-`closure.txt` diffed against the toplevel's real closure, one `store/` member
-per closure line and no extras, that `MANIFEST.json` declares **no** separate
-boot payload, and that `<toplevel>/{kernel,initrd,dtbs}` resolve to store paths
-which are both in the closure and in the archive.
+**`nanokvm-system-manifest`** (`pkgs/system-manifest-check.nix`) reads the release
+artefact back: the manifest names **this commit's** appliance toplevel, carries
+**this** `VERSION`, declares the format the updater installs, spells the toplevel as a
+store path, and its `closure.txt` diffs clean against the toplevel's real closure with
+a matching `closureCount`.
 
-To exercise the round trip against a device before trusting CI, serve
-`result/` over HTTPS from a host the device trusts and point a test build's
-`nanokvm.update.stableUrl` at it. Plain HTTP or an untrusted certificate will
-not work — both the server and `curl` verify.
+**What is stubbed, and it is only this.** `switch-to-configuration` is a stub script
+recording its argv — the real one is an aarch64 binary that writes a bootloader and
+refuses to run without `/etc/NIXOS`, and what these checks need to know is that the
+updater *called* it, with `boot`, after the profile moved. The toplevels are three tiny
+synthetic systems, input-addressed on purpose: content-addressed paths are
+self-verifying and `require-sigs` does not apply to them, which would make the negative
+test a lie. The reboot is recorded in `/run/nanokvm-reboot-requested` instead of taken.
+Everything else is the code that runs on the board.
 
-### What hardware still has to prove
+---
 
-Offline coverage stops at the sandbox boundary. Five board rounds, each
-ending in a state the plug recovers from — a cold cycle clears `bootcount`, and
-a candidate that does not come up is on the fallback config by the fourth
-attempt.
+## What hardware still has to prove
 
-**Round 1 — bootstrap onto the official layout (#99). DONE 2026-09-11.** The board's `/boot` is
-the pre-#86 shape: a flat `/Image`, `/ax630c-nanokvm-pro.dtb` and two
-hand-written extlinux configs, 245 MB with 97 MB free. One generation of the
-new shape is 50 MB, so it fits beside the old files with room to spare and
-nothing has to be deleted first.
+Three board rounds, each ending in a state the plug recovers from — a cold cycle
+clears `bootcount`, and a candidate that does not come up is on the fallback config by
+the fourth attempt. **None has been run: the board has no nix.**
 
-Ship the new toplevel by the manual recipe
-(`.claude/skills/kvm-device/SKILL.md`) and then let NixOS write `/boot` for the
-first time:
+**Round 1 — bootstrap, and it is the round with the sharp edge.** A board with no nix
+cannot substitute a closure, and `nix copy --to ssh://` needs nix on both ends, so the
+first nix-carrying generation goes over **by hand**: the one-time recipe in
+`.claude/skills/kvm-device/SKILL.md` ("Bootstrapping a board that has no nix yet").
+
+**The board's existing generations are unregistered, and that is a trap with teeth.**
+Generations 1-4 were unpacked by `tar` when the appliance had no nix, so they are
+directories no database knows about. After #99's rounds the board is on
+**generation 4**, and the two boot configs between them name exactly two labels:
+`nixos-default` and `nixos-4-default`, both resolving to
+`/nix/store/08vk0dsrvx0zjsix18gbvvbcc8hc559l-nixos-system-unnamed-26.11pre-git`
+(`extlinux.conf` defaults to the first, `extlinux-fallback.conf` to the second).
+Generations 1-3 still have profile links but carry no kernel, so the extlinux
+builder writes no entry for them and no boot config names them — they need no
+registration, only `--delete-generations`. Once the new system's database is loaded from the
+image's registration, only *its* closure is valid — and the fallback config's `DEFAULT`
+names an *older* generation. Measured, not assumed: `nix-env --set` on an unregistered
+path **fails** ("no substituter that can build it") and writes no generation;
+`nix-collect-garbage` **deletes** an unregistered path even with a gc root naming it.
+So a collection at that moment would delete the closure the rollback boots.
+
+The fix is to register **every generation either boot config names**, not just the new
+one. Read them off the board (`grep -h init= /boot/extlinux/*.conf`), and produce one
+registration on the build host — it has all of them, because it built them:
 
 ```sh
-cp /boot/extlinux/extlinux-fallback.conf /root/fallback.pre99
-<toplevel>/bin/switch-to-configuration boot    # writes extlinux.conf + /boot/nixos/*
-# hand-restore the OLD fallback: it must keep naming /Image and the old generation
-cp /root/fallback.pre99 /boot/extlinux/extlinux-fallback.conf
-sync; reboot
+nix-store --dump-db $(nix-store -qR "$NEW" "$OLD_DEFAULT" "$OLD_FALLBACK") > registration
 ```
 
-Restoring the old fallback is the whole safety of this round: the official
-builder does not write that file, so three failed attempts land back exactly
-where the board started, on the kernel and generation it is running now.
+then, on the board after the reboot, `nix-store --load-db < registration` **before any
+collection**. `nanokvm-update gc` refuses while a boot config names an unregistered
+generation — the backstop, not the plan. Leaving `extlinux-fallback.conf` alone is the
+rest of this round's safety: it still names the old generation, so three failed
+attempts land back exactly where the board started.
 
-**Oracles:** SSH at ~71 s; `devmem 0x02390030 32` = `0xB0010000`;
-`readlink /run/booted-system` is the new toplevel; `journalctl -u
-nanokvm-mark-good` shows `fallback promoted to generation N`; and
-`diff /boot/extlinux/extlinux{,-fallback}.conf` is exactly two lines, both
-`DEFAULT`.
+**Oracles**, after the reboot:
 
-**Round 2 — the forced rollback. DONE 2026-09-11.** `devmem 0x02390030 32 0xB001000A; reboot`.
-**Oracles:** the board comes up on the generation the fallback's `DEFAULT`
-named, bit 30 of `0x02390024` is set, and `nanokvm-update status` resolves both
-configs to the two different generations. This is the way to exercise the
-rollback — not a deliberately broken generation, which is what cost a bench
-trip in #89 rung 5.
+```sh
+nix-store --verify --check-contents                 # THE one: registration + contents
+nix path-info -r /run/current-system | wc -l         # the closure count
+nix path-info $(grep -ho 'init=/nix/store/[^/]*' /boot/extlinux/*.conf | cut -d= -f2)
+nix-env -p /nix/var/nix/profiles/system --list-generations
+nanokvm-update status                               # what /boot pins
+devmem 0x02390030 32                                # 0xB0010000
+```
 
-**Round 3 — a kernel-only change. DONE 2026-09-11, by hand rather than by bundle.** Build a bundle whose *only* difference is a
-kernel config string, install it, reboot. **Oracles:** `uname -r`/`uname -v`
-moves; `ls /boot/nixos` holds two Image files; `nanokvm-update status` shows
-generation N+1. Then force the counter again and confirm the board comes back
-on the **old** kernel — which is the property #86 needed four mechanisms for
-and #99 gets from the generation. A deliberately unbootable kernel is *not* the
-test.
+Then, once `nanokvm-mark-good` has promoted the fallback to a registered generation,
+`nix-env -p /nix/var/nix/profiles/system --delete-generations 1 2 3` retires the
+pre-nix ones and `nanokvm-update gc` collects what they held.
 
-**Round 4 — collection, then the button.** `nanokvm-gc --keep 2 -n`, read it,
-then without `-n`; the generation the fallback names must survive, the one
-before it must not, and `du -sh /nix/store` must drop. Then cut an alpha and
-press **update** in the web UI (or point `nanokvm.update.stableUrl` at a local
-HTTPS server), which is the only path that exercises the server's `install()`
-handoff rather than the CLI.
+**What needs the database and what does not,** measured on this branch:
 
-**Round 5 — the checkbox and the wait.** Two board rounds at most, and neither
-writes a partition.
+| | Needs a valid db? |
+|---|---|
+| `switch-to-configuration boot` | **No.** A program on disk; NixOS's extlinux builder only `readlink`s and `cp`s. |
+| the profile symlinks, written by hand | **No.** They are symlinks. |
+| `nix-env --set` | **Yes**, and it fails outright without one. |
+| `nix-collect-garbage` | **Yes**, and it deletes what is not in it. |
 
-1. Tick **Automatic updates** in Settings → Check for Updates; confirm
-   `/etc/kvm/auto_updates` appears and `nanokvm-update status` says `on`. Open a
-   video stream from a browser and leave it open, then
-   `systemctl start nanokvm-update` with a real bundle on the channel.
-   **Oracles:** `nanokvm-update status` shows the new generation *and* `reboot
-   pending`; `curl -sk https://127.0.0.1/api/update/idle` reports
-   `idle:false` with `busy` naming `stream`; the board has **not** rebooted; the
-   update page shows `<from> -> <version>` and *Restart now*.
-2. Close the browser tab and wait for the next `nanokvm-update-reboot` tick
-   (≤10 min). **Oracles:** the board reboots on its own; after it comes back,
-   `readlink /run/booted-system` is the new toplevel, `bootcount` is
-   `0xB0010000`, and within two minutes `journalctl -u nanokvm-update-reboot`
-   says `update <version> is live` with the note gone. Pressing *Restart now*
-   instead of waiting is the same round with the button as the trigger.
+**Round 2 — a real update from a real cache.** Cut an alpha, let the release job push
+the closure, run `nanokvm-update check` then `update` on the board — then the same
+again through the web UI's button, the only path that exercises the server's
+`install()` handoff rather than the CLI. **If Jeremy's attic is not up yet, a
+`file://` cache copied to the board or served over HTTP from the build host is an
+acceptable stand-in** (`--cache` and `--trusted-key` take both), proving everything
+except the attic endpoint itself. **Oracles:** the signature check passing on a real
+NAR; `readlink /run/booted-system` is the new toplevel; `bootcount` back to
+`0xB0010000`; the journal showing `nix copy` fetching a small fraction of the closure.
 
-**Failure catch, every round:** the boot counter. Nothing above writes a
-partition, so the worst outcome is a generation that does not come up, which
-`altbootcmd` undoes on the fourth attempt. The plug is the backstop if even
-that does not fire.
+**Round 3 — rollback, then collection.** Force the counter rather than breaking a
+generation — `devmem 0x02390030 32 0xB001000A; reboot` — and confirm the board comes up
+on the **previous** generation with bit 30 of `0x02390024` set. Then
+`nanokvm-update gc --keep 2`: the generation the fallback names must survive with its
+exclusive paths, the one before it must not, `du -sh /nix/store` must drop, and
+`nix-store --verify --check-contents` must still pass.
+
+**Failure catch, every round:** the boot counter. Nothing above writes a partition, so
+the worst outcome is a generation that does not come up, which `altbootcmd` undoes on
+the fourth attempt. The plug is the backstop if even that does not fire.
 
 ---
 
@@ -557,135 +569,140 @@ that does not fire.
 
 Recorded because the reasoning will be revisited.
 
-**Nix on the device.** The honest way to make updates cheap: `nix copy` a
-closure, `nixos-rebuild switch --target-host`, real garbage collection with a
-real database. Rejected because it puts a package manager, a SQLite database and
-a daemon on an appliance whose entire value proposition is "it is exactly what
-the flake says", adds ~150 MB to an image that must fit beside a 48.9 MiB kernel
-in a fixed layout, and gives a KVM's root account a general-purpose build tool.
-The device-side cost of *not* having it is one shell script and one closure
-list per generation, which is what `nixos/lib/updater.nix` is. Revisit if the
-bundle size becomes the thing users complain about.
+**The nix daemon.** With one user and no builds it buys a socket, a unit, 32 `nixbld`
+accounts and a second process in the update path for nothing — and it is the *weaker*
+of the two, because signature checking through a daemon has a trusted-user bypass and
+a direct `LocalStore` does not.
 
-**Delta bundles.** Ship only the store paths the device is missing. The builder
-cannot know what that is without the device telling it, and the honest ways to
-arrange that — serve the release as a binary cache, or have the device POST its
-closure list and get a tailored tarball — both mean putting a nar-fetching
-client (effectively nix) back on the appliance, or a stateful server behind the
-release. A middle road exists and was not taken for #86: publish a per-release
-`closure.txt` as its own small asset, have the device fetch the *previous*
-release's list and request a range of the tarball. GitHub release assets have no
-usable range semantics for tar members, so this needs a real artefact store
-first. **The eMMC cost is already proportional to the change** — only missing
-paths are written — so what a delta would save is bandwidth alone.
+**A device-side substituter list instead of an explicit `nix copy --from`.** Shorter,
+and it would work. Rejected because the trust would then come from
+`/etc/nix/nix.conf` — a file an operator can edit and a future NixOS module could
+merge into; passing the cache **and** the key list on the command line fixes what an
+update may install at build time. (The configured substituter is still set, for an
+operator debugging by hand; it is not what the updater relies on.)
 
-**Signing.** The bundle is gated by a SHA-512 that comes from our own manifest:
-integrity, not authenticity. Whoever serves the manifest controls what the
-device installs, as root. That is unchanged from the 4.19 OTA and is **issue
-#31**; when it lands it plugs into `verify_payload` in `nixos/lib/updater.nix`,
-between the hash check and the unpack, and nowhere else.
+**`nix.gc.automatic`.** nixpkgs' collector is age-based (`--delete-older-than 30d`),
+with no generation count and, decisively, **no notion of the fallback pin** — the
+generation that must survive here is named by a text file in `/boot`, which no nix root
+protects. An age-based sweep would collect it on exactly the schedule that makes the
+rollback useless.
 
-**A/B kernel partitions.** The vendor layout's answer, and the minimal layout
-deleted it deliberately (#89 rung 4): one `uboot`, one `atf`, no twins.
-Reintroducing an A/B kernel pair would mean two 64 MiB partitions, a slot
-register to arbitrate them and an SPL that knows about both — against two files
-in an ext4 `/boot` and a config that names one of them. The content-addressed
-scheme gets the same property with no partition table change and no
-first-stage-loader rebuild, and it scales past two.
+**Putting the cache URL in the manifest.** It would make a release self-describing and
+let the cache move without a device rebuild. Rejected outright: **a release must not be
+able to redirect the device's trust.** The cache and the keys are the device's own
+configuration, which is why a tampered manifest can only cause a downgrade or a
+failure.
 
-**Rebooting as soon as the update is installed.** What the first cut of #86 did,
-and what every appliance auto-updater does. Rejected because this appliance is a
-KVM: the one session an unattended reboot is guaranteed to interrupt is somebody
-using the console to fix a machine they cannot otherwise reach. Installing is
-free (nothing is live until the restart), so the reboot is the only part that
-has to wait, and waiting costs a marker file and a second timer.
+**Trimming nix's `aws-c-*` S3 libraries.** A real fraction of the 29.3 MiB, and
+`nix.package` can be overridden to drop them. Rejected because the override makes nix a
+*build*, not a substitution — on aarch64, under emulation, on every release runner:
+tens of minutes per release to save single-digit megabytes on a 29 GiB rootfs.
 
-**A NixOS option instead of a checkbox** (`nanokvm.update.auto`, which is what
-this replaced). Rejected on Jeremy's instruction and for two mechanical reasons:
-the owner of the box never sees the flake, and a device whose owner had ticked
-the box would still read `auto = false` in the configuration that built it. A
-default that the UI can override also needs tri-state storage plus a way to ship
-that default into the server, where presence-or-absence of one file needs
-neither. The option is gone; `enable` (ship the tools at all) and `schedule`
-stay.
+**Keeping a tarball fallback** for devices whose cache is unreachable. Rejected: two
+payload formats, two installers and two integrity stories forever, the weaker of which
+is what #100 exists to delete. A device that cannot reach the cache does not update;
+one that cannot update is reflashed — a bench trip, not a brick.
 
-**Polling `main`.** A device that tracked the branch would get every commit,
-including the ones that do not boot, and the rollback would then be the only
-review step. Both channels are tags; the alpha channel is *prerelease* tags, so
-"give me the new stuff early" and "give me whatever landed an hour ago" stay
-different things.
+**Delta transport.** Not needed: `nix copy` *is* a delta, asking the destination store
+what it is missing and copying exactly that — the offline check measures it at 2 paths
+for a two-path change.
 
-**Letting the server decide the idle threshold.** The route reports raw counts
-and takes `?quiet=<seconds>` from the caller, rather than owning a policy
-constant, so `nanokvm.update.idleQuietSec` is the only place the number lives
-and the same route can answer a UI that wants to display the state.
+**A/B kernel partitions.** The vendor layout's answer, and the minimal layout deleted
+it deliberately (#89 rung 4): one `uboot`, one `atf`, no twins. A pair would mean two
+64 MiB partitions, a slot register to arbitrate them and an SPL that knows about both —
+against two text files in an ext4 `/boot` naming two generations.
 
-**`switch-to-configuration switch` instead of `boot`.** Rejected: it activates
-a userspace the boot counter has not vouched for, restarts `nanokvm.service`
-underneath the HTTP request that asked for the update, and leaves no automatic
-way back. The reboot *is* the test.
+**Rebooting as soon as the update is installed.** What every appliance auto-updater
+does. Rejected because the one session an unattended reboot is guaranteed to interrupt
+is somebody using the console to fix a machine they cannot otherwise reach. Installing
+is free, so only the reboot has to wait, and waiting costs a marker file and a second
+timer.
+
+**A NixOS option instead of a checkbox** (`nanokvm.update.auto`). Rejected on Jeremy's
+instruction and for two mechanical reasons: the owner of the box never sees the flake,
+and a device whose owner had ticked the box would still read `auto = false` in the
+configuration that built it. A default the UI can override needs tri-state storage plus
+a way to ship that default into the server; presence-or-absence of one file needs
+neither.
+
+**Polling `main`.** A device tracking the branch would get every commit, including the
+ones that do not boot, and the rollback would be the only review step. Both channels
+are tags; the alpha channel is *prerelease* tags, so "give me the new stuff early" and
+"give me whatever landed an hour ago" stay different things.
+
+**Letting the server decide the idle threshold.** The route reports raw counts and
+takes `?quiet=<seconds>` from the caller, so `nanokvm.update.idleQuietSec` is the only
+place the number lives and the same route can answer a UI that wants to display the
+state.
+
+**`switch-to-configuration switch` instead of `boot`.** It activates a userspace the
+boot counter has not vouched for, restarts `nanokvm.service` underneath the HTTP
+request that asked for the update, and leaves no automatic way back. The reboot *is*
+the test.
 
 ---
 
 ## Caveats
 
-- **No signature, only a hash** (above, and #31). GitHub Releases over TLS is
-  the trust boundary — note that is the *mirror*, not the Gitea source of truth,
-  so both the GitHub repo's write access and the mirror credential matter.
+- **The cache does not exist yet (#96).** `nanokvm.update.cacheUrl` and
+  `nanokvm.update.trustedPublicKeys` are empty, `flake.nix` carries the intended
+  `nixConfig` as a comment rather than a placeholder URL (an unreachable substituter
+  is contacted for every missing path on every host, which is worse than none), and
+  the release job's three attic secrets do not exist. The module emits a **build-time
+  warning** when the cache URL is empty, and a second when a cache is set with no
+  keys; `nanokvm-update` refuses rather than installing anything unverified. Standing
+  up the attic server and holding the signing key are Jeremy's.
+- **`/boot` has to be mounted for an install to mean anything.** The bootloader builder
+  writes into whatever `/boot` is, and an unmounted one is a directory in the rootfs
+  U-Boot never reads. The install still succeeds, the profile still moves, and the
+  board still boots the old generation.
 - **The URL is baked in twice.** `nanokvm.update.stableUrl` (the updater) and
-  `updateBaseUrl` in `flake.nix` (the server, compiled in). Changing where you
-  host means a rebuild — and for the server half, an update carrying the new
-  binary or a reflash.
-- **~460 MB per update, and one closure of eMMC headroom.** The bundle is
-  downloaded to `/root/.kvmcache`, untarred there, and the missing paths renamed
-  into the store; a full-closure change therefore wants ~2 GB free on a 29 GiB
-  rootfs. `nanokvm-gc` is what keeps that true over time.
-- **A mounted virtual-media image blocks the reboot for as long as it is
-  mounted.** That is the intended behaviour — the host may be installing from
-  it — but it is the one idle term that can stay true forever with nobody
-  present. The update page names it, and *Restart now* overrides it.
-- **An update needs a healthy boot.** `nanokvm-update update` refuses while
-  `bootcount` is non-zero, i.e. before `nanokvm-mark-good` has run. That is
-  deliberate: installing then would rewrite the config the counter is counting.
-  `install-staged` does not refuse, because the web UI's button is an explicit
-  human action.
-- **There is no downgrade check.** The updater takes what the channel offers
-  rather than comparing semver, because "the channel" is a release we cut and
-  the thing that catches a bad one is the boot counter, not a version test.
-  Pointing a device at an older release is a deliberate downgrade and works.
-- **Mirrored-tag trigger.** The release workflow fires only if the mirror's
-  pushes come from a PAT/deploy-key identity. If a tag lands on GitHub and no
-  run starts, check the mirror's auth identity before anything else.
+  `updateBaseUrl` in `flake.nix` (the server, compiled in). Changing where you host
+  means a rebuild — and for the server half, an update carrying the new binary or a
+  reflash.
+- **A mounted virtual-media image blocks the reboot for as long as it is mounted.**
+  Intended — the host may be installing from it — but it is the one idle term that can
+  stay true forever with nobody present. The update page names it, and *Restart now*
+  overrides it.
+- **An update needs a healthy boot.** `nanokvm-update update` refuses while `bootcount`
+  is non-zero, i.e. before `nanokvm-mark-good` has run; installing then would rewrite
+  the config the counter is counting. `install-now` does not refuse, because the web
+  UI's button is an explicit human action.
+- **There is no downgrade check.** The updater takes what the channel offers rather
+  than comparing semver, because "the channel" is a release we cut and what catches a
+  bad one is the boot counter. Pointing a device at an older release is a deliberate
+  downgrade and works.
+- **Mirrored-tag trigger.** The release workflow fires only if the mirror's pushes come
+  from a PAT/deploy-key identity. If a tag lands on GitHub and no run starts, check the
+  mirror's auth identity before anything else.
 
 ---
 
-## History: the 4.19 overlay OTA
+## History
 
-**Retired 2026-09-10 (#86).** From #37 until then, the shipping 4.19 image
-updated itself with `pkgs/update-package.nix`: a `nanokvm_pro_<ver>.tar.gz`
-carrying a `rootfs/` overlay copied verbatim over `/` (the app, the web UI,
-`libkvm.so`, the `/lib/modules/4.19.125` tree, the `/soc/ko` loader) plus an
-optional `partitions/` set of vendor-format signed images written to **both** A/B
-slots, B first, compare-first and read-back verified. It was hardware-proven
-end to end on 2026-08-16 with `v2.0.0`. The server-side half was
-`pkgs/nanokvm-server/install-override.go.in`.
-
-It is gone, along with the flake output `.#update-package`, because the product
-is the mainline NixOS appliance and a store closure is not something an Ubuntu
-rootfs can apply. The 4.19 server build keeps an `install()` that refuses and
-points at AXDL (`install-retired.go.in`) rather than falling back to the
-vendor's dpkg installer, which would fetch three `.deb`s from a CDN we do not
-control.
-
+**The 4.19 rootfs-overlay OTA (#37 → 2026-09-10).** It shipped a
+`nanokvm_pro_<ver>.tar.gz` (`pkgs/update-package.nix`) carrying a `rootfs/` overlay
+copied verbatim over `/`, plus an optional `partitions/` set of vendor-format signed
+images written to both A/B slots — B first, compare-first, read-back verified — and was
+hardware-proven end to end on 2026-08-16 with `v2.0.0`. It is gone because the product
+is the mainline NixOS appliance and a store closure is not something an Ubuntu rootfs
+can apply, so the 4.19 server build keeps an `install()` that refuses and points at
+AXDL rather than falling back to the vendor's dpkg installer and its three CDN `.deb`s.
 **There is no migration path from the vendor layout, by decision** (Jeremy,
-2026-09-10): nobody is running the alpha releases, so a migration OTA — the old
-system staging a mainline kernel into `kernel_b`, an initramfs writing the split
-layout — would have been built for no users. **A vendor-layout board is moved
-forward by flashing `.#nixos-firmware-image-mainline` over AXDL**, which is a
-bench trip and not a brick
-([flashing-and-recovery.md](flashing-and-recovery.md)).
+2026-09-10): nobody runs the alpha releases, so a migration OTA would have been built
+for no users, and a vendor-layout board is reflashed over AXDL — a bench trip, not a
+brick.
 
-Two things from that era are still live and still worth knowing: the manifest
-shape (`{version, name, sha512, size}`, base64 of a raw digest) and the
-`releases/latest/download` + rolling-`preview` channel topology. The bundle
-reuses both, which is why the server needed no change to its download path.
+**The #86 tar system bundle (2026-09-10 → 2026-09-11).** Because the #78 appliance
+shipped `nix.enable = false`, an update had to be a ~460 MB
+`nanokvm_pro_sys_<ver>.tar.gz` carrying the toplevel's entire closure as ordinary
+directories, a `closure.txt` saying which paths belonged to it, and the kernel its
+stage-1 initrd was baked into — unpacked into the store by hand, with a `nanokvm-gc`
+that could only work from the per-generation closure lists the installer had recorded,
+and refused to run at all when one was missing. It lasted one day, because every one of
+those was a workaround for the missing package manager: the transport downloaded 460 MB
+to change one package, the closure lists were a database reimplemented badly, and a
+SHA-512 out of our own manifest authenticated nobody. **Nix costs 29.3 MiB and deletes
+all three** — and the one thing #86 got right is still load-bearing: the seam between
+transport and policy, which is why replacing the entire transport moved not one line of
+the checkbox, the markers or the idle gate.

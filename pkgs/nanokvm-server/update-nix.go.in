@@ -1,0 +1,8 @@
+	// #100: THE MANIFEST IS THE PAYLOAD. It names the tagged release's
+	// toplevel store path; `nanokvm-update` substitutes that closure from our
+	// signed binary cache, fetching only what this device does not already
+	// have. So nothing is downloaded, hashed or untarred here -- the three
+	// steps that used to stand between getLatest() and install() are gone, and
+	// with them the 460 MB tarball they moved (pkgs/nanokvm-server.nix step 3b).
+	_ = sendMessage("install", 0)
+	err = install("", latest.Version)

@@ -533,11 +533,13 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
 5. clk/reset/pinctrl real drivers.
 6. USB HID (#82, done); video stack (**#83, done 2026-09-10 -- the board
    streams H.264 on mainline**); audio; display; WiFi.
-7. Rollback + flake-based updates replace the custom OTA. **Done (#86,
-   2026-09-10):** an update is a system bundle, the kernel is content-addressed
-   so the rollback covers it too, and the legacy OTA is deleted with no
-   migration path — a vendor-layout board is reflashed over AXDL.
-   [updates.md](updates.md).
+7. Rollback + flake-based updates replace the custom OTA. **Done (#86, #99,
+   #100, 2026-09-11):** an update is the tagged release's system closure,
+   substituted from a signed binary cache by the `nix` the appliance now
+   carries; the kernel is inside that closure, so the rollback covers it too,
+   and the legacy OTA is deleted with no migration path — a vendor-layout board
+   is reflashed over AXDL. [updates.md](updates.md),
+   [releasing.md](releasing.md).
 8. Upstreaming (bindings once the prefix settles; drivers).
 
 ---
@@ -648,16 +650,18 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
 12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — Package
     `radxa-pkg/aic8800` (SDIO) against the pinned kernel, `aic_bsp` reset GPIO,
     firmware MD5-pinned; or record the drop decision. Depends on: #76.
-13. **#86 Flake-based updates replace the custom OTA** — **offline half DONE,
-    2026-09-10.** `.#system-bundle` (the toplevel's whole closure + its kernel)
-    replaces `update-package`; `nanokvm-update` / `nanokvm-gc` install and
-    collect it with no `nix` on the device; the kernel is content-addressed so
-    `extlinux.conf` and `extlinux-fallback.conf` can name two kernels and the
-    rollback finally covers one. The legacy migration OTA the issue asked for
-    was **dropped by decision** (Jeremy, 2026-09-10): nobody runs the alpha
-    releases, so a vendor-layout board is reflashed over AXDL. Two `nix flake
-    check` gates cover the loop; hardware is the remaining half.
-    [updates.md](updates.md).
+13. **#86 Flake-based updates replace the custom OTA / #100 nix on the device**
+    — **offline half DONE, 2026-09-11.** The appliance has `nix`
+    (`nix.enable = true`, single-user), and an update is the standard NixOS
+    one: `nix copy` the release's toplevel closure from a signed binary cache,
+    `nix-env --set`, `switch-to-configuration boot`. `.#system-manifest` (~200
+    bytes naming that store path) is all a release publishes; #86's 460 MB tar
+    bundle, its closure lists and `nanokvm-gc` are deleted. The legacy
+    migration OTA the issue asked for was **dropped by decision** (Jeremy,
+    2026-09-10): nobody runs the alpha releases, so a vendor-layout board is
+    reflashed over AXDL. Three `nix flake check` gates cover it, running real
+    nix in the sandbox; hardware is the remaining half, and the cache itself is
+    #96 (needs-human). [updates.md](updates.md).
 14. **#87 nixosModules split (product 1) and upstreaming** — Expose
     `nixosModules.nanokvm-pro-{kernel,video,display,atx,updates}`; submit
     bindings/drivers once the Axera prefix question resolves on LKML.

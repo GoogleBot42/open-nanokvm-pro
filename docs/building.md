@@ -63,7 +63,8 @@ All are `nix build .#<name>`. State reflects the current tree.
 | **`firmware-image`** | **`…-selfbuilt.axp`** | **the flashable eMMC image (default output)** |
 | **`nixos-firmware-image`** | **`…-nixos.axp`** | **the NixOS appliance's flashable eMMC image** — packed from scratch, no vendor bundle; `system.build.axpImage` on `nixosConfigurations.nanokvm-pro` |
 | `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` carries the `/boot` tree NixOS's own extlinux builder wrote for the imaged generation (#99) and asserts room for `configurationLimit + 1` of them |
-| **`system-bundle`** | `nanokvm_pro_sys_<ver>.tar.gz` + `nanokvm_pro_sys_latest.json` | **the update artefact** — the appliance's whole store closure — kernel, initrd and dtb included as store paths since #99 — ~450 MB. What a release publishes and what `nanokvm-update` installs. [updates.md](updates.md) |
+| **`system-manifest`** | `nanokvm_pro_sys_latest.json` | **the update artefact** — ~200 bytes naming the toplevel store path a release offers (#100). The payload is that closure — kernel, initrd and dtb included as store paths since #99 — pushed to the binary cache and substituted by the device. [updates.md](updates.md) |
+| `appliance-toplevel` | the appliance's system closure | what a release pushes to the cache, and what `nix copy --to ssh://` sends to a board |
 | `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
 | `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
 | `toolchain` | cross-gcc bundle | convenience `buildEnv` |
@@ -86,17 +87,21 @@ boot ──────> {kernel,dtb}-slot-image ──────────�
 image path builds from it.)
 
 `nix flake check` evaluates the whole tree without building the heavy leaves.
-Five of its gates belong to the update and boot path (#86, #99) and are worth
-running by name after touching anything under `nixos/lib/`, `pkgs/bootfs.nix`
-or `pkgs/system-bundle*`:
+Five of its gates belong to the update and boot path (#86, #99, #100) and are
+worth running by name after touching anything under `nixos/lib/`,
+`pkgs/bootfs.nix` or `pkgs/system-manifest*`:
 
 ```bash
-nix build .#checks.x86_64-linux.nanokvm-updater-loop -L        # the update loop, run for real
-nix build .#checks.x86_64-linux.nanokvm-update-idle -L         # the checkbox and the idle gate
+nix build .#checks.x86_64-linux.nanokvm-updater-loop -L        # a real signed closure into a real store
+nix build .#checks.x86_64-linux.nanokvm-update-idle -L         # the checkbox, the markers, the idle gate
 nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L  # the derived rollback config
 nix build .#checks.x86_64-linux.nanokvm-boot-dir -L            # the /boot NixOS writes
-nix build .#checks.x86_64-linux.nanokvm-system-bundle -L       # the artefact, read back
+nix build .#checks.x86_64-linux.nanokvm-system-manifest -L     # the artefact, read back
 ```
+
+The first two run **real nix inside the build sandbox** — a signed `file://`
+cache and two chroot stores — so they are slower than they look and they need
+no network.
 
 ---
 
@@ -151,7 +156,9 @@ nix build --rebuild "$(nix derivation show .#nanokvm-server \
 
 `--rebuild` re-runs the fetch and compares, so drift fails here instead of on the
 runner. Setting the field to `pkgs.lib.fakeHash` and rebuilding gets the same
-answer.
+answer. This is a step of [cutting a release](releasing.md), not an optional
+one: since #100 the release job pushes `.#appliance-toplevel`'s whole closure to
+the binary cache, and that closure contains the server this FOD builds.
 
 ---
 
@@ -209,3 +216,14 @@ only by path from `/soc/ko`, with the required parameters.
   inner-loop targets when iterating on the app/encoder layer.
 - riscv64 is irrelevant here (that's the other, SG2002 project); this target is
   plain aarch64 and builds with the standard nixpkgs cross set.
+
+**There is no binary cache yet, and that is #96.** Every build above is from
+source on your machine. The flake carries the intended
+`nixConfig.extra-substituters` / `extra-trusted-public-keys` as a **comment**
+next to the `description`, not as a value: a substituter listed there is
+contacted for every path any build on any host is missing, so a placeholder URL
+would cost every developer and the release runner a warning or a connect
+timeout per path and buy nothing. #96 fills those two lines in, and the same
+cache is what the appliance substitutes its updates from
+([updates.md](updates.md)); until then, `nanokvm.update.cacheUrl` stays empty
+and a built image says at evaluation time that it cannot update itself.

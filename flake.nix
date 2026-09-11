@@ -1,6 +1,32 @@
 {
   description = "Self-built open firmware for the Sipeed NanoKVM-Pro (Axera AX630C): boot chain, kernel, and app layer from source; Axera's redistributable media libraries and ax_*.ko modules pinned as binary inputs";
 
+  # ---- the release binary cache (#96) ------------------------------------
+  # NOT WIRED UP HERE YET, ON PURPOSE. Nobody should have to build a cross
+  # toolchain, a kernel, U-Boot and an appliance closure to get an image -- and
+  # the appliance substitutes its updates from the same cache (#100), signed by
+  # the same key. The flake half of that is four lines:
+  #
+  #   nixConfig = {
+  #     extra-substituters = [ "https://<attic host>/nanokvm-pro" ];
+  #     extra-trusted-public-keys = [ "nanokvm-pro:<base64>" ];
+  #   };
+  #
+  # A PLACEHOLDER URL HERE IS NOT FREE, which is why there is not one. A
+  # substituter in `nixConfig` is contacted for every path every build on every
+  # host is missing, the release runner's included; an unreachable one buys a
+  # warning or a connect timeout per path, for nothing, on everybody. An
+  # unreachable substituter is worse than no substituter, so this stays a
+  # comment until the endpoint and the key exist.
+  #
+  # When they do, they land in THREE places (docs/releasing.md): here, the
+  # release workflow's `ATTIC_*` secrets, and
+  # `nanokvm.update.{cacheUrl,trustedPublicKeys}` in nixos/appliance.nix -- the
+  # device's own trust, which does not read this file. The appliance-side
+  # defaults stay empty in the meantime and the module warns at build time,
+  # because there the placeholder's cost is a device that quietly cannot update
+  # rather than a slower build for everyone.
+
   inputs = {
     # ONE nixpkgs pin. There used to be a second, older one (nixos-24.11) for
     # the NixOS rootfs alone, because systemd's declared minimum kernel had
@@ -435,7 +461,7 @@
         nanokvm-server-libgpiod = callPkg ./pkgs/nanokvm-server.nix {
           inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl nanokvm-gpio;
           gpioBackend = "libgpiod";
-          updateMode = "bundle";
+          updateMode = "closure";
         };
 
         nanokvm-web = callPkg ./pkgs/nanokvm-web.nix { inherit version; };
@@ -451,10 +477,11 @@
 
         # `update-package` -- the 4.19 rootfs-overlay OTA -- is GONE (#86,
         # 2026-09-10). The product is the mainline NixOS appliance and its
-        # update is `.#system-bundle` (a whole store closure), which no Ubuntu
-        # rootfs can apply; keeping a second payload format alive for devices
-        # that do not exist was cost with no benefit. A vendor-layout board is
-        # reflashed over AXDL. docs/updates.md, "History".
+        # update is a system CLOSURE named by store path (`.#system-manifest`),
+        # which no Ubuntu rootfs can apply; keeping a second payload format
+        # alive for devices that do not exist was cost with no benefit. A
+        # vendor-layout board is reflashed over AXDL. docs/updates.md,
+        # "History".
 
         # Pinned vendor release .axp (overlay base; 1.4 GB fixed-output fetch).
         base-axp = callPkg ./pkgs/base-axp.nix { };
@@ -648,15 +675,24 @@
         applianceAxpImage = mkApplianceAxpImage "vendor";
         applianceAxpImageMainline = mkApplianceAxpImage "mainline";
 
-        # ---- the appliance's OTA artefact (#86) ----------------------------
-        # The ONLY OTA artefact this project publishes.
-        # It is a function of the SAME ONE thing `.#bootfs` is built from -- the
-        # minimal-layout appliance closure, which since #99 contains the kernel,
-        # the initrd and the dtb too -- so a release cannot publish a bundle
-        # that disagrees with the image flashed from the same commit.
-        system-bundle = callPkg ./pkgs/system-bundle.nix {
+        # ---- the appliance's update artefacts (#86, nix-native since #100) --
+        # The system closure a release offers, and the few hundred bytes that
+        # name it. The toplevel is a first-class output because the release job
+        # has to BUILD it (to push it to the cache) before it can publish the
+        # manifest that names it -- and because `nix copy --to ssh://` from a
+        # dev box wants exactly this path.
+        #
+        # It is the closure of the SAME appliance `.#nixos-firmware-image-
+        # mainline` and `.#bootfs` are built from -- and since #99 that closure
+        # contains the kernel, the initrd and the dtb as well -- so a release
+        # cannot offer an update that disagrees with the image flashed from the
+        # same commit.
+        appliance-toplevel =
+          nixos-appliance-mainline-chain.eval.config.system.build.toplevel;
+
+        system-manifest = callPkg ./pkgs/system-manifest.nix {
           inherit version;
-          toplevel = "${nixos-appliance-mainline-chain.eval.config.system.build.toplevel}";
+          toplevel = "${appliance-toplevel}";
         };
 
         nixos-firmware-image =
@@ -879,7 +915,7 @@
             nanokvm-web nanokvm-display libsns-dummy
             base-axp rootfs nixos-appliance nixos-appliance-mainline-chain
             nixos-appliance-loop nixos-appliance-loop-nofixes
-            uboot-env logo bootfs system-bundle
+            uboot-env logo bootfs system-manifest appliance-toplevel
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
             uboot-mainline-spldrv uboot-mainline-hangtest
@@ -947,12 +983,15 @@
           # unanswerable idle question fails CLOSED. A fake release host and a
           # fake idle route on loopback; everything else is the real scripts.
           nanokvm-update-idle = callPkg ./nixos/lib/update-idle-test.nix { };
-          # The release artefact itself, read back: the manifest hash against
-          # the tarball, closure.txt against the toplevel's real closure, and
-          # the /boot payload against the kernel the bundle carries.
-          nanokvm-system-bundle = callPkg ./pkgs/system-bundle-check.nix {
-            inherit system-bundle version;
-            toplevel = "${nixos-appliance-mainline-chain.eval.config.system.build.toplevel}";
+          # The release artefact itself, read back (#100): the manifest names
+          # the toplevel of the appliance THIS commit builds, carries the
+          # version this commit is, and its closure list is the toplevel's real
+          # closure. A release publishes these few hundred bytes and pushes
+          # that closure to the cache; if the two ever disagree, every device
+          # on the channel tries to substitute a path nobody pushed.
+          nanokvm-system-manifest = callPkg ./pkgs/system-manifest-check.nix {
+            inherit system-manifest version;
+            toplevel = "${appliance-toplevel}";
           };
           # The fallback derivation (#99), run for real against a fake /boot:
           # promote, and check that exactly the DEFAULT line moved -- then that

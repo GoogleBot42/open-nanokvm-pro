@@ -18,20 +18,20 @@
   updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
 , previewUpdateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview"
 , # What the web UI's "update" button installs, and therefore WHICH MANIFEST this
-  # build polls (#86). One release carries both channels side by side; the
+  # build polls (#86, #100). One release carries both channels side by side; the
   # manifest FILENAME is the whole of the separation, because a device must never
   # be offered a payload its installer cannot apply.
   #
-  #   "bundle"   nanokvm_pro_sys_latest.json -> a NixOS SYSTEM BUNDLE (a store
-  #              closure plus its kernel), applied by install-bundle.go.in
-  #              through `nanokvm-update`. The mainline appliance, and the only
-  #              update path this project publishes.
+  #   "closure"  nanokvm_pro_sys_latest.json -> a NixOS system CLOSURE, named by
+  #              store path and substituted from our signed binary cache by
+  #              `nanokvm-update` (install-update.go.in). The mainline
+  #              appliance, and the only update path this project publishes.
   #   "retired"  nanokvm_pro_latest.json -> nothing. The 4.19 image's rootfs-
   #              overlay OTA is gone (#86, 2026-09-10) and no release publishes
   #              a payload for it; install() refuses rather than letting the
   #              vendor's dpkg installer pull three .debs off Sipeed's CDN.
   #              A vendor-layout device moves forward by an AXDL reflash.
-  updateMode ? "bundle"
+  updateMode ? "closure"
 , ...
 }:
 
@@ -52,17 +52,20 @@
 
 assert builtins.elem gpioBackend [ "sysfs" "libgpiod" ];
 assert gpioBackend == "libgpiod" -> nanokvm-gpio != null;
-assert builtins.elem updateMode [ "bundle" "retired" ];
+assert builtins.elem updateMode [ "closure" "retired" ];
 
 let
   # The manifest this build polls, and the installer that consumes what it names.
   # They move together or a device downloads a payload it cannot apply.
   manifestName =
-    if updateMode == "bundle" then "nanokvm_pro_sys_latest.json"
+    if updateMode == "closure" then "nanokvm_pro_sys_latest.json"
     else "nanokvm_pro_latest.json";
   installOverride =
-    if updateMode == "bundle" then ./nanokvm-server/install-bundle.go.in
+    if updateMode == "closure" then ./nanokvm-server/install-update.go.in
     else ./nanokvm-server/install-retired.go.in;
+  # The three lines that replace update()'s download/verify/untar half in the
+  # nix-native mode -- see step 3b of postPatch.
+  updateFragment = ./nanokvm-server/update-nix.go.in;
   # `os/exec` is used ONLY by install() in this file, so the retired variant --
   # which execs nothing -- would leave an unused import, and an unused import is
   # a Go compile error.
@@ -173,8 +176,8 @@ buildGoModule {
       --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/${manifestName}", baseURL'
     sed -i '/^[[:space:]]*"time"$/d' service/application/version.go
 
-    # 3. Replace the vendor dpkg-based install() with ours -- the system-bundle
-    #    handoff to `nanokvm-update` (install-bundle.go.in) or the refusal
+    # 3. Replace the vendor dpkg-based install() with ours -- the handoff to
+    #    `nanokvm-update` (install-update.go.in) or the refusal
     #    (install-retired.go.in), per `updateMode` above.
     #    install() is the LAST function in update.go: truncate at its signature
     #    and append ours. appNames/getFileInfo become unused package-level decls,
@@ -192,6 +195,34 @@ buildGoModule {
       sed -i '/^\t"os\/exec"$/d' service/application/update.go
       ! grep -q 'exec\.' service/application/update.go \
         || { echo "ERROR: update.go still uses os/exec after dropping its import" >&2; exit 1; }
+    ''}
+    ${pkgs.lib.optionalString (updateMode == "closure") ''
+      # 3b. ...and cut update()'s download half out, because there is no
+      #     payload any more (#100). The manifest names a store path and
+      #     `nanokvm-update` substitutes that closure from the signed cache, so
+      #     the fetch / SHA-512 / UnTarGz sequence between getLatest() and
+      #     install() has nothing to operate on. Insert the replacement AFTER
+      #     the block's last line, then delete the block -- two passes, because
+      #     mixing sed's `r` and `d` on one address is not the same thing
+      #     twice.
+      #     The anchors are TAB-indented, and `grep` does not read \t as a tab
+      #     -- `sed` does, so each guard is a sed match with a counted result.
+      [ "$(sed -n '/^\t\/\/ download$/p' service/application/update.go | wc -l)" = 1 ] \
+        || { echo "ERROR: update()'s '// download' anchor is not present exactly once — upstream restructured the download path" >&2; exit 1; }
+      [ "$(sed -n '/^\terr = install(dir, latest.Version)$/p' service/application/update.go | wc -l)" = 1 ] \
+        || { echo "ERROR: update()'s install() call is not present exactly once — upstream restructured the download path" >&2; exit 1; }
+      sed -i '/^\terr = install(dir, latest.Version)$/r ${updateFragment}' service/application/update.go
+      sed -i '/^\t\/\/ download$/,/^\terr = install(dir, latest.Version)$/d' service/application/update.go
+      grep -q 'err = install("", latest.Version)' service/application/update.go \
+        || { echo "ERROR: the nix-native install() call is not in update()" >&2; exit 1; }
+      ! grep -q 'UnTarGz' service/application/update.go \
+        || { echo "ERROR: update() still untars a payload" >&2; exit 1; }
+
+      # `dir` and `tarFile` went with the block, and so did update.go's only
+      # uses of path/filepath. An unused import is a Go compile error.
+      sed -i '/^\t"path\/filepath"$/d' service/application/update.go
+      ! grep -q 'filepath\.' service/application/update.go \
+        || { echo "ERROR: update.go still uses path/filepath after dropping its import" >&2; exit 1; }
     ''}
 
     # 4. Strip the kvmadmin + assistant extension endpoints. Both fetch and run

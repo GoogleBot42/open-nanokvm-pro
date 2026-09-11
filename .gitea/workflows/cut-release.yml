@@ -14,7 +14,7 @@ name: cut-release
 # release assets that devices poll. An alpha version publishes as a GitHub
 # *prerelease*, which `releases/latest/download` (the stable channel) never
 # serves; every cut also refreshes the rolling `preview` release the
-# preview/alpha channel polls. docs/updates.md, "Cutting a release".
+# preview/alpha channel polls. docs/releasing.md.
 #
 # tools/release remains the local fallback for the same tag-cutting step.
 
