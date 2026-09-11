@@ -225,6 +225,17 @@ let
         install_boot_file "$dir/boot/$fdt"  "$bootdir/$fdt"  "$fsha"
 
         # --- 4. the system profile ----------------------------------------
+        # AFTER /boot, and that ordering is the failure plan: everything that
+        # can fail on a full filesystem or a bad hash has already run, and if
+        # anything below this line dies, what boots is still decided by the
+        # extlinux.conf already on the partition -- which pins `init=`, so the
+        # profile the next boot follows does not matter.
+        #
+        # The one exception is a FRESHLY FLASHED board, whose baked config
+        # carries no `init=` at all and therefore follows the profile. A crash
+        # between here and step 5 would boot the new generation on the old
+        # kernel there. Both are this flake's and stage 1 mounts root by
+        # device, so it comes up; it is worth knowing, not worth a transaction.
         local prof; prof="$(P /nix/var/nix/profiles)"
         mkdir -p "$prof"
         local next; next=$(next_generation "$prof")
