@@ -2,7 +2,16 @@
 	// toplevel store path; `nanokvm-update` substitutes that closure from our
 	// signed binary cache, fetching only what this device does not already
 	// have. So nothing is downloaded, hashed or untarred here -- the three
-	// steps that used to stand between getLatest() and install() are gone, and
-	// with them the 460 MB tarball they moved (pkgs/nanokvm-server.nix step 3b).
+	// steps that used to stand between the version check and install() are
+	// gone, and with them the 460 MB tarball they moved
+	// (pkgs/nanokvm-server.nix step 3b).
+	//
+	// #101: AND NOTHING IS FETCHED HERE EITHER. update() used to ask upstream's
+	// version check first, from a URL compiled into this binary, while install()
+	// hands off to `nanokvm-update`, which reads the channel the DEVICE is
+	// configured with -- two sources of truth for one press of the button, and
+	// the compiled one 404ed. `install-now` fetches the manifest for the
+	// device's channel itself and refuses if there is nothing to install, so
+	// the pre-check bought nothing but a second way to fail.
 	_ = sendMessage("install", 0)
-	err = install("", latest.Version)
+	err := install("", "")

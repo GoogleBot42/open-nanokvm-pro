@@ -1,0 +1,173 @@
+package application
+
+// ONE SOURCE OF TRUTH FOR "WHAT UPDATE IS THERE" (#101).
+//
+// Upstream's version.go fetched <baseURL>/<manifest> over HTTP itself, from a
+// base URL COMPILED INTO THIS BINARY. Our install() hands off to
+// `nanokvm-update`, which fetches the manifest for the channel the DEVICE is
+// configured with (nanokvm.update.stableUrl / previewUrl). So one press of the
+// update button read two different channels: the version the page showed came
+// from the compiled URL and the closure that got installed came from the
+// device's own configuration. They could not even agree -- no release published
+// the compiled URL's manifest -- so the button answered {"code":-2} with a 404
+// in the log on a board whose timer path updated perfectly (#100 round 4).
+//
+// This file replaces upstream's version.go entirely. The server now asks
+// `nanokvm-update check --json`: the same tool, the same channel, the same
+// manifest the install will use. There is no URL in this binary any more.
+//
+// THE ANSWER IS ALWAYS SOMETHING. `check --json` prints one JSON object even
+// when the channel is unreachable, because `installed` needs no network; the
+// failure rides in its `error` field and its exit status. When the check cannot
+// be made at all -- no updater on this system, which is the retired 4.19 image
+// -- this route reports the running version as the latest one, which is what
+// upstream did on a failed fetch and what the page renders as "up to date".
+// That is honest for an image that has no update path (docs/updates.md
+// "History"), and it is why the failure is logged rather than returned: a
+// device that cannot reach its channel is not a device whose version is
+// unknown.
+//
+// Installed as service/application/version.go by pkgs/nanokvm-server.nix.
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"NanoKVM-Server/proto"
+
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
+)
+
+// The updater, through /run/current-system so the RUNNING generation's copy is
+// the one that answers -- the same path install() execs.
+const updaterBin = "/run/current-system/sw/bin/nanokvm-update"
+
+// How long the route will wait for it. `check` fetches with one retry and a
+// ten-second ceiling (nixos/lib/updater.nix), so this only has to be longer
+// than that and shorter than the 60 s the web UI's axios client allows.
+const updateCheckTimeout = 30 * time.Second
+
+// What `nanokvm-update check --json` prints. Unknown fields are ignored -- the
+// two are built from the same tree and ship in the same closure, so the shape
+// cannot drift, and adding a field to the updater must not break the page. What
+// IS checked is that `installed` came back non-empty, because a zero value here
+// would read as "up to date" and that is the one answer this route must never
+// invent.
+type updateCheck struct {
+	Installed string `json:"installed"`
+	Available string `json:"available"`
+	Toplevel  string `json:"toplevel"`
+	Channel   string `json:"channel"`
+	Manifest  string `json:"manifest"`
+	Preview   bool   `json:"preview"`
+	Cache     string `json:"cache"`
+	UpToDate  bool   `json:"up_to_date"`
+	Error     string `json:"error"`
+}
+
+// Upstream's proto.GetVersionRsp plus the verdict, so the page does not have to
+// re-derive it with a semver comparison the updater does not make: the
+// appliance installs what the channel offers, and a deliberate downgrade is a
+// downgrade rather than "you are up to date".
+type GetVersionRsp struct {
+	Current  string `json:"current"`
+	Latest   string `json:"latest"`
+	UpToDate bool   `json:"up_to_date"`
+}
+
+func (s *Service) GetVersion(c *gin.Context) {
+	var rsp proto.Response
+
+	current := getCurrentVersion()
+	latest := current
+	upToDate := true
+
+	if chk, err := checkForUpdate(); err != nil {
+		log.Errorf("update check failed (%s); reporting %s as the latest version", err, current)
+	} else {
+		if current != chk.Installed {
+			log.Warnf("%s/version says %s but the updater says %s -- using the updater's",
+				AppDir, current, chk.Installed)
+		}
+		current = chk.Installed
+		latest = current
+		if chk.Available != "" {
+			latest = chk.Available
+		}
+		upToDate = chk.UpToDate
+	}
+
+	rsp.OkRspWithData(c, &GetVersionRsp{
+		Current:  current,
+		Latest:   latest,
+		UpToDate: upToDate,
+	})
+	log.Debugf("current version: %s, latest version: %s, up to date: %t", current, latest, upToDate)
+}
+
+func getCurrentVersion() string {
+	defaultVersion := "v1.0.0"
+
+	versionFile := filepath.Join(AppDir, "version")
+	content, err := os.ReadFile(versionFile)
+	if err != nil {
+		return defaultVersion
+	}
+
+	version := strings.ReplaceAll(string(content), "\n", "")
+	if version == "" {
+		return defaultVersion
+	}
+
+	return version
+}
+
+// Ask the updater. Exit status 1 with a well-formed object is the "channel
+// unreachable" case and carries its own message, so the JSON is decoded before
+// the exit status is judged.
+func checkForUpdate() (*updateCheck, error) {
+	if _, err := os.Stat(updaterBin); err != nil {
+		return nil, fmt.Errorf("no %s on this system: %w", updaterBin, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), updateCheckTimeout)
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, updaterBin, "check", "--json")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	var chk updateCheck
+	if err := json.Unmarshal(stdout.Bytes(), &chk); err != nil {
+		if runErr != nil {
+			return nil, fmt.Errorf("%s check --json: %w: %s", updaterBin, runErr,
+				strings.TrimSpace(stderr.String()))
+		}
+		return nil, fmt.Errorf("could not read %s check --json: %w", updaterBin, err)
+	}
+
+	if chk.Error != "" {
+		return nil, errors.New(chk.Error)
+	}
+	if runErr != nil {
+		return nil, fmt.Errorf("%s check --json: %w", updaterBin, runErr)
+	}
+	if chk.Installed == "" {
+		return nil, fmt.Errorf("%s check --json named no installed version", updaterBin)
+	}
+
+	log.Debugf("update check: installed %s, available %s, channel %s, preview %t",
+		chk.Installed, chk.Available, chk.Channel, chk.Preview)
+	return &chk, nil
+}

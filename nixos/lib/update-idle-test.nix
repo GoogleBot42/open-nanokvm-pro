@@ -53,6 +53,10 @@ pkgs.runCommand "nanokvm-update-idle"
     pkgs.curl pkgs.python3
   ];
   inherit (fixture) releaseClosure deviceClosure paths;
+  # The OTHER end of `check --json` (#101): the server's version route decodes
+  # this file's struct. Phase I2 reads the field names out of its json tags
+  # rather than repeating them, so the two cannot drift apart silently.
+  versionGo = ../../pkgs/nanokvm-server/version-updater.go.in;
   meta.description =
     "Offline proof of the update policy: the auto-updates checkbox, the pending markers and the idle reboot gate";
 } ''
@@ -266,6 +270,92 @@ pkgs.runCommand "nanokvm-update-idle"
   grep -q "pinned  " "$PWD/i3.log" \
     || { cat "$PWD/i3.log" >&2; fail "'status' does not report what the boot configs pin"; }
   ok "pending and status report the version, the checkbox and the pins"
+
+  # =====================================================================
+  # I2. `check --json` -- WHAT THE WEB UI'S VERSION ROUTE READS (#101).
+  # =====================================================================
+  # The server used to fetch a manifest of its own, from a URL compiled into
+  # the Go binary, and then hand off to `install-now`, which reads THIS
+  # channel. Two sources of truth for one press of the button, and the
+  # compiled one 404ed. The route now runs this, so the shape below is a
+  # contract between two files: pkgs/nanokvm-server/version-updater.go.in
+  # decodes exactly these fields.
+  echo "=== I2. check --json ==="
+  rm -f "$marker" "$note"
+  rm -f "$R/run/current-system"; ln -s "$R$V2" "$R/run/current-system"
+  offer "$V3" "9.9.10"
+  U check --json > "$PWD/chk.json" 2>"$PWD/chk.err" \
+    || { cat "$PWD/chk.err" >&2; fail "check --json exited non-zero against a reachable channel"; }
+  jq -e . "$PWD/chk.json" > /dev/null || { cat "$PWD/chk.json" >&2; fail "check --json did not print JSON"; }
+  # THE FIELD LIST IS NOT COPIED BY HAND. It is read out of the Go struct that
+  # decodes this, so adding a field on one side without the other fails here
+  # instead of on the board.
+  sed -n '/^type updateCheck struct {$/,/^}$/p' "$versionGo" \
+    | sed -n 's/.*json:"\([a-z_]*\)".*/\1/p' > "$PWD/fields"
+  [ "$(wc -l < "$PWD/fields")" -ge 8 ] \
+    || { cat "$PWD/fields" >&2; fail "could not read updateCheck's json tags out of $versionGo"; }
+  while read -r f; do
+    [ -n "$f" ] || continue
+    jq -e "has(\"$f\")" "$PWD/chk.json" > /dev/null \
+      || { cat "$PWD/chk.json" >&2; fail "check --json has no '$f' field -- the server's updateCheck decodes it"; }
+  done < "$PWD/fields"
+  [ "$(jq -r .installed   "$PWD/chk.json")" = "9.9.9" ]  || fail "check --json: wrong installed version"
+  [ "$(jq -r .available   "$PWD/chk.json")" = "9.9.10" ] || fail "check --json: wrong available version"
+  [ "$(jq -r .toplevel    "$PWD/chk.json")" = "$V3" ]    || fail "check --json: wrong toplevel"
+  [ "$(jq -r .up_to_date  "$PWD/chk.json")" = "false" ]  || fail "check --json: an outdated device reported up to date"
+  [ "$(jq -r .error       "$PWD/chk.json")" = "" ]       || fail "check --json: a successful check carried an error"
+  [ "$(jq -r .channel     "$PWD/chk.json")" = "${base}" ] || fail "check --json: wrong channel"
+  [ "$(jq -r .preview     "$PWD/chk.json")" = "false" ]  || fail "check --json: preview is on with no flag file"
+  ok "an available update: the fields the version route reads, with the right values"
+
+  # ...and the SAME version on both sides is the "up to date" the page shows.
+  offer "$V2" "9.9.9"
+  U check --json > "$PWD/chk2.json" || fail "check --json failed on an up-to-date device"
+  [ "$(jq -r .up_to_date "$PWD/chk2.json")" = "true" ] \
+    || { cat "$PWD/chk2.json" >&2; fail "check --json: an up-to-date device did not say so"; }
+  ok "installed == available -> up_to_date true"
+
+  # THE PREVIEW TOGGLE PICKS THE CHANNEL HERE TOO, and it is the same flag file
+  # the web UI writes. If these two ever disagreed, the page would show one
+  # channel's version and the button would install the other's -- which is the
+  # bug #101 exists to delete, in a different place.
+  : > "$R/etc/kvm/preview_updates"
+  U check --json > "$PWD/chk3.json" 2>/dev/null || true
+  [ "$(jq -r .channel "$PWD/chk3.json")" = "${base}/preview" ] \
+    || { cat "$PWD/chk3.json" >&2; fail "check --json ignored /etc/kvm/preview_updates"; }
+  [ "$(jq -r .preview "$PWD/chk3.json")" = "true" ] \
+    || fail "check --json did not report the preview channel as selected"
+  rm -f "$R/etc/kvm/preview_updates"
+  ok "the preview flag selects the preview channel, and check says so"
+
+  # AN UNREACHABLE CHANNEL IS STILL AN ANSWER. `installed` needs no network and
+  # the page has to be able to say it; the failure rides in `error` and the
+  # exit status, never in an absence of output -- a caller that gets nothing
+  # cannot tell "no update" from "no answer".
+  kill "$http_pid"; wait "$http_pid" 2>/dev/null || true
+  if U check --json > "$PWD/chk4.json" 2>/dev/null; then
+    fail "check --json exited 0 with the channel down"
+  fi
+  jq -e . "$PWD/chk4.json" > /dev/null \
+    || { cat "$PWD/chk4.json" >&2; fail "check --json printed nothing when the channel was down"; }
+  [ "$(jq -r .installed "$PWD/chk4.json")" = "9.9.9" ] \
+    || fail "check --json lost the installed version when the channel was down"
+  [ "$(jq -r .available "$PWD/chk4.json")" = "" ] \
+    || fail "check --json invented an available version with no channel"
+  [ "$(jq -r .up_to_date "$PWD/chk4.json")" = "false" ] \
+    || fail "check --json claimed up to date without reaching the channel"
+  case "$(jq -r .error "$PWD/chk4.json")" in
+    "could not reach ${base}/nanokvm_pro_sys_latest.json") ;;
+    *) cat "$PWD/chk4.json" >&2; fail "check --json did not name the channel it could not reach" ;;
+  esac
+  ok "channel down: one JSON object, the installed version, an error, exit 1"
+
+  python3 -m http.server --directory "$SRV" --bind 127.0.0.1 ${port} >/dev/null 2>&1 &
+  http_pid=$!
+  for _ in $(seq 1 50); do
+    curl -sf "${base}/nanokvm_pro_sys_latest.json" >/dev/null 2>&1 && break
+    sleep 0.2
+  done
 
   # =====================================================================
   # J. THE WEB UI'S BUTTON -- `install-now`, which is all the server calls.

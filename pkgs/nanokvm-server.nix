@@ -10,27 +10,27 @@
   #               mux by itself. Requires the `nanokvm-gpio` argument.
   gpioBackend ? "sysfs"
 , nanokvm-gpio ? null
-, # Base URL the on-device updater fetches from: the public GitHub downstream
-  # mirror's releases (`releases/latest/download` always resolves to the
-  # newest release's assets; the Gitea source of truth is Tailscale-only and
-  # unreachable from devices). See flake.nix (updateBaseUrl) and
-  # docs/updates.md.
-  updateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download"
-, previewUpdateBaseUrl ? "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview"
-, # What the web UI's "update" button installs, and therefore WHICH MANIFEST this
-  # build polls (#86, #100). One release carries both channels side by side; the
-  # manifest FILENAME is the whole of the separation, because a device must never
-  # be offered a payload its installer cannot apply.
+, # What the web UI's "update" button does (#86, #100, #101).
   #
-  #   "closure"  nanokvm_pro_sys_latest.json -> a NixOS system CLOSURE, named by
-  #              store path and substituted from our signed binary cache by
-  #              `nanokvm-update` (install-update.go.in). The mainline
+  # NO CHANNEL URL IS COMPILED INTO THIS BINARY. Since #101 the server asks
+  # `nanokvm-update check --json` -- the device's own configured channel
+  # (`nanokvm.update.stableUrl` / `previewUrl`) -- instead of fetching a
+  # manifest of its own, so the version the page shows and the closure the
+  # button installs come from one place. What is left to choose here is which
+  # installer install() is:
+  #
+  #   "closure"  hand off to `nanokvm-update` (install-update.go.in): it
+  #              substitutes the release's system closure from our signed
+  #              binary cache, makes it a generation, and reboots. The mainline
   #              appliance, and the only update path this project publishes.
-  #   "retired"  nanokvm_pro_latest.json -> nothing. The 4.19 image's rootfs-
+  #   "retired"  refuse (install-retired.go.in). The 4.19 image's rootfs-
   #              overlay OTA is gone (#86, 2026-09-10) and no release publishes
   #              a payload for it; install() refuses rather than letting the
   #              vendor's dpkg installer pull three .debs off Sipeed's CDN.
-  #              A vendor-layout device moves forward by an AXDL reflash.
+  #              A vendor-layout device moves forward by an AXDL reflash, and
+  #              its version route -- finding no updater -- reports the running
+  #              version as the latest one, which the page renders as
+  #              "up to date".
   updateMode ? "closure"
 , ...
 }:
@@ -55,17 +55,15 @@ assert gpioBackend == "libgpiod" -> nanokvm-gpio != null;
 assert builtins.elem updateMode [ "closure" "retired" ];
 
 let
-  # The manifest this build polls, and the installer that consumes what it names.
-  # They move together or a device downloads a payload it cannot apply.
-  manifestName =
-    if updateMode == "closure" then "nanokvm_pro_sys_latest.json"
-    else "nanokvm_pro_latest.json";
   installOverride =
     if updateMode == "closure" then ./nanokvm-server/install-update.go.in
     else ./nanokvm-server/install-retired.go.in;
-  # The three lines that replace update()'s download/verify/untar half in the
-  # nix-native mode -- see step 3b of postPatch.
+  # The two lines that replace update()'s fetch/download/verify/untar half --
+  # see step 3b of postPatch.
   updateFragment = ./nanokvm-server/update-nix.go.in;
+  # The whole of service/application/version.go: the version route, asking the
+  # updater instead of a compiled-in URL (#101).
+  versionOverride = ./nanokvm-server/version-updater.go.in;
   # `os/exec` is used ONLY by install() in this file, so the retired variant --
   # which execs nothing -- would leave an unused import, and an unused import is
   # a Go compile error.
@@ -157,24 +155,42 @@ buildGoModule {
   # pin is invisible on a host that already has the output — see docs/building.md).
   vendorHash = "sha256-jvtP0rk43UvYAosNfQN03aEh1EusZmDT+cTj0ui6Y0M=";
 
-  # ---- Redirect application updates from Sipeed's CDN to OUR host -----------
-  # So the web UI "update" button pulls firmware/app updates we publish, not
-  # Sipeed's. Runs in sourceRoot (server/). See docs/updates.md for the protocol.
+  # ---- The update path asks the DEVICE, not a compiled-in URL --------------
+  # Steps 1-2 are the whole of it: the version route runs `nanokvm-update check
+  # --json` and install() hands off to the same tool, so one press of the web
+  # UI's button reads one channel -- the device's own (#101). Runs in sourceRoot
+  # (server/). See docs/updates.md for the protocol.
   postPatch = ''
-    # 1. Base URLs. The vendor derives PreviewURL = StableURL + "/preview",
-    #    which can never resolve on GitHub's flat release-asset namespace --
-    #    so the preview channel gets its own base (the rolling `preview`
-    #    release, see flake.nix + docs/updates.md). Replace the full preview
-    #    string FIRST, then the stable prefix catches what remains.
-    substituteInPlace service/application/service.go \
-      --replace-fail 'https://cdn.sipeed.com/nanokvm/preview' '${previewUpdateBaseUrl}' \
-      --replace-fail 'https://cdn.sipeed.com/nanokvm' '${updateBaseUrl}'
+    # 1. THE VERSION ROUTE. Replace service/application/version.go wholesale:
+    #    upstream's fetches <StableURL>/<manifest> over HTTP from a base URL
+    #    compiled into this binary, which is the second source of truth #101
+    #    deletes. Ours runs the updater (version-updater.go.in).
+    #
+    #    A whole-file replacement rather than a truncate-and-append, because
+    #    all three of its declarations change; the guard is that the file is
+    #    still exactly those three, so a pin bump that adds anything to it
+    #    fails here instead of silently losing it (#34).
+    [ "$(grep -c '^func ' service/application/version.go)" = 3 ] \
+      || { echo "ERROR: version.go is no longer exactly three functions — the replacement would drop what upstream added" >&2; exit 1; }
+    for f in 'func (s \*Service) GetVersion(c \*gin.Context) {' \
+             'func getCurrentVersion() string {' \
+             'func getLatest() (\*Latest, error) {'; do
+      grep -q "^$f" service/application/version.go \
+        || { echo "ERROR: version.go does not declare $f — upstream restructured it" >&2; exit 1; }
+    done
+    cp ${versionOverride} service/application/version.go
 
-    # 2. Drop the ?now= cache-buster. Release-asset URLs may redirect and a
-    #    trailing query can interfere; a static manifest needs no cache-bust.
-    substituteInPlace service/application/version.go \
-      --replace-fail '"%s/nanokvm_pro_latest.json?now=%d", baseURL, time.Now().Unix()' '"%s/${manifestName}", baseURL'
-    sed -i '/^[[:space:]]*"time"$/d' service/application/version.go
+    # 2. That leaves the two vendor CDN base URLs referenced by nothing.
+    #     Delete them rather than leaving dead consts: they are network
+    #     endpoints in a binary we publish, and docs/provenance.md is an
+    #     audit of exactly that. The grep afterwards is the guard -- if any
+    #     caller is left, the build fails instead of shipping a compile error.
+    sed -i '/^\tStableURL  = "https:\/\/cdn\.sipeed\.com\/nanokvm"$/d' service/application/service.go
+    sed -i '/^\tPreviewURL = "https:\/\/cdn\.sipeed\.com\/nanokvm\/preview"$/d' service/application/service.go
+    ! grep -rn 'StableURL\|PreviewURL' --include='*.go' . \
+      || { echo "ERROR: something still references StableURL/PreviewURL after deleting them" >&2; exit 1; }
+    ! grep -rn 'cdn\.sipeed\.com/nanokvm' --include='*.go' service/application \
+      || { echo "ERROR: a Sipeed CDN update URL survived in service/application" >&2; exit 1; }
 
     # 3. Replace the vendor dpkg-based install() with ours -- the handoff to
     #    `nanokvm-update` (install-update.go.in) or the refusal
@@ -196,34 +212,38 @@ buildGoModule {
       ! grep -q 'exec\.' service/application/update.go \
         || { echo "ERROR: update.go still uses os/exec after dropping its import" >&2; exit 1; }
     ''}
-    ${pkgs.lib.optionalString (updateMode == "closure") ''
-      # 3b. ...and cut update()'s download half out, because there is no
-      #     payload any more (#100). The manifest names a store path and
-      #     `nanokvm-update` substitutes that closure from the signed cache, so
-      #     the fetch / SHA-512 / UnTarGz sequence between getLatest() and
-      #     install() has nothing to operate on. Insert the replacement AFTER
-      #     the block's last line, then delete the block -- two passes, because
-      #     mixing sed's `r` and `d` on one address is not the same thing
-      #     twice.
-      #     The anchors are TAB-indented, and `grep` does not read \t as a tab
-      #     -- `sed` does, so each guard is a sed match with a counted result.
-      [ "$(sed -n '/^\t\/\/ download$/p' service/application/update.go | wc -l)" = 1 ] \
-        || { echo "ERROR: update()'s '// download' anchor is not present exactly once — upstream restructured the download path" >&2; exit 1; }
-      [ "$(sed -n '/^\terr = install(dir, latest.Version)$/p' service/application/update.go | wc -l)" = 1 ] \
-        || { echo "ERROR: update()'s install() call is not present exactly once — upstream restructured the download path" >&2; exit 1; }
-      sed -i '/^\terr = install(dir, latest.Version)$/r ${updateFragment}' service/application/update.go
-      sed -i '/^\t\/\/ download$/,/^\terr = install(dir, latest.Version)$/d' service/application/update.go
-      grep -q 'err = install("", latest.Version)' service/application/update.go \
-        || { echo "ERROR: the nix-native install() call is not in update()" >&2; exit 1; }
-      ! grep -q 'UnTarGz' service/application/update.go \
-        || { echo "ERROR: update() still untars a payload" >&2; exit 1; }
+    # 3b. ...and cut everything update() did BEFORE install() out with it.
+    #     There is no payload to download (#100 -- the manifest names a store
+    #     path and `nanokvm-update` substitutes that closure from the signed
+    #     cache), and no manifest to fetch either (#101 -- `install-now`
+    #     fetches the device's own channel, and the getLatest() this used to
+    #     call fetched a URL compiled into the binary). So the whole sequence
+    #     from the version check to the install call goes, in both modes: the
+    #     retired image has no payload to download either.
+    #
+    #     Insert the replacement AFTER the block's last line, then delete the
+    #     block -- two passes, because mixing sed's `r` and `d` on one address
+    #     is not the same thing twice.
+    #     The anchors are TAB-indented, and `grep` does not read \t as a tab
+    #     -- `sed` does, so each guard is a sed match with a counted result.
+    [ "$(sed -n '/^\tlatest, err := getLatest()$/p' service/application/update.go | wc -l)" = 1 ] \
+      || { echo "ERROR: update()'s getLatest() call is not present exactly once — upstream restructured the update path" >&2; exit 1; }
+    [ "$(sed -n '/^\t\/\/ download$/p' service/application/update.go | wc -l)" = 1 ] \
+      || { echo "ERROR: update()'s '// download' anchor is not present exactly once — upstream restructured the download path" >&2; exit 1; }
+    [ "$(sed -n '/^\terr = install(dir, latest.Version)$/p' service/application/update.go | wc -l)" = 1 ] \
+      || { echo "ERROR: update()'s install() call is not present exactly once — upstream restructured the download path" >&2; exit 1; }
+    sed -i '/^\terr = install(dir, latest.Version)$/r ${updateFragment}' service/application/update.go
+    sed -i '/^\tlatest, err := getLatest()$/,/^\terr = install(dir, latest.Version)$/d' service/application/update.go
+    grep -q 'err := install("", "")' service/application/update.go \
+      || { echo "ERROR: the nix-native install() call is not in update()" >&2; exit 1; }
+    ! grep -q 'getLatest\|UnTarGz\|latest\.' service/application/update.go \
+      || { echo "ERROR: update() still fetches a manifest or untars a payload" >&2; exit 1; }
 
-      # `dir` and `tarFile` went with the block, and so did update.go's only
-      # uses of path/filepath. An unused import is a Go compile error.
-      sed -i '/^\t"path\/filepath"$/d' service/application/update.go
-      ! grep -q 'filepath\.' service/application/update.go \
-        || { echo "ERROR: update.go still uses path/filepath after dropping its import" >&2; exit 1; }
-    ''}
+    # `dir` and `tarFile` went with the block, and so did update.go's only
+    # uses of path/filepath. An unused import is a Go compile error.
+    sed -i '/^\t"path\/filepath"$/d' service/application/update.go
+    ! grep -q 'filepath\.' service/application/update.go \
+      || { echo "ERROR: update.go still uses path/filepath after dropping its import" >&2; exit 1; }
 
     # 4. Strip the kvmadmin + assistant extension endpoints. Both fetch and run
     #    third-party closed code on user action: /kvmadmin/install pulls the

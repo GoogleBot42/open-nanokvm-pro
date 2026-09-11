@@ -20,5 +20,6 @@ func install(dir string, version string) error {
 	log.Errorf("this image has no OTA path: reflash .#nixos-firmware-image-mainline over AXDL (see docs/updates.md)")
 	_ = sendMessage("install", 0)
 	_ = dir
-	return fmt.Errorf("over-the-air update is retired for this image (version %s); reflash over AXDL", version)
+	_ = version
+	return fmt.Errorf("over-the-air update is retired for this image; reflash over AXDL")
 }

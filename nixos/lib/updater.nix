@@ -129,7 +129,7 @@ let
   usageText = ''
     usage: nanokvm-update [OPTIONS] <command>
 
-      check                    what is installed, and what the channel offers
+      check [--json]           what is installed, and what the channel offers
       update                   check, install, reboot when idle (what the timer
                                runs; a no-op unless the "Automatic updates" box
                                is ticked in the web UI)
@@ -150,6 +150,8 @@ let
                        configured one
       --trusted-key K  require this key instead of the configured ones
       --keep N         generations to keep (gc)
+      --json           machine-readable output (check): one JSON object on
+                       stdout, always -- even when the channel is unreachable
       --no-activate    do not run switch-to-configuration
       --no-reboot      install, never reboot
 
@@ -366,6 +368,7 @@ let
       KEEP=${toString keepGenerations}
       ACTIVATE=1
       REBOOT=1
+      JSON=0
 
       usage() {
         printf '%s\n' ${lib.escapeShellArg usageText} >&2
@@ -384,8 +387,15 @@ let
         fi
       }
 
+      # The retry budget is a parameter because the two callers want different
+      # ones. An INSTALL is a job and may spend a minute per try. A `check` is
+      # a QUESTION somebody is waiting on -- since #101 the web UI's version
+      # route runs one synchronously inside an HTTP request whose browser gives
+      # up after 60 s -- so it gets one retry and a ten-second ceiling, and an
+      # unreachable channel becomes an answer rather than a hang.
       fetch_manifest() {
-        curl -fsSL --retry 3 --retry-delay 3 -m 60 "$(base_url)/$MANIFEST"
+        curl -fsSL --retry "''${1:-3}" --retry-delay "''${2:-3}" -m "''${3:-60}" \
+          "$(base_url)/$MANIFEST"
       }
 
       # The two fields an update needs, and the refusal that keeps a malformed
@@ -579,6 +589,7 @@ let
           --keep)        KEEP="$2"; shift 2 ;;
           --no-activate) ACTIVATE=0; shift ;;
           --no-reboot)   REBOOT=0; shift ;;
+          --json)        JSON=1; shift ;;
           -h|--help)     usage ;;
           --*)           echo "unknown option $1" >&2; usage ;;
           *)             if [ -z "$cmd" ]; then cmd="$1"; else args="$args $1"; fi; shift ;;
@@ -589,16 +600,58 @@ let
       set -- $args
 
       case "$cmd" in
+      # THE ONE PLACE THE QUESTION "IS THERE AN UPDATE" IS ANSWERED (#101).
+      #
+      # The web UI's version route asks this, over `--json`. It used to fetch a
+      # manifest of its own from a URL COMPILED INTO THE SERVER BINARY while
+      # the install it then handed off read this channel -- two sources of
+      # truth for one press of the button, and the compiled one 404ed on a
+      # board whose timer path updated perfectly. There is now one channel, and
+      # the version the page shows is the version `install-now` will install.
+      #
+      # --json PRINTS ONE OBJECT WHATEVER HAPPENS, an unreachable channel
+      # included: `installed` is knowable without the network and the page has
+      # to be able to say so. The failure is carried in `error` (empty when the
+      # check succeeded) and in the exit status -- never in an absence of
+      # output, because a caller that gets nothing cannot tell "no update" from
+      # "no answer".
       check)
         cur=$(current_version)
-        mf=$(fetch_manifest) || die "could not reach $(base_url)/$MANIFEST"
-        av=$(printf '%s' "$mf" | jq -r '.version')
+        chan=$(base_url)
+        if [ -e "$(P /etc/kvm/preview_updates)" ]; then prev=true; else prev=false; fi
+        av=""; top=""; cherr=""
+        if mf=$(fetch_manifest 1 2 10 2>/dev/null); then
+          av=$(printf '%s' "$mf" | jq -r '.version // empty' 2>/dev/null || echo "")
+          top=$(printf '%s' "$mf" | jq -r '.toplevel // empty' 2>/dev/null || echo "")
+          if [ -z "$av" ]; then
+            cherr="$chan/$MANIFEST names no version -- is it a manifest from a release?"
+          fi
+        else
+          cherr="could not reach $chan/$MANIFEST"
+        fi
+        if [ -n "$av" ] && [ "$cur" = "$av" ]; then uptodate=true; else uptodate=false; fi
+
+        if [ "$JSON" = 1 ]; then
+          jq -n \
+            --arg installed "$cur" --arg available "$av" --arg toplevel "$top" \
+            --arg channel "$chan" --arg manifest "$MANIFEST" \
+            --arg cache "$CACHE" --arg error "$cherr" \
+            --argjson preview "$prev" --argjson up_to_date "$uptodate" \
+            '{installed: $installed, available: $available, toplevel: $toplevel,
+              channel: $channel, manifest: $manifest, preview: $preview,
+              cache: $cache, up_to_date: $up_to_date, error: $error}'
+          [ -z "$cherr" ] || exit 1
+          exit 0
+        fi
+
+        [ -z "$cherr" ] || die "$cherr"
         echo "installed: $cur"
         echo "available: $av"
-        echo "toplevel:  $(printf '%s' "$mf" | jq -r '.toplevel // "(none)"')"
-        echo "channel:   $(base_url)"
+        echo "toplevel:  ''${top:-(none)}"
+        echo "channel:   $chan"
+        echo "preview:   $prev"
         echo "cache:     ''${CACHE:-(none configured)}"
-        [ "$cur" != "$av" ] || echo "up to date"
+        [ "$uptodate" != true ] || echo "up to date"
         ;;
 
       update)

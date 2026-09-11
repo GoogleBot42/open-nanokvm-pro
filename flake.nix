@@ -87,22 +87,17 @@
       # Release identity for the OTA / web-update system (docs/updates.md).
       # `version` comes from ./VERSION (first token) — the single source of
       # truth that `tools/release` tags from — and is stamped into
-      # /kvmapp/version and the update manifest. `updateBaseUrl` is baked into
-      # NanoKVM-Server so its update check pulls from our releases instead of
-      # Sipeed's CDN. Releases are hosted on the public GitHub downstream
-      # mirror (the Gitea source of truth is Tailscale-only, unreachable from
-      # devices); `releases/latest/download/<asset>` always resolves to the
-      # newest release's assets.
+      # /kvmapp/version and the update manifest.
+      #
+      # THE CHANNEL IS NOT HERE ANY MORE (#101). It used to be, as
+      # `updateBaseUrl`/`previewUpdateBaseUrl` compiled into NanoKVM-Server —
+      # a second source of truth beside `nanokvm.update.stableUrl`, which is
+      # what actually installs. The server now asks `nanokvm-update` instead,
+      # so the only channel a device knows is the one in its own NixOS
+      # configuration (nixos/appliance.nix).
       version =
         let m = builtins.match "[[:space:]]*([^[:space:]]+).*" (builtins.readFile ./VERSION);
         in if m == null then "0.0.0-dev" else builtins.head m;
-      updateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
-      # The preview/alpha channel (web-UI "preview updates" toggle). GitHub's
-      # `latest` alias excludes prereleases, so alphas ride a ROLLING release
-      # on the fixed `preview` tag instead (assets clobbered on every cut) --
-      # a release-asset namespace is flat, so the vendor's derived
-      # `<stable>/preview` sub-path can never work on GitHub. docs/updates.md.
-      previewUpdateBaseUrl = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview";
 
       perSystem = flake-utils.lib.eachSystem supportedSystems (
         localSystem:
@@ -438,7 +433,7 @@
         # vendor's dpkg installer. A vendor-layout device moves forward by an
         # AXDL reflash of `.#nixos-firmware-image-mainline`.
         nanokvm-server = callPkg ./pkgs/nanokvm-server.nix {
-          inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl;
+          inherit kvm-encoder axera-libs;
           updateMode = "retired";
         };
 
@@ -459,7 +454,7 @@
         # the separation -- a device is never offered a payload its installer
         # cannot apply.
         nanokvm-server-libgpiod = callPkg ./pkgs/nanokvm-server.nix {
-          inherit kvm-encoder axera-libs updateBaseUrl previewUpdateBaseUrl nanokvm-gpio;
+          inherit kvm-encoder axera-libs nanokvm-gpio;
           gpioBackend = "libgpiod";
           updateMode = "closure";
         };

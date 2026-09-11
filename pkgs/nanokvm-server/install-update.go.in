@@ -21,10 +21,16 @@ func install(dir string, version string) error {
 	// The path is resolved through /run/current-system, which is the running
 	// generation's own copy.
 	//
+	// Both parameters are empty and stay that way (#101): there is no download
+	// directory, and the version is the channel's business, not the caller's --
+	// `install-now` fetches the manifest for the device's channel itself, so
+	// nothing upstream of here has to know what it says.
+	//
 	// This appended file REPLACES the vendor dpkg installer; nanokvm-server.nix
 	// truncates update.go at install()'s signature and appends it. It may add NO
-	// imports beyond update.go's own (fmt, os, os/exec, path/filepath, log).
+	// imports beyond update.go's own (fmt, os, os/exec, log).
 	_ = dir
+	_ = version
 	_ = sendMessage("install", 5)
 
 	const updater = "/run/current-system/sw/bin/nanokvm-update"
@@ -58,7 +64,7 @@ func install(dir string, version string) error {
 	// nanokvm-mark-good only clears the counter once the new system is running,
 	// routed and serving. A `switch` would activate an untested userspace with no
 	// way back.
-	log.Infof("update %s installed; rebooting into it", version)
+	log.Info("the update is installed; rebooting into it")
 	_ = exec.Command("systemctl", "--no-block", "reboot").Run()
 	return nil
 }

@@ -68,6 +68,13 @@ export const Update = ({ setIsLocked }: UpdateProps) => {
       });
   }
 
+  // THE VERDICT IS THE SERVER'S (#101). `up_to_date` is what
+  // `nanokvm-update check` decided about the device's own channel -- the same
+  // channel, the same manifest, the same comparison the install will make. The
+  // semver fallback below is for a server that predates the field: upstream
+  // compares versions here, and the appliance does not, because it installs
+  // what the channel offers and a deliberate downgrade is a downgrade rather
+  // than "you are up to date".
   function checkVersion() {
     api
       .getVersion()
@@ -81,11 +88,14 @@ export const Update = ({ setIsLocked }: UpdateProps) => {
         setCurrentVersion(rsp.data.current);
         setLatestVersion(rsp.data.latest);
 
-        const isLatest = semver.gt(rsp.data.latest, rsp.data.current);
-        if (isLatest) {
+        const hasUpdate =
+          typeof rsp.data.up_to_date === 'boolean'
+            ? !rsp.data.up_to_date
+            : semver.gt(rsp.data.latest, rsp.data.current);
+        if (hasUpdate) {
           setTipMsg(t('settings.update.available'));
         }
-        setStatus(!isLatest ? 'latest' : 'outdated');
+        setStatus(hasUpdate ? 'outdated' : 'latest');
       })
       .catch(() => {
         setStatus('failed');
@@ -191,7 +201,7 @@ export const Update = ({ setIsLocked }: UpdateProps) => {
           <Button
             type="link"
             size="small"
-            href="https://github.com/sipeed/NanoKVM-Pro/blob/main/CHANGELOG.md"
+            href="https://github.com/GoogleBot42/open-nanokvm-pro/blob/main/CHANGELOG.md"
             target="_blank"
           >
             {t('settings.update.changelog')}
