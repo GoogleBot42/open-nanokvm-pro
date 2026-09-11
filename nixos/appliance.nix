@@ -1275,14 +1275,14 @@ in
     # closure, in the order the kernel build's depmod resolved, then a check
     # that the pipeline actually came up.
     #
-    # THE MODULES ARE IN THE GENERATION; THE KERNEL IS NOT. pkgs/video-modules.nix
-    # copies the .ko set out of the kernel derivation the Image comes from, so
-    # a generation carries the drivers it was built with -- but the Image
-    # itself is still a /boot artefact outside any generation
-    # (pkgs/boot-payload.nix). The two can therefore disagree and nothing here
-    # can detect it: the vermagic is the release string alone and does not
-    # change when a built-in driver does. The follow-up rung that moves the
-    # kernel, the initrd and the dtb into the generation is what closes that.
+    # THE MODULES AND THEIR KERNEL ARE IN THE SAME GENERATION (#99).
+    # pkgs/video-modules.nix copies the .ko set out of the kernel derivation
+    # `boot.kernelPackages` names, so a generation carries the drivers it was
+    # built with and cannot be booted on a kernel it was not built for. #83
+    # shipped with a caveat here -- the Image was a /boot artefact outside every
+    # generation, so the two could disagree with nothing able to detect it,
+    # because the vermagic is the release string alone and does not change when
+    # a built-in driver does. #99 closed that by construction.
     #
     # insmod, not modprobe: the order is six lines long, it ships next to the
     # modules, and an explicit order is a mechanism a reader can check. (The
@@ -1352,7 +1352,8 @@ in
     # environment.systemPackages below, and the server reaches it by absolute
     # store path (pkgs/nanokvm-server.nix, gpioBackend = "libgpiod").
     #
-    # This module therefore stubs #82 and #83, and no longer stubs #81.
+    # This module therefore stubs the POLICY half of #82 alone. #81 and #83
+    # both landed: 5a loads the video modules for real, and the board streams.
 
     # 5c. USB gadget -- STUB, but no longer for the reason it was written.
     # #82 landed the dwc3 glue and the configfs function drivers, and a host has

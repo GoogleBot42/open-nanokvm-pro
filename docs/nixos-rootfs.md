@@ -737,10 +737,14 @@ are part of the generation — but NixOS's own module machinery still has nothin
 to work with: every driver this board needs to boot is built in, and stage 1
 carries no `/lib/modules` tree.
 
-The one exception is the video stack (#83): `nanokvm.video-modules`
-(`pkgs/video-modules.nix`) is a `/lib/modules/<release>` tree built from the
-same kernel source, loaded in order by `nanokvm-video.service`. It is a store
-path in the closure like everything else, not a NixOS-managed module set.
+The one exception is the video stack (#83): six modules — the three open
+drivers (`open_vin_csi2`, `open_vin_capture`, `ax630c_venc_vcmd`) and the three
+videobuf2 modules they import — copied out of the kernel derivation into
+`nanokvm.video-modules` (`pkgs/video-modules.nix`) as a `/lib/modules/<release>`
+tree. They are a store path in the closure like everything else, not a
+NixOS-managed module set, and since #99 they and the kernel they load into come
+from the same generation: `boot.kernelPackages` names the derivation they were
+copied from, so the pair cannot disagree.
 
 That has one non-obvious consequence in stage 1. `boot.initrd.kernelModules` and
 `availableKernelModules` must be `lib.mkForce [ ]`, not `[ ]`: option lists
@@ -750,8 +754,9 @@ two in place, and `makeModulesClosure` over an empty tree with a non-empty
 module list is a hard build failure ("Can not derive a closure of kernel
 modules").
 
-The first thing that will need a modules tree is the video stack, #83 — see
-[gap 11](#known-gaps).
+`system.modulesTree` stays empty all the same: `nanokvm-video.service` loads the
+six by `insmod` in the order that ships beside them, so nothing asks NixOS's
+module machinery for a tree it does not have.
 
 ### 10. Nix — the appliance has a real store
 
@@ -1279,21 +1284,27 @@ number, so closed gaps keep their slot and new ones are appended.
    `deploy-iterate` skill assumes a writable `/kvmapp`.
 10. **`environment.ldso` alone is not an FHS.** See
     [the fallback ladder](#reaching-a-bare-name-dlopen--the-fallback-ladder).
-11. **No kernel module tree at all.** Every driver is built into the Image and
-    the closure has no `/lib/modules`. That is the right answer today and it
-    stops being one the moment something needs a module: the first such thing is
-    the video stack (#83), which will need `boot.kernel.enable` to stay false
-    while a modules tree is spliced into the system closure by hand — nixpkgs'
-    `kmod` is patched to search `/run/booted-system/kernel-modules/lib/modules`,
-    not `/lib/modules`, so it cannot simply be dropped into the filesystem.
-12. **The two hardware stubs, and what each costs the product.**
-    `nanokvm-video` (**#83**) — no `/dev/video0`: the web UI loads and streams
-    nothing. The three open drivers are 4.19 out-of-tree code and need porting to
-    current V4L2/dma APIs. `nanokvm-usb` (**#82**) — no keyboard, no mouse, no
-    mass storage, no NCM. The mini-display daemon (**#84**) is
-    `ConditionPathExists=/dev/fb0` and simply does not run. Both stubs exit 0 and
-    print which issue owns them. ATX is **not** on this list any more: #81 landed
-    and the appliance drives it through `nanokvm-gpio` — but that tool has still
+11. **Modules are loaded by us, not by NixOS — CLOSED (#83, #99).** Every
+    driver but six is built in, and the six the video stack needs ride in the
+    closure as `nanokvm.video-modules`, which `nanokvm-video.service` loads with
+    `insmod` off the `load-order` file that ships beside them (section 9 above).
+    `system.modulesTree` stays empty, so nothing consults
+    nixpkgs' `kmod` — which is patched to search
+    `/run/booted-system/kernel-modules/lib/modules`, not `/lib/modules`, and was
+    the reason a modules tree could not simply be dropped into the filesystem.
+    Anything that ever needs `modprobe` semantics — a second modular subsystem,
+    or udev autoloading — reopens this.
+12. **The one hardware stub left, and what it costs the product.**
+    `nanokvm-usb` (**#82**) — no keyboard, no mouse, no mass storage, no NCM.
+    The controller and the configfs function drivers are here and a host has
+    enumerated a gadget off this board; what is missing is the POLICY, because
+    `usbdev.sh` — the script that builds the gadget, its three HID report
+    descriptors and the Microsoft OS descriptors — exists only in the vendor
+    rootfs and is uncaptured (gap 2). The stub exits 0 and prints that. The
+    mini-display daemon (**#84**) is `ConditionPathExists=/dev/fb0` and simply
+    does not run. `nanokvm-video` is **not** on this list any more: #83 landed
+    2026-09-10 and the board streams H.264 on mainline. ATX is not either: #81
+    landed and the appliance drives it through `nanokvm-gpio` — but that tool has still
     never executed on hardware, because it targets this appliance and #81's own
     runs had no mainline userspace. QEMU gets as far as proving it is on the
     system PATH and resolving lines by name (`no gpiochip names line
