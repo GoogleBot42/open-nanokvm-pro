@@ -25,44 +25,41 @@ directly** — all git data flows one way, Gitea → GitHub.
 - [Garbage collection](#garbage-collection)
 - [What a release publishes](#what-a-release-publishes)
 - [Local testing](#local-testing)
-- [What hardware still has to prove](#what-hardware-still-has-to-prove)
+- [What hardware proved](#what-hardware-proved-100-2026-09-11)
 - [Weighed and rejected](#weighed-and-rejected)
 - [Caveats](#caveats)
 - [History](#history)
 
 ---
 
-> **Status (2026-09-11, #100): built and proven offline; not yet run on hardware.**
-> Five `nix flake check` gates cover it, two running **real nix** in the build sandbox
-> — a signed `file://` binary cache, two chroot stores, a real `nix copy`,
-> `nix-env --set` and `nix-collect-garbage`. Unproven is everything needing the board:
-> the real `switch-to-configuration`, the `/nix/store` remount, whether U-Boot boots
-> what was written, and whether the server's own idle answer is right. The board has
-> no nix yet, so round 1 is a bootstrap —
-> [the hardware plan](#what-hardware-still-has-to-prove).
+> **Status (2026-09-11, #100): HARDWARE-PROVEN, against a stand-in cache.**
+> Nix is on the board, the bootstrap is done, and four generations were installed
+> from a signed binary cache and booted — including one taken by the idle-gated
+> timer with nobody watching, and one rolled back by `bootcount` onto the previous
+> generation. Eight boots, 51-58 s each, one U-Boot attempt every time. Values,
+> oracles and the four things that are still *not* proven:
+> [What hardware proved](#what-hardware-proved-100-2026-09-11).
 >
-> **Two placeholders (#96):** `nanokvm.update.cacheUrl` and
-> `nanokvm.update.trustedPublicKeys` are empty and the release job's three attic
-> secrets do not exist, so a device builds and boots but refuses to update, and says
-> so at build time ([Caveats](#caveats)).
+> **The cache was a stand-in (#96 is still open).** A `file://` cache signed with a
+> throwaway key, served over HTTP from a build host through an SSH reverse tunnel.
+> `nanokvm.update.cacheUrl` and `nanokvm.update.trustedPublicKeys` ship **empty**
+> and the release job's three attic secrets do not exist, so a device builds and
+> boots but refuses to update, and says so at build time ([Caveats](#caveats)).
 >
-> **The kernel rides along (#99, merged):** kernel, initrd and dtb are store paths
-> inside the generation, so they arrive with the closure and
+> **The web UI's button does not work yet, for a reason outside #100.** The server
+> asks GitHub for the manifest before it hands off to `nanokvm-update` — a URL
+> compiled into the Go binary — and no release publishes
+> `nanokvm_pro_sys_latest.json`, so it 404s on a device whose timer path updates
+> fine ([round 4](#round-4--the-web-uis-button)).
+>
+> **The kernel rides along (#99, merged and hardware-proven):** kernel, initrd and
+> dtb are store paths inside the generation, so they arrive with the closure and
 > `switch-to-configuration boot` — NixOS's own extlinux builder — copies them into
 > `/boot`. An update can change the kernel, and the rollback covers it
-> ([Rollback](#rollback)).
->
-> **That half IS hardware-proven (#99, 2026-09-11).** On the board, not in a
-> sandbox: the real `switch-to-configuration boot` wrote `/boot`, U-Boot booted the
-> file it wrote, a forced `bootcount` took `altbootcmd` to the derived fallback, and
-> a kernel-only generation rolled back onto the OLD kernel while the profile symlink
-> still pointed at the new one. Six boots, 67-71 s each, one U-Boot attempt every
-> time; oracles and end state in [mainline-port.md](mainline-port.md) "What exists
-> now (#99)". So `switch-to-configuration`, the `/nix/store` remount and "does
-> U-Boot boot what NixOS wrote" are answered — what the rounds below still have to
-> prove is everything from the *cache* to the profile, and the server's own idle
-> answer. Those rounds ran on generations shipped by hand with `tar`, on a board
-> with no nix; #100's round 1 is what puts nix there.
+> ([Rollback](#rollback)); a forced `bootcount` took `altbootcmd` to the derived
+> fallback and a kernel-only generation rolled back onto the OLD kernel while the
+> profile symlink still pointed at the new one. Oracles in
+> [mainline-port.md](mainline-port.md) "What exists now (#99)".
 
 ## The idea
 
@@ -248,10 +245,14 @@ Two details that are not obvious:
   file, so a rollback rolls the version back with everything else and there is no
   mutable stamp to get out of sync. (The web UI reads `/kvmapp/version`, likewise a
   store symlink.)
-- **If `/nix/store` is ever a read-only bind mount**, `remount,ro` alone silently does
-  nothing on one — it needs `remount,bind,ro`. The updater flips it around the
-  `nix copy` and back; the flip is a no-op on this image, where the store is an
-  ordinary directory on a writable root.
+- **`/nix/store` IS a read-only bind mount here** (`boot.readOnlyNixStore`, NixOS's
+  default), measured on the board 2026-09-11 — not the no-op an earlier draft
+  claimed. The updater flips it `rw` around the `nix copy` and back, and
+  `remount,ro` alone silently does nothing on a bind mount: it needs
+  `remount,bind,ro`. Anything writing the store **by hand** — the bootstrap's
+  `tar`, a recovery — has to do the same flip, or it fails with `tar` exit 2 and
+  no message worth reading. `nix` itself copes without help: as root it unshares a
+  mount namespace and remounts the store writable for its own process.
 
 ---
 
@@ -475,95 +476,190 @@ self-verifying and `require-sigs` does not apply to them, which would make the n
 test a lie. The reboot is recorded in `/run/nanokvm-reboot-requested` instead of taken.
 Everything else is the code that runs on the board.
 
+### The hardware harness: a device pointed at a cache you control
+
+`.#appliance-toplevel-cachetest` is the shipped appliance with the update
+channel, the binary cache, the cache's public key and the version stamp taken
+from the **environment**, so a board can be driven end to end against a
+throwaway cache without waiting for #96 and without a host's address reaching a
+commit. Under pure evaluation `builtins.getEnv` returns `""` and the attribute
+is byte-identical to `.#appliance-toplevel` — `nix flake check` sees only the
+shipped configuration.
+
+```bash
+# 1. a throwaway signing key, and a cache to sign into
+nix key generate-secret --key-name nanokvm-test-1 > release.key
+nix key convert-secret-to-public < release.key > release.pub
+
+# 2. the system to offer. The version is what the updater compares.
+export NANOKVM_TEST_VERSION=2.1.0-test1
+export NANOKVM_TEST_CACHE_URL=http://127.0.0.1:8099/cache
+export NANOKVM_TEST_CHANNEL_URL=http://127.0.0.1:8099/chan
+export NANOKVM_TEST_CACHE_KEY=$(cat release.pub)
+TOP=$(nix build --impure .#appliance-toplevel-cachetest --no-link --print-out-paths)
+
+# 3. push it, and write the manifest beside it
+nix copy --to "file://$PWD/serve/cache?secret-key=$PWD/release.key&compression=none" "$TOP"
+#   serve/chan/nanokvm_pro_sys_latest.json  <- {format,version,toplevel,size,closureCount}
+(cd serve && python3 -m http.server 8099)
+```
+
+The device reaches the build host over a **reverse SSH tunnel**
+(`ssh -N -R 8099:127.0.0.1:8099 root@<device>`), which is why the URLs above are
+loopback: the board and a dev box are not usually on the same subnet, and a
+tunnel needs no firewall hole and leaks no address into the build. The tunnel
+dies with every reboot — restart it before the next `nanokvm-update` call.
+
 ---
 
-## What hardware still has to prove
+## What hardware proved (#100, 2026-09-11)
 
-Three board rounds, each ending in a state the plug recovers from — a cold cycle
-clears `bootcount`, and a candidate that does not come up is on the fallback config by
-the fourth attempt. **None has been run: the board has no nix.**
+Every step above ran on the board: the bootstrap that put nix there, a signed
+closure fetched from a real cache over HTTP, four generations installed and
+booted, an unattended idle-gated reboot, a forced rollback that landed on the
+previous generation, and two collections. **Eight boots, 51-58 s each from
+`reboot` to SSH, one U-Boot attempt every time** (`bootcount` `0xB0010001` at
+the health gate). Nothing was written as a block device and no partition was
+touched; the only recovery mechanism used was the one under test.
 
-**Round 1 — bootstrap, and it is the round with the sharp edge.** A board with no nix
-cannot substitute a closure, and `nix copy --to ssh://` needs nix on both ends, so the
-first nix-carrying generation goes over **by hand**: the one-time recipe in
-`.claude/skills/kvm-device/SKILL.md` ("Bootstrapping a board that has no nix yet").
+The cache was a throwaway stand-in for #96: a `file://` binary cache signed with
+a `nix key generate-secret` key, served by `python3 -m http.server` on the build
+host and reached through an SSH **reverse tunnel**, so the device's configured
+cache was `http://127.0.0.1:8099/cache` and no address of anyone's went into a
+build. `.#appliance-toplevel-cachetest` ([Local testing](#local-testing)) is
+that harness.
 
-**The board's existing generations are unregistered, and that is a trap with teeth.**
-Generations 1-4 were unpacked by `tar` when the appliance had no nix, so they are
-directories no database knows about. After #99's rounds the board is on
-**generation 4**, and the two boot configs between them name exactly two labels:
-`nixos-default` and `nixos-4-default`, both resolving to
-`/nix/store/08vk0dsrvx0zjsix18gbvvbcc8hc559l-nixos-system-unnamed-26.11pre-git`
-(`extlinux.conf` defaults to the first, `extlinux-fallback.conf` to the second).
-Generations 1-3 still have profile links but carry no kernel, so the extlinux
-builder writes no entry for them and no boot config names them — they need no
-registration, only `--delete-generations`. Once the new system's database is loaded from the
-image's registration, only *its* closure is valid — and the fallback config's `DEFAULT`
-names an *older* generation. Measured, not assumed: `nix-env --set` on an unregistered
-path **fails** ("no substituter that can build it") and writes no generation;
-`nix-collect-garbage` **deletes** an unregistered path even with a gc root naming it.
-So a collection at that moment would delete the closure the rollback boots.
+### Round 1 — the bootstrap
 
-The fix is to register **every generation either boot config names**, not just the new
-one. Read them off the board (`grep -h init= /boot/extlinux/*.conf`), and produce one
-registration on the build host — it has all of them, because it built them:
+The board was on generation 4, a `tar`-installed appliance with **no nix**. The
+new toplevel's closure was **73 missing store paths, 23.3 MB gzipped** (md5
+verified after `drop_caches`), extracted into `/nix/store`, `system-5-link`
+written by hand, then `switch-to-configuration boot`. After the reboot,
+`nix-store --load-db` of a registration covering **774 paths** — the union
+closure of the new toplevel and the one both boot configs still named.
 
-```sh
-nix-store --dump-db $(nix-store -qR "$NEW" "$OLD_DEFAULT" "$OLD_FALLBACK") > registration
-```
-
-then, on the board after the reboot, `nix-store --load-db < registration` **before any
-collection**. `nanokvm-update gc` refuses while a boot config names an unregistered
-generation — the backstop, not the plan. Leaving `extlinux-fallback.conf` alone is the
-rest of this round's safety: it still names the old generation, so three failed
-attempts land back exactly where the board started.
-
-**Oracles**, after the reboot:
-
-```sh
-nix-store --verify --check-contents                 # THE one: registration + contents
-nix path-info -r /run/current-system | wc -l         # the closure count
-nix path-info $(grep -ho 'init=/nix/store/[^/]*' /boot/extlinux/*.conf | cut -d= -f2)
-nix-env -p /nix/var/nix/profiles/system --list-generations
-nanokvm-update status                               # what /boot pins
-devmem 0x02390030 32                                # 0xB0010000
-```
-
-Then, once `nanokvm-mark-good` has promoted the fallback to a registered generation,
-`nix-env -p /nix/var/nix/profiles/system --delete-generations 1 2 3` retires the
-pre-nix ones and `nanokvm-update gc` collects what they held.
-
-**What needs the database and what does not,** measured on this branch:
-
-| | Needs a valid db? |
+| oracle | value |
 |---|---|
-| `switch-to-configuration boot` | **No.** A program on disk; NixOS's extlinux builder only `readlink`s and `cp`s. |
-| the profile symlinks, written by hand | **No.** They are symlinks. |
-| `nix-env --set` | **Yes**, and it fails outright without one. |
-| `nix-collect-garbage` | **Yes**, and it deletes what is not in it. |
+| boot | 51 s, `bootcount` `0xB0010001` → cleared |
+| `readlink -f /run/booted-system` | the new toplevel |
+| `nix --version` | `nix (Nix) 2.34.8` |
+| `nix path-info -r /run/current-system \| wc -l` | 748 |
+| `nix-store --verify --check-contents` | clean, exit 0 |
+| `nanokvm-mark-good` | "fallback promoted to generation 5" |
+| `df /boot` | 51 MB of 245 MB — unchanged, because the kernel did not change |
 
-**Round 2 — a real update from a real cache.** Cut an alpha, let the release job push
-the closure, run `nanokvm-update check` then `update` on the board — then the same
-again through the web UI's button, the only path that exercises the server's
-`install()` handoff rather than the CLI. **If Jeremy's attic is not up yet, a
-`file://` cache copied to the board or served over HTTP from the build host is an
-acceptable stand-in** (`--cache` and `--trusted-key` take both), proving everything
-except the attic endpoint itself. **Oracles:** the signature check passing on a real
-NAR; `readlink /run/booted-system` is the new toplevel; `bootcount` back to
-`0xB0010000`; the journal showing `nix copy` fetching a small fraction of the closure.
+**`/nix/store` is a read-only bind mount on this appliance.** The claim in an
+earlier draft that the remount was a no-op here was wrong: `tar -C /nix/store`
+fails with exit 2 and no useful message until `mount -o remount,rw /nix/store`.
+`nanokvm-update`'s `store_rw`/`store_ro` are load-bearing, not defensive.
 
-**Round 3 — rollback, then collection.** Force the counter rather than breaking a
-generation — `devmem 0x02390030 32 0xB001000A; reboot` — and confirm the board comes up
-on the **previous** generation with bit 30 of `0x02390024` set. Then
-`nanokvm-update gc --keep 2`: the generation the fallback names must survive with its
-exclusive paths, the one before it must not, `du -sh /nix/store` must drop, and
-`nix-store --verify --check-contents` must still pass.
+### Round 2 — an update from a cache
 
-**Failure catch, every round:** the boot counter. Nothing above writes a partition, so
-the worst outcome is a generation that does not come up, which `altbootcmd` undoes on
-the fourth attempt. The plug is the backstop if even that does not fire.
+`nanokvm-update install-manifest`, then the full `update` path. Measured, in
+order:
 
----
+1. **A NAR signed by a key the device does not trust does not install.** With
+   `--trusted-key` set to a throwaway attacker key: `error: cannot add path …
+   because it lacks a signature by a trusted key`, exit 1, the toplevel absent
+   from the store afterwards, the profile still on generation 5.
+2. **The same closure with the right key installs.** `nix copy` fetched
+   **exactly the 22 paths** the version bump added out of 748 — the rest of the
+   closure never crossed the wire — then generation 6,
+   `switch-to-configuration boot`, `extlinux.conf` `DEFAULT` → generation 6 and
+   `extlinux-fallback.conf` `DEFAULT` → generation 5.
+3. **The checkbox is the switch.** With `/etc/kvm/auto_updates` absent,
+   `nanokvm-update update` printed "automatic updates are off … nothing to do"
+   and exited 0.
+4. **The idle gate, end to end and unattended.** With a `curl` on
+   `/api/stream/mjpeg` holding the stream, `update` installed generation 7
+   (9 paths) and refused the reboot: `in use: {"idle":false,"busy":["stream",
+   "video","web"],"stream_clients":1,…}`, both markers written. The stream was
+   dropped; ten minutes later `nanokvm-update-reboot` logged
+   `idle: {"idle":true,…,"video_quiet_sec":1087}` → "nobody is using this device
+   -- rebooting into 2.1.0-test2", and the board took it **by itself**. After
+   the boot, `nanokvm-update pending` reported the new version live.
+
+### Round 3 — rollback, then collection
+
+The rollback was exercised on a *real pending update*: generation 6 installed
+and `/boot` written, then `devmem 0x02390030 32 0xB001000A; reboot` instead of a
+clean reboot.
+
+| oracle | value |
+|---|---|
+| `readlink -f /run/booted-system` | generation **5** — the OLD one |
+| `readlink /nix/var/nix/profiles/system` | `system-6-link` — the NEW one |
+| `bootcount` at the health gate | `0xB001000B` → cleared |
+| `nanokvm-update reboot-if-idle` | "update 2.1.0-test2 was installed but 2.1.0-alpha.6 is running -- it did not survive the boot" |
+| `nanokvm-mark-good` | "fallback promoted to generation 5" |
+
+Then two collections, from that boot:
+
+- `nanokvm-update gc` (keep 3) deleted generations 1-3 and **64 store paths,
+  132.1 MiB** — including the orphaned closure of a generation deleted before
+  #100 and the `tar`-era toplevels. Confirming the documented hazard on
+  hardware: `nix-collect-garbage` deletes **unregistered** paths.
+- `nanokvm-update gc --keep 1` then kept generation 5 anyway — `gc: keeping
+  generation 5 -- a boot config names it` — and deleted generation 4 with
+  **26 paths, 27.9 MiB**. The pin is the fallback's `DEFAULT` entry, and it
+  held.
+- `nix-store --verify --check-contents` clean after both.
+
+**`gc` leaves the extlinux menus naming generations it deleted.** Neither file
+is rewritten by the collector: `extlinux.conf` is repaired by the next
+activation, `extlinux-fallback.conf` by `systemctl restart nanokvm-mark-good`
+(**restart**, not `start` — the unit is a `RemainAfterExit` oneshot). Never
+unsafe, because both `DEFAULT` entries are exactly what `gc` pins; but a stale
+`LABEL` does point at an `init=` that is gone.
+
+### Round 4 — the web UI's button
+
+Driven from the build host with a real token: `POST /api/auth/login`
+(`admin`/`admin`, the default account — there is no `/etc/kvm/pwd` on this
+board) → `POST /api/application/update`.
+
+**It fails, and not for a reason #100 introduced.** The server answered
+`{"code":-2,"msg":"failed to update service"}` and its log says
+`version.go:82 server responded with status code: 404`. `getLatest()` runs
+*before* `install()` and fetches the manifest from the URL **compiled into the
+Go binary** (`updateBaseUrl` in `flake.nix`, the GitHub release), not from
+`nanokvm.update.stableUrl`. No release publishes
+`nanokvm_pro_sys_latest.json` yet, so the button 404s on a device whose timer
+path updates perfectly. **The button needs the first real release, not the
+cache** — and the two channel sources in one press are worth collapsing.
+
+Everything downstream of that 404 is proven: `nanokvm-update install-now` —
+the exact command `install()` execs — installed generation 8 (9 paths) with no
+checkbox and no idle gate, and `GET /api/application/pending` answered, from the
+host and token-gated, with
+`{"pending":{"version":"2.1.0-test3","from":"2.1.0-test2","reboot_pending":true}}`.
+The reboot went the way `install()` takes it, `systemctl --no-block reboot`.
+
+### `nix copy --to ssh://` — the developer path
+
+Proven with a throwaway key (removed afterwards): 7 paths in 4.5 s, valid in
+the board's database on arrival. The recipe in the `kvm-device` skill works as
+written; it needs key auth, because nix drives `ssh` itself and there is no
+password prompt to answer.
+
+### What is NOT proven
+
+- **A real cache.** Everything above used a `file://` cache over loopback. The
+  attic endpoint, its TLS, its key custody and `attic push` from a release
+  runner are #96, untouched.
+- **The web UI button as a user presses it** — see round 4. Also the UI itself:
+  every call here was `curl`, no browser.
+- **A release cut from a tag**, and therefore the manifest asset actually
+  existing at `releases/latest/download`.
+- **An update that changes the kernel.** Every generation here shared one
+  kernel, so `/boot` never grew and `configurationLimit = 3` has still never
+  held three kernels at once.
+- **A generation that genuinely fails to boot.** Every rollback was forced with
+  `devmem`, deliberately.
+- **An image flashed from `.#nixos-firmware-image-mainline`** since #100 — the
+  store database built into the image (`mkStoreDb`) has never been booted; this
+  board's database came from `nix-store --load-db`.
+
 
 ## Weighed and rejected
 
@@ -656,9 +752,16 @@ the test.
   writes into whatever `/boot` is, and an unmounted one is a directory in the rootfs
   U-Boot never reads. The install still succeeds, the profile still moves, and the
   board still boots the old generation.
-- **The URL is baked in twice.** `nanokvm.update.stableUrl` (the updater) and
-  `updateBaseUrl` in `flake.nix` (the server, compiled in). Changing where you host
-  means a rebuild — and for the server half, an update carrying the new binary or a
+- **The URL is baked in twice, and one press of the button uses both.**
+  `nanokvm.update.stableUrl` (the updater) and `updateBaseUrl` in `flake.nix` (the
+  server, compiled in). The web UI's route calls the server's `getLatest()` — the
+  compiled URL — *before* it hands off to `nanokvm-update install-now`, which then
+  fetches the module's channel. So the version the page shows and the closure the
+  device installs come from two different places, and a manifest missing from the
+  **GitHub** channel fails the button even when the device's own channel is
+  serving one. Measured on hardware 2026-09-11: `404`, `{"code":-2}`, and the
+  timer path updating perfectly on the same board. Changing where you host means a
+  rebuild — and for the server half, an update carrying the new binary or a
   reflash.
 - **A mounted virtual-media image blocks the reboot for as long as it is mounted.**
   Intended — the host may be installing from it — but it is the one idle term that can

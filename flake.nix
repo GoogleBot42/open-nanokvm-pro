@@ -690,6 +690,55 @@
         appliance-toplevel =
           nixos-appliance-mainline-chain.eval.config.system.build.toplevel;
 
+        # ---- the #100 hardware harness: the appliance, pointed elsewhere ----
+        # The same appliance, except that the update channel, the binary cache,
+        # the cache's public key and the version stamp all come from the
+        # ENVIRONMENT. It exists so a hardware run can prove the whole update
+        # path -- curl the manifest, `nix copy` from a signed cache, `nix-env
+        # --set`, `switch-to-configuration boot`, the idle gate and the
+        # rollback -- against a throwaway cache on a build host, without
+        # waiting for #96 to stand the real one up.
+        #
+        # THE VALUES ARE NOT IN THIS FILE ON PURPOSE. A test cache is one
+        # machine's address and one throwaway key; neither belongs in a commit,
+        # and a placeholder substituter is contacted for every missing path on
+        # every host that evaluates this flake. `builtins.getEnv` returns ""
+        # under pure evaluation, so `nix flake check` sees exactly the shipped
+        # configuration; this attribute differs only when somebody deliberately
+        # builds it with `--impure`:
+        #
+        #   NANOKVM_TEST_VERSION=2.1.0-test1 \
+        #   NANOKVM_TEST_CACHE_URL=http://<host>:<port>/cache \
+        #   NANOKVM_TEST_CHANNEL_URL=http://<host>:<port>/chan \
+        #   NANOKVM_TEST_CACHE_KEY=nanokvm-test-1:<base64> \
+        #   nix build --impure .#appliance-toplevel-cachetest
+        #
+        # A release must NEVER be cut from this attribute: its device would
+        # trust a key nobody rotates and poll a channel nobody publishes.
+        appliance-toplevel-cachetest =
+          let
+            env = builtins.getEnv;
+            testVersion = env "NANOKVM_TEST_VERSION";
+            testCache = env "NANOKVM_TEST_CACHE_URL";
+            testChannel = env "NANOKVM_TEST_CHANNEL_URL";
+            testKey = env "NANOKVM_TEST_CACHE_KEY";
+          in
+          (callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+            version = if testVersion == "" then version else testVersion;
+            applianceModules = [
+              ./nixos/image-axp.nix
+              { nanokvm.emmcLayout = "minimal"; }
+              ({ lib, ... }: {
+                nanokvm.update.cacheUrl = lib.mkIf (testCache != "") testCache;
+                nanokvm.update.trustedPublicKeys =
+                  lib.mkIf (testKey != "") [ testKey ];
+                nanokvm.update.stableUrl = lib.mkIf (testChannel != "") testChannel;
+                nanokvm.update.previewUrl = lib.mkIf (testChannel != "") testChannel;
+              })
+            ];
+            imageBuilder = applianceAxpImageMainline;
+          })).eval.config.system.build.toplevel;
+
         system-manifest = callPkg ./pkgs/system-manifest.nix {
           inherit version;
           toplevel = "${appliance-toplevel}";
@@ -916,6 +965,7 @@
             base-axp rootfs nixos-appliance nixos-appliance-mainline-chain
             nixos-appliance-loop nixos-appliance-loop-nofixes
             uboot-env logo bootfs system-manifest appliance-toplevel
+            appliance-toplevel-cachetest
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee uboot-mainline-probe
             uboot-mainline-spldrv uboot-mainline-hangtest
