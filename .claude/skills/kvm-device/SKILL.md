@@ -202,7 +202,7 @@ those:
 - **There is no vendor app stack any more (#97).** `kvmcomm.service` went with
   the 4.19 image; `nanokvm.service` is the only thing that serves the web UI.
   The PATH `/kvmcomm/scripts/wifi.sh` still exists, as a compat shim the Go
-  server execs (`nixos/wifi.nix`) — a path, not a service.
+  server execs (`nixos/modules/wifi.nix`) — a path, not a service.
 - **One capture channel serves every viewer**, gated by the global
   `KvmVision.StreamType`. A second viewer in another mode — another tab, a
   `curl /api/stream/mjpeg`, a stray mode POST — takes the stream and starves

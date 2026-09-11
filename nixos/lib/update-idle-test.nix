@@ -72,7 +72,7 @@ pkgs.runCommand "nanokvm-update-idle"
   export STC_LOG="$PWD/stc.log"
 
   # Every invocation carries the throwaway cache and key, because the built-in
-  # ones are placeholders until #96 lands (nixos/appliance.nix).
+  # ones are placeholders until #96 lands (nixos/modules/updates.nix).
   U() { nanokvm-update --root "$R" --cache "file://$CACHE" \
           --trusted-key "$(cat release.pub)" "$@"; }
 

@@ -52,11 +52,13 @@
 # answers false because no hostapd runs, and the UI therefore shows the
 # ordinary station flow.
 #
-# THIS FILE MOVED in #87 (it was nixos/wifi.nix). Two comments INSIDE the
-# generated `kvmcomm-wifi.sh` still name the old path: that text is hashed
-# into the script's store path and therefore into the whole appliance
-# closure, and the #87 refactor's contract was that the closure does not
-# change. They are corrected the next time the script changes for a reason.
+# THIS FILE MOVED in #87 (it was nixos/wifi.nix). A handful of comments still
+# name the old path -- two inside the generated `kvmcomm-wifi.sh` below, one
+# in pkgs/aic8800.nix's build script -- because a comment inside a build
+# string is a build input: changing it rehashes the script, the module set and
+# the whole appliance closure, and #87's contract was that the closure does
+# not change. They are corrected the next time those scripts change for a
+# reason.
 # ===========================================================================
 
 let

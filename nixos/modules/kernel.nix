@@ -348,7 +348,7 @@ in
       {
         assertion = !config.boot.initrd.systemd.enable;
         message = ''
-          nixos/appliance.nix: boot.initrd.systemd.enable must stay false.
+          nixos/modules/kernel.nix: boot.initrd.systemd.enable must stay false.
           A stage 1 that dies on this board is silent -- no console, no
           autoboot interrupt window -- and the `panicOnFail` deadman below is
           a property of the SCRIPTED stage 1 specifically. top-level.nix also
@@ -359,7 +359,7 @@ in
       {
         assertion = config.boot.kernel.enable;
         message = ''
-          nixos/appliance.nix: boot.kernel.enable must stay true (#99). The
+          nixos/modules/kernel.nix: boot.kernel.enable must stay true (#99). The
           kernel, the initrd and the dtb ARE the generation now; with this off
           there is no $out/kernel for the extlinux builder to copy and /boot
           would name files nothing produces.
@@ -368,7 +368,7 @@ in
       {
         assertion = config.boot.initrd.enable;
         message = ''
-          nixos/appliance.nix: boot.initrd.enable must stay true. Nothing else
+          nixos/modules/kernel.nix: boot.initrd.enable must stay true. Nothing else
           mounts the root filesystem -- the vendor initramfs that used to do it
           is not on this kernel.
         '';
@@ -376,7 +376,7 @@ in
       {
         assertion = config.boot.loader.generic-extlinux-compatible.enable;
         message = ''
-          nixos/appliance.nix: generic-extlinux-compatible must stay enabled.
+          nixos/modules/kernel.nix: generic-extlinux-compatible must stay enabled.
           It is the only writer of /boot/extlinux/extlinux.conf, and U-Boot's
           `bootcmd` reads exactly that file. Nothing else on this system
           writes a boot config.
@@ -385,7 +385,7 @@ in
       {
         assertion = config.boot.loader.timeout == 0;
         message = ''
-          nixos/appliance.nix: boot.loader.timeout must be 0. Any other value
+          nixos/modules/kernel.nix: boot.loader.timeout must be 0. Any other value
           makes the builder emit a top-level `MENU TITLE`, which sets
           `cfg->prompt = 1` in U-Boot's parse_pxefile_top() -- and this board's
           console is a hidden, unterminated UART pad, so the prompt loop reads
@@ -396,7 +396,7 @@ in
         assertion =
           config.boot.loader.generic-extlinux-compatible.configurationLimit >= 3;
         message = ''
-          nixos/appliance.nix: the boot menu must name at least three
+          nixos/modules/kernel.nix: the boot menu must name at least three
           generations. nanokvm-mark-good promotes the BOOTED one by name, and
           an update can put the default one generation ahead of it -- so with
           fewer than two the fallback ends up naming a LABEL the file does not
@@ -408,7 +408,7 @@ in
       {
         assertion = config.hardware.deviceTree.name != null;
         message = ''
-          nixos/appliance.nix: hardware.deviceTree.name must be set. Without
+          nixos/modules/kernel.nix: hardware.deviceTree.name must be set. Without
           it the builder writes FDTDIR, which U-Boot resolves through
           $fdtfile / $soc-$board.dtb -- putting the filename in the U-Boot
           environment, where nothing in this repo maintains it.

@@ -76,7 +76,7 @@ let
   # recorded DT_NEEDED is libjpeg.so.8 -- the soname the device's Ubuntu 22.04
   # multiarch path actually ships (nixpkgs' default is the jpeg62 ABI, whose
   # libjpeg.so.62 exists nowhere on the target). The NixOS appliance stages
-  # this same build into /opt/lib (nixos/appliance.nix); exported as passthru
+  # this same build into /opt/lib (nixos/modules/server.nix); exported as passthru
   # so it can't skew from what libkvm linked against.
   libjpeg8 = crossPkgs.libjpeg_turbo.override { enableJpeg8 = true; };
   # Capture backend selection (see openCapture above).

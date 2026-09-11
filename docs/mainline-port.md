@@ -694,7 +694,7 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
     appliance kernel's new KDIR (`pkgs/aic8800.nix`), 62 firmware files
     MD5-pinned (`pkgs/aic8800-firmware.nix`), the SDIO node enabled with an
     `mmc-pwrseq-simple` over GPIO1_A29, and `nanokvm.wifi.enable`
-    (`nixos/wifi.nix`) wiring a supplicant plus the `/kvmcomm/scripts/wifi.sh`
+    (`nixos/modules/wifi.nix`) wiring a supplicant plus the `/kvmcomm/scripts/wifi.sh`
     the server's WiFi routes exec. Three hardware rounds found three faults
     -- a =m reset driver that stopped the SDIO host probing, a unit that made
     a missing radio gate the boot, and wpa_cli's nixpkgs control path. See "What
@@ -2196,7 +2196,7 @@ read status from a bare `wpa_cli -i wlan0 status`
 (`server/service/network/{wifi,wifi_scan}.go`, `server/utils/wifi.go`).
 `pkgs/rootfs/wifi.sh` is a **different script at a different path**
 (`/opt/scripts/wifi.sh`, verbs `start|stop|restart`) that the vendor's own
-`wifi.service` ran at boot and that implements none of the four. `nixos/wifi.nix`
+`wifi.service` ran at boot and that implements none of the four. `nixos/modules/wifi.nix`
 provides the path the server compiles in, implemented over `wpa_cli`.
 
 Two consequences worth knowing before debugging a "WiFi page does nothing":
@@ -2218,7 +2218,7 @@ Two consequences worth knowing before debugging a "WiFi page does nothing":
 `wlan0` is auto-configured by networkd through nixpkgs' generic
 `99-wireless-client-dhcp` (RouteMetric 1025, so ethernet stays preferred). That
 network does **not** inherit the appliance's `ClientIdentifier = mac` override,
-which only patches the ethernet one — `nixos/wifi.nix` gives it the same
+which only patches the ethernet one — `nixos/modules/wifi.nix` gives it the same
 treatment, for the identical reason the ethernet one needed it.
 
 **The hardware plan (two rounds at most).**
@@ -5999,7 +5999,7 @@ into `preboot`, and its TORR value is still uncharacterised).
 
 Two fixes, because one of them should not have to be a string:
 
-- `nixos/appliance.nix` sets `panicOnFail=1` from
+- `nixos/modules/kernel.nix` sets `panicOnFail=1` from
   `boot.initrd.preDeviceCommands`, spliced in after the cmdline parse and after
   `trap 'fail' 0` — exactly where the variable has to land, depending on no
   string at all. `nixos/loop-test.nix` has done this correctly since #78; the

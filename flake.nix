@@ -21,7 +21,7 @@
   #
   # When they do, they land in THREE places (docs/releasing.md): here, the
   # release workflow's `ATTIC_*` secrets, and
-  # `nanokvm.update.{cacheUrl,trustedPublicKeys}` in nixos/appliance.nix -- the
+  # `nanokvm.update.{cacheUrl,trustedPublicKeys}` in nixos/modules/updates.nix -- the
   # device's own trust, which does not read this file. The appliance-side
   # defaults stay empty in the meantime and the module warns at build time,
   # because there the placeholder's cost is a device that quietly cannot update
@@ -55,7 +55,7 @@
     # The V3.0.0 Axera media HEADERS (ax_base_type.h, ax_venc_comm.h, ...).
     # Our blob-free libkvm still compiles against them for the SDK's frame and
     # stream types; NO library out of this tree is linked or shipped, and
-    # nixos/appliance.nix asserts the closure carries none of it.
+    # nixos/modules/server.nix asserts the closure carries none of it.
     maix_ax620e_sdk_msp = {
       url = "github:sipeed/maix_ax620e_sdk_msp/1bd333bc5ec074b868107102889044e79209771d";
       flake = false;
@@ -92,7 +92,7 @@
       # a second source of truth beside `nanokvm.update.stableUrl`, which is
       # what actually installs. The server now asks `nanokvm-update` instead,
       # so the only channel a device knows is the one in its own NixOS
-      # configuration (nixos/appliance.nix).
+      # configuration (nixos/modules/updates.nix).
       version =
         let m = builtins.match "[[:space:]]*([^[:space:]]+).*" (builtins.readFile ./VERSION);
         in if m == null then "0.0.0-dev" else builtins.head m;
@@ -206,7 +206,7 @@
         };
 
         # THE APPLIANCE'S KERNEL, and it embeds NOTHING (#99). It is
-        # `boot.kernelPackages` for nixos/appliance.nix, so the initrd and the
+        # `boot.kernelPackages` for the appliance, so the initrd and the
         # dtb that go with it are the GENERATION's -- NixOS's extlinux builder
         # copies all three into /boot and U-Boot loads them. One kernel for
         # every root variant, because the initrd is no longer inside it.
@@ -245,7 +245,7 @@
         # radxa-pkg/aic8800 and built out of tree against the appliance
         # kernel's KDIR; the FIRMWARE is the one piece of closed content the
         # blob policy permits, MD5-pinned to AICsemi's own manifest. Neither is
-        # in any image unless `nanokvm.wifi.enable` is on (nixos/wifi.nix).
+        # in any image unless `nanokvm.wifi.enable` is on (nixos/modules/wifi.nix).
         aic8800-src = callPkg ./pkgs/aic8800-src.nix { };
         aic8800-firmware = callPkg ./pkgs/aic8800-firmware.nix { inherit aic8800-src; };
         aic8800 = callPkg ./pkgs/aic8800.nix {

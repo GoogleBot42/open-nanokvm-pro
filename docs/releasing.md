@@ -69,7 +69,7 @@ does this in order:
 > **The push step needs three repository secrets, and they do not exist yet (#96).**
 > `ATTIC_ENDPOINT`, `ATTIC_CACHE`, `ATTIC_TOKEN` — all Jeremy's to create, and the
 > cache's **public** key has to match `nixConfig.extra-trusted-public-keys` in
-> `flake.nix` and `nanokvm.update.trustedPublicKeys` in `nixos/appliance.nix`, because
+> `flake.nix` and `nanokvm.update.trustedPublicKeys` in `nixos/modules/updates.nix`, because
 > that is what every device checks each NAR against. **The job fails loudly if they
 > are absent** rather than publishing a manifest naming a closure no cache serves. The
 > `.axp` needs no cache, which is why a cacheless release is still recoverable — by

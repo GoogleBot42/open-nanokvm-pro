@@ -14,7 +14,7 @@
 #
 # Dynamically linked against this flake's crossPkgs glibc + libgpiod, i.e. the
 # ordinary Nix store closure -- this tool exists for the NixOS appliance
-# (nixos/appliance.nix installs it) and the mainline kernel, not for the vendor
+# (nixos/modules/atx.nix installs it) and the mainline kernel, not for the vendor
 # Ubuntu rootfs, which has neither a named-line device tree nor a GPIO driver
 # that honours ->request.
 # ---------------------------------------------------------------------------

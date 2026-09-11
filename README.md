@@ -68,6 +68,7 @@ enumerated a gadget off this board; what is missing is the gadget *policy*.
 | [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
 | [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL flashing, backups, the chainload slot, rollback, the tripwires |
 | [docs/nixos-rootfs.md](docs/nixos-rootfs.md) | The appliance: boot contract, identity, `/boot`, the known gaps |
+| [docs/modules.md](docs/modules.md) | Building your own image: the composable `nixosModules`, what each enables, upstreaming status |
 | [docs/mainline-port.md](docs/mainline-port.md) | The #26 port — driver inventory, U-Boot/TF-A bring-up, how a serial-less first boot is made observable |
 | [docs/provenance.md](docs/provenance.md) | The approval baseline: every blob and every network endpoint |
 | [docs/updates.md](docs/updates.md) | How the device updates itself, and how a bad update rolls back |

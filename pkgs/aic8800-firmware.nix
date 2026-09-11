@@ -30,7 +30,7 @@
 # hardware/udev.nix), and `aic8800_fw/SDIO` because that is the path Radxa's
 # `fix-sdio-firmware-path` patch teaches the driver. At runtime the directory
 # is reachable as /run/current-system/firmware/aic8800_fw/SDIO, which is what
-# nixos/wifi.nix compiles into the module.
+# nixos/modules/wifi.nix compiles into the module.
 #
 # NOT COMPRESSED, deliberately: `hardware.firmware` runs every package through
 # zstd on a 7.x kernel, and this driver does NOT use request_firmware (the SDK
