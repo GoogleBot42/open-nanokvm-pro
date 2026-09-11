@@ -261,7 +261,7 @@ experiment:
 ```sh
 nix build .#system-bundle --no-link --print-out-paths     # ~460 MB tarball
 tools/kvmscp <that>/nanokvm_pro_sys_*.tar.gz /root/
-tools/kvmssh 'nanokvm-update --no-reboot install /root/nanokvm_pro_sys_*.tar.gz'
+tools/kvmssh 'nanokvm-update install /root/nanokvm_pro_sys_*.tar.gz'
 tools/kvmssh 'nanokvm-update status'                      # both configs, both kernels
 tools/kvmssh 'reboot'
 ```

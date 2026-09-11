@@ -377,7 +377,7 @@ trivially-changed configuration (any config change moves both the toplevel and
 the kernel, because the stage-1 initrd is inside the Image), copy it over, and:
 
 ```sh
-nanokvm-update --no-reboot install /root/nanokvm_pro_sys_<v>.tar.gz
+nanokvm-update install /root/nanokvm_pro_sys_<v>.tar.gz   # never reboots
 nanokvm-update status      # gen N+1, two Image-* in /boot, fallback still N
 reboot
 ```
