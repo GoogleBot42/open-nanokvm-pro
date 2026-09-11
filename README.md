@@ -57,7 +57,7 @@ Everything you need beyond this lives in [`docs/`](docs/):
 | [docs/architecture.md](docs/architecture.md) | Boot chain, partition layout, the video pipeline, our `libkvm`, and the **two vendor app stacks** (why we run `nanokvm`, not `kvmcomm`) |
 | [docs/building.md](docs/building.md) | Every package, the build DAG, pinned hashes, cross-compile notes |
 | [docs/flashing-and-recovery.md](docs/flashing-and-recovery.md) | AXDL USB flashing, the `User`-button recovery path, full backup/restore, non-destructive SD-card boot |
-| [docs/updates.md](docs/updates.md) | **Our own OTA/update system**: tag on Gitea → mirrored to GitHub → Actions builds images + web-update packages; the web-UI "update" button pulls from **our** GitHub Releases, not Sipeed |
+| [docs/updates.md](docs/updates.md) | **Our own update system**: tag on Gitea → mirrored to GitHub → Actions builds the image and a **system bundle** (the appliance's whole store closure + its kernel); the web-UI "update" button pulls from **our** GitHub Releases, not Sipeed, and a bad update rolls itself back |
 | [docs/mini-display.md](docs/mini-display.md) | The built-in screen: driven **fully from source** (kernel drivers built from our tree + our open Python status daemon; no `kvm_ui`, no `.ko` blobs), incl. sleep/wake on the knob button |
 
 > The deep on-device reverse-engineering log (UART maps, efuse/secure-boot
@@ -150,12 +150,15 @@ strap/boot-source caveats are in
 We build `NanoKVM-Server` from source, so it's patched to fetch updates from
 **our** [GitHub Releases](https://github.com/GoogleBot42/open-nanokvm-pro/releases)
 instead of `cdn.sipeed.com`. The GitHub repo is a public, read-only downstream
-mirror of the Gitea source of truth: bump `VERSION`, push, and run
-`tools/release` — it tags on Gitea, the mirror carries the tag to GitHub, and
-GitHub Actions builds the `.axp` image **and** a web-update package and
-publishes both as release assets. Every device then sees the new version in
-the web UI's **update** button and pulls it from us. Full design + setup is
-in [docs/updates.md](docs/updates.md).
+mirror of the Gitea source of truth: write the `CHANGELOG.md` section, then run
+the Gitea `cut-release` workflow (`tools/release` is the local fallback) — it
+tags on Gitea, the mirror carries the tag to GitHub, and GitHub Actions builds
+the `.axp` image **and** a **system bundle** and publishes both as release
+assets. The bundle is the appliance's whole store closure plus the kernel its
+initrd is baked into; the device unpacks what it is missing, points the system
+profile at it and reboots, and U-Boot's boot counter rolls the update back if
+the new system does not come up healthy. Full design in
+[docs/updates.md](docs/updates.md).
 
 ---
 

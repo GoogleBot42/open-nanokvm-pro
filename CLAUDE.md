@@ -161,8 +161,9 @@ that is arbitration, not a bug.
   function, grep the ELF), never by "the patch applied".
 - **A stale fixed-output hash is invisible on any host that already holds the
   output** (the store path comes from the hash alone, so the fetch never
-  re-runs): `.#update-package` built green here for two days while the release
-  runner died on `vendorHash`. `buildGoModule`'s vendor tree also depends on
+  re-runs): the release OTA package built green here for two days while the
+  release runner died on `vendorHash`. `.#system-bundle` sits in exactly that
+  place now. `buildGoModule`'s vendor tree also depends on
   `postPatch` (a patch that drops an import drops a module). Validate
   release-critical FODs with `nix build --rebuild` before cutting --
   `docs/building.md` "Pinned hashes" (alpha.5, 2026-09-07).

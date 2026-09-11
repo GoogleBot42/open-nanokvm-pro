@@ -834,11 +834,15 @@ in
         type = lib.types.str;
         default = "nanokvm_pro_sys_latest.json";
         description = ''
-          The manifest this system polls, and the WHOLE of the channel
-          separation between the two payload formats one release carries. A
-          4.19 device polls `nanokvm_pro_latest.json` and gets a rootfs
-          overlay it can apply; this appliance polls the `_sys_` one and gets a
-          system bundle. Neither can be offered the other's payload.
+          The manifest this system polls. It must match what the server build
+          is compiled against (`updateMode` in `pkgs/nanokvm-server.nix`), so
+          that the web UI's button and this tool can never install from
+          different places.
+
+          The `_sys_` name is also what keeps the retired 4.19 channel
+          separate: that image polls `nanokvm_pro_latest.json`, which nothing
+          publishes any more, so it is offered nothing rather than being
+          offered a store closure no Ubuntu rootfs could apply.
         '';
       };
 
@@ -1128,7 +1132,8 @@ in
     # flags there (usb.ncm, usb.disk0, usb.uac2, eth.nodhcp, ...), the module
     # loader sources /boot/configs, and the vendor initramfs contract still
     # uses /boot/rec and /boot/check_resize2fs on a vendor boot. Since #89
-    # rung 3 it also holds the boot payload -- extlinux.conf, Image, dtb.
+    # rung 3 it also holds the boot payload -- extlinux.conf, the kernel and the
+    # dtb, both content-addressed since #86 (Image-<hash>).
     #
     # EXT4 UNDER THE MINIMAL LAYOUT. The kernel needs ext4 for root anyway, so
     # putting /boot on it retires the CONFIG_VFAT_FS + NLS-codepage trap

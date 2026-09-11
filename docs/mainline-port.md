@@ -4872,8 +4872,9 @@ Two fixes, because one of them should not have to be a string:
 The first fix lives in the stage-1 initrd, which on this board is inside the
 kernel `Image`, so applying it meant writing `/boot` — and it is the reason the
 rollback above could fire at all: with the deadman armed, a failed attempt
-panics and resets instead of sitting there. The old `Image` is kept at
-`/boot/Image.prev`.
+panics and resets instead of sitting there. The old `Image` was kept at
+`/boot/Image.prev` — the hand-managed stand-in #86 retired by
+content-addressing the boot payload.
 
 **The lesson is the general one.** A safety net nobody has watched fire is not a
 safety net. This one had been in the command line, in a comment and in the docs
@@ -4895,11 +4896,18 @@ replaced:
 |---|---|---|---|
 | mainline U-Boot | `uboot`, `0x2C0000` | **`003eaffdc66b874dc182937641a3a603` over 187344 B** (2026-09-10, the #91 fix; `88b65081496b6f9f75e71a55a121b0a0` over the whole 2 MiB partition) | previous at `/root/uboot-prev-91.img`; rung 5's was `6713c38d5158b37372a0defbb7530b05` |
 | the generated environment | `env`, `0x4C0000` | `7d449d891ac140a9f7dc89a3d61795df`, 1 MiB | previous at `/root/rung5/env-prev.bin`, `fcf35dbf42c168b8a1af0d93b3a304b8` |
-| kernel `Image` with the armed deadman | `/boot/Image` | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
+| kernel `Image` with the armed deadman | `/boot/Image` *(as of this run — see below)* | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
 
 Both partition writes were verified from the medium after `drop_caches`. The
 two `*-prev` files are on the ROOTFS, so an AXDL recovery destroys them —
 rebuild from the flake rather than relying on them.
+
+**`/boot/Image` and `/boot/Image.prev` are how it looked on 2026-09-10, and the
+names have since changed.** #86 made the boot payload content-addressed:
+`/boot/Image-<16 hex of its sha256>` and `<dtbname>-<hash>.dtb`, one per
+generation, each named by its own extlinux config, with `nanokvm-mark-good`
+collecting whatever neither names. So a board updated after #86 has no
+`/boot/Image` at all, and `Image.prev` is retired as a hand-managed stand-in.
 
 **Generations.** `/nix/var/nix/profiles/system` → `system-4-link` →
 `/nix/store/aklnqir1…`, the generation carrying the `panicOnFail` fix and the

@@ -150,9 +150,9 @@ carveouts now consume all of it, the encoder framebuf starting exactly at
   points the encoder's input registers straight at the capture frame's own bus
   address; the prover and the host tests keep the input region via
   `vcenc_geom_build()`. 136 MB covers the with-input span plus headroom, which
-  is what the freed `ax_cmm` slice bought. `pkgs/rootfs.nix` and
-  `pkgs/update-package.nix` assert `MAP_FRAMEBUF_MB >= 92` on the curated
-  loader so an image can never ship a map too small for 4K.
+  is what the freed `ax_cmm` slice bought. `pkgs/rootfs.nix` asserts
+  `MAP_FRAMEBUF_MB >= 92` on the curated loader so an image can never ship a map
+  too small for 4K.
 - **`MAP_CMM_MIN_MB` is 0** — nothing shipped claims the remainder any more.
 
 **Safety valve.** `MAP_CMM_MIN_MB` being 0 means the guard now fires only when

@@ -220,8 +220,10 @@ This contract is unchanged and is not optional. `NanoKVM-Server` writes
 loader sources `/boot/configs`; the vendor boot path uses `/boot/rec`,
 `/boot/first_time_boot` and `/boot/check_resize2fs`. Every USB-gadget feature is
 gated on a flag file there. Since #89 rung 3 it is also the BOOT PAYLOAD:
-`extlinux/extlinux.conf`, the kernel `Image` and the device tree, which is what
-mainline U-Boot's `sysboot` reads.
+`extlinux/extlinux.conf`, the kernel and the device tree — both
+content-addressed since #86 (`Image-<hash>`, `<name>-<hash>.dtb`, so two
+generations can name two kernels) — which is what mainline U-Boot's `sysboot`
+reads.
 
 **It is ext4 since #89 rung 4, and 272 MiB.** The kernel needs ext4 for root
 anyway, so putting `/boot` on it retires a trap worth remembering: mounting FAT
@@ -243,8 +245,8 @@ no A/B twins and no slot register any more. There are two files in `/boot`:
 
 | file | who writes it | what it names |
 |---|---|---|
-| `extlinux/extlinux.conf` | `nanokvm-install-boot`, at every `nixos-rebuild switch`/`boot` | the generation being installed |
-| `extlinux/extlinux-fallback.conf` | `nanokvm-mark-good`, only after a boot has proven healthy | the last generation that worked |
+| `extlinux/extlinux.conf` | `nanokvm-install-boot`, at every switch and every update | the **(generation, kernel) pair** being installed |
+| `extlinux/extlinux-fallback.conf` | `nanokvm-mark-good`, only after a boot has proven healthy | the last pair that worked — and the same unit then deletes the `/boot` files neither config names |
 
 U-Boot's `bootcmd` boots the first; its `altbootcmd` boots the second.
 `sysboot` boots a config's `DEFAULT` entry and cannot be told to pick a `LABEL`,
@@ -1073,8 +1075,8 @@ number, so closed gaps keep their slot and new ones are appended.
    Still unimplemented, each needing the exact script text or register intent
    read off the device first: `axemac.sh` (eth0 RPS/RFS + `ethtool -A eth0 rx
    on`), `npu_set_bw_limiter.sh start`, and the bare
-   `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` belongs with the
-   OTA redesign (gap 5).
+   `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` has nothing to do
+   here — see gap 5.
 4. **WiFi is lost.** `aic8800_{bsp,fdrv,btlpm}.ko` need their own build against
    the mainline kernel, and their firmware is 28 files under
    `/opt/firmware/aic8800/` — the only closed content the blob policy still

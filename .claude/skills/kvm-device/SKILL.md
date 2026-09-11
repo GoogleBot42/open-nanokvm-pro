@@ -251,7 +251,25 @@ tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-2-link
 ```
 
 `/init` is a symlink to `/nix/var/nix/profiles/system/init`, so step 3 is also
-what the next boot takes — no boot-chain write. What it does **not** update is
-`/boot`: the kernel `Image`, the dtb and `extlinux.conf` are baked by the flake
-into the `/boot` filesystem image, so a configuration whose kernel changed needs
-those replaced too (`.#bootfs`, or the `.#migrate-layout` kit's `boot` region).
+what the next boot takes.
+
+**Since #86 there is a tool that does all three steps, plus `/boot`.** Build
+`.#system-bundle`, copy the tarball over, and run it — this is the product
+path, and it is the one to prefer for anything that is not a one-file
+experiment:
+
+```sh
+nix build .#system-bundle --no-link --print-out-paths     # ~460 MB tarball
+tools/kvmscp <that>/nanokvm_pro_sys_*.tar.gz /root/
+tools/kvmssh 'nanokvm-update --no-reboot install /root/nanokvm_pro_sys_*.tar.gz'
+tools/kvmssh 'nanokvm-update status'                      # both configs, both kernels
+tools/kvmssh 'reboot'
+```
+
+It unpacks only the store paths the board is missing, writes the kernel into
+`/boot` under its content-addressed name, points the profile at the new
+generation and writes `extlinux.conf` naming **both**. The manual recipe above
+does not touch `/boot` at all, so a configuration whose kernel changed needs
+`.#boot-payload`'s files copied by hand — which is exactly what
+`nanokvm-update` is for. `nanokvm-gc` reclaims the old generations afterwards;
+it refuses to delete anything if a kept generation has no closure list.
