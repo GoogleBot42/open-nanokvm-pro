@@ -79,7 +79,7 @@ let
   mainline = pkgs.linuxKernel.kernels.${kernelAttr};
   version = mainline.version;
 
-  localversion = "-nanokvm";
+  localversion = "-nanokvm-r3";   # TEMPORARY (#99 round 3): kernel-only generation test
   release = "${version}${localversion}";
 
   # The video stack's modules (#83). Only the appliance variant can load
