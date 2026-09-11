@@ -150,6 +150,12 @@ let
       # Close the write-ahead log into the database itself: what gets packed
       # into the ext4 is a copy, and a -wal left beside it is a recovery the
       # first boot would have to perform.
+      # THE ONE NON-DETERMINISTIC FIELD. `nix-store --load-db` stamps every row
+      # with the wall clock, so two builds of the same image would differ in
+      # db.sqlite -- and this file is inside the .axp. registrationTime is
+      # informational here (nothing on the appliance collects by age), so pin
+      # it to the epoch and the image is reproducible again.
+      sqlite3 "$NIX_STATE_DIR/db/db.sqlite" 'UPDATE ValidPaths SET registrationTime = 1;'
       sqlite3 "$NIX_STATE_DIR/db/db.sqlite" 'PRAGMA wal_checkpoint(TRUNCATE);' >/dev/null
       rm -f "$NIX_STATE_DIR/db/db.sqlite-wal" "$NIX_STATE_DIR/db/db.sqlite-shm"
 

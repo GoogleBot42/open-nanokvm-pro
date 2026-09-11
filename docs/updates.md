@@ -100,8 +100,8 @@ lands in the cache *first*, then the manifest that names it.
   "format": "nanokvm-nix-closure/1",
   "version": "2.3.0",
   "toplevel": "/nix/store/rkcz8k4w6fzdz0bnpxg1pk1ka0qbl8bd-nixos-system-nanokvm-pro-2.3.0",
-  "size": 1351720704,
-  "closureCount": 741
+  "size": 1379028112,
+  "closureCount": 748
 }
 ```
 
@@ -351,10 +351,10 @@ first boot with one more way to fail, on a board with no console.
 
 | Configuration | Store paths | Bytes |
 |---|---|---|
-| the appliance, with nix + the updater | 741 | 1,351,720,704 |
-| the same config, `nix.enable = false`, updater removed | 689 | 1,321,001,768 |
+| the appliance, with nix + the updater | 748 | 1,379,028,112 |
+| the same config, `nix.enable = false`, updater removed | 696 | 1,348,307,520 |
 
-**52 store paths and ~29.3 MiB — about 2.3%.** A chunk of that is the `aws-c-*`
+**52 store paths and ~29.3 MiB — about 2.2% of the closure.** A chunk of that is the `aws-c-*`
 S3 libraries nix links; trimming them is
 [rejected below](#weighed-and-rejected).
 
