@@ -236,6 +236,13 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_CLK_MUX_NFIELDS	3
 #define OVC_CLK_MUX_FIELD	0x7
 #define OVC_CLK_MUX_READY	0x5af	/* golden MUX_RD after apply (device-proven) */
+/*
+ * ...but only bits [10:2] of it are the mux. MUX_RD[3:0] is the CSI deskew
+ * lock status, which is 0xf only while a source is driving the link -- so an
+ * idle board reads 0x5ac and comparing the whole word cries wolf on every
+ * boot (measured 2026-09-10, first mainline run).
+ */
+#define OVC_CLK_MUX_FIELDS	0x7fc
 #define OVC_CLK_GATE_A_SET	0xD0	/* bits [5:0] */
 #define OVC_CLK_GATE_B_SET	0xD8	/* bits [9:1] */
 #define OVC_RST0_ASSERT		0xE0
@@ -649,9 +656,10 @@ static void ovc_clk_mux_apply(struct ovc_dev *ovc)
 	}
 
 	after = ovc_clkrst_rd(ovc, OVC_CLK_MUX_RD);
-	dev_info(ovc->dev, "clk-src mux applied: MUX_RD=%#06x (want %#06x)\n",
+	dev_info(ovc->dev, "clk-src mux applied: MUX_RD=%#06x (want %#06x in bits [10:2])\n",
 		 after, OVC_CLK_MUX_READY);
-	if (after != OVC_CLK_MUX_READY)
+	if ((after & OVC_CLK_MUX_FIELDS) !=
+	    (OVC_CLK_MUX_READY & OVC_CLK_MUX_FIELDS))
 		dev_warn(ovc->dev,
 			 "clk-src mux: MUX_RD %#06x != golden %#06x -- clock-source not selected (spec-vin-write-enable §6)\n",
 			 after, OVC_CLK_MUX_READY);
@@ -1220,9 +1228,8 @@ static int ovc_querycap(struct file *file, void *priv,
 	strscpy(cap->card, "AX630C open VIN/IFE capture", sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 OVC_DRV_NAME);
-	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
-			   V4L2_CAP_READWRITE;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+	/* capabilities / device_caps are filled from vdev->device_caps by the
+	 * core after this returns; setting them here would be dead stores. */
 	return 0;
 }
 
@@ -1622,6 +1629,15 @@ static int ovc_probe(struct platform_device *pdev)
 	ovc->vdev.v4l2_dev = &ovc->v4l2_dev;
 	ovc->vdev.queue = q;
 	ovc->vdev.lock = &ovc->lock;
+	/*
+	 * REQUIRED since 5.4, and its absence is a WARN plus -EINVAL out of
+	 * __video_register_device with nothing that names the field
+	 * (v4l2-dev.c: `WARN_ON(type != VFL_TYPE_SUBDEV && !vdev->device_caps)`).
+	 * On 4.19 only vidioc_querycap filled this in, which is why the port
+	 * did not carry it. Measured on hardware 2026-09-10.
+	 */
+	ovc->vdev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
+				V4L2_CAP_READWRITE;
 	strscpy(ovc->vdev.name, OVC_DRV_NAME, sizeof(ovc->vdev.name));
 	video_set_drvdata(&ovc->vdev, ovc);
 
