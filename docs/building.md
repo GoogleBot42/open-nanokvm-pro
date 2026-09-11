@@ -64,7 +64,8 @@ All are `nix build .#<name>`. State reflects the current tree.
 | **`nixos-firmware-image`** | **`…-nixos.axp`** | **the NixOS appliance's flashable eMMC image** — packed from scratch, no vendor bundle; `system.build.axpImage` on `nixosConfigurations.nanokvm-pro` |
 | `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` is built from `boot-payload` and asserts room for three kernels |
 | `boot-payload` | `Image-<hash>`, `<dtb>-<hash>.dtb`, both extlinux configs | the `/boot` payload, **content-addressed** so the two configs can name two kernels and a kernel change rolls back (#86) |
-| **`system-bundle`** | `nanokvm_pro_sys_<ver>.tar.gz` + `nanokvm_pro_sys_latest.json` | **the update artefact** — the appliance's whole store closure plus its kernel, ~460 MB. What a release publishes and what `nanokvm-update` installs. [updates.md](updates.md) |
+| **`system-manifest`** | `nanokvm_pro_sys_latest.json` | **the update artefact** — ~200 bytes naming the toplevel store path a release offers (#100). The payload is that closure, pushed to the binary cache and substituted by the device. [updates.md](updates.md) |
+| `appliance-toplevel` | the appliance's system closure | what a release pushes to the cache, and what `nix copy --to ssh://` sends to a board |
 | `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
 | `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
 | `toolchain` | cross-gcc bundle | convenience `buildEnv` |
@@ -87,13 +88,19 @@ boot ──────> {kernel,dtb}-slot-image ──────────�
 image path builds from it.)
 
 `nix flake check` evaluates the whole tree without building the heavy leaves.
-Two of its gates belong to the update path (#86) and are worth running by name
-after touching anything under `nixos/lib/` or `pkgs/{system-bundle,boot-payload}`:
+Three of its gates belong to the update path (#86, #100) and are worth running
+by name after touching anything under `nixos/lib/` or
+`pkgs/{system-manifest,boot-payload}`:
 
 ```bash
-nix build .#checks.x86_64-linux.nanokvm-updater-loop -L   # the update loop, run for real
-nix build .#checks.x86_64-linux.nanokvm-system-bundle -L  # the artefact, read back
+nix build .#checks.x86_64-linux.nanokvm-updater-loop -L     # a real signed closure into a real store
+nix build .#checks.x86_64-linux.nanokvm-update-idle -L      # the checkbox, the markers, the idle gate
+nix build .#checks.x86_64-linux.nanokvm-system-manifest -L  # the artefact, read back
 ```
+
+The first two run **real nix inside the build sandbox** — a signed `file://`
+cache and two chroot stores — so they are slower than they look and they need
+no network.
 
 ---
 

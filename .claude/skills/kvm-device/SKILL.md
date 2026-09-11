@@ -218,58 +218,70 @@ negative and lost a finished run's console buffer. When a probe says
 unreachable and the board *should* be up, confirm with
 `socat - TCP:$ip:22 </dev/null` (prints the SSH banner) before acting.
 
-## Switching the NixOS appliance — there is no `nix` on the board
 
-`nixos-rebuild switch --target-host` and `nix copy` both need a Nix on the far
-end, and the appliance has none: it is a store tree plus systemd, nothing more
-(`command -v nix-store` → nothing). So a configuration switch is done by hand,
-and it is three steps. Measured 2026-09-09 (#89 rung 4), where it took the board
-from a vendor-layout `fw_env.config`/`fstab` to the GPT layout's.
+## Switching the NixOS appliance — `nix copy --to ssh://` (#100)
+
+The appliance has `nix` since #100, so a configuration switch is what it is on
+any NixOS machine: copy the closure over SSH and activate it. Three commands,
+and none of them is ours.
 
 ```sh
-# 1. Which store paths are missing on the board? (Usually a handful --
-#    an /etc, an fstab, a system-path, the initrd, the toplevel.)
-NEW=$(nix build .#nixosConfigurations.nanokvm-pro.config.system.build.toplevel \
-        --no-link --print-out-paths)
+NEW=$(nix build .#appliance-toplevel --no-link --print-out-paths)
+
+# 1. The closure, over SSH. Only what the board is missing crosses the wire.
+#    --no-check-sigs because the source is YOUR build host, not a cache:
+#    this is the one place that flag is right.
+nix copy --to "ssh://root@$KVM_HOST" --no-check-sigs "$NEW"
+
+# 2. + 3. The profile and the activation, by the tool that also does the
+#    markers and the bootcount gate.
+tools/kvmssh "nanokvm-update install-toplevel $NEW"
+tools/kvmssh 'nanokvm-update status'
+tools/kvmssh 'reboot'
+```
+
+`install-toplevel` runs `nix-env --set` and `switch-to-configuration boot`, so
+the switch only becomes live on the reboot — which is what arms the rollback
+(`bootcount`, `nanokvm-mark-good`). Use `switch-to-configuration switch` by hand
+only when you deliberately want an untested userspace live with no way back.
+
+`nix copy --to ssh://` needs the SSH key in the agent and `NIX_SSHOPTS` for
+anything `tools/kvmssh` does with options; it also needs nix on BOTH ends.
+
+**Bootstrapping a board that has no nix yet** (any image from before #100, and
+the eMMC today): there is nothing on the far end for `nix copy` to talk to, so
+the first nix-carrying generation goes over by hand. This is a ONE-TIME recipe
+— once it has booted, everything above works.
+
+```sh
+# 1. Which store paths are missing on the board?
+NEW=$(nix build .#appliance-toplevel --no-link --print-out-paths)
 nix-store -qR "$NEW" > /tmp/req.txt
 cat /tmp/req.txt | tools/kvmssh 'cat > /root/req.txt;
   while read -r p; do [ -e "$p" ] || echo "$p"; done < /root/req.txt'
 
-# 2. Ship them as a plain tar. /nix/store is a READ-ONLY BIND on this board;
-#    remount it rw, unpack, and put the ro flag back (`remount,bind,ro` --
-#    plain `remount,ro` silently does nothing on a bind mount).
+# 2. Ship them as a plain tar, plus the registration the new nix will need.
+#    (/nix/store may be a READ-ONLY BIND: `remount,bind,ro` to put it back --
+#    plain `remount,ro` silently does nothing on a bind mount.)
 cd /nix/store && tar -czf /tmp/newsys.tar.gz <the missing basenames>
-tools/kvmscp /tmp/newsys.tar.gz /root/
-tools/kvmssh 'mount -o remount,rw /nix/store
-              tar -C /nix/store -xzf /root/newsys.tar.gz
-              mount -o remount,bind,ro /nix/store'
+nix-store --dump-db "$NEW" > /tmp/registration     # or closureInfo's `registration`
+tools/kvmscp /tmp/newsys.tar.gz /tmp/registration /root/
+tools/kvmssh 'mount -o remount,rw /nix/store 2>/dev/null || true
+              tar -C /nix/store -xzf /root/newsys.tar.gz'
 
 # 3. Set the profile the way `nix-env --set` would, then activate.
 tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-2-link
               ln -sfn system-2-link /nix/var/nix/profiles/system
-              $NEW/bin/switch-to-configuration switch"
+              $NEW/bin/switch-to-configuration boot && reboot"
+
+# 4. AFTER the reboot, register what the old board could not: the new system
+#    has nix, and its store must know about the paths that were tarred in.
+tools/kvmssh 'nix-store --load-db < /root/registration
+              nix-store --verify --check-contents
+              nix path-info -r /run/current-system | wc -l'
 ```
 
-`/init` is a symlink to `/nix/var/nix/profiles/system/init`, so step 3 is also
-what the next boot takes.
-
-**Since #86 there is a tool that does all three steps, plus `/boot`.** Build
-`.#system-bundle`, copy the tarball over, and run it — this is the product
-path, and it is the one to prefer for anything that is not a one-file
-experiment:
-
-```sh
-nix build .#system-bundle --no-link --print-out-paths     # ~460 MB tarball
-tools/kvmscp <that>/nanokvm_pro_sys_*.tar.gz /root/
-tools/kvmssh 'nanokvm-update install /root/nanokvm_pro_sys_*.tar.gz'
-tools/kvmssh 'nanokvm-update status'                      # both configs, both kernels
-tools/kvmssh 'reboot'
-```
-
-It unpacks only the store paths the board is missing, writes the kernel into
-`/boot` under its content-addressed name, points the profile at the new
-generation and writes `extlinux.conf` naming **both**. The manual recipe above
-does not touch `/boot` at all, so a configuration whose kernel changed needs
-`.#boot-payload`'s files copied by hand — which is exactly what
-`nanokvm-update` is for. `nanokvm-gc` reclaims the old generations afterwards;
-it refuses to delete anything if a kept generation has no closure list.
+Step 4 is not optional. A path on disk that the database does not know is not a
+store path: `nix-env --set` on one tries to *download* it, and
+`nix-collect-garbage` would happily delete it. A flashed image does not need
+this — `nixos/lib/appliance-artifacts.nix` builds the database into the image.
