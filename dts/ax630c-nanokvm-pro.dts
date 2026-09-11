@@ -10,6 +10,7 @@
  */
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/linux-event-codes.h>
 
 #include "ax630c.dtsi"
 
@@ -45,6 +46,106 @@
 			label = "sys-heartbeat";
 			gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>;
 			default-state = "off";
+		};
+	};
+
+	/*
+	 * The mini-display's backlight (#84). `bl_power` 0/1 and `brightness`
+	 * 0..100 under /sys/class/backlight/backlight is the ABI the status
+	 * daemon uses to blank the panel after three idle minutes, and the
+	 * node name is what names that directory -- do not rename it.
+	 *
+	 * The three brightness properties are the vendor's: two levels with
+	 * 100 interpolated steps between them, so max_brightness is 100 and
+	 * the mapping is linear. The period is 462963 ns = 2160 Hz, which at
+	 * the 24 MHz counter clock is 11111 ticks.
+	 *
+	 * PWM_POLARITY_NORMAL, and it is load-bearing. The DesignWare PWM
+	 * holds the LOW period in one register and the HIGH period in the
+	 * other, and upstream's driver models that as inversed polarity only
+	 * -- so brightness would run backwards. Patch 0002 teaches the core
+	 * both directions; this cell is what asks for the one that makes a
+	 * longer high period brighter, which is how the vendor drives it.
+	 */
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm0 0 462963 0>;	/* 0 = PWM_POLARITY_NORMAL */
+		brightness-levels = <0 101>;
+		num-interpolated-steps = <100>;
+		default-brightness-level = <100>;
+	};
+
+	/*
+	 * The knob (#84), which is a rotary encoder with a push switch.
+	 *
+	 * No pinctrl-0 on either node, for the same reason the ATX lines have
+	 * none: all three pads are GPIOs, and requesting a GPIO line is what
+	 * programs the pad's mux (gpio-ranges -> gpio_request_enable).
+	 *
+	 * The node names are an ABI here, not a style choice. gpio_keys takes
+	 * the input device's name from `label` or, absent that, from the
+	 * platform device's name, which comes from the node -- and
+	 * nanokvm-display finds its two wake sources by EVIOCGNAME. `label`
+	 * pins the button's name; the encoder's node name is what pins its.
+	 */
+	gpio-keys {
+		compatible = "gpio-keys";
+		label = "gpio_keys";
+		autorepeat;
+
+		key-knob {
+			label = "GPIO KEY ENTER";
+			linux,code = <KEY_ENTER>;
+			gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
+			debounce-interval = <10>;
+		};
+	};
+
+	rotary-encoder {
+		compatible = "rotary-encoder";
+		gpios = <&gpio3 1 GPIO_ACTIVE_LOW>, <&gpio0 18 GPIO_ACTIVE_LOW>;
+		linux,axis = <0>;		/* REL_X */
+		rotary-encoder,encoding = "gray";
+		rotary-encoder,relative-axis;
+		rotary-encoder,steps-per-period = <4>;
+	};
+
+	/*
+	 * HDMI audio (#84). The LT6911UXC recovers the audio embedded in the
+	 * HDMI stream and clocks it out as I2S; the SoC is a pure slave on
+	 * both the bit clock and the frame clock, which is what
+	 * bitclock-master/frame-master pointing at the codec says.
+	 *
+	 * THE CODEC IS A STUB, because there is nothing to program: the
+	 * bridge's audio side is configured over its own I2C interface by
+	 * drivers/misc/lt6911-manage.c, not by ASoC. The vendor invented a
+	 * `dummy-codec` driver for this; mainline's equivalent is
+	 * `linux,spdif-dir`, whose binding is literally titled "Dummy SPDIF
+	 * Transmitter/Receiver". It is capture-only, which is also correct
+	 * here -- the vendor's stub advertised a playback stream this board
+	 * cannot have.
+	 *
+	 * The card name is the vendor's verbatim: it is what `arecord -l`
+	 * prints and what libkvm's ALSA capture opens by index.
+	 */
+	hdmi_in_codec: spdif-in {
+		compatible = "linux,spdif-dir";
+		#sound-dai-cells = <0>;
+	};
+
+	sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "Lontium Lt6911UXC";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,bitclock-master = <&lt6911_codec>;
+		simple-audio-card,frame-master = <&lt6911_codec>;
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s_slv0>;
+		};
+
+		lt6911_codec: simple-audio-card,codec {
+			sound-dai = <&hdmi_in_codec>;
 		};
 	};
 
@@ -292,6 +393,64 @@
 	status = "okay";
 	memory-region = <&venc_cmdbuf>, <&venc_framebuf>;
 	memory-region-names = "cmdbuf", "framebuf";
+};
+
+/*
+ * The mini-display (#84). A Jadard JD9853 on SPI2, chip select 1.
+ *
+ * CS0 IS A HOLE, deliberately. The controller has two chip selects; the
+ * panel is on the second, and the pad that would carry the first is a GPIO on
+ * this board. An empty phandle cell is the documented way to say "index 0 has
+ * no GPIO" -- spi-controller.yaml allows it, and the SPI core takes the
+ * native chip select for that index, which reaches a pad nothing is on.
+ *
+ * TWO GPIO POLARITIES THAT DISAGREE WITH THE VENDOR DEVICE TREE, and getting
+ * either wrong is a blank panel with no error message:
+ *
+ *  - `dc-gpios` is ACTIVE_HIGH here where the vendor says active-low. 4.19
+ *    fbtft drove this line with gpio_set_value(), which is the RAW API and
+ *    ignores the flag; mainline uses gpiod_set_value(), which does not. The
+ *    pad must be high for data and low for command either way.
+ *  - `reset-gpios` STAYS active-low: fbtft_reset() asserts then deasserts
+ *    logically, which with this flag is the same low-then-high pulse the
+ *    vendor's raw writes produced.
+ *
+ * NO `te-gpios`. The vendor driver uses the panel's tearing-effect strobe to
+ * start each frame at V-blank, and carries a workqueue, a 5 s liveness timer
+ * and a second framebuffer to do it. The port drops all of that -- see the
+ * comment at the top of drivers/staging/fbtft/fb_jd9853.c. The pad
+ * (CDTX_L1P/GPIO2_A13) is left alone, which also keeps this off the list of
+ * CDTX_* pads a pinctrl state must not move without parking the D-PHY
+ * transmitter first.
+ *
+ * `rotate = <0>` is the framebuffer's own geometry, not the panel's mounting:
+ * /dev/fb0 is 172x320 portrait and the daemon rotates into it. `buswidth` and
+ * the SPI mode are the vendor's and are what the controller expects.
+ */
+&spi2 {
+	status = "okay";
+	cs-gpios = <0>, <&gpio0 27 GPIO_ACTIVE_LOW>;
+
+	panel@1 {
+		compatible = "jadard,jd9853";
+		reg = <1>;
+		spi-max-frequency = <80000000>;
+		spi-cpol;
+		spi-cpha;
+		buswidth = <8>;
+		rotate = <0>;
+		fps = <90>;
+		dc-gpios = <&gpio1 11 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+&i2s_slv0 {
+	status = "okay";
 };
 
 /*

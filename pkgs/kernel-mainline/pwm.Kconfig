@@ -1,0 +1,13 @@
+config PWM_DWC_OF
+	tristate "DesignWare PWM Controller (OF)"
+	depends on OF
+	depends on HAS_IOMEM
+	select PWM_DWC_CORE
+	help
+	  PWM driver for Synopsys DWC PWM Controller attached to a
+	  memory-mapped bus and described in the device tree, as found on
+	  the Axera AX620E family. The register interface is the same
+	  DesignWare APB timer block the PCI front end drives.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-dwc-of.

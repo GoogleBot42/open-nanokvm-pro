@@ -107,6 +107,19 @@ LT6911_W = "/proc/lt6911_info/width"
 LT6911_H = "/proc/lt6911_info/height"
 VERSION_FILE = "/kvmapp/version"
 
+# The target's power-LED sense, two ways (#84). On the shipped 4.19 image the
+# line is exported into sysfs by nanokvm-gpio.service as global number 75 and
+# reads INVERTED (host on = 0). On mainline there is no sysfs export and no
+# stable global number at all -- lines are addressed by their device-tree name
+# through the chardev, and `nanokvm-gpio get` prints the LOGICAL value, so the
+# active-low flag in the DT is already applied and 1 means "host is on".
+#
+# Both are cheap, but the mainline one is a fork, so the answer is cached for
+# HOST_POWER_TTL_S; the render path asks for it on every frame.
+HOST_POWER_SYSFS = "/sys/class/gpio/gpio75/value"
+HOST_POWER_LINE = "atx-power-led"
+HOST_POWER_TTL_S = 1.0
+
 # fbdev / evdev ioctls
 FBIOGET_VSCREENINFO = 0x4600
 EVIOCGNAME_256 = 0x81004506    # EVIOCGNAME(256): _IOC(READ, 'E', 0x06, 256)
@@ -276,12 +289,42 @@ def get_hdmi_input():
     return f"{wi}x{hi}" if wi and hi else "no signal"
 
 
+_host_power_cache = (0.0, None)
+
+
 def get_host_power():
-    """Target power LED straight from sysfs (gpio75, exported at boot by
-    nanokvm-gpio.service): cheap local read, safe for the render path.
-    Inverted sense: host ON = reads 0. Returns True/False/None."""
-    v = read_file("/sys/class/gpio/gpio75/value")
-    return {"0": True, "1": False}.get(v)
+    """Target power state from the power-LED sense line. Returns
+    True/False/None (None = the line is not reachable).
+
+    Two backends, tried in order, because the two kernels this daemon runs on
+    expose the line differently -- see HOST_POWER_SYSFS above. The result is
+    cached for a second so the render path can call this per frame."""
+    global _host_power_cache
+    now = time.monotonic()
+    stamp, cached = _host_power_cache
+    if now - stamp < HOST_POWER_TTL_S:
+        return cached
+
+    v = read_file(HOST_POWER_SYSFS, None)
+    if v is not None:
+        # Raw latch, inverted: host on = 0.
+        val = {"0": True, "1": False}.get(v)
+    else:
+        val = None
+        try:
+            out = subprocess.run(
+                ["nanokvm-gpio", "get", HOST_POWER_LINE],
+                capture_output=True, text=True, timeout=2,
+            )
+            if out.returncode == 0:
+                # Logical value: the DT declares the line active-low, so 1
+                # already means "host is on".
+                val = {"1": True, "0": False}.get(out.stdout.strip())
+        except (OSError, subprocess.SubprocessError):
+            val = None
+
+    _host_power_cache = (now, val)
+    return val
 
 
 def get_uptime():
@@ -581,7 +624,12 @@ def open_input_devices():
         # Exactly the two pinned knob devices (docs/mini-display.md): the
         # gpio_keys button and the rotary encoder. A loose "key" substring
         # would also grab e.g. a "keyboard" HID gadget as a wake source.
-        if name == "gpio_keys" or name.startswith("rotary"):
+        #
+        # Both spellings of the button, because the name comes from the device
+        # tree: the vendor 4.19 node is `gpio_keys` and the mainline one is
+        # `gpio-keys` with a `label` that pins the old spelling. Accepting
+        # either means a DT rename cannot silently cost the wake source.
+        if name in ("gpio_keys", "gpio-keys") or name.startswith("rotary"):
             fds[fd] = name
         else:
             os.close(fd)

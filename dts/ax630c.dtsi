@@ -366,6 +366,82 @@
 			 * every pipeline init and that is the whole SW_PWR
 			 * trap. The MIPI path does not need it.
 			 */
+			/*
+			 * SPI2, the mini-display's bus (#84). TWO pads, not
+			 * four: the panel is write-only, so MISO is not
+			 * claimed, and the chip select is a GPIO -- the pad
+			 * that would carry SPI_M2_CS0 (I2C1_SDA) is muxed to
+			 * GPIO0_A27 by the GPIO claim instead, which is what
+			 * the vendor board does too.
+			 *
+			 * Drive strength 3 and a pull-up on both, reproducing
+			 * the boot chain's own pad table. The SSI clock is
+			 * 208 MHz and the panel is asked for 80, so the bus
+			 * actually runs at 52 -- spi-dw's divisor is even.
+			 */
+			spi2_pins: spi2-pins {
+				spi2-sclk-mosi {
+					pins = "I2C1_SCL", "UART3_TXD";
+					function = "spi_m2";
+					drive-strength = <3>;
+					bias-pull-up;
+					input-schmitt-disable;
+				};
+			};
+
+			/*
+			 * The backlight's PWM output (#84): PWM0 channel 0 on
+			 * its alternate pad (function PWM0_M), which is what
+			 * the vendor group `emac_ptp_pps0_pwm0_m_pins` names.
+			 *
+			 * THIS ONE IS NOT A NO-OP IN VALUE, unlike most of the
+			 * states in this file. The boot chain's own pad table
+			 * leaves EMAC_PTP_PPS0 muxed to GPIO1_A8
+			 * (0x104F000C = 0x00060003) and the vendor KERNEL is
+			 * what moves it to PWM at probe -- measured on the
+			 * running vendor system as 0x00020003, which is
+			 * exactly what this state writes. Nothing replays that
+			 * on mainline, so without this group the backlight pad
+			 * stays an unclaimed GPIO and the panel is dark with a
+			 * PWM that reports itself working.
+			 *
+			 * No pull: the pad drives a load, it is never read.
+			 */
+			pwm0_pins: pwm0-pins {
+				pwm0-out {
+					pins = "EMAC_PTP_PPS0";
+					function = "pwm";
+					drive-strength = <3>;
+					bias-disable;
+					input-schmitt-disable;
+				};
+			};
+
+			/*
+			 * The HDMI audio port's three pads (#84). Capture
+			 * only, so no DOUT and no MCLK: the LT6911UXC is the
+			 * bit-clock and frame master and the SoC is a pure
+			 * slave.
+			 *
+			 * DIN1, not DIN0. The peripheral syscon's audio
+			 * crossbar word puts this stream on the slave block's
+			 * RX channel 1 (see the i2s node below), and the pad
+			 * that feeds channel 1 is VI_D4.
+			 *
+			 * These three pads are VI_* like SW_PWR's VI_D7, and
+			 * the same rule applies: claim only what is used, and
+			 * never VI_D7.
+			 */
+			i2s0_pins: i2s0-pins {
+				i2s0-slave-in {
+					pins = "VI_D1", "VI_D4", "VI_CLK0";
+					function = "i2s0";
+					drive-strength = <3>;
+					bias-disable;
+					input-schmitt-disable;
+				};
+			};
+
 			mipi_rx_pins: mipi-rx-pins {
 				mipi-rx-lanes {
 					pins = "CDRX_L0N", "CDRX_L0P",
@@ -921,6 +997,139 @@
 			interrupts = <GIC_SPI 119 IRQ_TYPE_LEVEL_HIGH>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&uart1_pins>;
+			status = "disabled";
+		};
+
+		/*
+		 * SPI2 (#84), the mini-display's bus. Stock Synopsys
+		 * DesignWare SSI; mainline spi-dw-mmio binds the unmodified
+		 * compatible.
+		 *
+		 * ONE reset name matters. Mainline takes `reset-names = "spi"`
+		 * and nothing else, so the block's APB reset is described but
+		 * never touched; firmware leaves both deasserted (SW_RST2 is
+		 * zero on this board) and pulsing the APB reset of a running
+		 * block is not something a driver should do at probe anyway.
+		 *
+		 * TWO clocks, and the first is unnamed as far as the driver is
+		 * concerned: spi-dw-mmio does clk_get(dev, NULL), which takes
+		 * index 0 whatever clock-names says, and clk_get_rate() on it
+		 * is the bus's reference. That is 208 MHz here -- the same
+		 * constant the vendor driver hardcodes, which is how the
+		 * source mux's index 3 is cited rather than guessed
+		 * (pkgs/kernel-mainline/tree/drivers/clk/axera/clk-ax630c-tables.c).
+		 *
+		 * No `dmas`. The vendor node has them and its SPI master is a
+		 * fork with a 32-bit endian swap in the DMA path that the
+		 * panel driver then had to undo in software. PIO over the
+		 * 4 KiB txbuf is 110 KB per frame at a few frames a second.
+		 */
+		spi2: spi@6072000 {
+			compatible = "snps,dw-apb-ssi";
+			reg = <0x0 0x6072000 0x0 0x400>;
+			interrupts = <GIC_SPI 153 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_CLK_SPI_M2_EB>,
+				 <&periph_clk AX630C_PCLK_SPI_M2_EB>;
+			clock-names = "ssi_clk", "pclk";
+			resets = <&periph_clk AX630C_RST_PERIPH_SPI2>,
+				 <&periph_clk AX630C_RST_PERIPH_SPI2_PRST>;
+			reset-names = "spi", "prst";
+			pinctrl-names = "default";
+			pinctrl-0 = <&spi2_pins>;
+			num-cs = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		/*
+		 * PWM0 (#84), the backlight's controller -- a DesignWare APB
+		 * timer block in PWM mode. Upstream has the core and a
+		 * device-tree binding that no driver matched until
+		 * drivers/pwm/pwm-dwc-of.c.
+		 *
+		 * The clock chain is worth stating because it is not
+		 * PWM-shaped: the block's source mux and class gate are the
+		 * TIMER ones (the vendor node names them by register offset,
+		 * clk-sel-offset = <0xD> and clk-glb-eb-offset = <0x9>), and
+		 * only the per-channel gate and the APB gate belong to PWM.
+		 * So "timer" here is clk_pwm00_eb, whose parent chain reaches
+		 * clk_timer_sel -- 24 MHz on this board, which is exactly the
+		 * constant the vendor driver hardcodes.
+		 *
+		 * No assigned-clock-parents: firmware already selects the
+		 * 24 MHz source (CLK_MUX0 bit 13 reads 1), and clk_timer_sel
+		 * is shared with the system APB timers.
+		 */
+		pwm0: pwm@6060000 {
+			compatible = "snps,dw-apb-timers-pwm2";
+			reg = <0x0 0x6060000 0x0 0x400>;
+			#pwm-cells = <3>;
+			clocks = <&periph_clk AX630C_PCLK_PWM0_EB>,
+				 <&periph_clk AX630C_CLK_PWM00_EB>;
+			clock-names = "bus", "timer";
+			resets = <&periph_clk AX630C_RST_PERIPH_PWM0_PWM>,
+				 <&periph_clk AX630C_RST_PERIPH_PWM0_PWM_CH0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwm0_pins>;
+			status = "disabled";
+		};
+
+		/*
+		 * I2S slave 0 (#84) -- the HDMI audio the LT6911UXC recovers
+		 * and clocks out. Stock Synopsys DesignWare I2S, in PIO mode.
+		 *
+		 * PIO, NOT DMA, and the driver decides that purely from this
+		 * node: mainline's dwc-i2s picks the PIO PCM when the node has
+		 * `interrupts` and dmaengine when it does not. DMA here would
+		 * mean porting `axera,dma-per`, a 1317-line vendor engine, for
+		 * 48 kHz stereo -- which at this block's FIFO threshold is
+		 * 6-12 k interrupts a second, tens of MMIO accesses each.
+		 *
+		 * THREE INTEGRATION FACTS the stock driver has no way to know,
+		 * each an optional property added by patch 0003:
+		 *
+		 *  - `snps,syscon` writes the peripheral syscon's audio
+		 *    crossbar word at +0x3c before the block is used. The
+		 *    value is the vendor board's, recomputed from its own
+		 *    seventeen `i2s-*-sel` properties: exter-codec-en (bit
+		 *    19), s-rx0-sel = 3 (bits 10:9) and s-sclk-sel = 1 (bits
+		 *    6:5). Masked, not the vendor's full-word write, so the
+		 *    top byte survives. One writer: every other I2S instance
+		 *    on this SoC shares this register and none is enabled.
+		 *
+		 *  - `snps,rx-channel = <1>`. That crossbar setting lands the
+		 *    stream on the block's RX channel 1, not 0 -- the vendor
+		 *    driver carries a hardcoded `if (rx0_sel == 3) enable
+		 *    RER(1)` for exactly this. The stock driver assumes
+		 *    channel 0 in four places and would wait forever for an
+		 *    interrupt that is masked.
+		 *
+		 *  - `apb`. In slave mode the driver takes no clock at all,
+		 *    having no bit clock to program, so without naming the APB
+		 *    gate clk_disable_unused() takes the register window away
+		 *    partway through boot. The reference gate is named too,
+		 *    because whether a pure slave needs it is not established.
+		 *
+		 * ONE reset, matching the vendor's `hdmi-i2s` path, which
+		 * deliberately requests only "rst" and leaves the APB reset
+		 * alone. Mainline deasserts every entry in `resets` together,
+		 * so listing the second one would be a behaviour change
+		 * nobody has tested.
+		 */
+		i2s_slv0: i2s@6051000 {
+			compatible = "snps,designware-i2s";
+			reg = <0x0 0x6051000 0x0 0x400>;
+			interrupts = <GIC_SPI 145 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&periph_clk AX630C_PCLK_I2S_S_EB>,
+				 <&periph_clk AX630C_CLK_I2S_REF0_EB>;
+			clock-names = "apb", "mclk";
+			resets = <&periph_clk AX630C_RST_PERIPH_I2S_SLV0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2s0_pins>;
+			snps,syscon = <&periph_clk 0x3c 0x00ffffff 0x00080620>;
+			snps,rx-channel = <1>;
+			#sound-dai-cells = <0>;
 			status = "disabled";
 		};
 

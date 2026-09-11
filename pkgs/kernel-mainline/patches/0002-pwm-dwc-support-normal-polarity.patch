@@ -1,0 +1,134 @@
+From: open-nanokvm-pro <noreply@example.invalid>
+Subject: [PATCH] pwm: dwc: support normal polarity
+
+The DesignWare APB timer in PWM mode holds the low period in LD_CNT and
+the high period in LD_CNT2. The driver models that as inversed polarity
+only and rejects PWM_POLARITY_NORMAL outright, but the hardware is
+symmetric between the two: a normal-polarity request is the same two
+registers with the values exchanged.
+
+That matters for any board whose consumer drives an active-high load.
+A pwm-backlight with the standard "brighter is a longer high period"
+wiring cannot be expressed at all today -- declaring the PWM inverted in
+the device tree makes brightness run backwards, and declaring it normal
+makes every apply() fail with -EINVAL.
+
+The hardware has no polarity bit, so .get_state() cannot read it back;
+remember per channel what .apply() was last given and report that,
+initialised to INVERSED so the value before any apply() still describes
+what the output does (it leaves the low period first).
+
+No functional change for a consumer that asks for inversed polarity,
+which is every in-tree user today.
+
+diff -u -r a/drivers/pwm/pwm-dwc-core.c b/drivers/pwm/pwm-dwc-core.c
+--- a/drivers/pwm/pwm-dwc-core.c
++++ b/drivers/pwm/pwm-dwc-core.c
+@@ -39,23 +39,34 @@
+ 				     struct pwm_device *pwm,
+ 				     const struct pwm_state *state)
+ {
++	u64 active, idle;
+ 	u64 tmp;
+ 	u32 ctrl;
+ 	u32 high;
+ 	u32 low;
+ 
+ 	/*
++	 * The output starts from the low period, so LD_CNT is the duty cycle
++	 * for an inversed-polarity request and the complement for a normal
++	 * one. The hardware is symmetric between the two; only the software
++	 * meaning of "duty cycle" differs.
++	 */
++	active = state->duty_cycle;
++	idle = state->period - state->duty_cycle;
++	if (state->polarity == PWM_POLARITY_NORMAL)
++		swap(active, idle);
++
++	/*
+ 	 * Calculate width of low and high period in terms of input clock
+ 	 * periods and check are the result within HW limits between 1 and
+ 	 * 2^32 periods.
+ 	 */
+-	tmp = DIV_ROUND_CLOSEST_ULL(state->duty_cycle, dwc->clk_ns);
++	tmp = DIV_ROUND_CLOSEST_ULL(active, dwc->clk_ns);
+ 	if (tmp < 1 || tmp > (1ULL << 32))
+ 		return -ERANGE;
+ 	low = tmp - 1;
+ 
+-	tmp = DIV_ROUND_CLOSEST_ULL(state->period - state->duty_cycle,
+-				    dwc->clk_ns);
++	tmp = DIV_ROUND_CLOSEST_ULL(idle, dwc->clk_ns);
+ 	if (tmp < 1 || tmp > (1ULL << 32))
+ 		return -ERANGE;
+ 	high = tmp - 1;
+@@ -100,12 +111,10 @@
+ {
+ 	struct dwc_pwm *dwc = to_dwc_pwm(chip);
+ 
+-	if (state->polarity != PWM_POLARITY_INVERSED)
+-		return -EINVAL;
+-
+ 	if (state->enabled) {
+ 		if (!pwm->state.enabled)
+ 			pm_runtime_get_sync(pwmchip_parent(chip));
++		dwc->polarity[pwm->hwpwm] = state->polarity;
+ 		return __dwc_pwm_configure_timer(dwc, pwm, state);
+ 	} else {
+ 		if (pwm->state.enabled) {
+@@ -140,12 +149,15 @@
+ 		duty = (ld + 1) * dwc->clk_ns;
+ 		period = (ld2 + 1)  * dwc->clk_ns;
+ 		period += duty;
++		/* LD_CNT is the low period; for normal polarity report the high one. */
++		if (dwc->polarity[pwm->hwpwm] == PWM_POLARITY_NORMAL)
++			duty = period - duty;
+ 	} else {
+ 		duty = (ld + 1) * dwc->clk_ns;
+ 		period = duty * 2;
+ 	}
+ 
+-	state->polarity = PWM_POLARITY_INVERSED;
++	state->polarity = dwc->polarity[pwm->hwpwm];
+ 	state->period = period;
+ 	state->duty_cycle = duty;
+ 
+@@ -163,6 +175,7 @@
+ {
+ 	struct pwm_chip *chip;
+ 	struct dwc_pwm *dwc;
++	unsigned int i;
+ 
+ 	chip = devm_pwmchip_alloc(dev, DWC_TIMERS_TOTAL, sizeof(*dwc));
+ 	if (IS_ERR(chip))
+@@ -172,6 +185,13 @@
+ 	dwc->clk_ns = 10;
+ 	chip->ops = &dwc_pwm_ops;
+ 
++	/*
++	 * Match what the hardware does before anyone has applied a state: the
++	 * output leaves the low period first, which is inversed polarity.
++	 */
++	for (i = 0; i < DWC_TIMERS_TOTAL; i++)
++		dwc->polarity[i] = PWM_POLARITY_INVERSED;
++
+ 	return chip;
+ }
+ EXPORT_SYMBOL_GPL(dwc_pwm_alloc);
+diff -u -r a/drivers/pwm/pwm-dwc.h b/drivers/pwm/pwm-dwc.h
+--- a/drivers/pwm/pwm-dwc.h
++++ b/drivers/pwm/pwm-dwc.h
+@@ -53,6 +53,13 @@
+ struct dwc_pwm {
+ 	void __iomem *base;
+ 	unsigned int clk_ns;
++	/*
++	 * The hardware has no polarity bit -- LD_CNT and LD_CNT2 simply hold
++	 * the low and the high period -- so which of the two the caller meant
++	 * by "duty cycle" is software state. Remember it per channel so that
++	 * .get_state() answers with the polarity .apply() was last given.
++	 */
++	enum pwm_polarity polarity[DWC_TIMERS_TOTAL];
+ 	struct dwc_pwm_ctx ctx[DWC_TIMERS_TOTAL];
+ };
+ 
