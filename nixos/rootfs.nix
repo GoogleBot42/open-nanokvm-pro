@@ -1,32 +1,26 @@
 { pkgs
-, crossPkgs
 , inputs
-, kvm-encoder
-, nanokvm-server # pkgs/nanokvm-server.nix -- ATX over nanokvm-gpio (#81)
-, nanokvm-gpio
-, nanokvm-web
-, nanokvm-display
-, kernel # pkgs/kernel-mainline.nix, no embedded initramfs -- boot.kernelPackages
-, dtb # pkgs/dtb-mainline.nix -- hardware.deviceTree.dtbSource
-, video-modules # pkgs/video-modules.nix: the open capture/encode .ko set
-, display-modules # pkgs/display-modules.nix: the mini-display panel .ko set (#84)
-, aic8800 # pkgs/aic8800.nix: the out-of-tree WiFi modules (#85)
-, aic8800-firmware # pkgs/aic8800-firmware.nix: the radio firmware (#85)
+  # nixos/nanokvm-modules.nix -- the flake's `nixosModules`. This file
+  # evaluates `nanokvm-pro` (every hardware module plus this flake's cross
+  # builds) together with nixos/appliance.nix, which is only our policy.
+, nanokvmModules
 , version ? "0.0.0-dev"
 , applianceModules ? [ ]
 , variant ? "emmc"
-  # The .axp builder (nixos/axp-image.nix), or null. Handed to the module
-  # system through specialArgs so nixos/image-axp.nix can define
-  # `system.build.axpImage` in terms of this configuration's own closure --
-  # see that file for why it cannot simply import it.
-, imageBuilder ? null
 , ...
 }:
 
 # ===========================================================================
-# The NanoKVM-Pro NixOS appliance (issue #78, epic #26) -- nixos/appliance.nix
-# evaluated into a system closure, packed into a rootless ext4, with the /boot
-# tree that generation boots from exposed beside it.
+# The NanoKVM-Pro NixOS appliance (issue #78, epic #26) --
+# `nixosModules.nanokvm-pro` + nixos/appliance.nix evaluated into a system
+# closure, packed into a rootless ext4, with the /boot tree that generation
+# boots from exposed beside it.
+#
+# SINCE #87 THE HARDWARE IS A MODULE SET, not one file. nixos/modules/ holds
+# nine modules -- kernel, identity, rollback, video, display, atx, wifi,
+# updates, server -- with no host-specific values in any of them, and
+# nixos/appliance.nix is what makes a board running them OUR appliance.
+# Anybody can build their own image from the same modules; docs/modules.md.
 #
 # ONE nixpkgs pin. The predecessor of this file evaluated against a second,
 # older pin (nixos-24.11) because systemd's declared kernel floor had risen
@@ -62,35 +56,13 @@
 # ===========================================================================
 
 let
-  lib = pkgs.lib;
   nixpkgs = inputs.nixpkgs;
 
   artifacts = import ./lib/appliance-artifacts.nix { inherit pkgs nixpkgs; };
 
-  nanokvm = {
-    inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
-      kernel dtb video-modules display-modules version;
-    inherit aic8800 aic8800-firmware;
-    image = imageBuilder;
-    # The three open libraries libkvm DT_NEEDEDs, taken from crossPkgs -- the
-    # exact builds it was compiled and linked against (pkgs/kvm-encoder.nix),
-    # so there is no skew between what was linked and what is loaded.
-    #
-    # getLib on every one of them, not the bare derivation: these are
-    # multi-output packages and libjpeg-turbo's FIRST output is `bin`, so
-    # "${kvm-encoder.libjpeg8}/lib" is a directory that does not exist and the
-    # only symptom is a `cp` with no source operand.
-    opus = lib.getLib crossPkgs.libopus;
-    alsaLib = lib.getLib crossPkgs.alsa-lib;
-    # jpeg8 ABI, from kvm-encoder's passthru: the soft-MJPEG path (#51)
-    # DT_NEEDEDs libjpeg.so.8 specifically.
-    jpeg = lib.getLib kvm-encoder.libjpeg8;
-  };
-
   eval = import (nixpkgs + "/nixos/lib/eval-config.nix") {
     system = null; # set via nixpkgs.hostPlatform in the module
-    modules = [ ./appliance.nix ] ++ applianceModules;
-    specialArgs = { inherit nanokvm; };
+    modules = [ nanokvmModules.nanokvm-pro ./appliance.nix ] ++ applianceModules;
   };
 
   toplevel = eval.config.system.build.toplevel;

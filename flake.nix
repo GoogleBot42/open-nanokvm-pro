@@ -319,16 +319,28 @@
         # per-mode identity + edid-decode --check clean). See pkgs/edid.nix.
         edid = callPkg ./pkgs/edid.nix { };
 
-        # The NixOS appliance (#78) -- nixos/appliance.nix evaluated into a
-        # system closure and packed into a rootless ext4. IT IS THE PRODUCT:
-        # the mainline kernel, a NixOS initrd, and generations on /boot.
-        nixosApplianceArgs = {
+        # ---- the composable module set (#87, product 1) --------------------
+        #
+        # THE HARDWARE IS A MODULE SET, NOT A FILE. nixos/modules/ holds nine
+        # modules -- kernel, identity, rollback, video, display, atx, wifi,
+        # updates, server -- none of which carries a host-specific value, and
+        # nixos/nanokvm-modules.nix binds this flake's cross builds to them.
+        # What comes out is the flake's `nixosModules`, lifted verbatim at the
+        # bottom of this file: a stranger writes
+        # `imports = [ nanokvm.nixosModules.nanokvm-pro ]` and gets a bootable
+        # NanoKVM-Pro. docs/modules.md.
+        #
+        # A FUNCTION OF THE VERSION, because `version` is stamped into
+        # /kvmapp/version and /etc/nanokvm-version, and the #100 cache harness
+        # below builds the same appliance with a different one.
+        mkNanokvmModules = ver: callPkg ./nixos/nanokvm-modules.nix {
           # The kernel and the device tree are part of the generation now
           # (#99): `boot.kernelPackages` and `hardware.deviceTree.dtbSource`.
           kernel = kernel-mainline-appliance;
           dtb = dtb-mainline;
+          version = ver;
           inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web
-            nanokvm-display version;
+            nanokvm-display;
           # The open capture/encode modules (#83), built against the kernel
           # the appliance boots and carried in the generation's closure.
           inherit video-modules;
@@ -339,20 +351,58 @@
           # dropped from the closure entirely by `nanokvm.wifi.enable = false`.
           inherit aic8800 aic8800-firmware;
         };
-        # THE system. nixos/image-axp.nix defines `system.build.axpImage` from
-        # this configuration's own closure, so `.#nixos-firmware-image-mainline`
-        # and the system it images are one derivation and cannot disagree.
-        nixos-appliance-mainline-chain = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
-          applianceModules = [ ./nixos/image-axp.nix ];
-          imageBuilder = applianceAxpImageMainline;
-        });
+        nanokvmModules = mkNanokvmModules version;
+
+        # THE system (#78): `nixosModules.nanokvm-pro` plus nixos/appliance.nix,
+        # which is our policy and nothing else. nixos/image-axp.nix defines
+        # `system.build.axpImage` from this configuration's own closure, so
+        # `.#nixos-firmware-image-mainline` and the system it images are one
+        # derivation and cannot disagree.
+        nixos-appliance-mainline-chain = callPkg ./nixos/rootfs.nix {
+          inherit version nanokvmModules;
+          applianceModules = [ applianceImageModule ];
+        };
+        # The .axp builder, bound to the module that defines
+        # `system.build.axpImage` in terms of it. Applied here rather than
+        # handed through the module system, because it needs the x86_64
+        # package set while the module evaluates as aarch64.
+        applianceImageModule = import ./nixos/image-axp.nix {
+          builder = applianceAxpImageMainline;
+        };
         # The same appliance retargeted at `qemu-system-aarch64 -M virt`, which
         # is where the NixOS half of a boot is proven before anything is
         # written to the device. See nixos/qemu-test.nix.
-        nixos-appliance-qemu = callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
+        nixos-appliance-qemu = callPkg ./nixos/rootfs.nix {
+          inherit version nanokvmModules;
           variant = "qemu";
           applianceModules = [ ./nixos/qemu-test.nix ];
-        });
+        };
+
+        # ---- proof that a stranger can consume the modules (#87) -----------
+        #
+        # A second, minimal NixOS system built from `nixosModules.nanokvm-pro`
+        # and the unavoidable minimum: a stateVersion and a hostname policy of
+        # its own. It carries NONE of nixos/appliance.nix -- no sshd, no mDNS,
+        # no root password, no interactive package set -- so if any hardware
+        # module had quietly come to depend on one of those, this stops
+        # evaluating. It is a `checks` entry and it BUILDS, because a module
+        # set that evaluates and does not build is not a module set anybody
+        # can use.
+        nixos-modules-consumer = (import (inputs.nixpkgs + "/nixos/lib/eval-config.nix") {
+          system = null;
+          modules = [
+            nanokvmModules.nanokvm-pro
+            {
+              system.stateVersion = "26.11";
+              # The identity module leaves `networking.hostName` empty on
+              # purpose (systemd-hostnamed refuses a transient hostname when a
+              # static one is set); a consumer who wants a fixed name takes it
+              # back here, which is the override this proves is possible.
+              networking.hostName = pkgs.lib.mkForce "nanokvm-consumer";
+              # No .axp, no QEMU harness: the point is the system closure.
+            }
+          ];
+        }).config.system.build.toplevel;
 
         # `nix run .#nixos-appliance-qemu-run` -- boots the appliance under
         # qemu-system-aarch64 on a throwaway copy of the rootfs image. The one
@@ -453,11 +503,13 @@
             testCache = env "NANOKVM_TEST_CACHE_URL";
             testChannel = env "NANOKVM_TEST_CHANNEL_URL";
             testKey = env "NANOKVM_TEST_CACHE_KEY";
+            ver = if testVersion == "" then version else testVersion;
           in
-          (callPkg ./nixos/rootfs.nix (nixosApplianceArgs // {
-            version = if testVersion == "" then version else testVersion;
+          (callPkg ./nixos/rootfs.nix {
+            version = ver;
+            nanokvmModules = mkNanokvmModules ver;
             applianceModules = [
-              ./nixos/image-axp.nix
+              applianceImageModule
               ({ lib, ... }: {
                 nanokvm.update.cacheUrl = lib.mkIf (testCache != "") testCache;
                 nanokvm.update.trustedPublicKeys =
@@ -466,8 +518,7 @@
                 nanokvm.update.previewUrl = lib.mkIf (testChannel != "") testChannel;
               })
             ];
-            imageBuilder = applianceAxpImageMainline;
-          })).eval.config.system.build.toplevel;
+          }).eval.config.system.build.toplevel;
 
         system-manifest = callPkg ./pkgs/system-manifest.nix {
           inherit version;
@@ -689,6 +740,13 @@
           # promote, and check that exactly the DEFAULT line moved -- then that
           # it REFUSES when the booted generation has no LABEL in the file.
           nanokvm-mark-good-fallback = callPkg ./nixos/lib/mark-good-test.nix { };
+          # A STRANGER'S CONFIGURATION (#87): a minimal NixOS system built from
+          # `nixosModules.nanokvm-pro` and nothing else of ours -- none of
+          # nixos/appliance.nix's policy. It is the proof that the module set
+          # stands alone, and it builds rather than merely evaluating, because
+          # a module set that evaluates and does not build is not one anybody
+          # can use. docs/modules.md is the guide it demonstrates.
+          inherit nixos-modules-consumer;
           # The /boot tree the flashed image carries, as a first-class check:
           # one extlinux.conf, no top-level MENU keyword, and LINUX/INITRD/FDT
           # lines whose files are actually there.
@@ -713,10 +771,33 @@
         devShells.default = callPkg ./pkgs/devshell.nix { inherit toolchain axdl; };
 
         formatter = pkgs.nixpkgs-fmt;
+
+        # NOT A FLAKE OUTPUT -- lifted out of the per-system set below and
+        # stripped from it, because `nixosModules` is system-independent by
+        # schema while the builds these modules carry are instantiated from
+        # one host's package set (the same x86_64-linux one
+        # `nixosConfigurations.nanokvm-pro` uses).
+        nanokvmModules = nanokvmModules;
       }
       );
     in
-    perSystem // {
+    builtins.removeAttrs perSystem [ "nanokvmModules" ] // {
+      # ---- the composable module set (#87, epic #26 product 1) ------------
+      #
+      # `nixosModules.nanokvm-pro` is the whole board -- every module in
+      # nixos/modules/ plus this flake's cross builds -- and it is what
+      # `nixosConfigurations.nanokvm-pro` below is made of, so a stranger's
+      # image and ours come off the same definitions. The nine area modules
+      # are exported beside it for anyone who wants to take only some of the
+      # board; each needs `nixosModules.packages` imported exactly once
+      # alongside it, which is what carries the kernel, the device tree and
+      # the rest. docs/modules.md.
+      #
+      # System-independent by flake schema, but built from the x86_64-linux
+      # instantiation -- every flashable output of this flake is (pkgs/boot.nix's
+      # packer is x86-64-only); the SYSTEM the modules describe is aarch64-linux.
+      nixosModules = perSystem.nanokvmModules.x86_64-linux;
+
       # The appliance as a first-class NixOS system (#78), so it can be
       # inspected and switched with the ordinary tooling:
       #   nix build .#nixosConfigurations.nanokvm-pro.config.system.build.toplevel
