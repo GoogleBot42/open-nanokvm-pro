@@ -1294,7 +1294,7 @@ in
 
     # 5d. The KVM server. Mirrors the vendor service model: the app tree is
     # copied to tmpfs at boot and the binary runs from there
-    # (docs/architecture.md "Runtime service model").
+    # (docs/architecture.md "Service model").
     #
     # This replaces the vendor `nanokvm.sh` supervisor, which did three things:
     # the tmpfs copy (nanokvm-appdir below), a restart loop that gives up after

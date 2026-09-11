@@ -57,14 +57,14 @@
 # those are diagnostics and build inputs, and a hundred megabytes of them has
 # no business inside an OTA bundle or on the appliance's rootfs.
 #
-# It exists ALONGSIDE pkgs/kernel.nix (Linux 4.19.125, still the shipped
+# It replaced pkgs/kernel.nix (Linux 4.19.125, once the shipped
 # kernel). No shipped firmware/rootfs/update output references this file yet.
 #
 # Version ceiling: 7.2. The out-of-tree aic8800 WiFi driver (#85) does not
 # build above it. WiFi is explicitly droppable (#26, #55) -- when that call is
 # made, the ceiling lifts and `kernelAttr` below can move.
 #
-# Why not nixpkgs' buildLinux: the same reason pkgs/kernel.nix drives `make`
+# Why not nixpkgs' buildLinux: the same reason the 4.19 build drove `make`
 # directly -- we want the config we wrote, an assertable kernelrelease, and the
 # raw `Image` that U-Boot's `booti` wants, without a kernel-package wrapper in
 # between. We take only the SOURCE from nixpkgs, so the tarball stays pinned and

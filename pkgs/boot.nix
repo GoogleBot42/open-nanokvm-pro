@@ -318,7 +318,7 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
     # SPL. The sd/ variant now fits its 50K sign slot (see the gc-sections fix in
     # configurePhase), so it signs cleanly to spl_<project>_sd_signed.bin -- the
     # `boot.bin` the AX620E BootROM loads from the FAT partition of an SD card
-    # (consumed by pkgs/sd-image.nix). A hard size guard in installPhase fails the
+    # (the SD image that consumed it was deleted in #97). A hard size guard in installPhase fails the
     # build LOUDLY if the raw SD SPL ever creeps back over 51200 B (which would
     # make the sign tool silently drop its output).
     ( cd boot/bl1/fdl && $mk install CONFIG_PROJECT=AX620E_CFG )
@@ -353,7 +353,8 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
     fi
 
     # Signed per-partition images (what the image/.axp layer consumes).
-    # spl_<project>_sd_signed.bin is the SD-card boot SPL (pkgs/sd-image.nix).
+    # spl_<project>_sd_signed.bin is the SD-card boot SPL; nothing consumes it
+    # since #97 deleted the SD image.
     for f in \
       spl_${project}_signed.bin \
       spl_${project}_enc_signed.bin \
@@ -379,8 +380,7 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
     # Raw (unsigned) binaries + logo, for debugging / alternate packaging.
     # eip_ax620e.bin -- the standalone copy of the closed EIP-130 firmware that
     # build/tools/imgsign ships -- used to be copied here too. Nothing consumed
-    # it (pkgs/image.nix passes the VENDOR bundle's member through, not ours), so
-    # it is no longer exported (#90).
+    # it, so it is no longer exported (#90).
     for f in atf_bl31.bin u-boot.bin spl_${project}.bin fdl2.bin \
              axera_logo.bmp; do
       [ -f "$imgs/$f" ] && cp "$imgs/$f" "$out/images/$f" || true

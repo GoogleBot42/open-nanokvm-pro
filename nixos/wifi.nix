@@ -26,7 +26,8 @@
 #      `connect_start <ssid> [pass]`, `connect_stop` and `ap_stop`, and read
 #      status from `wpa_cli -i wlan0 status`
 #      (server/service/network/wifi.go, wifi_scan.go, server/utils/wifi.go).
-#      `pkgs/rootfs/wifi.sh` is a DIFFERENT script at a different path
+#      the 4.19 image's `/opt/scripts/wifi.sh` was a DIFFERENT script at a
+#      different path
 #      (/opt/scripts/wifi.sh, verbs start|stop|restart) that the vendor's own
 #      wifi.service ran at boot; it does not implement any of the four. So the
 #      appliance provides /kvmcomm/scripts/wifi.sh, honouring the path the
