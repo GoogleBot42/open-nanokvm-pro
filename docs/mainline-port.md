@@ -1667,9 +1667,34 @@ deleted `/boot/ax630c-nanokvm-pro.dtb` while both extlinux configs named it.
 `\(LINUX\|FDT\)` matched the literal string `LINUX|FDT`, `keep` came out empty,
 and every file matching the globs was "named by neither config". Only the
 pre-#86 `/boot/Image` name saved the kernel; on the content-addressed layout
-both go and the board loops into AXDL. Fixed with a comma delimiter and a
-guard that collects nothing when `keep` is empty — the second being the
-property that should have made it loud.
+both go and the board loops into AXDL. Fixed on main as its own commit
+(`d4f0e5f`): a comma delimiter, and a guard that collects nothing when `keep`
+is empty — the second being the property that should have made it loud. The
+third boot below is that fix firing: mark-good promoted the fallback and
+deleted nothing.
+
+**Device end state**, read back after the third boot:
+
+| | |
+|---|---|
+| kernel | `7.1.3-nanokvm`, 54 s from `reboot` to SSH |
+| `bootcount` (`0x02390030`) | `0xB0010000` — one attempt |
+| slot register (`0x02390024`) | `0x30000008` |
+| profile / booted system | `system-3-link` → `ay6b5yyyxqin0d9x310iih4nbvk13snm` |
+| `is-system-running` | `running` |
+| `/boot/Image` | `4e07806f21e4d1eef71218bd2fbf0259` |
+| `/boot/ax630c-nanokvm-pro.dtb` | `378e1b642c8100d65196888896592779` |
+| `/boot/Image.prev` | `558e7e171dd215d30f77e8de1304ad57` (round 1's kernel, also proven) |
+| `/boot/ax630c-nanokvm-pro.dtb.prev` | `b58a8e3eb474989efd3543bd7d6e68af` (the pre-#83 tree) |
+| both extlinux configs | `LINUX /Image`, `FDT /ax630c-nanokvm-pro.dtb` |
+| services | `nanokvm`, `nanokvm-video`, `nanokvm-mark-good` all active; web 200 |
+| nodes | `/dev/video0`, `/dev/media0`, `/dev/v4l-subdev0`, `/dev/es_venc` |
+| `/boot` | 100 MB of 245 MB used |
+
+`/boot` is still the PRE-#86 shape — `Image` and `ax630c-nanokvm-pro.dtb`, not
+the content-addressed names — because bootstrapping that layout is #86's own
+hardware round, not this one's. The `.prev` pair is the hand-made rollback the
+brief called for while `Image` and the fallback still named one kernel.
 
 ---
 ---
