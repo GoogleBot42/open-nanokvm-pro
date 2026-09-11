@@ -822,7 +822,7 @@ static int openvin_csi2_set_fmt(struct v4l2_subdev *sd,
 	 */
 	fmt->format.code = MEDIA_BUS_FMT_UYVY8_1X16;
 	fmt->format.width = clamp_t(u32, fmt->format.width, 64, 4096);
-	fmt->format.height = clamp_t(u32, fmt->format.height, 64, 2160);
+	fmt->format.height = clamp_t(u32, fmt->format.height, 64, 2400);
 	fmt->format.field = V4L2_FIELD_NONE;
 	fmt->format.colorspace = V4L2_COLORSPACE_SRGB;
 

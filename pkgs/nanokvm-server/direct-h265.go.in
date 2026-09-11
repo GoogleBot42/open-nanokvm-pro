@@ -59,6 +59,15 @@ func newH265Streamer() *h265Streamer {
 // ConnectH265 upgrades the request to a WebSocket and attaches it to the
 // H.265 stream until the peer closes. Mirrors Connect (h264.go).
 func ConnectH265(c *gin.Context) {
+	// Refuse BEFORE the upgrade when the attached host's mode is out of
+	// range (#98): a websocket that connects and then never carries a frame
+	// is indistinguishable from a wedged encoder. See common/video_envelope.go.
+	if source := common.GetVideoSource(); source.Unsupported() {
+		log.Errorf("h265 direct refused: %s", source.Reason())
+		c.JSON(503, gin.H{"code": -5, "msg": source.Reason()})
+		return
+	}
+
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Errorf("failed to upgrade to websocket: %s", err)

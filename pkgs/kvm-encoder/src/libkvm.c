@@ -58,6 +58,12 @@ static int64_t s_chn_fail_until = 0;  /* VENC-create cooldown: no 120 Hz retry s
 static int64_t s_prev_lease_us = 0;    /* read-path tap active until then */
 static int64_t s_last_enc_cap_us = 0;  /* last kvm_cap_get by the read path */
 static int64_t s_last_geom_us = 0;     /* last live source-geometry poll */
+
+/* Last source geometry seen outside the capture envelope (#98). Sticky so
+ * every consumer -- the MJPEG route, the direct streams, the WebRTC status
+ * channel -- can say "this mode is not supported" instead of failing the way
+ * a wedged encoder fails. Zeroed the moment a supported geometry arrives. */
+static int s_unsup_w = 0, s_unsup_h = 0;
 static int64_t s_last_frame_us = 0;    /* last successful kvm_cap_get */
 static int64_t s_reinit_after_us = 0;  /* throttle: no re-init before this */
 
@@ -199,6 +205,21 @@ static int init_pipeline_locked(int w, int h)
         fprintf(stderr, "OPEN-KVM: no source geometry (%dx%d, HDMI unlocked?); refusing bring-up\n", w, h);
         return -1;
     }
+    /* Outside the envelope is its OWN failure, not a bring-up failure (#98).
+     * kvm_sys_init would refuse it too, but only the caller that knows this
+     * is a geometry problem can tell the user something actionable -- and
+     * before this existed the symptom was a stream that produced no bytes at
+     * all and no error anywhere but the journal. */
+    if (!kvm_cap_geom_ok(w, h)) {
+        int mw = 0, mh = 0;
+        kvm_cap_envelope(&mw, &mh);
+        if (s_unsup_w != w || s_unsup_h != h)
+            fprintf(stderr, "OPEN-KVM: source %dx%d is outside the capture envelope "
+                    "(64x64..%dx%d, even dimensions); refusing bring-up\n", w, h, mw, mh);
+        s_unsup_w = w; s_unsup_h = h;
+        return -1;
+    }
+    s_unsup_w = 0; s_unsup_h = 0;
     if (kvm_sys_init(&s_cap, w, h) != 0) { kvm_sys_deinit(&s_cap); return -1; }
     if (kvm_cap_start(&s_cap, w, h, s_fps) != 0) { kvm_cap_stop(&s_cap); kvm_sys_deinit(&s_cap); return -1; }
     s_w = w; s_h = h; s_inited = 1;
@@ -318,7 +339,11 @@ int kvmv_read_img(uint16_t _width, uint16_t _height, uint8_t _type, uint16_t _ql
         }
     }
 
-    if (!s_inited && init_pipeline_locked(_width, _height) != 0) { pthread_mutex_unlock(&s_lock); return IMG_VENC_ERROR; }
+    if (!s_inited && init_pipeline_locked(_width, _height) != 0) {
+        int rc_init = s_unsup_w ? IMG_UNSUPPORTED_MODE : IMG_VENC_ERROR;
+        pthread_mutex_unlock(&s_lock);
+        return rc_init;
+    }
 
     int want_type = (_type == IMG_MJPEG_TYPE) ? 0
                   : (_type >= IMG_H265_TYPE_SPS) ? 2 : 1;   /* 5..8 = H.265 */
@@ -701,6 +726,28 @@ int kvmv_preview_tick(void)
     }
     pthread_mutex_unlock(&s_lock);
     return rc;
+}
+
+/* The source, and the envelope it has to fit in (#98). Returns 1 when the
+ * attached host's mode is one this device can capture, 0 when it is not, and
+ * -1 when there is no source geometry to judge (HDMI unlocked, or the poll
+ * failed). *w/*h are the live source geometry, *max_w/*max_h the ceiling.
+ *
+ * This is a PURE query -- it brings nothing up and takes no pipeline lock --
+ * so a request handler can call it before deciding whether to open a stream
+ * at all. It reads /proc/lt6911_info afresh rather than reporting the sticky
+ * refusal, so it is right even before anything has tried to stream. */
+int kvmv_source_state(int *w, int *h, int *max_w, int *max_h)
+{
+    int sw = 0, sh = 0, sf = 0, locked = 0;
+    kvm_cap_envelope(max_w, max_h);
+    if (w) *w = 0;
+    if (h) *h = 0;
+    if (kvm_read_source(&sw, &sh, &sf, &locked) != 0 || !locked || sw <= 0 || sh <= 0)
+        return -1;
+    if (w) *w = sw;
+    if (h) *h = sh;
+    return kvm_cap_geom_ok(sw, sh) ? 1 : 0;
 }
 
 int kvmv_video_resume(void)

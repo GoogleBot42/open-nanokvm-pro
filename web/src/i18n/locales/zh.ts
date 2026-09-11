@@ -82,6 +82,7 @@ const zh = {
       resetHdmi: '重置 HDMI',
       noSignal: 'HDMI 无信号',
       inconsistentVideoMode: '已暂停，其他视频模式正在播放中',
+      unsupportedVideoMode: '不支持的视频模式。主机输出的分辨率超出本设备的采集范围，请调低分辨率。',
       upload: '上传',
       advanced: '高级设置'
     },

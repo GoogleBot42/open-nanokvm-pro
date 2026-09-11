@@ -62,7 +62,7 @@
 
 #define VCENC_GEOM_MIN_W 64
 #define VCENC_GEOM_MIN_H 64
-#define VCENC_GEOM_MAX_W 3840
+#define VCENC_GEOM_MAX_W 4096
 #define VCENC_GEOM_MAX_H 2400
 
 typedef struct {
@@ -104,14 +104,23 @@ static inline uint32_t vcg_align(uint32_t v, uint32_t a)
 
 /* 0 if the open encoder can drive (w,h); -1 with *why otherwise. The height
  * ceiling is 2400, not 2160: the vendor encoder accepts 3840x2400 and every
- * geometry law holds there (E3), and the 4K 16:10 EDID exists (#61). */
+ * geometry law holds there (E3), and the 4K 16:10 EDID exists (#61). The
+ * width ceiling is 4096, not 3840 (#98): the bench host emits DCI 4K
+ * (4096x2160) and pins it regardless of EDID, so 3840 was a ceiling a real
+ * source could reach. No vendor golden program exists above 3840 wide -- the
+ * source that could have produced one is the same one that only emits
+ * 4096 -- so 4096 rests on the laws extrapolating plus a decoded hardware
+ * encode, not on a vendor differential. Every width-derived field has the
+ * headroom: sw5[31:20] carries align16(W)/2 = 2048 in 12 bits, sw210 and
+ * sw261 carry W/16 and align16(W) in 16-bit halves, and the floorplan span
+ * is 63.14 MiB at 4096x2160 against a 136 MiB carveout. */
 static inline int vcenc_geom_check(int w, int h, const char **why)
 {
 	const char *r = 0;
 	if (w < VCENC_GEOM_MIN_W || h < VCENC_GEOM_MIN_H)
 		r = "below 64x64 minimum";
 	else if (w > VCENC_GEOM_MAX_W || h > VCENC_GEOM_MAX_H)
-		r = "above 3840x2400 envelope";
+		r = "above 4096x2400 envelope";
 	else if ((w | h) & 1)
 		r = "odd width/height (YUYV macropixel)";
 	if (why)

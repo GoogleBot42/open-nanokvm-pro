@@ -246,6 +246,60 @@ EOF
     #    "suspended") in /api/streamer/local.
     cp ${./nanokvm-server/video-power.go.in} common/video_power.go
 
+    # The capture envelope, queried before a stream is opened (#98). A source
+    # the SoC cannot capture used to fail one frame-read at a time: the MJPEG
+    # route staged its multipart headers and blocked forever without flushing
+    # a byte, and the direct websockets connected and went silent. Now every
+    # stream route asks first and answers 503 with both numbers in it.
+    cp ${./nanokvm-server/video-envelope.go.in} common/video_envelope.go
+
+    substituteInPlace service/stream/mjpeg/mjpeg.go \
+      --replace-fail 'import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+)' 'import (
+	"net/http"
+	"time"
+
+	"NanoKVM-Server/common"
+
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
+)' \
+      --replace-fail 'func Connect(c *gin.Context) {
+	c.Header("Content-Type", "multipart/x-mixed-replace; boundary=frame")' \
+'func Connect(c *gin.Context) {
+	// #98: refuse before staging the multipart headers. Past this point the
+	// handler blocks on the request context and only writeFrame ever flushes,
+	// so an unsupported source produced an unanswered 200 and zero bytes.
+	if source := common.GetVideoSource(); source.Unsupported() {
+		log.Errorf("mjpeg stream refused: %s", source.Reason())
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": -5, "msg": source.Reason()})
+		return
+	}
+
+	c.Header("Content-Type", "multipart/x-mixed-replace; boundary=frame")'
+
+    substituteInPlace service/stream/direct/h264.go \
+      --replace-fail '	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"' \
+'	"NanoKVM-Server/common"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"' \
+      --replace-fail 'func Connect(c *gin.Context) {
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)' \
+'func Connect(c *gin.Context) {
+	// #98, same reasoning as the H.265 twin in h265.go.
+	if source := common.GetVideoSource(); source.Unsupported() {
+		log.Errorf("h264 direct refused: %s", source.Reason())
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": -5, "msg": source.Reason()})
+		return
+	}
+
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)'
+
     substituteInPlace common/kvm_vision.go \
       --replace-fail 'func (k *KvmVision) ReadMjpeg(width uint16, height uint16, quality uint16) (data []byte, result int) {' \
 'func (k *KvmVision) ReadMjpeg(width uint16, height uint16, quality uint16) (data []byte, result int) {

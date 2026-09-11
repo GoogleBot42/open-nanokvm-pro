@@ -29,6 +29,15 @@ typedef struct {
     int streamOn;       /* VIDIOC_STREAMON succeeded; buffers are queued */
 } kvm_cap_ctx;
 
+/* The capture envelope (#98). The backend owns it -- it has to match the
+ * kernel driver's OVC_MAX_* -- and kvm_sys_init enforces it, but libkvm.c
+ * asks FIRST so that a source outside the range is reported as its own thing
+ * ("this mode is not supported") rather than as a generic bring-up failure.
+ * kvm_cap_envelope fills the maximum; kvm_cap_geom_ok is 1 when (w,h) is
+ * inside it. */
+void kvm_cap_envelope(int *max_w, int *max_h);
+int  kvm_cap_geom_ok(int w, int h);
+
 /* Open the capture node and negotiate WxH. Call once per pipeline. */
 int  kvm_sys_init(kvm_cap_ctx *c, int w, int h);
 void kvm_sys_deinit(kvm_cap_ctx *c);

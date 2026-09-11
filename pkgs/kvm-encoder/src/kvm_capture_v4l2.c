@@ -62,8 +62,13 @@ _Static_assert(sizeof(((struct dmabuf_import_parameter *)0)->bus_addr)
 #define V4L2_NBUF        4         /* 3 in flight + the one being encoded */
 #define V4L2_MIN_W       64
 #define V4L2_MIN_H       64
-#define V4L2_MAX_W       3840
-#define V4L2_MAX_H       2160
+/* The capture envelope, and it must match open_vin_capture's OVC_MAX_* --
+ * the driver CLAMPS an out-of-range format instead of refusing it, so a
+ * mismatch shows up as "driver negotiated WxH, wanted W'xH'" below rather
+ * than as a clean rejection here. 4096x2400 (#98): the bench host emits DCI
+ * 4K and the 16:10 EDID (#61) advertises 3840x2400. */
+#define V4L2_MAX_W       4096
+#define V4L2_MAX_H       2400
 
 static struct {
     int vfd;                       /* /dev/videoN, -1 when closed */
@@ -84,6 +89,20 @@ static struct {
 } S = { .vfd = -1, .efd = -1, .dq = -1 };
 
 static const char *es(int e) { return e ? strerror(e) : "ok"; }
+
+/* The envelope, published so libkvm.c can name it in a user-visible error
+ * before it tries to bring anything up (#98). */
+void kvm_cap_envelope(int *max_w, int *max_h)
+{
+    if (max_w) *max_w = V4L2_MAX_W;
+    if (max_h) *max_h = V4L2_MAX_H;
+}
+
+int kvm_cap_geom_ok(int w, int h)
+{
+    return w >= V4L2_MIN_W && h >= V4L2_MIN_H &&
+           w <= V4L2_MAX_W && h <= V4L2_MAX_H && !((w | h) & 1);
+}
 
 /* Find the open capture node by driver name (env OPENKVM_V4L2_DEV overrides). */
 static int open_node(void)

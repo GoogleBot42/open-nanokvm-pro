@@ -1,0 +1,76 @@
+package common
+
+// The capture envelope, surfaced to the HTTP layer (OUR addition; copied into
+// the vendored server source as common/video_envelope.go by
+// pkgs/nanokvm-server.nix postPatch). Issue #98.
+//
+// WHY THIS EXISTS. The pipeline reads the attached host's geometry from
+// /proc/lt6911_info and brings capture up at whatever it finds. A mode the
+// SoC cannot capture therefore failed at the very bottom of the stack, one
+// frame-read at a time, and every consumer failed differently: the MJPEG
+// route staged its multipart headers and then blocked forever without
+// flushing a single byte (`curl` saw a 200 that never arrived and zero
+// bytes), the direct websockets connected and went silent, and the only
+// evidence anywhere was a line in the journal. That is the reported symptom
+// of #98 -- 4096x2160 on a stack that capped at 3840 -- and raising the cap
+// fixes this source, not the next one.
+//
+// So: ask before opening a stream. kvmv_source_state is a pure query (no
+// bring-up, no pipeline lock), and a route that knows the answer can refuse
+// with a real HTTP status and a message that names both numbers instead of
+// hanging.
+
+/*
+#cgo CFLAGS: -I../include
+#cgo LDFLAGS: -L../dl_lib -lkvm
+// Our libkvm extension; not in the vendored include/kvm_vision.h.
+extern int kvmv_source_state(int *w, int *h, int *max_w, int *max_h);
+*/
+import "C"
+
+import "fmt"
+
+// VideoSource is the attached host's mode measured against what this device
+// can capture.
+type VideoSource struct {
+	Width  int
+	Height int
+	MaxW   int
+	MaxH   int
+	// Locked is false when there is no signal to judge. Supported is only
+	// meaningful when Locked is true.
+	Locked    bool
+	Supported bool
+}
+
+// GetVideoSource reads the live source geometry and the capture envelope.
+func GetVideoSource() VideoSource {
+	var w, h, maxW, maxH C.int
+	rc := C.kvmv_source_state(&w, &h, &maxW, &maxH)
+
+	return VideoSource{
+		Width:     int(w),
+		Height:    int(h),
+		MaxW:      int(maxW),
+		MaxH:      int(maxH),
+		Locked:    rc >= 0,
+		Supported: rc == 1,
+	}
+}
+
+// Unsupported reports whether there IS a signal and it is out of range. A
+// missing signal is not an unsupported mode: "no image" is the pipeline's
+// own, older, already-reported condition, and conflating the two would put an
+// "unsupported mode" toast on every unplugged host.
+func (s VideoSource) Unsupported() bool {
+	return s.Locked && !s.Supported
+}
+
+// Reason is the message handed to the client. It names the source and the
+// maximum, because "unsupported" without the two numbers tells the user
+// nothing they can act on.
+func (s VideoSource) Reason() string {
+	return fmt.Sprintf(
+		"the attached host outputs %dx%d, which is outside the range this device can capture (up to %dx%d)",
+		s.Width, s.Height, s.MaxW, s.MaxH)
+}

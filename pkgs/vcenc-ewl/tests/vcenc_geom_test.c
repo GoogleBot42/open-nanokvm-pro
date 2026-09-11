@@ -127,8 +127,11 @@ static void envelope(void)
     vcenc_geom g;
     static const struct { int w, h, ok; } E[] = {
         { 1920, 1200, 1 }, { 64, 64, 1 }, { 1366, 768, 1 },
-        { 3840, 2160, 1 }, { 3840, 2400, 1 }, { 3842, 2160, 0 },
-        { 3840, 2402, 0 }, { 62, 64, 0 },
+        { 3840, 2160, 1 }, { 3840, 2400, 1 },
+        /* #98: DCI 4K, the geometry the bench host actually emits, plus the
+         * two corners of the raised envelope. */
+        { 4096, 2160, 1 }, { 4096, 2400, 1 },
+        { 4098, 2160, 0 }, { 4096, 2402, 0 }, { 62, 64, 0 },
         { 1365, 768, 0 }, { 1280, 719, 0 },
     };
     for (unsigned i = 0; i < sizeof E / sizeof E[0]; i++) {
@@ -140,6 +143,36 @@ static void envelope(void)
         }
     }
     printf("envelope: accept/reject checked\n");
+
+    /*
+     * #98: the floorplan at the raised corners must still fit the encoder
+     * carveout (dts/ax630c-nanokvm-pro.dts venc-framebuf, 136 MiB). libkvm
+     * builds with want_input = 0; the standalone prover pays for the input
+     * region as well, and BOTH have to fit or ewl_encode stops being able to
+     * check the geometry the product runs.
+     */
+    {
+        static const struct { int w, h; } C[] = {
+            { 3840, 2160 }, { 3840, 2400 }, { 4096, 2160 }, { 4096, 2400 },
+        };
+        const uint32_t carveout = 136u * 1024 * 1024;
+        for (unsigned i = 0; i < sizeof C / sizeof C[0]; i++) {
+            for (int in = 0; in < 2; in++) {
+                if (vcenc_geom_build_ex(&g, C[i].w, C[i].h, in)) {
+                    printf("FAIL floorplan %dx%d want_input=%d rejected\n",
+                           C[i].w, C[i].h, in);
+                    fails++;
+                    continue;
+                }
+                if (g.span > carveout) {
+                    printf("FAIL floorplan %dx%d want_input=%d span %u > %u\n",
+                           C[i].w, C[i].h, in, g.span, carveout);
+                    fails++;
+                }
+            }
+        }
+        printf("floorplan: every envelope corner fits the 136 MiB carveout\n");
+    }
 }
 
 /*

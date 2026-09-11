@@ -23,5 +23,9 @@ export enum VideoStatus {
   NoImage = -1,
   VencError = -2,
   ImageBufferFull = -3,
-  InconsistentVideoMode = -4
+  // -4 is the SERVER's own arbitration code (another mode holds the single
+  // capture channel); everything else comes from libkvm's kvmv_read_img.
+  InconsistentVideoMode = -4,
+  // #98: there is a signal, and its geometry is outside the capture envelope.
+  UnsupportedMode = -5
 }

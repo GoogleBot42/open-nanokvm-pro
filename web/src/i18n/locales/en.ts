@@ -113,6 +113,8 @@ const en = {
       resetHdmi: 'Reset HDMI',
       noSignal: 'HDMI no signal',
       inconsistentVideoMode: 'Play paused. Another video mode is playing.',
+      unsupportedVideoMode:
+        'Unsupported video mode. The attached host is outside the range this device can capture. Lower its resolution.',
       upload: 'Upload',
       advanced: 'Advanced'
     },

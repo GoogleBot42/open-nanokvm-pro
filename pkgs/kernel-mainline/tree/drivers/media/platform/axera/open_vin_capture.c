@@ -269,11 +269,26 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_AXI_YUV_CTRL	0xC0148
 #define OVC_AXI_YUV_STAT	0xC014C
 
-/* Format limits */
+/*
+ * Format limits -- 4096x2400, not 3840x2160 (#98).
+ *
+ * Both old ceilings were reachable by a real source and neither was admitted:
+ * the bench host outputs 4096x2160 (DCI 4K) and pins that mode regardless of
+ * EDID, and the 16:10 EDID this project ships (#61) advertises 3840x2400.
+ *
+ * Nothing in the datapath is width-baked. The CSI-2 receiver is
+ * format-transparent and already clamped at 4096 (open_vin_csi2.c); the
+ * golden ISP image parameterises exactly four words on geometry
+ * (ovc_golden_4k.h), and those words hold width and height in separate
+ * 16-bit halves, so 4096 costs no bit. The real bound is the capture pool,
+ * and ovc_queue_setup() enforces it dynamically rather than through these
+ * constants: 56 MiB holds three 4096x2160 YUYV frames (16.88 MiB each) and
+ * two 4096x2400 ones (18.75 MiB).
+ */
 #define OVC_MIN_WIDTH		64
-#define OVC_MAX_WIDTH		3840
+#define OVC_MAX_WIDTH		4096
 #define OVC_MIN_HEIGHT		64
-#define OVC_MAX_HEIGHT		2160
+#define OVC_MAX_HEIGHT		2400
 /* Default to the confirmed source geometry (live vendor capture = 3840x2160). */
 #define OVC_DEF_WIDTH		3840
 #define OVC_DEF_HEIGHT		2160
@@ -1033,17 +1048,34 @@ static int ovc_queue_setup(struct vb2_queue *vq, unsigned int *nbuffers,
 	if (*nplanes)
 		return sizes[0] < ovc->fmt.sizeimage ? -EINVAL : 0;
 
-	/* Never promise more buffers than the carveout holds (a 4K YUYV frame
-	 * is 15.8 MB; the 56 MB default fits three) -- otherwise vb2 tries the
-	 * allocation and dma_alloc_coherent logs a failure for every start. */
+	/* Never promise more buffers than the carveout holds -- otherwise vb2
+	 * tries the allocation and dma_alloc_coherent logs a failure for every
+	 * start. This, not OVC_MAX_WIDTH/HEIGHT, is what actually bounds the
+	 * envelope: in the 56 MiB default pool a YUYV frame is 15.82 MiB at
+	 * 3840x2160 (three fit), 16.88 MiB at 4096x2160 (three), 18.43 MiB at
+	 * 3840x2400 (three) and 18.75 MiB at 4096x2400 (two). Two is the vb2
+	 * minimum this queue declares, so the whole envelope rotates; the
+	 * corners just rotate with less slack, which is worth saying out loud
+	 * when it happens (#98). */
 	if (ovc->carveout_size) {
 		unsigned int max = div_u64(ovc->carveout_size,
 					   PAGE_ALIGN(ovc->fmt.sizeimage));
 
-		if (max < 2)
+		if (max < 2) {
+			dev_err(ovc->dev,
+				"%ux%u needs %u B/frame; the %llu MiB pool cannot hold two\n",
+				ovc->fmt.width, ovc->fmt.height,
+				ovc->fmt.sizeimage,
+				(u64)ovc->carveout_size >> 20);
 			return -ENOMEM;
-		if (*nbuffers > max)
+		}
+		if (*nbuffers > max) {
+			if (max < 3)
+				dev_info(ovc->dev,
+					 "%ux%u: pool holds only %u buffers\n",
+					 ovc->fmt.width, ovc->fmt.height, max);
 			*nbuffers = max;
+		}
 	}
 
 	*nplanes = 1;

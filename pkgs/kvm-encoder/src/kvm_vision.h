@@ -12,6 +12,9 @@ extern "C" {
 #include <string.h>
 #include <unistd.h>
 
+/* -4 is NOT free: the Go server hands it to the browser as its own
+ * "another video mode is playing" arbitration code. -5 is ours (#98). */
+#define IMG_UNSUPPORTED_MODE -5
 #define IMG_BUFFER_FULL   -3
 #define IMG_VENC_ERROR    -2
 #define IMG_NOT_EXIST     -1
@@ -82,6 +85,12 @@ int kvmv_set_rate_control(uint8_t mode);
  * suspend re-inits on its own; the explicit call just fronts the latency. */
 int kvmv_video_suspend(void);
 int kvmv_video_resume(void);
+
+/* The attached host's mode against the capture envelope (#98). 1 = capturable,
+ * 0 = out of range (kvmv_read_img will answer IMG_UNSUPPORTED_MODE), -1 = no
+ * signal to judge. Fills the live source geometry and the ceiling. Pure query:
+ * no bring-up, no lock. */
+int kvmv_source_state(int *w, int *h, int *max_w, int *max_h);
 
 /* Mini-display live preview (also ours). One call = one preview beat: keeps
  * the read-path preview tap leased for 1 s and, when no web viewer is pulling

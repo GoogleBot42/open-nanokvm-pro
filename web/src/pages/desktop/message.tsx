@@ -34,6 +34,9 @@ export const Message = () => {
     } else if (status === VideoStatus.InconsistentVideoMode) {
       icon = <MonitorPauseIcon size={16} className="text-yellow-500/80" />;
       content = <div className="pl-2 text-sm">{t('screen.inconsistentVideoMode')}</div>;
+    } else if (status === VideoStatus.UnsupportedMode) {
+      icon = <MonitorXIcon size={16} className="text-red-500/80" />;
+      content = <div className="pl-2 text-sm">{t('screen.unsupportedVideoMode')}</div>;
     } else {
       return;
     }

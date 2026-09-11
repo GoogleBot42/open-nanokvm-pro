@@ -739,6 +739,13 @@
         #   nix build .#checks.x86_64-linux.open-capture-geometry -L
         checks = {
           open-capture-geometry = kvm-encoder-geom-test;
+          # The LIVE capture envelope (#98): the kernel driver, the CSI-2
+          # receiver, libkvm, the encoder and the capture carveout all state
+          # it separately, and the driver CLAMPS rather than refusing, so a
+          # mismatch is silent. open-capture-geometry above is a different
+          # thing -- the frozen 1080p byte-identity proof for the retired
+          # vendor-MPI payload builder, which nothing links any more (#102).
+          open-capture-envelope = callPkg ./pkgs/capture-envelope-check.nix { };
           open-venc-geometry = vcenc-geom-test;
           open-venc-rc = vcenc-rc-test;
           # The mainline DT asserts its own boot contract (FDT slack, the
