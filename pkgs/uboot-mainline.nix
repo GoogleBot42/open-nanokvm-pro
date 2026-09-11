@@ -26,10 +26,13 @@
 , splDrvCmds ? "splmmc regs; splmmc init; splmmc probe 0x4a000000 0x4ae00"
 , splDrvTag ? ""
 , hangTest ? false
-  # #95. `gzip = false` (the DEFAULT since 2026-09-11) stores u-boot.bin RAW
-  # behind the signed header, for an SPL compiled with SUPPPORT_GZIPD=FALSE.
-  # It must match `.#spl-minimal`'s `gzipd`; the two are one artefact.
-, gzip ? false
+  # #95. `gzip = true` is STILL THE DEFAULT: the raw chain has not booted the
+  # board yet, and `.#nixos-firmware-image-mainline` is the AXDL recovery image
+  # -- a recovery image that fails the way the candidate did is not a recovery.
+  # `gzip = false` stores u-boot.bin RAW behind the signed header, for an SPL
+  # compiled with SUPPPORT_GZIPD=FALSE; that is `.#uboot-mainline-raw`, and it
+  # must be paired with `.#spl-minimal-raw`. The two are one artefact.
+, gzip ? true
 , ... }:
 
 # ===========================================================================
@@ -47,10 +50,11 @@
 # WHAT THIS PRODUCES
 #   images/u-boot.bin                    raw, DT appended, links at 0x5C000400
 #   images/u-boot.dtb                    the device tree that is inside it
-#   images/u-boot_mainline_signed.bin    1 KiB signed header + the RAW binary
-#                                        (#95; `gzip = true` restores the
-#                                        axgzip'd packing), `dd`-able into the
-#                                        `uboot` partition
+#   images/u-boot_mainline_signed.bin    axgzip'd + 1 KiB signed header,
+#                                        packaged exactly like the vendor's
+#                                        u-boot_signed.bin, `dd`-able into the
+#                                        `uboot` partition. `gzip = false`
+#                                        (#95) stores the RAW binary instead
 #   src/part_cmdline.c                   the patched partition driver, so the
 #                                        host-side parser test in
 #                                        checks.uboot-mainline builds the
@@ -1345,7 +1349,7 @@ let
     + lib.optionalString (emmcPhyHsmmc != null) "-phy${toString emmcPhyHsmmc}"
     + lib.optionalString splDrv ("-spldrv" + splDrvTag)
     + lib.optionalString hangTest "-hangtest"
-    + lib.optionalString gzip "-gzipd";
+    + lib.optionalString (!gzip) "-raw";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;

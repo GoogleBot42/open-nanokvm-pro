@@ -12,6 +12,10 @@
 , slotPairs ? [ ] # [{ a = <partition>; b = <partition>; }] -- must be identical
 , signedMembers ? [ ] # partitions whose member carries the 1 KB AX signed header
 , notes ? ""
+  # #95. The boot-chain members used to be packed with Axera's prebuilt x86-64
+  # `ax_gzip`, which is what pinned this bundle to an x86_64-linux builder.
+  # The raw-chain variant needs no prebuilt binary; the default still does.
+, hostAgnostic ? false
 }:
 
 # ===========================================================================
@@ -317,11 +321,11 @@ let
 
   meta = {
     description = "AXDL .axp firmware bundle, packed from scratch (manifest + every stored partition from source)";
-    # Was x86_64-linux-only because every stored boot-chain member had to go
-    # through the prebuilt `ax_gzip`. #95 retired it; nothing in the members'
-    # build runs an x86-64 binary now, and `.#checks.<sys>.no-x86-blobs`
-    # asserts the closure carries none either.
-    platforms = pkgs.lib.platforms.linux;
+    # x86_64-linux-only whenever a stored boot-chain member goes through the
+    # prebuilt `ax_gzip`. #95's raw chain does not, and its bundle says so --
+    # `.#checks.<sys>.no-x86-blobs` asserts the artefacts carry no x86-64 ELF.
+    platforms =
+      if hostAgnostic then pkgs.lib.platforms.linux else [ "x86_64-linux" ];
   };
   };
 in

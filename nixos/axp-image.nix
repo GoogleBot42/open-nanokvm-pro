@@ -10,6 +10,9 @@
 , spl-minimal # pkgs/spl-minimal.nix -- the SPL rebuilt for this layout
 , gpt-image # pkgs/gpt-image.nix -- the generated GPT (primary + alternate)
 , artifacts # nixos/lib/appliance-artifacts.nix
+  # #95. True only for the raw-chain variant, whose members need no prebuilt
+  # x86-64 host tool; the default chain is still axgzip'd and still does.
+, hostAgnostic ? false
 , ...
 }:
 
@@ -71,7 +74,9 @@ let
   # second bootloader.
   atfImg = "${atf-mainline}/images/atf_bl31_mainline_signed.bin";
   ubootImg = "${uboot-mainline}/images/u-boot_mainline_signed.bin";
-  splImg = "${spl-minimal}/images/spl_${project}_signed.bin";
+  # The SPL's file name carries its build variant (`-raw`, `-eip`), so take it
+  # from the package rather than assuming the default.
+  splImg = "${spl-minimal}/images/spl_${project}${spl-minimal.variant or ""}_signed.bin";
 
   bootfs = mkBootfs bootDir;
 
@@ -141,10 +146,12 @@ let
 
   axp = import ./lib/make-axp-image.nix {
     inherit pkgs lib parts project partitionImages downloadAgents imgOrder;
+    inherit hostAgnostic;
     projectVersion = "open-nanokvm-pro ${version} (nixos appliance)";
-    pname = "nanokvm-pro-nixos-firmware-image-mainline";
+    pname = "nanokvm-pro-nixos-firmware-image-mainline"
+      + lib.optionalString hostAgnostic "-raw";
     inherit version;
-    artifact = "${project}-nixos${sfx}.axp";
+    artifact = "${project}-nixos${sfx}${lib.optionalString hostAgnostic "-raw"}.axp";
     # No A/B twins in this layout, so no pair to assert identical.
     slotPairs = [ ];
     signedMembers = lib.filter parts.has [ "spl" "atf" "uboot" ];

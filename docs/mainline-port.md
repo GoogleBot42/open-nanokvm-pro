@@ -6332,12 +6332,21 @@ then wedges resets with the load having *succeeded*, so it still counts.
 
 ### 11.12 #95: the stages go raw, and `ax_gzip` is retired (offline, 2026-09-11)
 
-`ax_gzip` was the last prebuilt x86-64 binary anywhere in this build — an Axera
-static ELF with no source, packing every stage the SPL loads into the "axgzip"
-LZ77 that the SoC's gzipd block decompresses in hardware. It is gone. The SPL is
-compiled with `SUPPPORT_GZIPD=FALSE`, `atf` and `uboot` are stored raw behind
-their signed headers, and `pkgs/boot.nix` deletes the tool from its own build
-tree. **Not on hardware yet** — this section is the offline half.
+`ax_gzip` is the last prebuilt x86-64 binary in this build — an Axera static ELF
+with no source, packing every stage the SPL loads into the "axgzip" LZ77 that
+the SoC's gzipd block decompresses in hardware. #95 builds the chain that does
+without it: an SPL compiled `SUPPPORT_GZIPD=FALSE`, with `atf` and `uboot`
+stored raw behind their signed headers. `pkgs/boot.nix` (the FDL agents) drops
+the tool unconditionally.
+
+**The raw chain is NOT the default, and must not become one until it has booted
+the board.** `.#nixos-firmware-image-mainline` is the AXDL recovery image; if
+the raw SPL failed on hardware, a recovery image built the same way would fail
+identically — a bench trip with a broken recovery. So the defaults stay
+axgzip'd and byte-identical to what the board runs, the raw chain ships as
+`.#spl-minimal-raw` / `.#atf-mainline-raw` / `.#uboot-mainline-raw` /
+`.#nixos-firmware-image-mainline-raw`, and the write is done from a running
+board. **Not on hardware yet** — this section is the offline half.
 
 #### What the macro actually gates
 
@@ -6383,10 +6392,20 @@ reversible one.
 
 | Package | Packing | Platform |
 |---|---|---|
-| `.#spl-minimal` | `SUPPPORT_GZIPD=FALSE` | any linux |
-| `.#atf-mainline` | raw BL31 behind the header | any linux |
-| `.#uboot-mainline` | raw `u-boot.bin` behind the header | any linux |
-| `.#spl-minimal-gzipd` / `.#atf-mainline-gzipd` / `.#uboot-mainline-gzipd` | the pre-#95 trio, byte-for-byte rebuildable | `x86_64-linux` (`ax_gzip`) |
+| `.#spl-minimal` / `.#atf-mainline` / `.#uboot-mainline` / `.#nixos-firmware-image-mainline` | axgzip'd — **the default, and what the board runs** | `x86_64-linux` (`ax_gzip`) |
+| `.#spl-minimal-raw` | `SUPPPORT_GZIPD=FALSE` | any linux |
+| `.#atf-mainline-raw` | raw BL31 behind the header | any linux |
+| `.#uboot-mainline-raw` | raw `u-boot.bin` behind the header | any linux |
+| `.#nixos-firmware-image-mainline-raw` | the three above in an `.axp`; same rootfs, same `/boot`, same GPT | any linux |
+
+The default three are **byte-for-byte what `main` built before #95** — their
+store paths are unchanged (`5falfzc4…` spl, `g8q22xf8…` atf, `rnskha32…`
+uboot), which is asserted by construction: `gzip = true` selects the pre-#95
+script text verbatim, down to the `# --- axgzip + sign, exactly as the vendor
+ATF Makefile does ----------` comment, because **a comment inside a build string
+is a build input** and rewording it moved the hash on the first attempt. The
+flashable image's path does move, because `pkgs/boot.nix` changed; every member
+inside it is identical except FDL1, which is not reproducible anyway (below).
 
 Sizes, measured from the built artefacts:
 
@@ -6401,10 +6420,13 @@ asserted separately now.)
 
 #### How each claim is checked, from the artefact
 
-- **The decompressor is gone from the SPL**: `pkgs/spl-minimal.nix` counts `bl`
-  instructions targeting the gzipd driver in the SPL's own `objdump -S` output.
-  Seven in the `-gzipd` build, zero in the default one — each variant asserts
-  its own side, so the pair is a differential test.
+- **The decompressor is gone from the SPL**: `.#spl-minimal-raw` counts `bl`
+  instructions targeting the gzipd driver in the SPL's own `objdump -S` output
+  and fails if there are any. It is differential by measurement: the same count
+  over a `SUPPPORT_GZIPD=TRUE` build of this tree is **seven**, over the raw one
+  **zero**. Only the raw build carries the assertion, because the default one's
+  script has to stay byte-identical to the pre-#95 script; when the default
+  flips, the assertion becomes unconditional.
   *Do not use `gzip_pipeline_flash_read` as the oracle*: it is a file-static
   with one caller and `-Os` inlines it, so the symbol is absent from **both**
   builds. That version of the check looked like it passed and could never have

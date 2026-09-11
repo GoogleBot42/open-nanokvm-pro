@@ -180,21 +180,25 @@
         bootfs = mkBootfs nixos-appliance-mainline-chain.bootDir;
 
         # Mainline TF-A BL31 with our own plat/axera/ax630c (#89 rung 0),
-        # signed for the `atf` partition exactly like the vendor BL31 was --
-        # and since #95 stored RAW behind that header, because the SPL in front
-        # of it no longer has a decompressor.
+        # signed and axgzip'd for the `atf` partition exactly like the vendor
+        # BL31 was. THE PROVEN PACKING; see atf-mainline-raw below.
         atf-mainline = callPkg ./pkgs/atf-mainline.nix { inherit boot; };
 
-        # ---- the pre-#95 packing, kept buildable ---------------------------
-        # BL31 axgzip'd behind the header, for the SPL built with
-        # SUPPPORT_GZIPD=TRUE. The three `-gzipd` packages are ONE SET with
-        # `.#spl-minimal-gzipd`: an SPL can only read the format it was
-        # compiled for, and mixing them is a dark board. They exist so the
-        # trio the board is proven on can be rebuilt byte-for-byte until the
-        # raw trio has hardware behind it. Needs an x86-64 builder (ax_gzip).
-        atf-mainline-gzipd = callPkg ./pkgs/atf-mainline.nix {
+        # ---- #95: the raw packing, not yet on hardware ---------------------
+        # BL31 stored UNCOMPRESSED behind the same signed header, for an SPL
+        # built with SUPPPORT_GZIPD=FALSE. The three `-raw` packages are ONE
+        # SET with `.#spl-minimal-raw`: an SPL can only read the format it was
+        # compiled for, and either mismatch is a dark board with no console.
+        #
+        # They are NOT the default, and the flashable image is not built from
+        # them, because `.#nixos-firmware-image-mainline` is also the AXDL
+        # recovery image -- a recovery that fails the way the candidate did is
+        # no recovery. The write is done from a running board
+        # (docs/flashing-and-recovery.md); when it boots, the defaults flip and
+        # the gzip variants go.
+        atf-mainline-raw = callPkg ./pkgs/atf-mainline.nix {
           inherit boot;
-          gzip = true;
+          gzip = false;
         };
 
         # The same BL31 plus seven milestone-bit writes (#89 rung 1). A
@@ -386,6 +390,14 @@
         applianceImageModule = import ./nixos/image-axp.nix {
           builder = applianceAxpImageMainline;
         };
+        # #95's raw-chain twin of the same appliance. Same system closure;
+        # only the three boot-chain members of the .axp differ.
+        nixos-appliance-mainline-chain-raw = callPkg ./nixos/rootfs.nix {
+          inherit version nanokvmModules;
+          applianceModules = [
+            (import ./nixos/image-axp.nix { builder = applianceAxpImageMainlineRaw; })
+          ];
+        };
         # The same appliance retargeted at `qemu-system-aarch64 -M virt`, which
         # is where the NixOS half of a boot is proven before anything is
         # written to the device. See nixos/qemu-test.nix.
@@ -473,6 +485,26 @@
           };
         };
 
+        # #95: the same image with the RAW boot chain. It exists so the raw
+        # trio can be flashed as a unit if that is ever wanted, and so the
+        # no-x86-blobs check has an image to assert against; it is NOT what
+        # `.#nixos-firmware-image-mainline` builds, because that image is the
+        # AXDL recovery. Same rootfs, same /boot, same GPT -- only `spl`,
+        # `atf` and `uboot` differ, so it costs a second module evaluation and
+        # almost no build.
+        applianceAxpImageMainlineRaw = import ./nixos/axp-image.nix {
+          inherit pkgs project version boot uboot-env mkBootfs;
+          inherit gpt-image;
+          atf-mainline = atf-mainline-raw;
+          uboot-mainline = uboot-mainline-raw;
+          spl-minimal = spl-minimal-raw;
+          hostAgnostic = true;
+          artifacts = import ./nixos/lib/appliance-artifacts.nix {
+            inherit pkgs;
+            nixpkgs = inputs.nixpkgs;
+          };
+        };
+
         # ---- the appliance's update artefacts (#86, nix-native since #100) --
         # The system closure a release offers, and the few hundred bytes that
         # name it. The toplevel is a first-class output because the release job
@@ -548,19 +580,24 @@
         nixos-firmware-image-mainline =
           nixos-appliance-mainline-chain.eval.config.system.build.axpImage;
 
+        # #95: the same image with the raw boot chain. Not the recovery image,
+        # and not what a release ships, until the raw chain has booted a board.
+        nixos-firmware-image-mainline-raw =
+          nixos-appliance-mainline-chain-raw.eval.config.system.build.axpImage;
+
         # ---- mainline U-Boot (#89 rung 0) ----------------------------------
         #
         # Upstream U-Boot 2026.07 plus our AX630C board port, wrapped in the
-        # 1 KiB signed-header container the SPL loads -- raw behind that header
-        # since #95. This is BL33 on the board. docs/mainline-port.md 11.10.
+        # axgzip + signed-header container the SPL loads. This is BL33 on the
+        # board. docs/mainline-port.md 11.10.
         axSign = callPkg ./pkgs/ax-sign.nix { };
         uboot-mainline = callPkg ./pkgs/uboot-mainline.nix { inherit axSign; };
 
-        # The pre-#95 packing of the SAME binary: axgzip'd behind the header.
-        # One of the three `-gzipd` packages -- see atf-mainline-gzipd.
-        uboot-mainline-gzipd = callPkg ./pkgs/uboot-mainline.nix {
+        # #95: the SAME binary stored RAW behind the header. One of the three
+        # `-raw` packages -- see atf-mainline-raw.
+        uboot-mainline-raw = callPkg ./pkgs/uboot-mainline.nix {
           inherit axSign;
-          gzip = true;
+          gzip = false;
         };
 
         # ---- the SPL, rebuilt for the minimal layout (#89 rung 4) ---------
@@ -580,17 +617,16 @@
         # and a cold power cycle. That was the last closed payload on the
         # eMMC image.
         #
-        # Since #95 it is also built with SUPPPORT_GZIPD=FALSE, so it reads
-        # `atf` and `uboot` straight from flash instead of through the gzipd
-        # hardware -- which retires `ax_gzip`, the last prebuilt x86-64 host
-        # tool in this build. THE SPL AND THOSE TWO IMAGES ARE ONE SET.
+        # SUPPPORT_GZIPD=TRUE, so it expects axgzip'd stages. THE PROVEN
+        # PACKING; see spl-minimal-raw below.
         spl-minimal = callPkg ./pkgs/spl-minimal.nix { };
 
-        # The pre-#95 SPL: SUPPPORT_GZIPD=TRUE, so it expects axgzip'd stages.
-        # Pair it with `.#atf-mainline-gzipd` + `.#uboot-mainline-gzipd` and
-        # NOTHING ELSE. This is the trio the board is hardware-proven on, kept
-        # buildable until the raw trio has a boot behind it.
-        spl-minimal-gzipd = callPkg ./pkgs/spl-minimal.nix { gzipd = true; };
+        # #95: SUPPPORT_GZIPD=FALSE, so it reads `atf` and `uboot` straight
+        # from flash instead of through the gzipd hardware -- which is what
+        # retires `ax_gzip`, the last prebuilt x86-64 host tool in this build.
+        # Pair it with `.#atf-mainline-raw` + `.#uboot-mainline-raw` and
+        # NOTHING ELSE. Not yet on hardware; see atf-mainline-raw.
+        spl-minimal-raw = callPkg ./pkgs/spl-minimal.nix { gzipd = false; };
 
         # The vendor-shaped container, WITH the closed firmware spliced in --
         # kept as the fallback a single `dd` away if a unit ever turns out to
@@ -690,7 +726,7 @@
         packages = {
           inherit
             toolchain axera-libs boot
-            atf-mainline atf-mainline-debug atf-mainline-gzipd
+            atf-mainline atf-mainline-debug atf-mainline-raw
             initramfsMainline kernel-mainline dtb-mainline
             kernel-mainline-appliance
             video-modules display-modules
@@ -705,9 +741,9 @@
             uboot-mainline uboot-mainline-debug uboot-mainline-console
             uboot-mainline-nommu uboot-mainline-trace uboot-mainline-tee
             uboot-mainline-probe uboot-mainline-spldrv uboot-mainline-hangtest
-            uboot-mainline-gzipd
-            gpt-image spl-minimal spl-minimal-eip spl-minimal-gzipd
-            nixos-firmware-image-mainline
+            uboot-mainline-raw
+            gpt-image spl-minimal spl-minimal-eip spl-minimal-raw
+            nixos-firmware-image-mainline nixos-firmware-image-mainline-raw
             edid axdl;
 
           default = nixos-firmware-image-mainline;
@@ -741,15 +777,28 @@
           uboot-gpt = callPkg ./pkgs/uboot-gpt-test.nix {
             inherit uboot-mainline gpt-image;
           };
-          # #95's acceptance test: the boot chain and the flashable image carry
-          # no x86-64 ELF and no `ax_gzip`, and none of them declares itself
-          # x86_64-linux-only any more. See pkgs/no-x86-blobs-check.nix for
-          # what that does and does not prove.
+          # #95's acceptance test, run on the RAW chain -- the one that has no
+          # ax_gzip in it. The default chain is still axgzip'd and still
+          # x86_64-linux-only, deliberately (it is the AXDL recovery image),
+          # so it is not a root here; `boot` is, because its ax_gzip removal
+          # is unconditional. See pkgs/no-x86-blobs-check.nix for what this
+          # does and does not prove.
           no-x86-blobs = callPkg ./pkgs/no-x86-blobs-check.nix {
             roots = {
-              inherit boot spl-minimal atf-mainline uboot-mainline;
-              firmware-image = nixos-firmware-image-mainline;
+              inherit boot;
+              spl-minimal = spl-minimal-raw;
+              atf-mainline = atf-mainline-raw;
+              uboot-mainline = uboot-mainline-raw;
+              firmware-image = nixos-firmware-image-mainline-raw;
             };
+          };
+          # The raw chain's own header assertions (#95): BL31's and U-Boot's
+          # signed containers, read back -- `img_size`, both checksums
+          # recomputed with the SPL's arithmetic, and the stored payload
+          # byte-identical to the raw binary.
+          atf-mainline-raw = atf-mainline-raw.verify;
+          uboot-mainline-raw = callPkg ./pkgs/uboot-mainline-check.nix {
+            uboot-mainline = uboot-mainline-raw;
           };
           # The eMMC partition map, parsed out of the blkdevparts= clause that
           # defines it, with the root/boot partition numbers and the U-Boot

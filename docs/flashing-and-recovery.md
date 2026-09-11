@@ -219,9 +219,14 @@ candidate goes through the chainload slot; a bad SPL is an AXDL trip.
 
 ## #95: the raw boot chain
 
-**NOT DONE. This is the procedure, waiting on a go.** Since #95 the SPL is
-compiled `SUPPPORT_GZIPD=FALSE` and `atf`/`uboot` are stored uncompressed behind
-their signed headers. The board is still running the compressed chain.
+**NOT DONE. This is the procedure, waiting on a go.** #95 builds a boot chain
+whose SPL is compiled `SUPPPORT_GZIPD=FALSE` and whose `atf`/`uboot` are stored
+uncompressed behind their signed headers — `.#spl-minimal-raw`,
+`.#atf-mainline-raw`, `.#uboot-mainline-raw`. It is **not** the default and
+**not** what `.#nixos-firmware-image-mainline` contains, precisely because that
+image is the AXDL recovery: if the raw SPL fails on the board, a recovery image
+built the same way fails the same way. So the raw chain is written from a
+**running board**, with the proven gzip image as the way back.
 
 **The three partitions must be written together.** The container carries no
 "compressed" flag, so each SPL reads only the format it was compiled for and
@@ -262,8 +267,8 @@ tools/kvmssh 'mkdir -p /root/pre95
 
 Copy `/root/pre95/` off the board as well: it is on `rootfs`, which an AXDL
 recovery overwrites. The same three images are rebuildable from source at any
-time with `.#spl-minimal-gzipd`, `.#atf-mainline-gzipd` and
-`.#uboot-mainline-gzipd`, so the dumps are a convenience, not the safety net.
+time — they are the DEFAULT `.#spl-minimal`, `.#atf-mainline` and
+`.#uboot-mainline` — so the dumps are a convenience, not the safety net.
 
 ```bash
 # ---- push and write --------------------------------------------------------
@@ -311,14 +316,20 @@ A first-stage failure prints nothing and reaches nothing: no milestone bits, no
 answer is AXDL:
 
 ```bash
-nix build .#nixos-firmware-image-mainline
+nix build .#nixos-firmware-image-mainline     # the axgzip'd chain
 nix run .#axdl -- --file result/*.axp --wait-for-device
 ```
 
-Hold `User` ~10 s at power-on to enter AXDL. That image carries the **same**
-raw trio, so it is internally consistent; to go back to the proven compressed
-chain, write the three `-gzipd` images by the procedure above, from a board that
-still boots, or build an image from a commit before #95.
+Hold `User` ~10 s at power-on to enter AXDL. **That image carries the proven
+axgzip'd chain, not the raw one** — which is the whole reason the raw chain is
+not the default — so the recovery cannot fail the way the candidate did. Once
+the board is back, the raw attempt can simply be repeated or abandoned.
+
+After the raw chain HAS booted, a follow-up commit flips the defaults
+(`gzipd`/`gzip` to `false` in `pkgs/spl-minimal.nix`, `pkgs/atf-mainline.nix`
+and `pkgs/uboot-mainline.nix`), deletes the frozen gzip branches and the `-raw`
+package names, and drops the `ax_gzip` row from
+[provenance.md](provenance.md#build-time-only-vendor-inputs).
 
 ---
 

@@ -27,10 +27,16 @@
 #     `ram_ops + 1024` by flash_read() (boot.c:781-787).
 #
 # Either way `img_size` and `img_check_sum` describe the STORED payload, and
-# the payload lands at the same address. So `gzip = false` (the default since
-# #95) means: sign the raw binary, and the SPL built with SUPPPORT_GZIPD=FALSE
-# reads exactly those bytes to exactly that address. The two must be changed
+# the payload lands at the same address. So `gzip = false` means: sign the raw
+# binary, for an SPL built with SUPPPORT_GZIPD=FALSE. The two must be changed
 # together -- see the warning in pkgs/spl-minimal.nix.
+#
+# `gzip = true` IS STILL THE DEFAULT, and the body under it is FROZEN: it is
+# byte-for-byte the script this file carried before #95, so `.#uboot-mainline`
+# and the flashable image keep the store paths the board is proven on. The
+# flashable image is also the AXDL recovery image, and a recovery image that
+# fails the same way the candidate did is not a recovery. The default flips,
+# and this branch is deleted, once the raw chain has booted the board.
 #
 # The signing tool comes from the SDK snapshot and is not reimplemented here:
 #   build/tools/imgsign/sec_boot_AX620E_sign.py   python, needs `rsa`
@@ -54,7 +60,7 @@ let
   pythonEnv = pkgs.python3.withPackages (ps: [ ps.rsa ]);
 in
 {
-  # signImage { name, payload, capability ? …, maxSize ? null, gzip ? false }
+  # signImage { name, payload, capability ? …, maxSize ? null, gzip ? true }
   #
   #   name        the output file name, e.g. "u-boot_mainline_signed.bin"
   #   payload     path to the raw binary to wrap
@@ -70,47 +76,36 @@ in
     , pname ? "ax-signed-image"
     , capability ? "0x54FAFE"
     , maxSize ? null
-    , gzip ? false
+    , gzip ? true
     }:
+    if gzip then
+    # ---- FROZEN: the pre-#95 body, unchanged so the store path is too ------
     pkgs.runCommand pname
       {
         nativeBuildInputs = [ pythonEnv ];
-        meta.platforms =
-          if gzip then [ "x86_64-linux" ] else pkgs.lib.platforms.all;
-        passthru = { inherit gzip; };
+        meta.platforms = [ "x86_64-linux" ];
       }
       ''
         set -euo pipefail
 
-        # Stage the tool trees at the layout the sign script assumes.
+        # Stage the two tool trees at the layout the sign script assumes.
         mkdir -p work/build/tools work/tools
         cp -r ${maix_ax620e_sdk}/build/tools/imgsign work/build/tools/imgsign
         cp -r ${maix_ax620e_sdk}/tools/imgsign       work/tools/imgsign
-        ${pkgs.lib.optionalString gzip ''
         cp -r ${maix_ax620e_sdk}/tools/ax_gzip_tool  work/tools/ax_gzip_tool
-        ''}
         chmod -R u+w work
 
         cp ${payload} work/payload.bin
 
-        ${if gzip then ''
-        # axgzip: writes <base>_axgzip.bin beside the input. An SPL built with
-        # SUPPPORT_GZIPD=TRUE requires it -- read_image_data() sends every
-        # stage but ddrinit through the gzipd pipeline, and a raw payload fails
-        # the "20" magic check.
+        # axgzip: writes <base>_axgzip.bin beside the input. The SPL requires
+        # it -- read_image_data() sends every stage but ddrinit through the
+        # gzipd pipeline, and a raw payload fails the "20" magic check.
         ( cd work && ./tools/ax_gzip_tool/ax_gzip -9 payload.bin )
         test -f work/payload_axgzip.bin
-        stored=work/payload_axgzip.bin
-        '' else ''
-        # #95: the payload is stored verbatim. An SPL built with
-        # SUPPPORT_GZIPD=FALSE flash_read()s these bytes straight to the load
-        # address; nothing decompresses anything.
-        stored=work/payload.bin
-        ''}
 
         mkdir -p "$out"
         python3 work/build/tools/imgsign/sec_boot_AX620E_sign.py \
-          -i "$stored" \
+          -i work/payload_axgzip.bin \
           -o "$out/${name}" \
           -pub work/tools/imgsign/public.pem \
           -prv work/tools/imgsign/private.pem \
@@ -122,20 +117,66 @@ in
           exit 1
         }
 
-        # ---- the header, read back out of the artefact --------------------
-        # Not "the tool was invoked correctly" but "the bytes on disk say what
-        # the SPL needs them to say": magic, the two checksums recomputed with
-        # the SPL's own arithmetic (calc_word_chksum, boot.c:140-154), and --
-        # for a raw image -- that the stored payload IS the input, byte for
-        # byte, so `img_size` is the uncompressed size.
+        # Magic 0x55543322 lives at byte offset 4, little-endian.
+        magic=$(od -An -tx1 -j4 -N4 "$out/${name}" | tr -d ' ')
+        if [ "$magic" != "22335455" ]; then
+          echo "ERROR: ${name} bad header magic ($magic != 22335455)" >&2
+          exit 1
+        fi
+
+        sz=$(stat -c %s "$out/${name}")
+        echo "${name}: $sz bytes signed (raw $(stat -c %s work/payload.bin), axgzip $(stat -c %s work/payload_axgzip.bin))"
+        ${pkgs.lib.optionalString (maxSize != null) ''
+        if [ "$sz" -gt ${toString maxSize} ]; then
+          echo "ERROR: ${name} is $sz bytes, over its ${toString maxSize}-byte partition" >&2
+          exit 1
+        fi
+        ''}
+      ''
+    else
+    # ---- #95: the payload is stored verbatim -------------------------------
+    pkgs.runCommand pname
+      {
+        nativeBuildInputs = [ pythonEnv ];
+        meta.platforms = pkgs.lib.platforms.linux;
+        passthru = { inherit gzip; };
+      }
+      ''
+        set -euo pipefail
+
+        # Only the signing tool: no ax_gzip, and therefore no prebuilt binary.
+        mkdir -p work/build/tools work/tools
+        cp -r ${maix_ax620e_sdk}/build/tools/imgsign work/build/tools/imgsign
+        cp -r ${maix_ax620e_sdk}/tools/imgsign       work/tools/imgsign
+        chmod -R u+w work
+
+        cp ${payload} work/payload.bin
+
+        mkdir -p "$out"
+        python3 work/build/tools/imgsign/sec_boot_AX620E_sign.py \
+          -i work/payload.bin \
+          -o "$out/${name}" \
+          -pub work/tools/imgsign/public.pem \
+          -prv work/tools/imgsign/private.pem \
+          -cap ${capability} \
+          -key_bit 2048
+
+        test -s "$out/${name}" || {
+          echo "ERROR: the sign tool produced no output (it exits 0 on overflow)" >&2
+          exit 1
+        }
+
+        # The header, read back out of the artefact -- not "the tool was
+        # invoked correctly" but "the bytes on disk say what the SPL needs
+        # them to say", including that the stored payload IS the raw binary.
         python3 ${./ax-sign-verify.py} \
           --image "$out/${name}" \
-          --stored "$stored" \
-          ${pkgs.lib.optionalString (!gzip) "--raw-payload work/payload.bin"} \
+          --stored work/payload.bin \
+          --raw-payload work/payload.bin \
           ${pkgs.lib.optionalString (maxSize != null)
               "--max-size ${toString maxSize}"}
 
         sz=$(stat -c %s "$out/${name}")
-        echo "${name}: $sz bytes signed (raw $(stat -c %s work/payload.bin), stored $(stat -c %s "$stored"))"
+        echo "${name}: $sz bytes signed (raw $(stat -c %s work/payload.bin), stored RAW)"
       '';
 }

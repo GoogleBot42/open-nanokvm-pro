@@ -116,7 +116,7 @@ let
         # The image must be the RAW one, linked at 0x5C000400. arch/arm/cpu/
         # armv8/start.S puts `_TEXT_BASE: .quad CONFIG_TEXT_BASE` at offset 8,
         # so those eight bytes are a free, exact identity check -- and they are
-        # what separates a raw u-boot.bin from the signed container
+        # what separates a raw u-boot.bin from the axgzip'd signed container
         # (which would be loaded and jumped into as if it were code), from a
         # kernel Image, and from a U-Boot built for another board.
         got=$(od -An -tx8 -j8 -N8 "$src" | tr -d ' \n')
