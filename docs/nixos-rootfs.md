@@ -61,7 +61,7 @@ The costs that remain:
 
 | Cost | Detail |
 |---|---|
-| **OTA redesign** | `pkgs/update-package.nix` overlays *files* into `/kvmapp`, `/opt/lib`, `/usr/lib/modules`. A NixOS rootfs is a store closure; an update becomes "import a closure, `switch-to-configuration`". [updates.md](updates.md) has to be rewritten — #86. |
+| ~~**OTA redesign**~~ — **done (#86)** | An update is a **system bundle**: the toplevel's whole closure plus the kernel its initrd is baked into, unpacked into the store and booted into. The 4.19 overlay path is deleted, not ported. [updates.md](updates.md). |
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [gap 2](#known-gaps). |
 | **WiFi** | `aic8800_*.ko` + `/opt/firmware/aic8800/*.bin`. Needs its own build against the mainline kernel — #85. |
 | **The `rc.local` glue** | `S99checkboot` is now a unit and is live (below). `axemac.sh`, `npu_set_bw_limiter.sh` and a bare `devmem` poke are not. |
@@ -220,8 +220,10 @@ This contract is unchanged and is not optional. `NanoKVM-Server` writes
 loader sources `/boot/configs`; the vendor boot path uses `/boot/rec`,
 `/boot/first_time_boot` and `/boot/check_resize2fs`. Every USB-gadget feature is
 gated on a flag file there. Since #89 rung 3 it is also the BOOT PAYLOAD:
-`extlinux/extlinux.conf`, the kernel `Image` and the device tree, which is what
-mainline U-Boot's `sysboot` reads.
+`extlinux/extlinux.conf`, the kernel and the device tree — both
+content-addressed since #86 (`Image-<hash>`, `<name>-<hash>.dtb`, so two
+generations can name two kernels) — which is what mainline U-Boot's `sysboot`
+reads.
 
 **It is ext4 since #89 rung 4, and 272 MiB.** The kernel needs ext4 for root
 anyway, so putting `/boot` on it retires a trap worth remembering: mounting FAT
@@ -243,8 +245,8 @@ no A/B twins and no slot register any more. There are two files in `/boot`:
 
 | file | who writes it | what it names |
 |---|---|---|
-| `extlinux/extlinux.conf` | `nanokvm-install-boot`, at every `nixos-rebuild switch`/`boot` | the generation being installed |
-| `extlinux/extlinux-fallback.conf` | `nanokvm-mark-good`, only after a boot has proven healthy | the last generation that worked |
+| `extlinux/extlinux.conf` | `nanokvm-install-boot`, at every switch and every update | the **(generation, kernel) pair** being installed |
+| `extlinux/extlinux-fallback.conf` | `nanokvm-mark-good`, only after a boot has proven healthy | the last pair that worked — and the same unit then deletes the `/boot` files neither config names |
 
 U-Boot's `bootcmd` boots the first; its `altbootcmd` boots the second.
 `sysboot` boots a config's `DEFAULT` entry and cannot be told to pick a `LABEL`,
@@ -319,13 +321,32 @@ devmem 0x02390030 32                                   # 0xB0010000 = healthy
 devmem 0x02390024 32                                   # bit 30 set = rolled back
 grep -o 'init=[^ ]*' /boot/extlinux/extlinux.conf          # default generation
 grep -o 'init=[^ ]*' /boot/extlinux/extlinux-fallback.conf # fallback generation
+nanokvm-update status                                  # all of it, both pairs
 ```
 
-A rollback is a *userspace* rollback. The kernel `Image` and device tree are
-flake artefacts in `/boot`, one copy, shared by both entries — `boot.kernel.enable
-= false` and the stage-1 initrd is inside the Image, so a NixOS generation on
-this board does not carry a kernel. A kernel change is still a `/boot` write and
-still has no automatic rollback; that is the remaining half of the contract.
+**The kernel half — closed by #86.** It used to be true that a rollback was a
+*userspace* rollback: the kernel `Image` and device tree were flake artefacts in
+`/boot`, one copy, shared by both entries, so a kernel change had no automatic
+fallback and `/boot/Image.prev` was a manual stand-in. Since #86 the files are
+**content-addressed** — `Image-<16 hex of its sha256>` and `<name>-<hash>.dtb`,
+built by `pkgs/boot-payload.nix` — the extlinux template carries `@KERNEL@` and
+`@FDT@` beside `@INIT@`, and each config therefore names a **(generation,
+kernel) pair**. An update writes its kernel under a name nothing else uses, so
+both coexist in the 272 MiB `/boot` (a kernel is 48.9 MiB; `pkgs/bootfs.nix`
+asserts room for three).
+
+How `nanokvm-mark-good` knows which kernel booted: `sysboot` loads `LINUX` and
+`FDT` and then tells the kernel nothing about which files they were, so the
+config it chose puts the answer on the command line itself —
+`nanokvmboot=<kernel>,<fdt>`, read back out of `/proc/cmdline`. It is honest
+precisely because U-Boot copied it out of whichever of the two configs it used.
+After promoting the pair, the same unit deletes the `/boot` files neither config
+names — the only moment at which that is safe, because both configs are final.
+
+Still not a kernel rollback: the boot chain itself. `spl`, `atf` and `uboot` are
+single copies with no twins, and a U-Boot candidate is tried through the
+one-shot chainload slot ([mainline-port.md](mainline-port.md) §11.10), never by
+writing the partition.
 
 ### 5. Identity — the MAC is derived on every boot, not stored
 
@@ -547,8 +568,10 @@ What survives on the appliance:
   *consumes* the current slot's BOOTABLE bit on the way in, so a boot that never
   re-arms it is a boot that falls back next time. #79 is what puts a health gate
   in front of that instead of re-arming unconditionally the way the vendor does.
-- **`S99checkota`** (the OTA-commit `fw_setenv` clears) belongs with the OTA
-  redesign, #86.
+- **`S99checkota`** (the OTA-commit `fw_setenv` clears) has nothing to commit
+  any more: #86 replaced the vendor-shaped OTA with a system bundle, and what
+  vouches for an update here is `nanokvm-mark-good` clearing `bootcount`, not an
+  environment variable.
 - **The module loader is gone**, along with `/soc/ko` and `/soc/scripts`. There
   are no modules to load (below). The `#!/bin/sh`-but-actually-bash trap in the
   vendor `/soc/scripts/*.sh` set therefore no longer applies to anything the
@@ -892,7 +915,8 @@ Notable decisions inside `nixos/appliance.nix`:
 - `boot.kernel.enable = false`, every in-tree bootloader off (`grub`,
   `systemd-boot`, `generic-extlinux-compatible`), and
   `boot.loader.external.enable = true` — the AX630C boot chain owns all of it,
-  and "install" means "write the inactive A/B slot" (#79).
+  and "install" means writing `/boot/extlinux/extlinux.conf` with the
+  generation's `init=` and the kernel it boots (`nixos/lib/install-boot.nix`).
 - `boot.initrd.enable = true` with `boot.initrd.systemd.enable = false`: classic
   script stage 1. Two board-specific reasons — every byte of the initrd is
   charged against a 64 MiB partition shared with the kernel, and a stage 1 that
@@ -1051,14 +1075,19 @@ number, so closed gaps keep their slot and new ones are appended.
    Still unimplemented, each needing the exact script text or register intent
    read off the device first: `axemac.sh` (eth0 RPS/RFS + `ethtool -A eth0 rx
    on`), `npu_set_bw_limiter.sh start`, and the bare
-   `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` belongs with the
-   OTA redesign (gap 5).
+   `devmem 0x10030028 32 0x000006A0` SoC poke. `S99checkota` has nothing to do
+   here — see gap 5.
 4. **WiFi is lost.** `aic8800_{bsp,fdrv,btlpm}.ko` need their own build against
    the mainline kernel, and their firmware is 28 files under
    `/opt/firmware/aic8800/` — the only closed content the blob policy still
    allows. Needs its own pinned derivation, or WiFi is dropped. **#85.**
-5. **OTA.** `pkgs/update-package.nix` and [updates.md](updates.md) assume a
-   file-overlay rootfs. Unresolved — **#86**.
+5. **OTA — CLOSED (#86, 2026-09-10).** An update is a **system bundle**: the
+   toplevel's whole closure plus the kernel its stage-1 initrd is baked into,
+   published as `.#system-bundle` and installed by `nanokvm-update` (no `nix` on
+   the device). `nanokvm-gc` collects old generations from the per-generation
+   closure lists the installer records. The 4.19 overlay OTA is deleted with no
+   replacement and no migration path — a vendor-layout board is reflashed over
+   AXDL. Design, offline proof and the hardware plan: [updates.md](updates.md).
 6. **Timezone reporting is subtly wrong** (display-only; `timedatectl
    set-timezone` still works). `service/vm/datetime.go` reads the zone by
    `os.Readlink("/etc/localtime")` and slicing on the literal

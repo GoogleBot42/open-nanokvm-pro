@@ -1,0 +1,24 @@
+func install(dir string, version string) error {
+	// THE 4.19 IMAGE HAS NO OTA ANY MORE (#86, 2026-09-10).
+	//
+	// It used to: a rootfs overlay plus signed A/B partition images, applied by
+	// pkgs/nanokvm-server/install-override.go.in from a payload
+	// pkgs/update-package.nix built. Both are deleted. The product is the mainline
+	// NixOS appliance, whose update is a system bundle -- a whole store closure --
+	// and which no 4.19 Ubuntu rootfs can apply; and no release publishes an
+	// overlay payload any more, so this build's update check finds nothing to
+	// offer in the first place. A vendor-layout device is moved forward by
+	// reflashing `.#nixos-firmware-image-mainline` over AXDL, which is a bench
+	// trip and not a brick. There is deliberately no migration OTA: there are no
+	// users on the alpha releases to migrate (docs/updates.md).
+	//
+	// This function stays rather than being deleted with the rest, because
+	// update.go's route is registered unconditionally and the vendor's dpkg
+	// installer is what would run in its place -- three `.deb`s from a CDN we do
+	// not control, into a from-source rootfs. Refusing loudly is the only correct
+	// behaviour left.
+	log.Errorf("this image has no OTA path: reflash .#nixos-firmware-image-mainline over AXDL (see docs/updates.md)")
+	_ = sendMessage("install", 0)
+	_ = dir
+	return fmt.Errorf("over-the-air update is retired for this image (version %s); reflash over AXDL", version)
+}

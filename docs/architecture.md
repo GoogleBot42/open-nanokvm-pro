@@ -380,7 +380,9 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
   whole service down during bring-up.
 - The server serves the React web UI + a JSON/WebRTC API on :80/:443, reads frames
   from `libkvm`, and exposes keyboard/mouse HID, storage/image mount, and the
-  update flow.
+  update flow. (The update route is live only on the **appliance** build, where
+  it hands off to `nanokvm-update`; the 4.19 build's `install()` refuses and
+  points at AXDL — #86, [updates.md](updates.md).)
 - **Logging:** `/var/log/nanokvm/NanoKVM-Server.log` is the server's redirected
   stdout+stderr (`nanokvm.sh` appends `>> $LOG_DIR/$exe_name.log`; `server.yaml`
   sets `logger.file: stdout`, so logrus never opens a file itself) — it carries
@@ -438,8 +440,9 @@ included** (Jeremy, 2026-08-30). What's pinned has shrunk accordingly:
     `/opt/etc/skelModels`, `/opt/data/npu`) and the `/opt/etc` ISP sensor-tuning
     `*.ini`/`*.bin` set: ~355 files, ~248 MB. `/soc/ko` now holds exactly our
     three open modules, so the `vermagic` constraint no longer binds anything
-    shipped — see [building.md](building.md#ax_ko-vermagic). OTA cannot delete,
-    so an OTA-upgraded device keeps them until a reflash.
+    shipped — see [building.md](building.md#ax_ko-vermagic). The 4.19 overlay
+    OTA could not delete, so a device upgraded by one kept them until a reflash;
+    that OTA is retired (#86) and the mainline appliance never had them.
 - **Pinned base:** the vendor Ubuntu 22.04 arm64 rootfs (v1 decision — matches the
   on-device ABI/systemd layout at lowest risk). A pure nix-built rootfs is the
   long-term north star; the feasibility study, the systemd-vs-4.19 version wall

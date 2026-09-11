@@ -161,8 +161,9 @@ that is arbitration, not a bug.
   function, grep the ELF), never by "the patch applied".
 - **A stale fixed-output hash is invisible on any host that already holds the
   output** (the store path comes from the hash alone, so the fetch never
-  re-runs): `.#update-package` built green here for two days while the release
-  runner died on `vendorHash`. `buildGoModule`'s vendor tree also depends on
+  re-runs): the release OTA package built green here for two days while the
+  release runner died on `vendorHash`. `.#system-bundle` sits in exactly that
+  place now. `buildGoModule`'s vendor tree also depends on
   `postPatch` (a patch that drops an import drops a module). Validate
   release-critical FODs with `nix build --rebuild` before cutting --
   `docs/building.md` "Pinned hashes" (alpha.5, 2026-09-07).
@@ -274,9 +275,14 @@ board past WDT0) has never measured anything.
 since the last healthy boot -- and `bootlimit` is 3, so the FOURTH attempt
 runs `altbootcmd`, sets milestone bit 30 and boots
 `/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`. Those two
-files name two generations through a pinned `init=`, and `nanokvm-mark-good`
-(timer, `OnBootSec=60s`) clears the counter and regenerates the fallback from
-`/run/booted-system` once the system is `running`, routed and serving. To force
+files name two **(generation, kernel) pairs** — `init=` is pinned, and since
+#86 the kernel and dtb are content-addressed (`/boot/Image-<16 hex of its
+sha256>`), so a kernel change rolls back too and `/boot/Image` no longer
+exists. `nanokvm-mark-good` (timer, `OnBootSec=60s`) clears the counter and
+regenerates the fallback from `/run/booted-system` plus the `nanokvmboot=`
+token on the command line — the only thing that says which kernel U-Boot
+loaded — once the system is `running`, routed and serving, then deletes the
+`/boot` files neither config names. To force
 a fallback by hand: `devmem 0x02390030 32 0xB001000A; reboot` -- and **that is
 the way to exercise the rollback, not a broken generation**: it proves
 `bootcount_error()`, `altbootcmd`, bit 30 and the fallback config in one boot
@@ -287,6 +293,15 @@ generation, unattended, after four boot-chain attempts. What triggered it was
 **#91**, not a bad generation — U-Boot sometimes cannot read the 51 MB `Image`
 inside `bootcmd`'s four tries, and that now costs a rollback instead of a power
 cycle.
+
+**An update is a system bundle, and there is no OTA any more (#86, 2026-09-10).**
+`.#system-bundle` is the appliance's whole store closure plus its kernel (~460 MB);
+`nanokvm-update install <tarball>` unpacks what the board is missing, writes
+`/boot`, sets the profile and leaves the reboot to arm the rollback, and
+`nanokvm-gc` reclaims old generations from the closure lists the installer
+records (it refuses to delete anything if one is missing). The 4.19 overlay OTA
+and `.#update-package` are **deleted** — a vendor-layout board is reflashed over
+AXDL, by decision, because nobody runs the alpha releases. `docs/updates.md`.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

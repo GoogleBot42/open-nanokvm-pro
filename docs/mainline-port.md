@@ -464,9 +464,16 @@ userspace; health-gated re-arm makes rollback automatic.** Reasons:
   watchdog) falls back. The dual-slot write strategy in
   [updates.md](updates.md) already matches this model.
 
-Open validation (unchanged from updates.md): the SPL→U-Boot slot-B failover
-for ATF/OP-TEE/U-Boot has never been exercised on hardware; the kernel-slot
-half has.
+**Superseded, twice.** #89 rung 5 replaced the whole A/B scheme with U-Boot's
+`bootcount`/`altbootcmd` over two extlinux configs (there are no A/B twins in
+the minimal layout, and the slot register's SLOT bits select nothing) —
+[nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate).
+Then #86 closed the half that left behind: the kernel and dtb in `/boot` are
+**content-addressed**, so the two configs name two (generation, kernel) pairs
+and a kernel change has an automatic fallback as well.
+[updates.md](updates.md). Everything above this paragraph is the vendor
+mechanism, kept because it is what a *vendor* boot still does and what an AXDL
+recovery image runs.
 
 ---
 
@@ -519,8 +526,11 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
    health-gated checkboot.
 5. clk/reset/pinctrl real drivers.
 6. USB HID; video stack; audio; display; WiFi.
-7. Rollback + flake-based updates replace the custom OTA (one legacy OTA
-   migrates devices; `updates.md` rewrite).
+7. Rollback + flake-based updates replace the custom OTA. **Done (#86,
+   2026-09-10):** an update is a system bundle, the kernel is content-addressed
+   so the rollback covers it too, and the legacy OTA is deleted with no
+   migration path — a vendor-layout board is reflashed over AXDL.
+   [updates.md](updates.md).
 8. Upstreaming (bindings once the prefix settles; drivers).
 
 ---
@@ -626,10 +636,16 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
 12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — Package
     `radxa-pkg/aic8800` (SDIO) against the pinned kernel, `aic_bsp` reset GPIO,
     firmware MD5-pinned; or record the drop decision. Depends on: #76.
-13. **#86 Flake-based updates replace the custom OTA; legacy migration OTA** —
-    `system.autoUpgrade`-style against the flake; one final legacy
-    `update-package` that migrates a vendor-base device to the NixOS image;
-    rewrite updates.md. Depends on: #79.
+13. **#86 Flake-based updates replace the custom OTA** — **offline half DONE,
+    2026-09-10.** `.#system-bundle` (the toplevel's whole closure + its kernel)
+    replaces `update-package`; `nanokvm-update` / `nanokvm-gc` install and
+    collect it with no `nix` on the device; the kernel is content-addressed so
+    `extlinux.conf` and `extlinux-fallback.conf` can name two kernels and the
+    rollback finally covers one. The legacy migration OTA the issue asked for
+    was **dropped by decision** (Jeremy, 2026-09-10): nobody runs the alpha
+    releases, so a vendor-layout board is reflashed over AXDL. Two `nix flake
+    check` gates cover the loop; hardware is the remaining half.
+    [updates.md](updates.md).
 14. **#87 nixosModules split (product 1) and upstreaming** — Expose
     `nixosModules.nanokvm-pro-{kernel,video,display,atx,updates}`; submit
     bindings/drivers once the Axera prefix question resolves on LKML.
@@ -4863,8 +4879,9 @@ Two fixes, because one of them should not have to be a string:
 The first fix lives in the stage-1 initrd, which on this board is inside the
 kernel `Image`, so applying it meant writing `/boot` — and it is the reason the
 rollback above could fire at all: with the deadman armed, a failed attempt
-panics and resets instead of sitting there. The old `Image` is kept at
-`/boot/Image.prev`.
+panics and resets instead of sitting there. The old `Image` was kept at
+`/boot/Image.prev` — the hand-managed stand-in #86 retired by
+content-addressing the boot payload.
 
 **The lesson is the general one.** A safety net nobody has watched fire is not a
 safety net. This one had been in the command line, in a comment and in the docs
@@ -4886,11 +4903,18 @@ replaced:
 |---|---|---|---|
 | mainline U-Boot | `uboot`, `0x2C0000` | **`003eaffdc66b874dc182937641a3a603` over 187344 B** (2026-09-10, the #91 fix; `88b65081496b6f9f75e71a55a121b0a0` over the whole 2 MiB partition) | previous at `/root/uboot-prev-91.img`; rung 5's was `6713c38d5158b37372a0defbb7530b05` |
 | the generated environment | `env`, `0x4C0000` | `7d449d891ac140a9f7dc89a3d61795df`, 1 MiB | previous at `/root/rung5/env-prev.bin`, `fcf35dbf42c168b8a1af0d93b3a304b8` |
-| kernel `Image` with the armed deadman | `/boot/Image` | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
+| kernel `Image` with the armed deadman | `/boot/Image` *(as of this run — see below)* | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
 
 Both partition writes were verified from the medium after `drop_caches`. The
 two `*-prev` files are on the ROOTFS, so an AXDL recovery destroys them —
 rebuild from the flake rather than relying on them.
+
+**`/boot/Image` and `/boot/Image.prev` are how it looked on 2026-09-10, and the
+names have since changed.** #86 made the boot payload content-addressed:
+`/boot/Image-<16 hex of its sha256>` and `<dtbname>-<hash>.dtb`, one per
+generation, each named by its own extlinux config, with `nanokvm-mark-good`
+collecting whatever neither names. So a board updated after #86 has no
+`/boot/Image` at all, and `Image.prev` is retired as a hand-managed stand-in.
 
 **Generations.** `/nix/var/nix/profiles/system` → `system-4-link` →
 `/nix/store/aklnqir1…`, the generation carrying the `panicOnFail` fix and the
@@ -5010,10 +5034,15 @@ the chain with `devmem` identifies a bad handler for zero boot cycles.
 
 **Also open.** `mem=512M` is still unexplained and still not droppable.
 `SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt x86-64 host
-tool, and is a clean follow-up now that the layout is settled. And a rollback is
-still a *userspace* rollback: one `Image` in `/boot`, shared by both entries, so
-a kernel change has no automatic fallback — which is what `/boot/Image.prev`
-stands in for by hand.
+tool, and is a clean follow-up now that the layout is settled.
+
+**The kernel half of the rollback is no longer open (#86, 2026-09-10).** `/boot`
+now carries `Image-<sha256 prefix>` and `<dtb>-<hash>.dtb`, each extlinux config
+names its own pair, and `nanokvm-mark-good` promotes the pair that booted
+healthy — it learns which one that was from a `nanokvmboot=` token the config
+puts on the command line. `/boot/Image.prev` is retired as a hand-managed
+stand-in. The first hardware round is where that mechanism is actually watched
+to fire; [updates.md](updates.md) has the plan.
 
 ---
 

@@ -189,8 +189,8 @@ dependency mapping):
 - `libsns_dummy.so` is now **built from SDK source** (`pkgs/libsns-dummy.nix`
   from `component/isp_proton/sensor/dummysensor/` + shared i2c/common
   sources): 73 KB vs the vendor's 1.3 MB (the difference is AI-ISP glue and
-  debug baggage irrelevant to bypass mode). Shipped in the rootfs and the OTA
-  payload over the vendor `/opt/lib` copy; device-tested on the closed
+  debug baggage irrelevant to bypass mode). Shipped in the rootfs over the
+  vendor `/opt/lib` copy; device-tested on the closed
   (vendor-MPI) backend — clean dlopen of `gSnsdummyObj`, live MJPEG.
 - Only **12 of 22** vendor-loaded modules are needed for video. This is no
   longer future work: since #39 the image ships a **curated loader** in place of

@@ -263,69 +263,43 @@ let
   # way to name a LABEL, so the choice of generation IS the choice of file --
   # which is also why generations are not labels in one config here.
   #
-  # The template carries @INIT@ where the generation's `init=` goes;
-  # nanokvm-install-boot substitutes the toplevel it was handed. Nothing else
-  # in the file varies, so a diff between the two configs is exactly the
-  # generation difference.
-  extlinuxTemplate = pkgs.writeText "extlinux.conf.in"
-    (import ../pkgs/extlinux.nix { inherit pkgs lib; init = "@INIT@"; });
-
-  # ---- boot.loader.external installer ------------------------------------
-  # "Installing the bootloader" on this board is writing one text file. There
-  # is no kernel to copy: `boot.kernel.enable = false`, the Image lives in
-  # /boot as a flake artefact with the stage-1 initrd inside it, and what a
-  # NixOS generation actually is here is a userspace closure. So the installer
-  # pins that closure into the default extlinux config and leaves the fallback
-  # alone -- the fallback is nanokvm-mark-good's to write, and only after a
-  # boot has proven itself.
+  # The template carries THREE placeholders: @INIT@ for the generation's
+  # `init=`, and @KERNEL@/@FDT@ for the /boot files this entry loads.
+  # nanokvm-install-boot substitutes all three.
   #
-  # THE FALLBACK IS NEVER WRITTEN HERE. That is the whole safety property: at
-  # the moment of a switch the new generation has never booted, so promoting
-  # it to the rollback target would leave a board with two copies of the same
-  # untested system. The one exception is bootstrap -- if no fallback exists
-  # at all there is nothing to roll back TO, and a copy of the entry being
-  # installed is strictly better than a missing file.
-  bootInstaller = pkgs.writeShellApplication {
-    name = "nanokvm-install-boot";
-    runtimeInputs = with pkgs; [ coreutils gnused gnugrep ];
-    text = ''
-      set -eu
-      toplevel="''${1:?usage: nanokvm-install-boot <toplevel>}"
+  # THE KERNEL IS A PLACEHOLDER SINCE #86, and that is what made the rollback
+  # cover the kernel too. Before it, both configs named one `/boot/Image`, so a
+  # kernel update had no fallback and `/boot/Image.prev` was a manual stand-in.
+  # pkgs/boot-payload.nix names each kernel `Image-<hash>`, an update writes its
+  # own under a name nothing else uses, and the two configs can then name two
+  # different (generation, kernel) PAIRS. `nanokvm-mark-good` promotes the pair
+  # that booted healthy -- it learns which kernel that was from the
+  # `nanokvmboot=` token this same template puts on the command line, because
+  # `sysboot` tells the kernel nothing about the files it loaded.
+  extlinuxTemplate = pkgs.writeText "extlinux.conf.in"
+    (import ../pkgs/extlinux.nix {
+      inherit pkgs lib;
+      init = "@INIT@";
+      kernelFile = "@KERNEL@";
+      dtbFile = "@FDT@";
+      bootId = "@KERNEL@,@FDT@";
+    });
+  # ---- boot.loader.external installer ------------------------------------
+  # nixos/lib/install-boot.nix is the script and its reasoning; it lives there
+  # rather than here so the offline updater check can instantiate it against
+  # the build host's package set and actually run it.
+  bootInstaller = import ./lib/install-boot.nix {
+    inherit pkgs lib extlinuxTemplate;
+  };
 
-      dir=/boot/extlinux
-      conf="$dir/extlinux.conf"
-      fallback="$dir/extlinux-fallback.conf"
-
-      [ -d "$dir" ] || { echo "nanokvm: $dir is missing -- is /boot mounted?" >&2; exit 1; }
-
-      # Write, fsync, rename: a config half-written by a power cut is a board
-      # that boots nothing, and this partition is the only thing U-Boot reads.
-      tmp="$conf.new"
-      sed "s|@INIT@|$toplevel/init|" ${extlinuxTemplate} > "$tmp"
-      grep -q "init=$toplevel/init" "$tmp" \
-        || { echo "nanokvm: generated config does not name $toplevel" >&2; rm -f "$tmp"; exit 1; }
-      sync "$tmp"
-      mv "$tmp" "$conf"
-
-      if [ ! -e "$fallback" ]; then
-        echo "nanokvm: no rollback fallback yet -- seeding it with this generation"
-        cp "$conf" "$fallback.new"
-        sync "$fallback.new"
-        mv "$fallback.new" "$fallback"
-      fi
-      sync
-
-      echo "nanokvm: default generation is now $toplevel"
-      echo "nanokvm: fallback stays $(sed -n 's|.*init=\([^ ]*\)/init.*|\1|p' "$fallback")"
-      echo "nanokvm: the boot counter is armed; nanokvm-mark-good promotes this"
-      echo "         generation to the fallback only once the boot is healthy."
-
-      ${lib.optionalString cfg.bootUpdate.enable ''
-        echo "nanokvm: A/B kernel/dtb update is enabled but unimplemented (#79)." >&2
-        echo "         Refusing to write ${parts.slotB.kernel.device} blindly." >&2
-        exit 1
-      ''}
-    '';
+  # ---- the updater and the collector (#86) --------------------------------
+  # nixos/lib/updater.nix's header is the design; this is only the wiring.
+  updateTools = import ./lib/updater.nix {
+    inherit pkgs lib bootInstaller;
+    stableUrl = cfg.update.stableUrl;
+    previewUrl = cfg.update.previewUrl;
+    manifestName = cfg.update.manifestName;
+    keepGenerations = cfg.update.keepGenerations;
   };
 
   # ---- the U-Boot chainload test slot ------------------------------------
@@ -598,16 +572,72 @@ let
         exit 0
       fi
       fallback="$dir/extlinux-fallback.conf"
-      sed "s|@INIT@|$booted/init|" ${extlinuxTemplate} > "$fallback.new"
+      conf="$dir/extlinux.conf"
+
+      # WHICH KERNEL THIS BOOT ACTUALLY USED (#86). `sysboot` loads LINUX and
+      # FDT and then tells the kernel nothing about which files they were, so
+      # the only honest source is the token pkgs/extlinux.nix puts on the
+      # command line -- and it is honest precisely because U-Boot copied it out
+      # of the config it chose, whichever of the two that was.
+      #
+      # Promoting a generation with the WRONG kernel would be worse than not
+      # promoting at all: the fallback would name a pair that has never booted
+      # together. So an absent token means keep the fallback's current kernel,
+      # and if there is no fallback yet, the default config's.
+      bootid=$(sed -n 's|.*[[:space:]]nanokvmboot=\([^[:space:]]*\).*|\1|p' /proc/cmdline)
+      if [ -n "$bootid" ]; then
+        K=''${bootid%%,*}
+        F=''${bootid#*,}
+      else
+        src="$fallback"; [ -r "$src" ] || src="$conf"
+        K=$(sed -n 's|^[[:space:]]*LINUX[[:space:]]\+||p' "$src" 2>/dev/null | head -1)
+        F=$(sed -n 's|^[[:space:]]*FDT[[:space:]]\+||p' "$src" 2>/dev/null | head -1)
+        echo "mark-good: no nanokvmboot= on the command line (a pre-#86 /boot?);"
+        echo "           keeping the fallback's kernel $K."
+      fi
+      if [ -z "$K" ] || [ -z "$F" ] || [ ! -f "/boot$K" ] || [ ! -f "/boot$F" ]; then
+        echo "mark-good: cannot establish this boot's kernel ($K / $F) -- not promoting." >&2
+        exit 0
+      fi
+
+      sed -e "s|@INIT@|$booted/init|g" -e "s|@KERNEL@|$K|g" -e "s|@FDT@|$F|g" \
+        ${extlinuxTemplate} > "$fallback.new"
       if cmp -s "$fallback.new" "$fallback"; then
         rm -f "$fallback.new"
-        echo "mark-good: fallback already $booted"
+        echo "mark-good: fallback already $booted on $K"
       else
         sync "$fallback.new"
         mv "$fallback.new" "$fallback"
         sync
-        echo "mark-good: fallback promoted to $booted"
+        echo "mark-good: fallback promoted to $booted on $K"
       fi
+
+      # COLLECT THE BOOT FILES NOTHING NAMES ANY MORE. This is the only moment
+      # it is safe: both configs are final (the default names the installed
+      # generation, the fallback now names the one that just proved itself) and
+      # /boot is the one partition with no room to leak. A file named by EITHER
+      # config is kept, so the worst case of a racing update is that a kernel
+      # survives one cycle longer.
+      keep=$(sed -n 's|^[[:space:]]*\(LINUX\|FDT\)[[:space:]]\+/||p' "$conf" "$fallback" 2>/dev/null | sort -u)
+      for f in /boot/Image-* /boot/*.dtb; do
+        [ -e "$f" ] || continue
+        b=$(basename "$f")
+        if printf '%s\n' "$keep" | grep -qxF "$b"; then continue; fi
+        echo "mark-good: /boot/$b is named by neither config -- removing"
+        rm -f "$f"
+      done
+      # And the video stack's module directories (#83), which are named after
+      # the kernel they belong to rather than by a config. A set survives
+      # exactly as long as its kernel does -- no extra policy, and no way for
+      # a kept kernel to lose the modules it needs.
+      for d in /boot/modules-*; do
+        [ -d "$d" ] || continue
+        h=''${d#/boot/modules-}
+        if printf '%s\n' "$keep" | grep -qxF "Image-$h"; then continue; fi
+        echo "mark-good: /boot/modules-$h belongs to no kept kernel -- removing"
+        rm -rf "$d"
+      done
+      sync
     '';
   };
 in
@@ -761,13 +791,87 @@ in
       '';
     };
 
-    bootUpdate.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = ''
-        Let a generation switch write the inactive A/B kernel/dtb slot and flip
-        `bootsystem`. Owned by #79 (health-gated re-arm); inert until then.
-      '';
+    # ---- flake-based updates (#86) --------------------------------------
+    # The appliance has no `nix`, so an update is a SYSTEM BUNDLE -- a whole
+    # store closure plus the kernel it boots -- fetched from a release, not a
+    # `nixos-rebuild`. nixos/lib/updater.nix is the implementation and
+    # docs/updates.md is the design.
+    update = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Ship `nanokvm-update` and `nanokvm-gc`. The web UI's update button
+          goes through the same tool (the server's install() override), so
+          turning this off leaves a device that can only be updated by hand.
+        '';
+      };
+
+      auto = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Check for and install updates on a timer, unattended.
+
+          OFF by default, and deliberately: applying an update REBOOTS the
+          board, and a KVM rebooting on its own schedule is a surprise in the
+          middle of someone's console session. Turn it on for a fleet that
+          wants it; the rollback that catches a bad generation is the same
+          either way.
+        '';
+      };
+
+      schedule = lib.mkOption {
+        type = lib.types.str;
+        default = "daily";
+        description = "systemd OnCalendar expression for the unattended check.";
+      };
+
+      stableUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
+        description = ''
+          Where the updater fetches the manifest and the bundle. The same base
+          URL the server is built with -- the Gitea source of truth is
+          Tailscale-only, so devices poll the public GitHub mirror's releases.
+        '';
+      };
+
+      previewUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/download/preview";
+        description = ''
+          The rolling preview channel, selected by the same flag file the web
+          UI's "preview updates" toggle writes (`/etc/kvm/preview_updates`).
+        '';
+      };
+
+      manifestName = lib.mkOption {
+        type = lib.types.str;
+        default = "nanokvm_pro_sys_latest.json";
+        description = ''
+          The manifest this system polls. It must match what the server build
+          is compiled against (`updateMode` in `pkgs/nanokvm-server.nix`), so
+          that the web UI's button and this tool can never install from
+          different places.
+
+          The `_sys_` name is also what keeps the retired 4.19 channel
+          separate: that image polls `nanokvm_pro_latest.json`, which nothing
+          publishes any more, so it is offered nothing rather than being
+          offered a store closure no Ubuntu rootfs could apply.
+        '';
+      };
+
+      keepGenerations = lib.mkOption {
+        type = lib.types.int;
+        default = 3;
+        description = ''
+          How many generations `nanokvm-gc` keeps. The booted system, the
+          activated one and both generations the extlinux configs name are
+          always kept on top of this, so a small number cannot strand the
+          board.
+        '';
+      };
     };
 
     identity = {
@@ -1045,7 +1149,8 @@ in
     # flags there (usb.ncm, usb.disk0, usb.uac2, eth.nodhcp, ...), the module
     # loader sources /boot/configs, and the vendor initramfs contract still
     # uses /boot/rec and /boot/check_resize2fs on a vendor boot. Since #89
-    # rung 3 it also holds the boot payload -- extlinux.conf, Image, dtb.
+    # rung 3 it also holds the boot payload -- extlinux.conf, the kernel and the
+    # dtb, both content-addressed since #86 (Image-<hash>).
     #
     # EXT4 UNDER THE MINIMAL LAYOUT. The kernel needs ext4 for root anyway, so
     # putting /boot on it retires the CONFIG_VFAT_FS + NLS-codepage trap
@@ -1069,6 +1174,14 @@ in
     environment.ldso = "${pkgs.glibc}/lib/ld-linux-aarch64.so.1";
 
     systemd.tmpfiles.rules = [
+      # The updater's state (#86). `closures/<toplevel basename>.txt` is the
+      # ONLY record of what a generation needs -- there is no nix here to
+      # recompute it -- so nanokvm-gc refuses to collect anything if a kept
+      # generation's file is missing. The image build writes the first one
+      # (nixos/lib/appliance-artifacts.nix); every update writes its own.
+      "d /var/lib/nanokvm 0755 root root - -"
+      "d /var/lib/nanokvm/closures 0755 root root - -"
+      "d /var/cache/nanokvm-update 0755 root root 30d -"
       "d /opt 0755 root root - -"
       "L+ /opt/lib - - - - ${optLib}/lib"
       # Third entry of NanoKVM-Server's DT_RUNPATH; same directory.
@@ -1097,6 +1210,15 @@ in
     # U-Boot rewrites this environment TWICE per boot (set_slot_ab,
     # update_cmdline), so a userspace fw_setenv must not race a reboot.
     environment.etc."fw_env.config".text = parts.fwEnvConfig;
+
+    # THE VERSION THIS GENERATION IS, as a file INSIDE the closure (#86). The
+    # web UI reads `/kvmapp/version`, which is a store symlink and therefore
+    # also per-generation -- but `nanokvm-update` needs the version of the
+    # RUNNING system specifically, and `/run/current-system/etc/nanokvm-version`
+    # is the only thing that says it without guessing. Making it part of the
+    # closure is what removes the need for any mutable version stamp at all:
+    # a rollback rolls the version back with everything else.
+    environment.etc."nanokvm-version".text = "${nanokvm.version}\n";
 
     # =====================================================================
     # 5. Services
@@ -1130,12 +1252,30 @@ in
       script =
         if cfg.videoStack.enable then ''
           set -e
+          # WHICH MODULE SET BELONGS TO THIS KERNEL. pkgs/boot-payload.nix
+          # names it after the kernel's own content hash, so the answer is the
+          # `nanokvmboot=` token -- the same one nanokvm-mark-good trusts,
+          # and for the same reason: it is what U-Boot copied out of the
+          # config it actually chose.
+          #
+          # `/boot/modules` is the fallback, and it is not dead code: a board
+          # whose /boot predates the content-addressed payload has exactly
+          # that, and a kernel/module mismatch there fails at insmod rather
+          # than silently.
+          bootid=$(sed -n 's|.*[[:space:]]nanokvmboot=\([^[:space:]]*\).*|\1|p' /proc/cmdline)
           dir=/boot/modules
+          if [ -n "$bootid" ]; then
+            k=''${bootid%%,*}
+            case "$k" in
+              /Image-*) dir="/boot/modules-''${k#/Image-}" ;;
+            esac
+          fi
           if [ ! -r "$dir/load-order" ]; then
             echo "nanokvm-video: $dir/load-order is missing -- /boot does not" >&2
             echo "               carry a module set for this kernel." >&2
             exit 1
           fi
+          echo "nanokvm-video: loading from $dir"
           while read -r ko; do
             [ -n "$ko" ] || continue
             if [ -d "/sys/module/$(basename "$ko" .ko | tr - _)" ]; then
@@ -1434,6 +1574,36 @@ in
       };
     };
 
+    # ---- unattended updates (#86) ---------------------------------------
+    # OFF unless `nanokvm.update.auto` is set. Applying an update reboots the
+    # board, and a KVM that reboots itself mid-session is a worse surprise than
+    # a device a version behind; the timer exists for fleets that want it.
+    # `Persistent` so a board that is off at the scheduled hour still checks
+    # once it is back, rather than waiting a whole period.
+    systemd.services.nanokvm-update = lib.mkIf (cfg.update.enable && cfg.update.auto) {
+      description = "Fetch and install a NanoKVM system bundle, then reboot into it";
+      after = [ "network-online.target" "nanokvm-mark-good.service" ];
+      wants = [ "network-online.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${updateTools.updater}/bin/nanokvm-update update";
+        # An update that fails must not take the board with it: every step
+        # before the profile switch is a no-op on failure, and the boot config
+        # is only rewritten once the store and /boot are complete.
+        SuccessExitStatus = [ 0 ];
+      };
+    };
+
+    systemd.timers.nanokvm-update = lib.mkIf (cfg.update.enable && cfg.update.auto) {
+      description = "Periodic NanoKVM system-bundle update check";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.update.schedule;
+        Persistent = true;
+        RandomizedDelaySec = "30m";
+      };
+    };
+
     systemd.timers.nanokvm-mark-good = lib.mkIf cfg.markGood.enable {
       description = "Run the boot health gate once, after this boot has had time to finish";
       wantedBy = [ "timers.target" ];
@@ -1569,6 +1739,7 @@ in
       # the server reaches it by store path, not through PATH.
       nanokvm.nanokvm-gpio
     ] ++ lib.optional cfg.ubootTest.enable ubootTest
+    ++ lib.optionals cfg.update.enable [ updateTools.updater updateTools.gc ]
     ++ (with pkgs; [
       busybox # devmem, udhcpd/udhcpc
       bash

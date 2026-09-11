@@ -1,0 +1,69 @@
+func install(dir string, version string) error {
+	// OPEN-KVM SYSTEM-BUNDLE installer (#86). On the NixOS appliance an update is
+	// not a file overlay: it is a new system closure plus the kernel that closure's
+	// stage-1 initrd is baked into. The payload the server has already downloaded,
+	// SHA-512-verified and untarred is:
+	//
+	//   <dir>/MANIFEST.json    format, version, toplevel, boot payload + hashes
+	//   <dir>/closure.txt      every store path in the toplevel's closure
+	//   <dir>/store/<base>/    those store paths
+	//   <dir>/boot/Image-<h>   the kernel for this generation (content-addressed)
+	//   <dir>/boot/<dtb>       its device tree
+	//
+	// Applying it means: move the missing store paths into /nix/store (a rename --
+	// /root/.kvmcache and /nix/store are the same filesystem), point the system
+	// profile at the new toplevel, put the kernel in /boot, write extlinux.conf
+	// naming BOTH the new generation and its kernel, and reboot into the
+	// bootcount-guarded boot so a generation that does not come up healthy is
+	// rolled back by U-Boot's altbootcmd with nobody watching.
+	//
+	// ALL OF THAT IS `nanokvm-update`, a NixOS-module shell application
+	// (nixos/appliance.nix). This function reimplements none of it: the same code
+	// has to run from the systemd timer, so it lives in one place and the web UI is
+	// one of its two callers. The path is resolved through /run/current-system,
+	// which is the running generation's own copy.
+	//
+	// This appended file REPLACES the vendor dpkg installer; nanokvm-server.nix
+	// truncates update.go at install()'s signature and appends it. It may add NO
+	// imports beyond update.go's own (fmt, os, os/exec, path/filepath, log).
+	_ = sendMessage("install", 5)
+
+	const updater = "/run/current-system/sw/bin/nanokvm-update"
+	if _, err := os.Stat(updater); err != nil {
+		log.Errorf("no %s on this system -- is this the NixOS appliance? %s", updater, err)
+		return err
+	}
+
+	manifest := filepath.Join(dir, "MANIFEST.json")
+	if _, err := os.Stat(manifest); err != nil {
+		log.Errorf("payload %s is not a system bundle (no MANIFEST.json): %s", dir, err)
+		return fmt.Errorf("not a system bundle: %s", dir)
+	}
+
+	_ = sendMessage("install", 20)
+
+	// `install-staged` does everything except the reboot.
+	cmd := exec.Command(updater, "install-staged", dir, version)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Errorf("nanokvm-update install-staged failed: %s", string(out))
+		return err
+	}
+	log.Infof("nanokvm-update install-staged:\n%s", string(out))
+
+	// The version stamp is part of the closure (the new /kvmapp/version), so there
+	// is nothing to write here -- and nothing this function could write, since
+	// /kvmapp is a read-only store symlink on this system.
+
+	_ = sendMessage("install", 100)
+
+	// A REBOOT, ALWAYS, and never a service restart. The generation was installed
+	// with `switch-to-configuration boot`, so nothing about it is live yet; and the
+	// reboot is what arms the rollback -- U-Boot counts the attempt, and
+	// nanokvm-mark-good only clears the counter once the new system is running,
+	// routed and serving. A `switch` would activate an untested userspace with no
+	// way back.
+	log.Infof("system bundle %s installed; rebooting into it", version)
+	_ = exec.Command("systemctl", "--no-block", "reboot").Run()
+	return nil
+}

@@ -122,7 +122,6 @@ literal module (`pkgs/nanokvm-display/gen_font.py`).
    Kernel-side reading: a GPIO's `value` file just echoes the output
    latch — it proves nothing about the ball; check the pad word with
    `devmem 0x02300060` instead.
-4. The OTA update package carries the same payload (`pkgs/update-package.nix`).
 
 ---
 

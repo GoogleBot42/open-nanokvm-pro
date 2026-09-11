@@ -6,10 +6,11 @@
 , version ? "0.0.0-dev"
 , files ? { }
 , payload ? { }
-  # Whole directories copied in recursively, "path/under/boot" -> store dir.
-  # The video stack's kernel modules ride here (#83): they belong to the same
-  # artefact as the Image and the dtb, not to the NixOS closure.
-, payloadDirs ? { }
+, # A whole directory tree copied into the filesystem root, for a payload whose
+  # FILE NAMES are computed at build time and so cannot be an eval-time attrset
+  # -- which is what content-addressing the kernel made of the boot payload
+  # (#86, pkgs/boot-payload.nix).
+  payloadDir ? null
 , ...
 }:
 
@@ -82,21 +83,20 @@ let
       + "\n  install -m 0644 ${lib.escapeShellArg src} root/${name}")
     payload);
 
-  payloadDirsCopyFat = lib.concatStringsSep "\n" (lib.mapAttrsToList
-    (name: src: ''
-      mmd -i bootfs.fat32 "::/${name}" || true
-      for f in ${lib.escapeShellArg src}/*; do
-        mcopy -i bootfs.fat32 "$f" "::/${name}/$(basename "$f")"
-      done'')
-    payloadDirs);
+  payloadDirCopyExt = lib.optionalString (payloadDir != null) ''
+    cp -r --no-preserve=mode,ownership,timestamps ${payloadDir}/. root/
+    find root -type d -exec chmod 0755 {} +
+    find root -type f -exec chmod 0644 {} +
+  '';
 
-  payloadDirsCopyExt = lib.concatStringsSep "\n" (lib.mapAttrsToList
-    (name: src: ''
-      mkdir -p root/${name}
-      for f in ${lib.escapeShellArg src}/*; do
-        install -m 0644 "$f" "root/${name}/$(basename "$f")"
-      done'')
-    payloadDirs);
+  payloadDirCopyFat = lib.optionalString (payloadDir != null) ''
+    (cd ${payloadDir} && find . -type d ! -name .) | sed 's|^\./||' | while read -r d; do
+      mmd -i bootfs.fat32 "::/$d" || true
+    done
+    (cd ${payloadDir} && find . -type f) | sed 's|^\./||' | while read -r f; do
+      mcopy -i bootfs.fat32 "${payloadDir}/$f" "::/$f"
+    done
+  '';
 
   fat = pkgs.runCommand "nanokvm-bootfs.fat32"
     {
@@ -111,7 +111,7 @@ let
     done
 
     ${payloadCopyFat}
-    ${payloadDirsCopyFat}
+    ${payloadDirCopyFat}
 
     echo "=== /boot contents ==="
     mdir -i bootfs.fat32 -/ ::
@@ -131,7 +131,27 @@ let
     done
 
     ${payloadCopyExt}
-    ${payloadDirsCopyExt}
+    ${payloadDirCopyExt}
+
+    # ROOM FOR THREE KERNELS, and that is the sizing rule (#86). A kernel
+    # rollback means /boot holds the running kernel AND the fallback one; an
+    # update stages a third before `nanokvm-mark-good` collects whatever neither
+    # extlinux config names. Nothing on the device can grow this partition, and
+    # a /boot that fills up mid-update is a board that has written half a boot
+    # payload -- so the headroom is asserted here, at build time.
+    img=$(ls -S root/Image-* 2>/dev/null | head -1 || true)
+    if [ -n "$img" ]; then
+      used=$(du -sb root | cut -f1)
+      kb=$(stat -Lc%s "$img")
+      need=$(( used + 2 * kb + 16777216 ))
+      echo "/boot sizing: content $used B + two more kernels ($kb B each) + 16 MiB slack = $need B of ${toString size} B"
+      [ "$need" -le ${toString size} ] || {
+        echo "ERROR: /boot (${toString (size / 1048576)} MiB) cannot hold three kernels." >&2
+        echo "       Grow \`boot\` in nixos/lib/emmc-layout.nix -- which means a new GPT," >&2
+        echo "       an SPL rebuild and an AXDL flash, so do it deliberately." >&2
+        exit 1
+      }
+    fi
 
     # -d stages the tree, -U pins the UUID, -m 0 keeps no reserved blocks (this
     # filesystem has no privileged writer to reserve them for), and

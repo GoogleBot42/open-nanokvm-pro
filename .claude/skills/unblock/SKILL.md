@@ -22,10 +22,11 @@ them by how much downstream agent work each one frees up.
    ```
    As of the last check this includes: #7 (SD card image in releases),
    #8 (docs need human touch), #9 (SD-card image never booted on
-   hardware), #10 (OTA A/B slot failover never exercised on hardware),
+   hardware),
    #11 (mini-display final on-device boot test), #28 (decide pending
-   blobs: aic8800 WiFi/BT, axbox syslog, eip_ax620e.bin), #31 (OTA updates
-   unsigned), #32 (default root password "sipeed" with SSH enabled).
+   blobs: aic8800 WiFi/BT, axbox syslog, eip_ax620e.bin), #31 (the update
+   bundle is hash-verified but unsigned), #32 (default root password "sipeed"
+   with SSH enabled).
    Re-pull rather than trusting this list verbatim — it changes.
 3. Identify items blocked on either:
    - **Physical access to the device**: on-device boot tests (SD image,

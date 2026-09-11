@@ -250,14 +250,14 @@ for pending/TODO/unverified markers still present in the tree:
   `modprobe` (udev already autoloads our from-source aic8800 modules, device-proven).
   Remaining closed content on a flashed image: aic8800 WiFi/BT **firmware** (~3.5 MB,
   #28) + the flash-time-only `eip_ax620e.bin`. Vermagic no longer binds anything shipped.
-  OTA can't delete, so an OTA-upgraded device keeps the purged files until reflash.
+  The 4.19 overlay OTA could not delete, so a device upgraded by one kept the purged files until reflash; #86 retired that OTA outright.
   **#52 DONE 2026-09-03 (4K blob-free H.264):** `vcenc_geom.h` envelope 1920x1200 ->
   3840x2160 plus `vcenc_geom_build_ex(..., want_input)` (libkvm passes 0 -- it points the
   encoder input registers at the capture frame's own bus address, so a 4K floorplan spans
   59.21 MB instead of 90.85 MB), and the DMA map gave it room: `MAP_FRAMEBUF_MB` 64 -> 136,
   `MAP_CMM_MIN_MB` 72 -> 0 (ax_cmm's slice, unclaimed since #55 M3/#54, folded into the
   encoder framebuf). 1G map is now framebuf 0x73800000 +136MB / capture 0x7C000000 +56MB /
-  coherent 0x7F800000 +8MB = the whole 200 MB pool; rootfs.nix + update-package.nix assert
+  coherent 0x7F800000 +8MB = the whole 200 MB pool; rootfs.nix asserts
   `MAP_FRAMEBUF_MB >= 92`; the bench `.openvenc`/`.base-only`/`.stub` loaders keep 64/72
   (they still load ax_cmm). Hardware-proven: prover PASS 20/20 at 3840x2160 (ffprobe: Main
   L5.1, clean decode) and the live wss h264-direct path at the NATIVE 4K bench source with
@@ -419,8 +419,9 @@ propose SG2002 work without flagging this gap up front.
   points at the broken tree and stays where it is (never move tags).
   **Superseded by `v2.1.0-alpha.6`, cut over the Gitea API and PUBLISHED on
   GitHub 2026-09-07** (`8e26530`; same content plus the fix; the `preview`
-  manifest serves alpha.6, sha512 `l9GXB1Jk…`). Not yet applied on the device
-  — the alpha.6 OTA on hardware is the open checkbox.
+  manifest serves alpha.6, sha512 `l9GXB1Jk…`). That checkbox is GONE: #86
+  retired the 4.19 overlay OTA outright (2026-09-10, no users), and the board
+  runs the mainline appliance.
 
 - **2026-09-06 — the mainline port (#26) has a queue.** The 14 children drafted in
   `docs/mainline-port.md` section 8 are filed as **#74-#87** in dependency order
@@ -580,9 +581,11 @@ propose SG2002 work without flagging this gap up front.
   functional children. Bookkeeping worth doing: close **#76**, **#81**, **#82**
   (delivered; residuals in their comments) and re-title **#80** to its
   CPUPLL/cpufreq residual.
-  Next: **#83** (video on mainline — the reason the appliance is not yet a KVM)
-  and **#86** (flake-based updates, unblocked by rung 5) can run in parallel,
-  device-serialized; then **#84**; **#85** (aic8800) is an owner decision,
+  Next: **#83** (video on mainline — the reason the appliance is not yet a KVM).
+  **#86** (flake-based updates) landed its OFFLINE half 2026-09-10 -- system
+  bundles, `nanokvm-update`/`nanokvm-gc`, a content-addressed kernel so the
+  rollback covers one, the legacy OTA deleted -- and needs ONE device round to
+  close. Then **#84**; **#85** (aic8800) is an owner decision,
   `needs-human`; **#87** last.
   Two facts worth reusing: the mainline kernel's release string must be asserted
   against `build/include/config/kernel.release` after the build, not `make

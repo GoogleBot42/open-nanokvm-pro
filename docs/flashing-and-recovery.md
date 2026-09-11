@@ -173,7 +173,7 @@ reported as promoted (#94).
 | USB HID — no keyboard, no mouse, no mass storage | #82 (the gadget policy half) |
 | Mini-display and audio | #84 |
 | WiFi | #85 |
-| OTA updates | #86 |
+| Self-update on hardware | #86 — the mechanism is built and proven offline, but no board has installed a bundle yet |
 
 ATX power/reset works in principle (`nanokvm-gpio`, #81) but has never been
 pulsed on hardware.
@@ -183,11 +183,19 @@ pulsed on hardware.
 **Flashing this overwrites the vendor system.** Keep a stock `.axp` on hand;
 AXDL re-flashing it is the way back, and it needs hands on the board.
 
-NixOS generations are **userspace only** here. `/init` points at the system
-profile, so switching generations changes the whole userland with no bootloader
-involved — but the kernel lives in the A/B partitions and no generation switch
-touches it. A kernel that does not boot is not a rollback, it is an AXDL trip,
-until #79 puts a health gate in front of the slot flip.
+**Rollback is live and it covers the kernel.** U-Boot counts boot attempts in
+`0x02390030`; the fourth runs `altbootcmd`, which boots
+`/boot/extlinux/extlinux-fallback.conf` instead of `extlinux.conf`. Those two
+files name two **(generation, kernel) pairs** — the kernel and dtb in `/boot`
+are content-addressed (`Image-<hash>`) since #86 — and `nanokvm-mark-good`
+promotes the pair that booted healthy. So a generation that does not come up,
+*including one with a new kernel*, is undone unattended.
+[nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate)
+and [updates.md](updates.md).
+
+What still has no rollback is the **boot chain**: one `spl`, one `atf`, one
+`uboot`, no twins. A U-Boot candidate goes through the one-shot chainload slot
+(`nanokvm-uboot-test`), never a partition write, and a bad SPL is an AXDL trip.
 
 **There is no deadman in the product image.** The #78 hardware harness carried a
 900 s keepalive that returned the board to slot A on its own; that is a
