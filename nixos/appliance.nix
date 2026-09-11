@@ -275,6 +275,7 @@ let
     inherit pkgs lib;
     serverEnabled = cfg.server.enable;
     timeoutSec = cfg.markGood.timeoutSec;
+    tolerateFailed = cfg.markGood.tolerateFailed;
   };
 
   # ---- the updater (#86, nix-native since #100) ---------------------------
@@ -660,6 +661,35 @@ in
         How long the health check keeps polling before giving up and leaving
         the boot counter alone. Must stay well under the time three more boot
         attempts would take, or a board that is merely slow looks broken.
+      '';
+    };
+
+    markGood.tolerateFailed = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "nanokvm-wifi.service"
+        "nanokvm-panel.service"
+        "nanokvm-display.service"
+      ];
+      example = [ "nanokvm-wifi.service" ];
+      description = ''
+        Units whose failure still counts as a healthy boot. When
+        `systemctl is-system-running` says `degraded` and EVERY failed unit is
+        in this list, the boot counter is cleared and the generation is
+        promoted anyway.
+
+        This is the second half of a rule the units themselves implement
+        first: optional hardware gets a journal line and `exit 0`, never a
+        failed unit (#85's WiFi, #84's panel). Both cost a hardware round to
+        the same mechanism -- a peripheral unit that `exit 1`-ed made the
+        system `degraded`, `nanokvm-mark-good` polled `markGood.timeoutSec`
+        and gave up, `bootcount` was never cleared, and the fourth such boot
+        would have rolled a working KVM onto its previous generation over a
+        missing radio or a dark status screen.
+
+        Keep it to peripherals. A unit that is not listed still fails the
+        gate, which is what keeps the rollback meaningful for the things this
+        appliance is actually for: the server, the network, the capture stack.
       '';
     };
 
@@ -1503,11 +1533,21 @@ in
     #
     # Why these two are modules at all is argued in pkgs/display-modules.nix:
     # loading fb_jd9853 runs the vendor's power-on sequence twice, ~560 ms of
-    # mdelay plus two resets over SPI, and a hang in there must cost a failed
+    # mdelay plus two resets over SPI, and a hang in there must cost a dead
     # unit rather than a kernel that never reaches userspace. THE OTHER HALF OF
     # THAT RULE IS NOT ENFORCEABLE HERE: never unload them. On the vendor 4.19
     # driver that hard-hangs the board; the cause is structurally absent from
     # our port, and it has never been tested. Test at boot.
+    #
+    # THIS UNIT NEVER FAILS, for the reason nanokvm-wifi does not (#85): a
+    # `Type=oneshot` that exits non-zero over absent optional hardware makes
+    # `systemctl is-system-running` report `degraded`, which makes
+    # nanokvm-mark-good poll its whole timeout and give up, which leaves
+    # `bootcount` uncleared -- so every reboot counts as a failed attempt and
+    # the fourth rolls the board onto the fallback generation. A KVM whose
+    # HDMI, USB and ethernet all work is not unhealthy because it has no
+    # status screen. Every dead end here is a journal line and `exit 0`, and
+    # nanokvm.markGood.tolerateFailed is the second belt on the same trousers.
     systemd.services.nanokvm-panel = {
       description = "NanoKVM-Pro mini-display panel (fbtft + JD9853)";
       wantedBy = [ "multi-user.target" ];
@@ -1520,26 +1560,32 @@ in
       };
       script =
         if cfg.panel.enable then ''
-          set -e
+          say() { echo "nanokvm-panel: $*"; }
+          note() { echo "nanokvm-panel: $*" >&2; }
+
           # `uname -r` rather than a baked-in release, for the same reason
           # nanokvm-video does it: a generation running on a kernel it was not
-          # built for fails here, with a path that names the mismatch, rather
+          # built for says so here, with a path that names the mismatch, rather
           # than at the first insmod with a vermagic error.
           dir=${nanokvm.display-modules}/lib/modules/$(uname -r)
           if [ ! -r "$dir/load-order" ]; then
-            echo "nanokvm-panel: $dir does not exist." >&2
-            echo "               This generation's modules were built for a" >&2
-            echo "               different kernel than the one /boot booted." >&2
-            exit 1
+            note "$dir does not exist: this generation's panel modules were"
+            note "built for a different kernel than the one /boot booted."
+            note "No /dev/fb0; the status daemon will not start."
+            exit 0
           fi
           while read -r ko; do
             [ -n "$ko" ] || continue
             if [ -d "/sys/module/$(basename "$ko" .ko | tr - _)" ]; then
-              echo "nanokvm-panel: $ko already loaded"
+              say "$ko already loaded"
               continue
             fi
-            echo "nanokvm-panel: insmod $ko"
-            insmod "$dir/$ko"
+            if insmod "$dir/$ko"; then
+              say "insmod $ko"
+            else
+              note "insmod $ko failed -- see dmesg for the driver's own reason."
+              break
+            fi
           done < "$dir/load-order"
 
           # The oracle. fb_jd9853 can load cleanly and still register no
@@ -1549,11 +1595,30 @@ in
             [ -e /dev/fb0 ] && break
             sleep 0.25
           done
-          if [ ! -e /dev/fb0 ]; then
-            echo "nanokvm-panel: modules loaded but /dev/fb0 never appeared" >&2
-            exit 1
+          if [ -e /dev/fb0 ]; then
+            say "/dev/fb0 up"
+            exit 0
           fi
-          echo "nanokvm-panel: /dev/fb0 up"
+
+          # The diagnosis, in the journal, in the order that separates the
+          # causes. The panel hangs off spi2, and the single fact that says
+          # whether anything could have bound is whether the SPI MASTER
+          # probed: with no /sys/bus/spi/devices/spi2.1 there is no device for
+          # fb_jd9853 to attach to and the fault is the controller (its
+          # clocks, its resets, its pinctrl), not the panel driver. #84 lost
+          # its first hardware round to exactly this: five clock rows the
+          # binding header declared and the clock table never registered, so
+          # dw_spi_mmio and dwc-pwm-of both failed clk_get with -ENOENT.
+          note "modules loaded but /dev/fb0 never appeared."
+          if [ -e /sys/bus/platform/drivers/dw_spi_mmio/6072000.spi ]; then
+            note "spi2 (6072000.spi) IS bound; the panel itself did not answer."
+          else
+            note "spi2 (6072000.spi) did NOT bind -- no SPI device for the panel."
+            note "check: dmesg | grep -iE '6072000|dw_spi|dwc-pwm', and"
+            note "       /sys/kernel/debug/devices_deferred"
+          fi
+          note "spi devices: $(ls /sys/bus/spi/devices 2>/dev/null | tr '\n' ' ')"
+          exit 0
         '' else ''
           echo "nanokvm-panel: DISABLED (nanokvm.panel.enable = false)."
           echo "               No /dev/fb0; the status daemon will not start."

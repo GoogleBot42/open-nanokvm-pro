@@ -2,6 +2,7 @@
 , lib ? pkgs.lib
 , serverEnabled ? true
 , timeoutSec ? 240
+, tolerateFailed ? [ ]
 , bootcountReg ? "0x02390030"
 , bootcountClear ? "0xB0010000"
 }:
@@ -88,8 +89,49 @@ pkgs.writeShellApplication {
     # DHCP lands, and a wall-clock deadline expires instantly when it does.
     elapsed() { echo $(( $(cut -d. -f1 /proc/uptime) - start )); }
 
+    # Units whose failure does not make this board unhealthy. See the header
+    # block above `system_ok`.
+    TOLERATE="${lib.concatStringsSep " " tolerateFailed}"
+
+    # ---- is the SYSTEM up? ------------------------------------------------
+    #
+    # `running` is the plain answer. `degraded` means at least one unit
+    # failed, and whether that matters depends entirely on WHICH unit: a
+    # missing WiFi radio or an absent mini-display panel is not a reason to
+    # roll a working KVM back onto its previous generation, and #85 and #84
+    # each cost a hardware round to exactly that (a peripheral unit that
+    # `exit 1`-ed held `bootcount` uncleared on every boot, three boots from a
+    # rollback nobody asked for).
+    #
+    # The units themselves are the first fix -- optional hardware gets a
+    # journal line and `exit 0` -- and this is the second. It is belt and
+    # braces on purpose: a unit that starts failing for a NEW reason, or a
+    # NixOS unit we do not own, must not be able to arm the rollback over a
+    # peripheral. Anything NOT in the list still fails the gate, so a broken
+    # server, a dead network or a failed nanokvm-video is as fatal as it ever
+    # was.
+    system_ok() {
+      state=$(systemctl is-system-running 2>/dev/null || true)
+      case "$state" in
+        running) return 0 ;;
+        degraded) ;;
+        *) return 1 ;;
+      esac
+      [ -n "$TOLERATE" ] || return 1
+
+      # `--plain` drops the leading bullet; column 1 is the unit name.
+      for u in $(systemctl list-units --failed --plain --no-legend --no-pager \
+                   | awk '{ print $1 }'); do
+        case " $TOLERATE " in
+          *" $u "*) ;;
+          *) return 1 ;;
+        esac
+      done
+      return 0
+    }
+
     healthy() {
-      [ "$(systemctl is-system-running 2>/dev/null || true)" = running ] || return 1
+      system_ok || return 1
       ip -4 route show default | grep -q . || return 1
       ${lib.optionalString serverEnabled ''
         curl -sk -o /dev/null -m 5 https://127.0.0.1/ || return 1
@@ -109,6 +151,12 @@ pkgs.writeShellApplication {
       done
 
       echo "mark-good: healthy after $(elapsed)s (bootcount was $(devmem $BOOTCOUNT_REG 32))"
+      # Say so out loud when the board is healthy DESPITE a failed unit -- the
+      # whole point of the list is that it is a deliberate, readable decision
+      # rather than a silently relaxed gate.
+      if [ "$(systemctl is-system-running 2>/dev/null || true)" = degraded ]; then
+        echo "mark-good: degraded, and tolerated: $(systemctl list-units --failed --plain --no-legend --no-pager | awk '{ print $1 }' | tr '\n' ' ')"
+      fi
       devmem $BOOTCOUNT_REG 32 $BOOTCOUNT_CLEAR
       echo "mark-good: bootcount cleared -> $(devmem $BOOTCOUNT_REG 32)"
     fi
