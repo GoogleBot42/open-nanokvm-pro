@@ -1,7 +1,7 @@
 { pkgs, crossPkgs, toolchain, axdl, ... }:
 
 # Dev shell for working on the NanoKVM-Pro flake: cross toolchain + the native
-# tools the vendor SDK / image pipeline expect.
+# tools the boot chain and the image builder expect.
 
 pkgs.mkShell {
   name = "nanokvm-pro-dev";
@@ -35,9 +35,9 @@ pkgs.mkShell {
     echo "  vendor triple: aarch64-none-linux-gnu-  (pass CROSS_COMPILE to SDK)"
     echo ""
     echo "Build + flash (host <-USB-> AX630C in BootROM download mode):"
-    echo "    nix build .#base-axp        # stock recovery .axp (or grab from Sipeed releases)"
-    echo "    nix build .#firmware-image  # our from-source .axp"
+    echo "    nix build .#nixos-firmware-image-mainline   # the product (packages.default)"
     echo "    nix run .#axdl -- --file result/*.axp --wait-for-device"
+    echo "  A stock Sipeed .axp flashes with the same command."
     echo "  Enter download mode: remove the SD card, then hold User (~10s) while powering on."
     echo "  Non-root USB access needs the udev rule (VID:PID 32c9:1000): see"
     echo "  99-axdl.rules in the axdl-rs repo -> /etc/udev/rules.d (or run axdl as root)."
