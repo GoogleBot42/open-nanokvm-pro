@@ -457,9 +457,16 @@ userspace; health-gated re-arm makes rollback automatic.** Reasons:
   watchdog) falls back. The dual-slot write strategy in
   [updates.md](updates.md) already matches this model.
 
-Open validation (unchanged from updates.md): the SPL→U-Boot slot-B failover
-for ATF/OP-TEE/U-Boot has never been exercised on hardware; the kernel-slot
-half has.
+**Superseded, twice.** #89 rung 5 replaced the whole A/B scheme with U-Boot's
+`bootcount`/`altbootcmd` over two extlinux configs (there are no A/B twins in
+the minimal layout, and the slot register's SLOT bits select nothing) —
+[nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate).
+Then #86 closed the half that left behind: the kernel and dtb in `/boot` are
+**content-addressed**, so the two configs name two (generation, kernel) pairs
+and a kernel change has an automatic fallback as well.
+[updates.md](updates.md). Everything above this paragraph is the vendor
+mechanism, kept because it is what a *vendor* boot still does and what an AXDL
+recovery image runs.
 
 ---
 
@@ -512,8 +519,11 @@ Then the KVM function: pinctrl, GPIO (ATX + LT6911 pins), `dwc3` + gadget
    health-gated checkboot.
 5. clk/reset/pinctrl real drivers.
 6. USB HID; video stack; audio; display; WiFi.
-7. Rollback + flake-based updates replace the custom OTA (one legacy OTA
-   migrates devices; `updates.md` rewrite).
+7. Rollback + flake-based updates replace the custom OTA. **Done (#86,
+   2026-09-10):** an update is a system bundle, the kernel is content-addressed
+   so the rollback covers it too, and the legacy OTA is deleted with no
+   migration path — a vendor-layout board is reflashed over AXDL.
+   [updates.md](updates.md).
 8. Upstreaming (bindings once the prefix settles; drivers).
 
 ---
@@ -619,10 +629,16 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
 12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — Package
     `radxa-pkg/aic8800` (SDIO) against the pinned kernel, `aic_bsp` reset GPIO,
     firmware MD5-pinned; or record the drop decision. Depends on: #76.
-13. **#86 Flake-based updates replace the custom OTA; legacy migration OTA** —
-    `system.autoUpgrade`-style against the flake; one final legacy
-    `update-package` that migrates a vendor-base device to the NixOS image;
-    rewrite updates.md. Depends on: #79.
+13. **#86 Flake-based updates replace the custom OTA** — **offline half DONE,
+    2026-09-10.** `.#system-bundle` (the toplevel's whole closure + its kernel)
+    replaces `update-package`; `nanokvm-update` / `nanokvm-gc` install and
+    collect it with no `nix` on the device; the kernel is content-addressed so
+    `extlinux.conf` and `extlinux-fallback.conf` can name two kernels and the
+    rollback finally covers one. The legacy migration OTA the issue asked for
+    was **dropped by decision** (Jeremy, 2026-09-10): nobody runs the alpha
+    releases, so a vendor-layout board is reflashed over AXDL. Two `nix flake
+    check` gates cover the loop; hardware is the remaining half.
+    [updates.md](updates.md).
 14. **#87 nixosModules split (product 1) and upstreaming** — Expose
     `nixosModules.nanokvm-pro-{kernel,video,display,atx,updates}`; submit
     bindings/drivers once the Axera prefix question resolves on LKML.
@@ -5003,10 +5019,15 @@ the chain with `devmem` identifies a bad handler for zero boot cycles.
 
 **Also open.** `mem=512M` is still unexplained and still not droppable.
 `SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt x86-64 host
-tool, and is a clean follow-up now that the layout is settled. And a rollback is
-still a *userspace* rollback: one `Image` in `/boot`, shared by both entries, so
-a kernel change has no automatic fallback — which is what `/boot/Image.prev`
-stands in for by hand.
+tool, and is a clean follow-up now that the layout is settled.
+
+**The kernel half of the rollback is no longer open (#86, 2026-09-10).** `/boot`
+now carries `Image-<sha256 prefix>` and `<dtb>-<hash>.dtb`, each extlinux config
+names its own pair, and `nanokvm-mark-good` promotes the pair that booted
+healthy — it learns which one that was from a `nanokvmboot=` token the config
+puts on the command line. `/boot/Image.prev` is retired as a hand-managed
+stand-in. The first hardware round is where that mechanism is actually watched
+to fire; [updates.md](updates.md) has the plan.
 
 ---
 
