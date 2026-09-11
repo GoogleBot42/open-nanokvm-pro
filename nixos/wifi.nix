@@ -222,7 +222,7 @@ in
     };
   };
 
-  config = lib.mkIf (config.nanokvm.wifi.enable or false) {
+  config = lib.mkIf cfg.enable {
     # The radio's firmware. `hardware.firmware` links it under
     # /run/current-system/firmware, which is the path compiled into
     # aic8800_bsp.ko.
@@ -237,11 +237,14 @@ in
     systemd.services.nanokvm-wifi = {
       description = "NanoKVM-Pro WiFi (AIC8800 SDIO modules)";
       wantedBy = [ "multi-user.target" ];
-      after = [ "systemd-modules-load.service" ];
+      # After the video stack, because that is what this appliance is for and
+      # a radio should not delay it. NOT before `network-pre.target`: this
+      # unit waits up to 10 s for wlan0 and then fails, and nothing that can
+      # do that belongs in front of the interface the board is reached on.
+      after = [ "systemd-modules-load.service" "nanokvm-video.service" ];
       # wpa_supplicant-wlan0.service `requires` the wlan0 .device unit, so it
       # would wait for us anyway; ordering says so explicitly.
-      before = [ "network-pre.target" "wpa_supplicant-${iface}.service" ];
-      wants = [ "network-pre.target" ];
+      before = [ "wpa_supplicant-${iface}.service" ];
       path = [ pkgs.kmod ];
       serviceConfig = {
         Type = "oneshot";

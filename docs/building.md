@@ -134,6 +134,13 @@ field to `pkgs.lib.fakeHash`, rebuild, paste the printed hash back):
 The `base-axp` FOD hash changes only if you re-pin a different vendor release
 (`pkgs/base-axp.nix`, `version = "1.0.15"`).
 
+`pkgs/aic8800-src.nix` pins the WiFi driver by commit and `sha256`. Bumping
+that `rev` means a new hash **and** two assertions to reconcile: the count of
+`debian/patches` entries that touch `src/SDIO` (the build prints every one it
+applies or skips), and the 62 firmware files
+`pkgs/aic8800-firmware.nix` checks against the upstream MD5 manifest. Both
+exist so an upstream change is read rather than absorbed.
+
 `buildGoModule`'s go-modules derivation inherits `postPatch`, so every patch that
 adds or removes an import moves `vendorHash` — not just a `go.mod` bump. `go mod
 vendor` vendors only the packages the main module actually imports.

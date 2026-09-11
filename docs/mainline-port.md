@@ -2025,6 +2025,21 @@ is on by default, the appliance closure carries two out-of-tree modules and
 load any of it. Read the hardware plan at the end of this section before
 pointing it at the device.
 
+**What it costs: 6.27 MiB**, measured as `nix path-info -S` on
+`.#appliance-toplevel` with the option on and off — 1 386 009 032 against
+1 379 436 776 bytes. Eleven store paths, and only four are real: the firmware
+(5.12 MB), the two modules (1.0 MB), `iw`, and `wireless-regdb` (which the
+nixpkgs wireless module pulls in through
+`hardware.wirelessRegulatoryDatabase`). `wpa_supplicant` costs nothing — it was
+already in the closure, because it is in NanoKVM-Server's PATH contract.
+
+The build gates: `nix flake check --no-build` passes, both modules report
+`vermagic 7.1.3-nanokvm SMP preempt mod_unload aarch64` (asserted from the
+finished `.ko`, not from the KDIR path), the compiled-in firmware path is
+greppable in `aic8800_bsp.ko`, the 62 firmware MD5s reconcile in both
+directions, and the pinned source's fixed-output hash was re-validated with
+`nix build --rebuild` rather than trusted from a store that already held it.
+
 **The driver.** There is no mainline aic8800 driver and no one is writing one.
 `pkgs/aic8800-src.nix` pins `radxa-pkg/aic8800` at `516e3b0` — an AICsemi SDK
 drop plus a `debian/patches` series that is where every kernel-version fix
