@@ -263,7 +263,7 @@ pkgs.runCommand "nanokvm-update-idle"
   grep -q "automatic updates : off" "$PWD/i2.log" \
     || { cat "$PWD/i2.log" >&2; fail "'pending' does not follow the checkbox"; }
   U status > "$PWD/i3.log"
-  grep -q "pinned by /boot" "$PWD/i3.log" \
+  grep -q "pinned  " "$PWD/i3.log" \
     || { cat "$PWD/i3.log" >&2; fail "'status' does not report what the boot configs pin"; }
   ok "pending and status report the version, the checkbox and the pins"
 

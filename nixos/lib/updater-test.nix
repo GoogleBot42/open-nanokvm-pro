@@ -108,9 +108,18 @@ pkgs.runCommand "nanokvm-updater-loop"
   ln -s system-1-link "$R/nix/var/nix/profiles/system"
   ln -s "$R$V1" "$R/run/booted-system"
   ln -s "$R$V1" "$R/run/current-system"
-  bootcfg() { printf 'DEFAULT nixos\nLABEL nixos\n  LINUX /Image\n  APPEND init=%s/init loglevel=4\n' "$1"; }
-  bootcfg "$V1" > "$R/boot/extlinux/extlinux.conf"
-  bootcfg "$V1" > "$R/boot/extlinux/extlinux-fallback.conf"
+  # A config shaped like the one NixOS's extlinux builder writes since #99: a
+  # MENU of every generation, and one DEFAULT that picks among them. The decoy
+  # label is first on purpose -- a collector that reads "the init= in this
+  # file" pins the wrong generation, and the one it leaves collectable is the
+  # fallback's.
+  bootcfg() {
+    printf 'MENU TITLE ------ NixOS ------\nTIMEOUT 1\nDEFAULT nixos-%s\n\n' "$2"
+    printf 'LABEL nixos-decoy\n  MENU LABEL NixOS - decoy\n  LINUX ../nixos/decoy-Image\n  APPEND init=%s/init loglevel=4\n\n' "$3"
+    printf 'LABEL nixos-%s\n  MENU LABEL NixOS - this one\n  LINUX ../nixos/Image\n  APPEND init=%s/init loglevel=4\n' "$2" "$1"
+  }
+  bootcfg "$V1" 1 "$V2" > "$R/boot/extlinux/extlinux.conf"
+  bootcfg "$V1" 1 "$V2" > "$R/boot/extlinux/extlinux-fallback.conf"
 
   nix-store --store "local?root=$R" --verify --check-contents \
     || fail "the fixture device store is not valid before we touch it"
@@ -219,9 +228,9 @@ pkgs.runCommand "nanokvm-updater-loop"
   rm -f "$R/run/booted-system" "$R/run/current-system"
   ln -s "$R$V3" "$R/run/booted-system"
   ln -s "$R$V3" "$R/run/current-system"
-  bootcfg "$V3" > "$R/boot/extlinux/extlinux.conf"
+  bootcfg "$V3" 3 "$V2" > "$R/boot/extlinux/extlinux.conf"
   # ...and the fallback is still the generation that last booted healthy.
-  bootcfg "$V1" > "$R/boot/extlinux/extlinux-fallback.conf"
+  bootcfg "$V1" 1 "$V2" > "$R/boot/extlinux/extlinux-fallback.conf"
 
   U --keep 2 gc > "$PWD/gc1.log" 2>&1 || { cat "$PWD/gc1.log" >&2; fail "gc failed"; }
   cat "$PWD/gc1.log"
@@ -244,11 +253,14 @@ pkgs.runCommand "nanokvm-updater-loop"
   # 5. COLLECTION -- after the fallback has been promoted (what mark-good does)
   # =====================================================================
   echo "=== nanokvm-update gc --keep 1, nothing pinning generation 1 ==="
-  bootcfg "$V3" > "$R/boot/extlinux/extlinux-fallback.conf"
+  bootcfg "$V3" 3 "$V2" > "$R/boot/extlinux/extlinux-fallback.conf"
   U --keep 1 gc > "$PWD/gc2.log" 2>&1 || { cat "$PWD/gc2.log" >&2; fail "the second gc failed"; }
   cat "$PWD/gc2.log"
   [ ! -e "$R$V1" ] || fail "gc kept a generation nothing pins any more"
-  [ ! -e "$R$V2" ] || fail "gc kept the superseded middle generation"
+  # V2 is a LABEL in both configs and the DEFAULT of neither -- the decoy. A
+  # collector that pinned every init= in the file would have kept it, and
+  # would keep every generation the menu lists, forever.
+  [ ! -e "$R$V2" ] || fail "gc kept a generation that is only a non-DEFAULT label"
   [ -e "$R$V3" ] || fail "gc deleted the running system"
   [ -e "$R$V3/dep" ] || fail "gc deleted a dependency of the running system"
   ok "the unpinned generations and their exclusive paths are gone; the live one is intact"

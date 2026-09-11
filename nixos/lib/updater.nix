@@ -193,6 +193,34 @@ let
     store_uri() {
       if [ -n "$ROOT" ]; then printf 'local?root=%s' "$ROOT"; else printf 'auto'; fi
     }
+
+    # WHICH GENERATION AN EXTLINUX CONFIG ACTUALLY BOOTS (#99).
+    #
+    # NixOS's builder writes one LABEL per generation and a single top-level
+    # DEFAULT that selects among them, so "the `init=` in this file" is no
+    # longer a question with one answer -- there are several, and only one of
+    # them is live. Reading the first would pin the wrong generation, and for
+    # `gc` that means deleting the one the ROLLBACK depends on.
+    #
+    # Prints the toplevel store path the file's DEFAULT entry pins, or nothing
+    # at all. Every caller must treat "nothing" as "do not delete", never as
+    # "nothing is pinned".
+    conf_default_toplevel() {
+      [ -r "$1" ] || return 0
+      awk '
+        $1 == "DEFAULT" && !d { want = $2; d = 1; next }
+        $1 == "LABEL"         { cur = $2; next }
+        cur == want && $1 == "APPEND" {
+          for (i = 2; i <= NF; i++)
+            if (substr($i, 1, 5) == "init=") {
+              p = substr($i, 6)
+              sub(/\/init$/, "", p)
+              print p
+              exit
+            }
+        }
+      ' "$1"
+    }
   '';
 
   # ---- the idle gate and the pending marker ------------------------------
@@ -497,9 +525,19 @@ let
       # FALLBACK is the one that matters: it is what gets used precisely when
       # the default does not work, and it is named by a file in /boot rather
       # than by a profile link, so nothing in nix knows about it unless we say
-      # so. Any `init=/nix/store/<x>/init` in ANY boot config counts -- which
-      # keeps working whether the fallback is a second file (today) or a
-      # second LABEL in one file (#99).
+      # so.
+      #
+      # THE DEFAULT ENTRY OF EACH FILE, AND ONLY IT (#99). Since NixOS's own
+      # extlinux builder took over /boot, both configs list every generation
+      # the menu names; what each one BOOTS is its DEFAULT. Pinning every
+      # `init=` in the file would pin the whole menu and collect nothing ever;
+      # pinning the first would pin whichever the builder emitted first and
+      # leave the fallback's own generation collectable -- precisely the one
+      # that gets used when the default does not work.
+      #
+      # A file that yields nothing is a file we do not understand, and an
+      # unreadable pin is not the same as an absent one: `gc` refuses rather
+      # than collects.
       #
       # LOGICAL store paths, always: a gc root must name /nix/store/<x> even
       # when --root has the store somewhere else, because that is what the
@@ -514,7 +552,10 @@ let
         done
         for f in "$(P /boot/extlinux)"/*.conf; do
           [ -r "$f" ] || continue
-          sed -n 's|.*[[:space:]]init=\(/nix/store/[^[:space:]]*\)/init.*|\1|p' "$f"
+          t=$(conf_default_toplevel "$f")
+          [ -n "$t" ] \
+            || die "$f names no generation on its DEFAULT entry -- refusing to collect anything"
+          printf '%s\n' "$t"
         done
       }
 
@@ -729,11 +770,11 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         echo "current system    : $(readlink -f "$(P /run/current-system)" 2>/dev/null || echo '?')"
         echo "profile           : $(readlink -f "$(P /nix/var/nix/profiles/system)" 2>/dev/null || echo '?')"
         echo "generations       : $(find "$(P /nix/var/nix/profiles)" -maxdepth 1 -name "system-*-link" 2>/dev/null | wc -l)"
-        echo "pinned by /boot   :"
+        echo "pinned            :"
         pinned_toplevels | sort -u | sed 's/^/  /'
         for c in "$(P /boot/extlinux)"/*.conf; do
           [ -r "$c" ] || continue
-          echo "$(basename "$c"): $(sed -n 's|.*init=\([^ ]*\).*|\1|p' "$c" | head -1)"
+          echo "$(basename "$c"): DEFAULT $(sed -n 's|^DEFAULT[[:space:]]*||p' "$c" | head -1) -> $(conf_default_toplevel "$c")"
         done
         ;;
 
