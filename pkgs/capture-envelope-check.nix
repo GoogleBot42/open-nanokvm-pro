@@ -98,17 +98,31 @@ pkgs.runCommand "capture-envelope-check"
     fi
     pool_bytes=$(( pool ))
 
-    # YUYV 4:2:2, stride == width (ovc_fill_pix_format), page-aligned per
-    # buffer exactly as ovc_queue_setup computes it.
+    # YUYV 4:2:2, stride == width (ovc_fill_pix_format).
+    #
+    # A BUFFER DOES NOT COST ITS PAGE-ALIGNED SIZE. The pool is a declared
+    # coherent region, so dma_alloc_from_dev_coherent() allocates
+    # 2^get_order(size) PAGES, aligned to itself -- 16 MiB for a 15.82 MiB
+    # 3840x2160 frame, 32 MiB for anything larger up to 32. Measured on
+    # hardware (#98): out of 56 MiB the driver got three buffers at
+    # 3840x2160 and could not get ONE at 3840x2400. Reproduce that
+    # arithmetic here rather than the page-aligned arithmetic that hid it.
+    #
+    # And the floor is three, not two: vb2 fails REQBUFS outright below
+    # min_queued_buffers + 1, and open_vin_capture declares 2.
+    min_buffers=$(sed -n 's/^#define[[:space:]]\+OVC_MIN_BUFFERS[[:space:]]\+\([0-9]\+\).*/\1/p' "$capture" | head -1)
+    [ -n "$min_buffers" ] || { bad "could not read OVC_MIN_BUFFERS"; exit 1; }
+
     frame=$(( lib_w * 2 * lib_h ))
-    aligned=$(( (frame + 4095) / 4096 * 4096 ))
-    fit=$(( pool_bytes / aligned ))
+    cost=4096
+    while [ "$cost" -lt "$frame" ]; do cost=$(( cost * 2 )); done
+    fit=$(( pool_bytes / cost ))
 
     note "capture-pool      $(( pool_bytes / 1048576 )) MiB"
-    note "frame at ''${lib_w}x''${lib_h}  $aligned B -> $fit buffers"
+    note "frame at ''${lib_w}x''${lib_h}  $frame B -> $(( cost / 1048576 )) MiB allocated -> $fit buffers (need $min_buffers)"
 
-    if [ "$fit" -lt 2 ]; then
-      bad "the capture pool holds $fit buffers at ''${lib_w}x''${lib_h}; vb2 needs two to rotate, so this geometry cannot stream at all"
+    if [ "$fit" -lt "$min_buffers" ]; then
+      bad "the capture pool yields $fit buffers at ''${lib_w}x''${lib_h} (each frame costs $(( cost / 1048576 )) MiB after the order rounding); vb2 refuses REQBUFS below $min_buffers, so this geometry cannot stream at all"
     fi
 
     [ "$fail" = 0 ] || { echo "RESULT: FAIL" >&2; exit 1; }

@@ -1723,7 +1723,9 @@ attached host is 4096x2160, and both the driver (`OVC_MAX_WIDTH`) and libkvm
 (`V4L2_MAX_W`, `pkgs/kvm-encoder/src/kvm_capture_v4l2.c`) cap at 3840, so the
 shipped path needs `OPENKVM_FORCE_GEOM` on this source. Identical on the 4.19
 image; raising the kernel constant alone changes nothing, because libkvm's is
-a compile-time constant. Also unproven: H.265 through this stack on mainline,
+a compile-time constant. **Fixed in #98** — see "What exists now (#98)" below;
+the ceiling was the easy half and the capture carveout's power-of-two
+allocator was the rest. Also unproven: H.265 through this stack on mainline,
 unloading the whole module set (only `open_vin_capture` was rmmod'd and
 reloaded), the receiver's second controller, the 1/2/3-lane tables, the
 private control IDs, and the `standalone` / `start_on_probe` bench modes.

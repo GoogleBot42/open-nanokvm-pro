@@ -73,6 +73,19 @@ that is arbitration, not a bug.
   proven 2026-09-01. Only ax_vpp/production clocks it. The same rule holds for ANY block whose clock is off: a U-Boot register dump of the cardless SD slot at `0x104E0000` hung the bus and cost a power cycle (#89 rung 2f, 2026-09-08) — dump only what you have proven clocked. And glibc `memset`/`memcpy` on a
   `/dev/mem` mapping SIGBUSes (DC ZVA on Device memory): use word loops. Details:
   `docs/reference/deblob-scope/regdumps/README.md`.
+- **A buffer in a declared coherent carveout costs a POWER OF TWO of pages, not
+  its page-aligned size.** `dma_alloc_from_dev_coherent()` allocates through
+  `bitmap_find_free_region(..., get_order(size))`, so the cost is
+  `2^ceil(log2(size))` aligned to itself: a 15.82 MiB 3840x2160 YUYV frame
+  costs 16 MiB and a 16.88 MiB 4096x2160 one costs **32**. Sizing a pool by
+  `PAGE_ALIGN(sizeimage) * n` promises buffers it cannot hold, and vb2 then
+  fails `REQBUFS` **entirely** — it refuses below `min_queued_buffers + 1` — so
+  "raise the ceiling" looked done and one hardware round said otherwise. Out of
+  the old 56 MiB pool the driver got three buffers at 3840x2160 and could not
+  get ONE at 3840x2400 (#98, measured; the 16:10 EDID in #61 had therefore
+  never worked and nothing said so). The capture pool is 96 MiB now —
+  three 32 MiB slots — and `.#checks.open-capture-envelope` reproduces the
+  order arithmetic rather than the page arithmetic that hid it.
 - A bare `platform_device_register_simple()` device on arm64 4.19 gets `dummy_dma_ops`
   (`dma_supported` = 0), so `dma_coerce_mask_and_coherent()` FAILS silently and the
   coherent mask stays 0 (WARN at every `dma_alloc_attrs`). Set `dev.coherent_dma_mask`

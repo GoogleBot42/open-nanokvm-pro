@@ -289,6 +289,10 @@ MODULE_PARM_DESC(wdma_chn, "IFE-WDMA channel for the packed YUV422 plane");
 #define OVC_MAX_WIDTH		4096
 #define OVC_MIN_HEIGHT		64
 #define OVC_MAX_HEIGHT		2400
+/* min_queued_buffers + 1: what vb2 insists on before REQBUFS succeeds at all.
+ * Keep the two in step -- ovc_queue_setup uses this to decide whether the
+ * carveout can serve a geometry, and it is a floor, not a margin. */
+#define OVC_MIN_BUFFERS		3
 /* Default to the confirmed source geometry (live vendor capture = 3840x2160). */
 #define OVC_DEF_WIDTH		3840
 #define OVC_DEF_HEIGHT		2160
@@ -1048,34 +1052,42 @@ static int ovc_queue_setup(struct vb2_queue *vq, unsigned int *nbuffers,
 	if (*nplanes)
 		return sizes[0] < ovc->fmt.sizeimage ? -EINVAL : 0;
 
-	/* Never promise more buffers than the carveout holds -- otherwise vb2
+	/*
+	 * Never promise more buffers than the carveout holds -- otherwise vb2
 	 * tries the allocation and dma_alloc_coherent logs a failure for every
 	 * start. This, not OVC_MAX_WIDTH/HEIGHT, is what actually bounds the
-	 * envelope: in the 56 MiB default pool a YUYV frame is 15.82 MiB at
-	 * 3840x2160 (three fit), 16.88 MiB at 4096x2160 (three), 18.43 MiB at
-	 * 3840x2400 (three) and 18.75 MiB at 4096x2400 (two). Two is the vb2
-	 * minimum this queue declares, so the whole envelope rotates; the
-	 * corners just rotate with less slack, which is worth saying out loud
-	 * when it happens (#98). */
+	 * envelope.
+	 *
+	 * THE COST OF A BUFFER IS NOT ITS PAGE-ALIGNED SIZE (#98). A declared
+	 * coherent region is a bitmap allocator, and dma_alloc_from_dev_coherent
+	 * calls bitmap_find_free_region() with get_order(size) -- so every
+	 * buffer costs a POWER-OF-TWO number of pages, aligned to itself. A
+	 * 4096x2160 YUYV frame is 16.88 MiB and costs 32 MiB; 3840x2160 is
+	 * 15.82 MiB and costs 16. Computing the cap from PAGE_ALIGN() instead
+	 * promised three buffers the pool could not hold and failed inside vb2
+	 * with nothing pointing at the reason -- measured on hardware, which is
+	 * also where the 16 MiB step showed up: 3840x2160 allocates three
+	 * buffers out of 56 MiB and 3840x2400 cannot allocate ONE.
+	 *
+	 * "Cannot allocate one" is literal: vb2 refuses the whole REQBUFS
+	 * unless it gets min_queued_buffers + 1 = 3, so three is the floor for
+	 * any geometry at all, not a comfort margin.
+	 */
 	if (ovc->carveout_size) {
-		unsigned int max = div_u64(ovc->carveout_size,
-					   PAGE_ALIGN(ovc->fmt.sizeimage));
+		unsigned long cost = PAGE_SIZE << get_order(ovc->fmt.sizeimage);
+		unsigned int max = div_u64(ovc->carveout_size, cost);
 
-		if (max < 2) {
+		if (max < OVC_MIN_BUFFERS) {
 			dev_err(ovc->dev,
-				"%ux%u needs %u B/frame; the %llu MiB pool cannot hold two\n",
+				"%ux%u: %u B/frame costs %lu MiB of the %llu MiB pool (order-rounded), so at most %u buffers -- vb2 needs %u\n",
 				ovc->fmt.width, ovc->fmt.height,
-				ovc->fmt.sizeimage,
-				(u64)ovc->carveout_size >> 20);
+				ovc->fmt.sizeimage, cost >> 20,
+				(u64)ovc->carveout_size >> 20, max,
+				OVC_MIN_BUFFERS);
 			return -ENOMEM;
 		}
-		if (*nbuffers > max) {
-			if (max < 3)
-				dev_info(ovc->dev,
-					 "%ux%u: pool holds only %u buffers\n",
-					 ovc->fmt.width, ovc->fmt.height, max);
+		if (*nbuffers > max)
 			*nbuffers = max;
-		}
 	}
 
 	*nplanes = 1;
@@ -1638,7 +1650,8 @@ static int ovc_probe(struct platform_device *pdev)
 	q->ops = &ovc_vb2_ops;
 	q->mem_ops = &ovc_mem_ops;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
-	q->min_queued_buffers = 2;
+	/* OVC_MIN_BUFFERS is this + 1; ovc_queue_setup depends on the pair. */
+	q->min_queued_buffers = OVC_MIN_BUFFERS - 1;
 	q->dev = dev;
 	q->lock = &ovc->lock;
 	ret = vb2_queue_init(q);

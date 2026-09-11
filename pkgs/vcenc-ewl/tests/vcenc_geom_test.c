@@ -145,33 +145,49 @@ static void envelope(void)
     printf("envelope: accept/reject checked\n");
 
     /*
-     * #98: the floorplan at the raised corners must still fit the encoder
-     * carveout (dts/ax630c-nanokvm-pro.dts venc-framebuf, 136 MiB). libkvm
-     * builds with want_input = 0; the standalone prover pays for the input
-     * region as well, and BOTH have to fit or ewl_encode stops being able to
-     * check the geometry the product runs.
+     * #98: the floorplan has to fit dts/ax630c-nanokvm-pro.dts's
+     * venc-framebuf, which is 96 MiB since the capture pool took the other
+     * half of the 200 MiB video region (a 4096-wide YUYV frame costs 32 MiB
+     * of a declared coherent pool after the allocator's power-of-two
+     * rounding, and vb2 wants three).
+     *
+     * PRODUCTION is want_input = 0 -- libkvm points the input registers at
+     * the capture frame's own bus address -- and every corner of the
+     * envelope must fit. The standalone prover (ewl_encode) also reserves a
+     * 4*W*H input region it fills itself; that fits up to 3840x2160 and no
+     * further, which is a deliberate trade, so pin BOTH facts.
      */
     {
+        const uint32_t carveout = 96u * 1024 * 1024;
         static const struct { int w, h; } C[] = {
-            { 3840, 2160 }, { 3840, 2400 }, { 4096, 2160 }, { 4096, 2400 },
+            { 1920, 1080 }, { 3840, 2160 }, { 3840, 2400 },
+            { 4096, 2160 }, { 4096, 2400 },
         };
-        const uint32_t carveout = 136u * 1024 * 1024;
         for (unsigned i = 0; i < sizeof C / sizeof C[0]; i++) {
-            for (int in = 0; in < 2; in++) {
-                if (vcenc_geom_build_ex(&g, C[i].w, C[i].h, in)) {
-                    printf("FAIL floorplan %dx%d want_input=%d rejected\n",
-                           C[i].w, C[i].h, in);
-                    fails++;
-                    continue;
-                }
-                if (g.span > carveout) {
-                    printf("FAIL floorplan %dx%d want_input=%d span %u > %u\n",
-                           C[i].w, C[i].h, in, g.span, carveout);
-                    fails++;
-                }
+            if (vcenc_geom_build_ex(&g, C[i].w, C[i].h, 0)) {
+                printf("FAIL floorplan %dx%d rejected\n", C[i].w, C[i].h);
+                fails++;
+                continue;
+            }
+            if (g.span > carveout) {
+                printf("FAIL floorplan %dx%d span %u > carveout %u\n",
+                       C[i].w, C[i].h, g.span, carveout);
+                fails++;
             }
         }
-        printf("floorplan: every envelope corner fits the 136 MiB carveout\n");
+        printf("floorplan: every envelope corner fits the 96 MiB carveout\n");
+
+        /* The prover's reach, stated rather than assumed. */
+        if (vcenc_geom_build_ex(&g, 3840, 2160, 1) || g.span > carveout) {
+            printf("FAIL prover floorplan 3840x2160 no longer fits\n");
+            fails++;
+        }
+        if (!vcenc_geom_build_ex(&g, 4096, 2160, 1) && g.span <= carveout) {
+            printf("FAIL prover floorplan 4096x2160 now fits -- the carveout"
+                   " grew; say so in the dts comment and here\n");
+            fails++;
+        }
+        printf("floorplan: the prover reaches 3840x2160, not 4096x2160\n");
     }
 }
 

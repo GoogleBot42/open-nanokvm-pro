@@ -297,6 +297,47 @@ encoder register program consumes, so frames reach the encoder zero-copy. The
 same mmap is the CPU view for the software-JPEG MJPEG path and the mini-display
 preview.
 
+### The geometry envelope
+
+The pipeline captures whatever the attached host sends, so the envelope is a
+product decision, not a formatting one. It is **4096x2400** (#98), and the
+number is stated in four places that have to agree:
+
+| where | constant | what it does |
+|---|---|---|
+| `open_vin_csi2.c` | `clamp_t(..., 64, 4096)` / `2400` | the receiver is format-transparent; this only keeps the media graph honest |
+| `open_vin_capture.c` | `OVC_MAX_WIDTH` / `OVC_MAX_HEIGHT` | **clamps** an out-of-range `S_FMT` — it does not refuse it |
+| `kvm_capture_v4l2.c` | `V4L2_MAX_W` / `V4L2_MAX_H` | libkvm's own gate, checked before the device is opened |
+| `vcenc_geom.h` | `VCENC_GEOM_MAX_W` / `_H` | H.264/H.265 only; MJPEG is software and has no ceiling of its own |
+
+`.#checks.x86_64-linux.open-capture-envelope` reads all four out of the
+shipping sources and asserts the relations, because the coupling is silent in
+the direction that matters: the driver clamping rather than refusing means a
+libkvm ceiling above the driver's shows up as `driver negotiated 3840x2160,
+wanted 4096x2160` — an error that names neither constant.
+
+What actually bounds it:
+
+| | 1920x1080 | 3840x2160 | 4096x2160 | 4096x2400 |
+|---|---|---|---|---|
+| YUYV frame | 3.96 MiB | 15.82 MiB | 16.88 MiB | 18.75 MiB |
+| buffers in the 56 MiB `capture-pool` | 4 (libkvm asks for 4) | 3 | 3 | 2 |
+| encoder floorplan (`vcenc_geom`, no prover input) | 14.97 MiB | 59.21 MiB | 63.14 MiB | 70.43 MiB |
+
+The 136 MiB `venc-framebuf` carveout covers every corner with room, including
+the standalone prover's larger floorplan (107.93 MiB at 4096x2400). The
+capture pool is the binding constraint, and `ovc_queue_setup()` enforces it
+dynamically — it caps the buffer count from the carveout size and refuses only
+when two frames will not fit, which is the vb2 minimum for a queue to rotate.
+Nothing in the ISP replay is width-baked: the golden register image
+parameterises exactly four words on geometry, and they carry width and height
+in separate 16-bit halves.
+
+Outside the envelope, `kvmv_read_img` answers `IMG_UNSUPPORTED_MODE` (-5) and
+every stream route refuses with **503** and a message naming the source and the
+maximum, rather than opening a stream that never carries a frame. The browser
+shows it as `VideoStatus.UnsupportedMode`.
+
 The pipeline is **lazy**: nothing is initialized until the first
 `kvmv_read_img`, which opens `/dev/video0`, sets the format from the live
 geometry in `/proc/lt6911_info`, starts streaming and brings the encoder up.
