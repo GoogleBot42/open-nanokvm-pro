@@ -1,4 +1,6 @@
-{ config, lib, pkgs, nanokvm, ... }:
+{ builder }:
+
+{ config, lib, pkgs, ... }:
 
 # ===========================================================================
 # `system.build.axpImage` -- the flashable .axp for THIS configuration.
@@ -10,12 +12,12 @@
 # .#nixosConfigurations.nanokvm-pro.config.system.build.axpImage` and the
 # flake's `.#nixos-firmware-image` are the same derivation.
 #
-# The heavy lifting is `nanokvm.image` (nixos/axp-image.nix), passed in through
-# specialArgs by nixos/rootfs.nix. It has to arrive that way rather than being
-# imported here, because it needs the flake's x86_64 package set: the signing
-# tool (`ax_gzip`) is a prebuilt x86-64 host binary and the ext4 is packed by
-# make-ext4-fs on the build machine, while THIS module evaluates as
-# aarch64-linux.
+# The heavy lifting is `builder` (nixos/axp-image.nix), applied to this file by
+# the flake before the module system ever sees it. It has to arrive that way
+# rather than being imported here, because it needs the flake's x86_64 package
+# set: the signing tool (`ax_gzip`) is a prebuilt x86-64 host binary and the
+# ext4 is packed by make-ext4-fs on the build machine, while THIS module
+# evaluates as aarch64-linux.
 # ===========================================================================
 
 {
@@ -34,7 +36,7 @@
   # builder, because they are what shapes the /boot tree it writes -- and the
   # same three are read by nixos/rootfs.nix at flake level. One definition,
   # two callers, one store path (#99).
-  system.build.axpImage = nanokvm.image {
+  system.build.axpImage = builder {
     inherit (config.system.build) toplevel;
     # For the VENDOR-layout image's `kernel`/`kernel_b` members only. Since #99
     # that Image carries no initramfs, and the vendor U-Boot has no way to pass

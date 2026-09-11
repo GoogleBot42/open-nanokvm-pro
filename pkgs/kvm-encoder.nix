@@ -37,7 +37,7 @@ let
   cc = "${crossPkgs.stdenv.cc.targetPrefix}gcc";
   # Soft-JPEG MJPEG path (#51): libjpeg-turbo built with the jpeg8 ABI so the
   # recorded DT_NEEDED is libjpeg.so.8. The appliance stages this same build
-  # into /opt/lib (nixos/appliance.nix); exported as passthru so it cannot
+  # into /opt/lib (nixos/modules/server.nix); exported as passthru so it cannot
   # skew from what libkvm linked against.
   libjpeg8 = crossPkgs.libjpeg_turbo.override { enableJpeg8 = true; };
 in
@@ -132,7 +132,7 @@ crossPkgs.stdenv.mkDerivation {
   dontFixup = true;
 
   # The exact jpeg8-ABI libjpeg-turbo this links (see above); consumed by
-  # nixos/appliance.nix so /opt/lib stages the matching .so.
+  # nixos/modules/server.nix so /opt/lib stages the matching .so.
   passthru = { inherit libjpeg8; };
 
   meta = {

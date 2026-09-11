@@ -5,7 +5,7 @@
 , previewUrl # the rolling preview channel's base URL
 , manifestName ? "nanokvm_pro_sys_latest.json"
 , # The binary cache the release closure is substituted from (#96). Empty means
-  # this system cannot update itself and says so; nixos/appliance.nix warns at
+  # this system cannot update itself and says so; nixos/modules/updates.nix warns at
   # build time rather than shipping a device that finds out at 03:00.
   cacheUrl ? ""
 , # The keys a NAR must be signed by. THE DEVICE'S OWN TRUST, not the

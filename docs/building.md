@@ -251,7 +251,7 @@ cache, and that closure contains the server this FOD builds.
   libopus, and its own `DT_RUNPATH` is the bare, store-free
   `$ORIGIN/dl_lib:/opt/lib:/opt/usr/lib`.
 - **libkvm rpath:** `pkgs/kvm-encoder.nix` uses `patchelf --force-rpath` to emit
-  `DT_RPATH` (transitive), not `DT_RUNPATH`, and `nixos/appliance.nix` re-rpaths
+  `DT_RPATH` (transitive), not `DT_RUNPATH`, and `nixos/modules/server.nix` re-rpaths
   both copies into the image so no closed-library store path survives as a
   closure reference. Both halves are load-bearing —
   [architecture.md](architecture.md#load-bearing-linker-detail).

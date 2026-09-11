@@ -5,7 +5,7 @@ nixpkgs, on the mainline kernel. **Since #97 (`fb77209`) it is the only product
 this repo builds** — the 4.19 image, its A/B slot packaging and the vendor boot
 chain are deleted, not deprecated.
 
-**Status: it is what the board runs.** `nixos/appliance.nix` evaluates against
+**Status: it is what the board runs.** `nixos/modules/` + `nixos/appliance.nix` evaluates against
 the flake's one `nixos-unstable` pin and runs on `pkgs/kernel-mainline`
 (Linux 7.1.x), with the NixOS stage-1 initrd embedded in the kernel Image. Root
 is `/dev/loop0p5` on the eMMC's own GPT (#89 rung 4), boot to SSH is 71 s, the
@@ -63,7 +63,7 @@ The costs that remain:
 |---|---|
 | ~~**OTA redesign**~~ — **done (#86, nix-native since #100)** | An update is a **signed system closure**: the release names a toplevel store path, the device substitutes it from our binary cache with `require-sigs` against its own keys, sets the system profile and runs `switch-to-configuration boot`. The 4.19 overlay path is deleted, not ported. [updates.md](updates.md). |
 | **Vendor scripts** | `/kvmapp/scripts/usbdev.sh` (the whole USB-gadget HID / mass-storage / NCM / UAC2 path the server shells out to) exists **only in the shipped vendor rootfs** — it is not in the public `NanoKVM-Pro` repo. See [gap 2](#known-gaps). |
-| ~~**WiFi**~~ — **packaged (#85), not hardware-proven** | `pkgs/aic8800.nix` builds the two SDIO modules out of tree from `radxa-pkg/aic8800` against this kernel; `pkgs/aic8800-firmware.nix` MD5-pins the radio firmware; `nixos/wifi.nix` is the option, the loader unit, the supplicant and the `/kvmcomm/scripts/wifi.sh` the server's WiFi routes exec. **The radio scans on hardware (2026-09-11)** — [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS". |
+| ~~**WiFi**~~ — **packaged (#85), not hardware-proven** | `pkgs/aic8800.nix` builds the two SDIO modules out of tree from `radxa-pkg/aic8800` against this kernel; `pkgs/aic8800-firmware.nix` MD5-pins the radio firmware; `nixos/modules/wifi.nix` is the option, the loader unit, the supplicant and the `/kvmcomm/scripts/wifi.sh` the server's WiFi routes exec. **The radio scans on hardware (2026-09-11)** — [mainline-port.md](mainline-port.md) "ON HARDWARE: THE RADIO SCANS". |
 | **The `rc.local` glue** | `S99checkboot` is now a unit and is live (below). `axemac.sh`, `npu_set_bw_limiter.sh` and a bare `devmem` poke are not. |
 | ~~**No hardware yet**~~ — **it is a working KVM** | Video streams on this kernel (#83, in-tree drivers, modules in the closure), USB HID is device-proven (#82), and ATX goes through `nanokvm-gpio` by device-tree line name (#81). What is left is the mini-display (#84). |
 | **Boot risk** | The rootfs is the one thing between U-Boot and a working device, `bootdelay=0` means there is no serial break-in, and recovery is physical AXDL. |
@@ -73,7 +73,7 @@ The costs that remain:
 ## The boot contract
 
 What the running system owes the boot chain, and what it needs *from* the
-rootfs. Sources: `nixos/appliance.nix`, `nixos/rootfs.nix`,
+rootfs. Sources: `nixos/modules/` ([modules.md](modules.md)), `nixos/rootfs.nix`,
 `pkgs/kernel-mainline.nix`, the server source, the QEMU runs, and
 [mainline-port.md](mainline-port.md) §5–6.
 
@@ -305,7 +305,7 @@ against a fake `/boot`.
 can put the default one generation ahead of the fallback (and no further —
 `nanokvm-update` refuses to install over a boot that has not been marked good),
 so the menu has to name at least two, and the third is a spare.
-`nixos/appliance.nix` asserts it.
+`nixos/modules/kernel.nix` asserts it.
 
 **The counter is a register, not the environment.** `bootcount` lives in
 `TOP_CHIPMODE_GLB_BACKUP1` (`0x02390030`) behind U-Boot's
@@ -861,7 +861,7 @@ Two traps inside that fix:
 - **Both copies.** `pkgs/kvm-encoder.nix` installs `libkvm.so` and `libkvm.so.0`
   as two real files, not a symlink pair. Patch one and the store path survives in
   the other and the closure is dragged in anyway. The `kvmapp` derivation
-  (`nixos/appliance.nix`) patches both and then `grep`s both plus
+  (`nixos/modules/server.nix`) patches both and then `grep`s both plus
   `NanoKVM-Server` for `axera-libs` and for any `libax_` as a belt-and-braces
   check.
 - **`--force-rpath`.** `DT_RPATH`, not `DT_RUNPATH`. libkvm is `dlopen`'d by the
@@ -1067,7 +1067,18 @@ and the board builds nothing (`max-jobs = 0`).
 ## What is built
 
 ```
-nixos/appliance.nix           NixOS module: the NanoKVM-Pro appliance
+nixos/modules/                the HARDWARE, nine composable modules (#87) -- see modules.md
+  kernel.nix                    kernel, dtb, extlinux, cmdline, initrd, filesystems
+  identity.nix                  MAC + hostname from the SoC UID, DHCP, fw_env.config
+  rollback.nix                  bootcount, mark-good, watchdog, the chainload slot
+  video.nix                     the open capture/encode modules and their oracle
+  display.nix                   the mini-display panel and its status daemon
+  atx.nix                       nanokvm-gpio on PATH (#81) -- no unit, by design
+  wifi.nix                      the AIC8800 radio, its firmware and wifi.sh
+  updates.nix                   nix on the board, the updater, the timers, the GC
+  server.nix                    NanoKVM-Server, /kvmapp, /opt/lib, the PATH contract
+nixos/nanokvm-modules.nix     binds this flake's cross builds to them -> `nixosModules`
+nixos/appliance.nix           OUR policy alone: sshd, mDNS, root password, journal cap
 nixos/lib/emmc-layout.nix     the ONE layout: GPT, flash offsets, blkdevparts=, fw_env
 nixos/emmc-partitions.nix     a one-line re-export of it
 nixos/rootfs.nix              eval-config -> closure -> rootless ext4 (+ sparse, + /boot)
@@ -1103,7 +1114,19 @@ whole closure substitutes prebuilt from `cache.nixos.org`, so emulation only
 pays for a handful of tiny system derivations. Cross-compiling a full NixOS
 closure is the alternative and is materially worse.
 
-Notable decisions inside `nixos/appliance.nix`:
+**The hardware is a module set, not a file** (#87). `nixos/appliance.nix` was
+2,094 lines of hardware and policy together, so the only way to build a
+NanoKVM-Pro image that is not ours was to fork it; since #87 the hardware is
+nine modules under `nixos/modules/`, exported as
+`nixosModules.{nanokvm-pro,kernel,identity,rollback,video,display,atx,wifi,updates,server}`,
+and `nixos/appliance.nix` is a thin consumer of them.
+[modules.md](modules.md) is the consumer's guide, and
+`checks.nixos-modules-consumer` is a minimal configuration built on every
+`nix flake check` so that guide cannot rot. The split changed no store path:
+the appliance's toplevel, `.#nixos-firmware-image-mainline` and
+`.#system-manifest` are byte-for-byte what they were.
+
+Notable decisions inside the modules (`nixos/modules/kernel.nix` unless noted):
 
 - `boot.kernelPackages = pkgs.linuxPackagesFor <kernel-mainline>` and
   `boot.loader.generic-extlinux-compatible.enable = true` with
@@ -1175,7 +1198,7 @@ The appliance needs `boot.initrd.enable = true` — nothing else mounts root —
 script. It defaults false, but the trap is live: nixpkgs'
 `profiles/image-based-appliance.nix` sets it `mkDefault true`, and that profile
 is exactly what someone would reach for next. It is therefore guarded twice: an
-assertion in `nixos/appliance.nix` on the *option*, and a check in
+assertion in `nixos/modules/kernel.nix` on the *option*, and a check in
 `nixos/lib/appliance-artifacts.nix` that `<toplevel>/init` in the built image
 actually starts with `#!` — the *artifact*, because an imported profile could
 re-enable the option under the assertion's nose.
@@ -1222,7 +1245,7 @@ What actually works, in order:
 
 ## Known gaps
 
-Numbering is stable: other documents and `nixos/appliance.nix` cite these by
+Numbering is stable: other documents and the modules cite these by
 number, so closed gaps keep their slot and new ones are appended.
 
 1. **`nanokvm.service` is not the vendor service — SPLIT AND MOSTLY CLOSED.**
@@ -1365,7 +1388,7 @@ number, so closed gaps keep their slot and new ones are appended.
     the one the device already has.
 
 14. **The appliance runs on half its RAM.** `boot.kernelParams` in
-    `nixos/appliance.nix` carries `mem=512M`, so `free -m` reports **428 MB** on
+    `nixos/modules/kernel.nix` carries `mem=512M`, so `free -m` reports **428 MB** on
     a 1 GiB board. It is ours to set now — the whole chain is mainline — and it
     started as a vendor leftover for media carveouts the open stack does not
     use. It has not gone, because removing it was measured on 2026-09-08 (#89

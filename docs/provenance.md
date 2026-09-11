@@ -36,7 +36,7 @@ rootfs is nixpkgs.
 
 The closure is asserted blob-free at build time: `pkgs/kvm-encoder.nix` fails if
 a libkvm source includes a vendor `ax_*.h` or the linked library asks for a
-`libax_*`, and `nixos/appliance.nix` fails if `libkvm.so`, `libkvm.so.0` or
+`libax_*`, and `nixos/modules/server.nix` fails if `libkvm.so`, `libkvm.so.0` or
 `NanoKVM-Server` still carries an `axera-libs` store path or names a `libax_` —
 either of which would drag the closed Axera media libraries into an image that
 is supposed to contain none of them.
@@ -109,7 +109,7 @@ in the GPT order (`nixos/lib/emmc-layout.nix`; full offsets in
 | 2 | `uboot` | `pkgs/uboot-mainline.nix` — **mainline U-Boot 2026.07** plus this repo's AX630C patch series, signed |
 | 3 | `env` | `pkgs/uboot-env.nix` — `mkenvimage` over U-Boot's own compiled-in default environment plus the delta in `pkgs/uboot-env.txt`. U-Boot itself does not read it (`CONFIG_ENV_IS_NOWHERE`); `fw_printenv`/`fw_setenv` on the appliance do |
 | 4 | `boot` | `pkgs/bootfs.nix` — ext4 carrying the extlinux tree, the kernel, the initrd and the dtb of each generation |
-| 5 | `rootfs` | `nixos/appliance.nix` → `nixos/lib/appliance-artifacts.nix` — the NixOS system, sparse ext4 |
+| 5 | `rootfs` | `nixos/modules/` → `nixos/lib/appliance-artifacts.nix` — the NixOS system, sparse ext4 |
 
 Plus the `spl` region in front of the GPT: `pkgs/spl-minimal.nix`, written last,
 deliberately. And two members that are **flash-time only, never stored**: FDL1
