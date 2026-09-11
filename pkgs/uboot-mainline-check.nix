@@ -25,6 +25,11 @@
 #      .#checks.uboot-gpt is the other half.
 #   5. bootpart, bootlimit, altbootcmd and the milestone bits reached the
 #      linked image, not just the defconfig.
+#   6. The one-shot chainload slot tests its arming token and SPENDS it before
+#      it jumps (#91).
+#   7. The extlinux contract NixOS's own bootloader builder depends on (#99):
+#      `sysboot`, the three load addresses an INITRD/FDT line needs, and the
+#      two config filenames `bootcmd` and `altbootcmd` read.
 # ===========================================================================
 
 let
@@ -202,6 +207,66 @@ pkgs.runCommand "uboot-mainline-check"
     esac
     echo "the arming token is tested, and spent before the load and the jump"
     echo "chainload is a command and chainaddr = $want_base"
+
+    # === 7. what the extlinux config needs to exist (#99) ================
+    # NixOS's own generic-extlinux-compatible builder writes /boot now, so the
+    # things it emits have to be things THIS U-Boot acts on. Each of these is
+    # a silent non-boot on a board with no console and no autoboot window, and
+    # each is cheap to assert here because it is a compiled-in string.
+    echo "=== 7. the extlinux contract ==="
+
+    # INITRD needs `ramdisk_addr_r`. get_relfile_envaddr() (boot/pxe_utils.c)
+    # returns -ENOENT when the variable is absent, and label_boot() then
+    # SKIPS THE WHOLE LABEL -- "Skipping %s for failure retrieving initrd".
+    # A missing initrd is not a degraded boot here; it is no boot at all.
+    #
+    # FDT needs `fdt_addr_r`, for the same reason and in the same function.
+    #
+    # The gap between kernel_addr_r and ramdisk_addr_r is what caps the Image
+    # (pkgs/kernel-mainline.nix asserts 64 MiB against it); the gap above
+    # ramdisk_addr_r is what caps the initrd.
+    for w in 'kernel_addr_r=0x4a000000' 'ramdisk_addr_r=0x4e000000' \
+             'fdt_addr_r=0x49200000' 'pxefile_addr_r=0x49100000' \
+             'scriptaddr=0x49000000'; do
+      grep -qa "$w" "$ub/images/u-boot.bin" \
+        || { echo "ERROR: \"$w\" missing -- the extlinux bootmeth would skip the label" >&2; exit 1; }
+    done
+    echo "kernel_addr_r / ramdisk_addr_r / fdt_addr_r are all in the environment"
+
+    # `sysboot` is the command, and `bootmeth_extlinux` the parser. Without
+    # CMD_SYSBOOT there is no extlinux path at all and `bootcmd` is a string
+    # that fails with nobody watching.
+    grep -qa 'sysboot' "$ub/images/u-boot.bin" \
+      || { echo "ERROR: the sysboot command is not in the image" >&2; exit 1; }
+
+    # THE PROMPT. `parse_pxefile_top()` sets `cfg->prompt = 1` on any TOP-LEVEL
+    # `MENU` keyword, and `menu_interactive_choice()` then reads the console
+    # forever on a board whose UART pads are unterminated. The bootloader side
+    # of that contract is that "Enter choice: " must never be reached with our
+    # config; the CONFIG side is asserted where the config is written
+    # (nixos/lib/appliance-artifacts.nix: no line may start with MENU).
+    # Assert here that both halves are talking about the same U-Boot: the
+    # prompt string is compiled in, so if it ever is not, the config-side
+    # assertion has stopped guarding anything.
+    grep -qa 'Enter choice: ' "$ub/images/u-boot.bin" \
+      || { echo "ERROR: the interactive prompt string is gone from this U-Boot;" >&2
+           echo "       the no-MENU rule in mkBootDir may no longer be what saves us." >&2
+           exit 1; }
+
+    # `altbootcmd` must sysboot the FALLBACK file, and `bootcmd` the default
+    # one. Two files, two DEFAULT lines, one boot counter -- that is the whole
+    # rollback (docs/nixos-rootfs.md 4b).
+    alt=$(tr '\0' '\n' < "$ub/images/u-boot.bin" | grep -a '^bootfallback=' | head -1)
+    case "$alt" in
+      *'sysboot mmc'*'extlinux_fallback'*) ;;
+      *) echo "ERROR: bootfallback does not sysboot \$extlinux_fallback: $alt" >&2; exit 1 ;;
+    esac
+    for w in 'extlinux_cfg=/extlinux/extlinux.conf' \
+             'extlinux_fallback=/extlinux/extlinux-fallback.conf'; do
+      grep -qa "$w" "$ub/images/u-boot.bin" \
+        || { echo "ERROR: \"$w\" missing from the built-in environment" >&2; exit 1; }
+    done
+    echo "bootcmd reads extlinux.conf, altbootcmd reads extlinux-fallback.conf"
 
     mkdir -p "$out"
     { echo "u-boot: ${uboot-mainline.version}, entry $entry"

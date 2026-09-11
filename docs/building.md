@@ -59,12 +59,11 @@ All are `nix build .#<name>`. State reflects the current tree.
 | `boot-fsbl/atf/optee/uboot` | boot-chain subsets | selectors over `boot` |
 | `base-axp` | pinned vendor v1.0.15 `.axp` | 1.4 GB FOD (overlay base) |
 | `rootfs` | overlaid `ubuntu_rootfs_sparse.ext4` | vendor base + our libkvm + modules + service selection |
-| `nixos-appliance` | NixOS `ext4` (+ sparse, + initrd) | the pure-Nix rootfs, #78. One nixpkgs pin, mainline kernel, **boot-proven on hardware from slot B**. See [nixos-rootfs.md](nixos-rootfs.md) |
+| `nixos-appliance` | NixOS `ext4` (+ sparse, + the generation's `/boot` tree) | the pure-Nix rootfs, #78. One nixpkgs pin, mainline kernel, **boot-proven on hardware from slot B**. See [nixos-rootfs.md](nixos-rootfs.md) |
 | **`firmware-image`** | **`…-selfbuilt.axp`** | **the flashable eMMC image (default output)** |
 | **`nixos-firmware-image`** | **`…-nixos.axp`** | **the NixOS appliance's flashable eMMC image** — packed from scratch, no vendor bundle; `system.build.axpImage` on `nixosConfigurations.nanokvm-pro` |
-| `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` is built from `boot-payload` and asserts room for three kernels |
-| `boot-payload` | `Image-<hash>`, `<dtb>-<hash>.dtb`, both extlinux configs | the `/boot` payload, **content-addressed** so the two configs can name two kernels and a kernel change rolls back (#86) |
-| **`system-bundle`** | `nanokvm_pro_sys_<ver>.tar.gz` + `nanokvm_pro_sys_latest.json` | **the update artefact** — the appliance's whole store closure plus its kernel, ~460 MB. What a release publishes and what `nanokvm-update` installs. [updates.md](updates.md) |
+| `uboot-env` / `logo` / `bootfs` | `env` / `logo` / `boot` partition images | the three stored partitions the overlay image still inherited from Sipeed. `bootfs` carries the `/boot` tree NixOS's own extlinux builder wrote for the imaged generation (#99) and asserts room for `configurationLimit + 1` of them |
+| **`system-bundle`** | `nanokvm_pro_sys_<ver>.tar.gz` + `nanokvm_pro_sys_latest.json` | **the update artefact** — the appliance's whole store closure — kernel, initrd and dtb included as store paths since #99 — ~450 MB. What a release publishes and what `nanokvm-update` installs. [updates.md](updates.md) |
 | `sd-image` | `…-sdcard.img` | non-destructive microSD boot image |
 | `axdl` | `axdl-cli` host flasher | built for the dev/host system, not cross |
 | `toolchain` | cross-gcc bundle | convenience `buildEnv` |
@@ -87,12 +86,16 @@ boot ──────> {kernel,dtb}-slot-image ──────────�
 image path builds from it.)
 
 `nix flake check` evaluates the whole tree without building the heavy leaves.
-Two of its gates belong to the update path (#86) and are worth running by name
-after touching anything under `nixos/lib/` or `pkgs/{system-bundle,boot-payload}`:
+Five of its gates belong to the update and boot path (#86, #99) and are worth
+running by name after touching anything under `nixos/lib/`, `pkgs/bootfs.nix`
+or `pkgs/system-bundle*`:
 
 ```bash
-nix build .#checks.x86_64-linux.nanokvm-updater-loop -L   # the update loop, run for real
-nix build .#checks.x86_64-linux.nanokvm-system-bundle -L  # the artefact, read back
+nix build .#checks.x86_64-linux.nanokvm-updater-loop -L        # the update loop, run for real
+nix build .#checks.x86_64-linux.nanokvm-update-idle -L         # the checkbox and the idle gate
+nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L  # the derived rollback config
+nix build .#checks.x86_64-linux.nanokvm-boot-dir -L            # the /boot NixOS writes
+nix build .#checks.x86_64-linux.nanokvm-system-bundle -L       # the artefact, read back
 ```
 
 ---

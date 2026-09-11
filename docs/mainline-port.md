@@ -464,13 +464,19 @@ userspace; health-gated re-arm makes rollback automatic.** Reasons:
   watchdog) falls back. The dual-slot write strategy in
   [updates.md](updates.md) already matches this model.
 
-**Superseded, twice.** #89 rung 5 replaced the whole A/B scheme with U-Boot's
-`bootcount`/`altbootcmd` over two extlinux configs (there are no A/B twins in
-the minimal layout, and the slot register's SLOT bits select nothing) —
-[nixos-rootfs.md §4b](nixos-rootfs.md#4b-rollback--two-config-files-a-register-and-a-health-gate).
-Then #86 closed the half that left behind: the kernel and dtb in `/boot` are
-**content-addressed**, so the two configs name two (generation, kernel) pairs
-and a kernel change has an automatic fallback as well.
+**Superseded, three times, and option (b) won in the end.** #89 rung 5 replaced
+the whole A/B scheme with U-Boot's `bootcount`/`altbootcmd` over two extlinux
+configs — there are no A/B twins in the minimal layout, and the slot register's
+SLOT bits select nothing. #86 content-addressed the kernel in `/boot` so the
+two configs could name two (generation, kernel) pairs. **#99 then made the
+kernel, the initrd and the dtb part of the NixOS generation and handed `/boot`
+to `boot.loader.generic-extlinux-compatible`** — the stock NixOS ARM path this
+section dismissed, which mainline U-Boot gives us for free: `CMD_SYSBOOT`,
+`HUSH_PARSER` and `BOOTCOUNT_*` are all on, and there is no
+`setup_boot_mode()` overwriting `bootcmd`. `switch-to-configuration boot` is
+now the only writer of `/boot`, and `nanokvm-mark-good` derives the fallback
+config from the official one by rewriting a single `DEFAULT` line.
+[nixos-rootfs.md §1 and §4b](nixos-rootfs.md#1-the-kernel-the-initrd-and-the-dtb-are-part-of-the-generation),
 [updates.md](updates.md). Everything above this paragraph is the vendor
 mechanism, kept because it is what a *vendor* boot still does and what an AXDL
 recovery image runs.

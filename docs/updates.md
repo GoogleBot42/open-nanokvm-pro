@@ -29,15 +29,18 @@ edits on GitHub directly** — all git data flows one way, Gitea → GitHub.
 
 ---
 
-> **Status (2026-09-10, #86): built and proven offline; not yet run on
-> hardware.** Three `nix flake check` gates cover the loop and the policy
-> around it — `nanokvm-updater-loop` applies a real bundle to a fake root with
-> the real scripts, `nanokvm-update-idle` drives the checkbox, the pending
-> markers and the idle reboot gate against a fake release host, and
-> `nanokvm-system-bundle` reads the published artefact back against the closure
-> it claims. What is unproven is everything that needs the board:
-> `switch-to-configuration`, the `/nix/store` remount, whether U-Boot boots
-> what the updater wrote, and whether the server's own idle answer is right.
+> **Status (2026-09-11, #86 + #99): built and proven offline; not yet run on
+> hardware.** Four `nix flake check` gates cover the loop and the policy around
+> it — `nanokvm-updater-loop` applies a real bundle to a fake root with the real
+> scripts, `nanokvm-update-idle` drives the checkbox, the pending markers and
+> the idle reboot gate against a fake release host,
+> `nanokvm-mark-good-fallback` derives a rollback config and refuses the cases
+> it must, and `nanokvm-system-bundle` reads the published artefact back against
+> the closure it claims. Since #99 the appliance also boots end to end under
+> QEMU with the generation's own kernel and initrd, zero failed units. What is
+> unproven is everything that needs the board: `switch-to-configuration`, the
+> `/nix/store` remount, whether U-Boot boots the `/boot` NixOS wrote, and
+> whether the server's own idle answer is right.
 > See [the hardware plan](#what-hardware-still-has-to-prove).
 
 ## The idea
@@ -49,11 +52,11 @@ exactly what the flake describes. So an update cannot be a `nixos-rebuild`, and
 since #78 it cannot be a file overlay either — there are no files to overlay,
 only store paths.
 
-An update is therefore a **system bundle**: the new toplevel's entire closure,
-the kernel that closure's stage-1 initrd is baked into, and a list saying which
-store paths belong to it. The device unpacks what it does not already have,
-points the system profile at the new toplevel, writes the kernel into `/boot`,
-and reboots.
+An update is therefore a **system bundle**: the new toplevel's entire closure —
+its kernel, initrd and device tree included, as ordinary store paths (#99) —
+and a list saying which paths belong to it. The device unpacks what it does not
+already have, points the system profile at the new toplevel, runs
+`switch-to-configuration boot`, and reboots.
 
 **The reboot is the mechanism, not an afterthought.** The generation is
 installed with `switch-to-configuration boot`, so nothing about it is live until
@@ -97,12 +100,18 @@ button needed no change at all.
 the server's `UnTarGz` hands to `install()`:
 
 ```
-MANIFEST.json     format, version, toplevel, boot payload + sha256s
+MANIFEST.json     format, version, toplevel, closure count
 closure.txt       every store path in the toplevel's closure, one per line
 store/<base>/     those store paths, as ordinary directories
-boot/Image-<h>    the kernel, content-addressed
-boot/<dtb>        its device tree, likewise
 ```
+
+**There is no `boot/` half** (#99). The kernel, the initrd and the device tree
+are part of the generation, so they travel in `closure.txt` as ordinary store
+paths, and `switch-to-configuration boot` — NixOS's own extlinux builder — is
+what copies them onto `/boot`. `nanokvm-update` does not write a single byte of
+that partition, and `pkgs/system-bundle-check.nix` asserts both halves: the
+manifest declares no out-of-band payload, and `<toplevel>/{kernel,initrd,dtbs}`
+resolve to store paths that are in the closure *and* in the archive.
 
 **The manifest FILENAME is the channel.** `nanokvm_pro_sys_latest.json` is the
 appliance's; the 4.19 image polls `nanokvm_pro_latest.json`, which nothing
@@ -229,13 +238,12 @@ nanokvm-update update
       1. check EVERY closure path is installed or in the bundle   ← before any write
       2. remount /nix/store rw, rename the missing ones in, remount bind,ro
       3. record closure.txt as /var/lib/nanokvm/closures/<toplevel>.txt
-      4. write /boot/Image-<h> + the dtb, verify each from the file
-      5. profile: system-<N+1>-link -> toplevel, then rename `system` onto it
-      6. note the kernel in /run/nanokvm-pending-boot
-      7. switch-to-configuration boot   → nanokvm-install-boot writes
-                                          /boot/extlinux/extlinux.conf naming
-                                          THIS generation and THIS kernel
-      8. write the pending markers
+      4. profile: system-<N+1>-link -> toplevel, then rename `system` onto it
+      5. switch-to-configuration boot   → NixOS's extlinux builder copies THIS
+                                          generation's kernel, initrd and dtbs
+                                          into /boot/nixos/ and rewrites
+                                          /boot/extlinux/extlinux.conf
+      6. write the pending markers
   └─ reboot IF the server says nobody is using the device; otherwise leave the
      markers and let nanokvm-update-reboot take it later
 ```
@@ -262,30 +270,23 @@ two files in `/boot`, `extlinux.conf` and `extlinux-fallback.conf`, chosen by
 U-Boot's `bootcmd` and `altbootcmd`, with `bootcount` in `0x02390030` and
 `bootlimit` 3.
 
-**#86 closes the kernel half.** Until now both configs named one `/boot/Image`,
-so the two entries could name two generations but never two kernels, and a
-kernel change had no automatic fallback — `/boot/Image.prev` was a manual
-stand-in. Now:
+**#99 closes the kernel half, by deleting the question.** The kernel, the
+initrd and the device tree are part of the generation — `boot.kernelPackages`
+and `hardware.deviceTree` — so an entry that names a generation names its
+kernel by construction. NixOS's own extlinux builder writes one `LABEL` per
+generation with its own `LINUX`/`INITRD`/`FDT`/`init=`, and
+`nanokvm-mark-good` promotes by rewriting one `DEFAULT` line.
 
-- `pkgs/boot-payload.nix` names each kernel `Image-<16 hex of its sha256>` and
-  each device tree `<name>-<hash>.dtb`;
-- the extlinux template carries `@KERNEL@`/`@FDT@` beside `@INIT@`, and
-  `nanokvm-install-boot` substitutes all three, so a config names a
-  **(generation, kernel) pair**;
-- an update writes its kernel under a name nothing else uses, so the two
-  coexist;
-- **the APPEND line carries `nanokvmboot=<kernel>,<fdt>`**, because `sysboot`
-  loads LINUX and FDT and then tells the kernel nothing about which files they
-  were. That token is how a running system knows which kernel booted it, and it
-  is honest precisely because U-Boot copied it out of whichever config it chose;
-- `nanokvm-mark-good` regenerates the fallback from `/run/booted-system` **and**
-  that token, so it promotes the pair that actually proved itself, and then
-  deletes the `/boot` files neither config names.
+#86's scheme is worth recording because it worked and was still the wrong
+shape: content-addressed `/boot/Image-<hash>` files, a `nanokvmboot=` token on
+the command line so a running system could tell which one `sysboot` had loaded,
+a copier in the updater and a collector in the health gate. Four mechanisms to
+re-implement what the store already does. All four are gone.
 
-`/boot` is 272 MiB and the kernel is 48.9 MiB, so it holds the running kernel,
-the fallback kernel and an incoming third with room to spare; `pkgs/bootfs.nix`
-asserts that at build time rather than letting a future kernel quietly fill the
-partition.
+`/boot` is 272 MiB and a generation's kernel + initrd + dtbs is ~50 MB.
+`configurationLimit` is 3 and `pkgs/bootfs.nix` asserts room for four sets — the
+builder writes the new one before it collects the obsolete one, so the peak is
+the menu plus the set being replaced.
 
 **To exercise the rollback, do not install a broken generation.** Force the
 counter instead — one boot, nothing to strand:
@@ -307,13 +308,22 @@ closure**. So every generation's closure list is recorded when it is installed
 (`/var/lib/nanokvm/closures/<toplevel basename>.txt`), and the image builder
 writes the flashed generation's list into `/var` so the very first one is not a
 blind spot. On top of `keepGenerations`, four things are always kept: the
-profile's target, `/run/booted-system`, `/run/current-system`, and **both**
-generations the extlinux configs name — the fallback most of all, since it is
-the one that gets used exactly when the default does not work.
+profile's target, `/run/booted-system`, `/run/current-system`, and the
+generation **each extlinux config's `DEFAULT` entry** names — the fallback most
+of all, since it is the one that gets used exactly when the default does not
+work.
 
-**If any kept generation has no closure list, `nanokvm-gc` deletes nothing at
-all** and says so. An unknown live set makes every deletion a guess; a store
-that is too full is recoverable, a store missing one path is a bench trip.
+**The `DEFAULT` entry, not the first `init=` in the file.** Since #99 both
+configs list every generation in the menu and differ only in which `LABEL`
+their `DEFAULT` selects, so "the `init=` in this file" has several answers and
+only one of them is live. Reading the first would pin whichever generation the
+builder emitted first — `nixos-default`, the newest — and leave the fallback's
+own generation collectable.
+
+**If any kept generation has no closure list, or a boot config yields no
+generation at all, `nanokvm-gc` deletes nothing** and says so. An unknown live
+set makes every deletion a guess; a store that is too full is recoverable, a
+store missing one path is a bench trip.
 
 ---
 
@@ -394,26 +404,37 @@ head result/closure.txt
 openssl dgst -sha512 -binary result/*.tar.gz | base64 -w0
 ```
 
-The three gates that run in `nix flake check`:
+The four gates that run in `nix flake check`:
 
 ```bash
 nix build .#checks.x86_64-linux.nanokvm-updater-loop -L
 nix build .#checks.x86_64-linux.nanokvm-update-idle -L
+nix build .#checks.x86_64-linux.nanokvm-mark-good-fallback -L
 nix build .#checks.x86_64-linux.nanokvm-system-bundle -L
 ```
 
 **`nanokvm-updater-loop`** (`nixos/lib/updater-test.nix`) runs the real
-`nanokvm-update`, `nanokvm-gc` and `nanokvm-install-boot` against a fake root in
-a build sandbox — `--root` exists for exactly this — with a tiny synthetic
-bundle. It asserts, after an apply: both new store paths landed, the old
-generation is untouched, the profile advanced, the closure list was recorded,
-the new kernel is in `/boot` and the old one still is, `extlinux.conf` names the
-new generation **and** the new kernel and carries the `nanokvmboot=` token, and
-**the fallback did not move**. Then it collects twice — once while the fallback
-still names generation 1 (nothing may be deleted) and once after the fallback
-has been promoted (generation 1 and its exclusive paths go, the live set stays)
-— and finally checks that `nanokvm-gc` **refuses and deletes nothing** when a
-kept generation's closure list is missing.
+`nanokvm-update` and `nanokvm-gc` against a fake root in a build sandbox —
+`--root` exists for exactly this — with a tiny synthetic bundle. It asserts,
+after an apply: both new store paths landed, the old generation is untouched,
+the profile advanced, the closure list was recorded, and **`/boot` is
+byte-for-byte untouched** (#99: the extlinux builder owns it, and this run is
+`--no-activate`). Then it collects twice against a pair of NixOS-shaped configs
+that list all three generations — once while the fallback's `DEFAULT` names
+generation 1 (nothing may be deleted) and once after it has been promoted
+(generation 1 and its exclusive paths go, the live set stays) — and finally
+checks the two refusals: a kept generation with no closure list, and a boot
+config whose `DEFAULT` resolves to no generation. Both must delete nothing.
+
+**`nanokvm-mark-good-fallback`** (`nixos/lib/mark-good-test.nix`) runs the real
+`nanokvm-mark-good` against a fake `/boot` holding an official config with
+three labels, with `/run/booted-system` on the *older* generation — the state
+after an install and before the reboot. It asserts the fallback selects the
+**booted** generation's label and not the profile's, that exactly two lines
+differ from `extlinux.conf` and both are the `DEFAULT`, that a repeat run is a
+no-op, that a booted generation with no `LABEL` in the file is **refused** with
+the previous fallback intact, and that an absent `/boot/extlinux` is a clean
+skip rather than a write into the root filesystem.
 
 **`nanokvm-update-idle`** (`nixos/lib/update-idle-test.nix`) runs the same real
 scripts against a fake root, a fake release host and a fake idle route on
@@ -433,8 +454,9 @@ artefact: the manifest's SHA-512 and size against the tarball, the digest's
 form (base64 of a raw SHA-512, 88 chars — a hex digest would be a channel that
 can never install anything), one top-level directory, no hardlink entries,
 `closure.txt` diffed against the toplevel's real closure, one `store/` member
-per closure line and no extras, and the boot payload against the hashes
-`MANIFEST.json` claims for it.
+per closure line and no extras, that `MANIFEST.json` declares **no** separate
+boot payload, and that `<toplevel>/{kernel,initrd,dtbs}` resolve to store paths
+which are both in the closure and in the archive.
 
 To exercise the round trip against a device before trusting CI, serve
 `result/` over HTTPS from a host the device trusts and point a test build's
@@ -443,58 +465,62 @@ not work — both the server and `curl` verify.
 
 ### What hardware still has to prove
 
-Offline coverage stops at the sandbox boundary. Three board rounds, each
+Offline coverage stops at the sandbox boundary. Five board rounds, each
 ending in a state the plug recovers from — a cold cycle clears `bootcount`, and
 a candidate that does not come up is on the fallback config by the fourth
 attempt.
 
-**Round 1 — bootstrap.** The board is running a generation from before this
-work: it has no `nanokvm-update`, and its `/boot` holds the old flat `Image`.
-So the first move is the manual switch
-(`.claude/skills/kvm-device/SKILL.md`) plus a `/boot` rename, in this order:
+**Round 1 — bootstrap onto the official layout (#99).** The board's `/boot` is
+the pre-#86 shape: a flat `/Image`, `/ax630c-nanokvm-pro.dtb` and two
+hand-written extlinux configs, 245 MB with 97 MB free. One generation of the
+new shape is 50 MB, so it fits beside the old files with room to spare and
+nothing has to be deleted first.
+
+Ship the new toplevel by the manual recipe
+(`.claude/skills/kvm-device/SKILL.md`) and then let NixOS write `/boot` for the
+first time:
 
 ```sh
-cp /boot/Image /root/Image.pre86       # mark-good WILL collect the old one
-# copy .#boot-payload's Image-<h> and <dtb>-<h>.dtb into /boot  (add, do not replace)
-# ship the missing store paths, set the profile, switch-to-configuration switch
-# write extlinux.conf naming the NEW pair; LEAVE extlinux-fallback.conf alone
-reboot
+cp /boot/extlinux/extlinux-fallback.conf /root/fallback.pre99
+<toplevel>/bin/switch-to-configuration boot    # writes extlinux.conf + /boot/nixos/*
+# hand-restore the OLD fallback: it must keep naming /Image and the old generation
+cp /root/fallback.pre99 /boot/extlinux/extlinux-fallback.conf
+sync; reboot
 ```
 
-Leaving the fallback alone is the whole safety of this round: it still names
-the old generation and the old `/boot/Image`, so three failed attempts land
-back exactly where the board started. **Oracles:** SSH at ~71 s;
-`nanokvm-update status` prints the new generation and `Image-<hash>`;
-`devmem 0x02390030 32` = `0xB0010000`; `journalctl -u nanokvm-mark-good` shows
-the fallback promoted to the new pair **and the old `/boot/Image` collected** —
-that last line is the `/boot` GC proving itself.
+Restoring the old fallback is the whole safety of this round: the official
+builder does not write that file, so three failed attempts land back exactly
+where the board started, on the kernel and generation it is running now.
 
-**Round 2 — a real bundle, end to end.** Build a bundle from a
-trivially-changed configuration (any config change moves both the toplevel and
-the kernel, because the stage-1 initrd is inside the Image), copy it over, and:
+**Oracles:** SSH at ~71 s; `devmem 0x02390030 32` = `0xB0010000`;
+`readlink /run/booted-system` is the new toplevel; `journalctl -u
+nanokvm-mark-good` shows `fallback promoted to generation N`; and
+`diff /boot/extlinux/extlinux{,-fallback}.conf` is exactly two lines, both
+`DEFAULT`.
 
-```sh
-nanokvm-update install /root/nanokvm_pro_sys_<v>.tar.gz   # never reboots
-nanokvm-update status      # gen N+1, two Image-* in /boot, fallback still N
-reboot
-```
+**Round 2 — the forced rollback.** `devmem 0x02390030 32 0xB001000A; reboot`.
+**Oracles:** the board comes up on the generation the fallback's `DEFAULT`
+named, bit 30 of `0x02390024` is set, and `nanokvm-update status` resolves both
+configs to the two different generations. This is the way to exercise the
+rollback — not a deliberately broken generation, which is what cost a bench
+trip in #89 rung 5.
 
-**Oracles:** `readlink /run/booted-system` is the new toplevel; `bootcount`
-back to `0xB0010000`; the fallback now names the new pair and `/boot` is back
-to one kernel. Then, on the same round, force the rollback rather than breaking
-a generation — `devmem 0x02390030 32 0xB001000A; reboot` — and confirm the
-board comes up on the **previous** generation *and its kernel*, with bit 30 of
-`0x02390024` set. That is the thing #86 added and the only way to watch it fire
-that cannot strand the board.
+**Round 3 — a kernel-only change.** Build a bundle whose *only* difference is a
+kernel config string, install it, reboot. **Oracles:** `uname -r`/`uname -v`
+moves; `ls /boot/nixos` holds two Image files; `nanokvm-update status` shows
+generation N+1. Then force the counter again and confirm the board comes back
+on the **old** kernel — which is the property #86 needed four mechanisms for
+and #99 gets from the generation. A deliberately unbootable kernel is *not* the
+test.
 
-**Round 3 — collection, then the button.** `nanokvm-gc --keep 2 -n`, read it,
+**Round 4 — collection, then the button.** `nanokvm-gc --keep 2 -n`, read it,
 then without `-n`; the generation the fallback names must survive, the one
 before it must not, and `du -sh /nix/store` must drop. Then cut an alpha and
 press **update** in the web UI (or point `nanokvm.update.stableUrl` at a local
 HTTPS server), which is the only path that exercises the server's `install()`
 handoff rather than the CLI.
 
-**Round 4 — the checkbox and the wait.** Two board rounds at most, and neither
+**Round 5 — the checkbox and the wait.** Two board rounds at most, and neither
 writes a partition.
 
 1. Tick **Automatic updates** in Settings → Check for Updates; confirm

@@ -245,31 +245,47 @@ tools/kvmssh 'mount -o remount,rw /nix/store
               mount -o remount,bind,ro /nix/store'
 
 # 3. Set the profile the way `nix-env --set` would, then activate.
+#    `boot`, not `switch`: on this board the reboot is what arms the rollback,
+#    and it is also what makes a new kernel take effect.
 tools/kvmssh "ln -sfn $NEW /nix/var/nix/profiles/system-2-link
               ln -sfn system-2-link /nix/var/nix/profiles/system
-              $NEW/bin/switch-to-configuration switch"
+              $NEW/bin/switch-to-configuration boot"
 ```
 
-`/init` is a symlink to `/nix/var/nix/profiles/system/init`, so step 3 is also
-what the next boot takes.
+**`switch-to-configuration` WRITES `/boot` NOW (#99).** It runs NixOS's
+`generic-extlinux-compatible` builder, which copies this generation's kernel,
+initrd and dtbs into `/boot/nixos/` and rewrites `/boot/extlinux/extlinux.conf`
+— and removes the boot files no menu entry names any more. Three consequences
+for a hand switch:
 
-**Since #86 there is a tool that does all three steps, plus `/boot`.** Build
+- `/boot` must be mounted, or the builder writes into the rootfs's own `/boot`
+  directory and U-Boot sees nothing. `mountpoint -q /boot` first.
+- Nothing else has to be copied. A configuration whose kernel changed needs no
+  extra step; step 2's tar carries the kernel, because it is a store path in
+  the closure.
+- `extlinux-fallback.conf` is **not** written by it. That is deliberate — it
+  still names whatever last booted healthy, which is the way back if the new
+  generation does not come up. `nanokvm-mark-good` promotes it ~60 s after a
+  healthy boot; check with `journalctl -u nanokvm-mark-good`.
+
+`/init` is a symlink to `/nix/var/nix/profiles/system/init`, and each extlinux
+entry pins `init=` besides, so the profile and the boot config agree.
+
+**Since #86 there is a tool that does all three steps.** Build
 `.#system-bundle`, copy the tarball over, and run it — this is the product
 path, and it is the one to prefer for anything that is not a one-file
 experiment:
 
 ```sh
-nix build .#system-bundle --no-link --print-out-paths     # ~460 MB tarball
+nix build .#system-bundle --no-link --print-out-paths     # ~450 MB tarball
 tools/kvmscp <that>/nanokvm_pro_sys_*.tar.gz /root/
 tools/kvmssh 'nanokvm-update install /root/nanokvm_pro_sys_*.tar.gz'
-tools/kvmssh 'nanokvm-update status'                      # both configs, both kernels
+tools/kvmssh 'nanokvm-update status'                      # both configs, resolved
 tools/kvmssh 'reboot'
 ```
 
-It unpacks only the store paths the board is missing, writes the kernel into
-`/boot` under its content-addressed name, points the profile at the new
-generation and writes `extlinux.conf` naming **both**. The manual recipe above
-does not touch `/boot` at all, so a configuration whose kernel changed needs
-`.#boot-payload`'s files copied by hand — which is exactly what
-`nanokvm-update` is for. `nanokvm-gc` reclaims the old generations afterwards;
-it refuses to delete anything if a kept generation has no closure list.
+It unpacks only the store paths the board is missing, points the profile at the
+new generation and runs `switch-to-configuration boot` — it writes no `/boot`
+files itself. `nanokvm-gc` reclaims the old generations afterwards; it refuses
+to delete anything if a kept generation has no closure list, or if a boot
+config's `DEFAULT` entry resolves to no generation.
