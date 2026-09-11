@@ -1262,7 +1262,7 @@ in
     # through gpio-ranges -> gpio_request_enable() and the pin controller
     # programs the pad. The tool that does the requesting is `nanokvm-gpio` in
     # environment.systemPackages below, and the server reaches it by absolute
-    # store path (pkgs/nanokvm-server.nix, gpioBackend = "libgpiod").
+    # store path (pkgs/nanokvm-server.nix).
     #
     # This module therefore stubs the POLICY half of #82 alone. #81 and #83
     # both landed: 5a loads the video modules for real, and the board streams.

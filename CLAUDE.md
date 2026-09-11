@@ -61,34 +61,8 @@ that is arbitration, not a bug.
 
 - `libkvm.so` needs `patchelf --force-rpath` (DT_RPATH, not DT_RUNPATH); a binary that
   works from an SSH shell but crash-loops under systemd is this. See
-  `docs/architecture.md` ("Load-bearing linker detail") and `pkgs/kvm-encoder.nix`.
-- Vendor `ax_*.ko` modules require an exact vermagic match — `docs/building.md`.
-  And vermagic match is NOT ABI safety: config flags can add `#ifdef` fields to
-  core structs the blobs touch (CONFIG_DMA_CMA → `struct device.cma_area`;
-  CONFIG_CMA → migratetype renumber → `struct zone`) and kill boot when the
-  blobs load — audit struct layout per flag. Proven the hard way in #49:
-  `docs/vcmd-cma-unblock.md`.
-- The device must run `nanokvm.service`, not the vendor `kvmcomm.service`, or the web
-  UI is down — `docs/architecture.md` ("The two app stacks").
-- The app tree is copied to tmpfs at boot: hot patches must land in BOTH `/kvmapp`
-  and `/dev/shm/kvmapp` — see the deploy-iterate skill.
-- #50 (FIXED 2026-08-31, closed): a process that brought VIN up and then dies
-  oopsed vendor `ax_proton.ko` in `vin_model_manager_deinit+0x44` — but the real
-  trigger was **our own** capture replay issuing AINR ioctl `0xc008708a` (proton
-  nr138), which `kmalloc`s a `model_manager` whose garbage slot array the teardown
-  walks. `ax_venc` presence only masked it data-dependently; it was never a venc
-  registration. Fix: `kvm_capture_open.c` gates nr138 behind `getenv("OPENKVM_NR138")`
-  (unset in prod) → `model_manager` stays NULL → deinit no-ops. Set `OPENKVM_NR138=1`
-  to reproduce the old crash. Caveat: the oops faults before the NULL-store, so a
-  crashed nr138 process leaves the global dangling — the fix is clean only from a
-  boot where nobody issued nr138. Full analysis + hardware proof: `docs/blob-replacement.md`
-  ("#50 FIXED"). `panic_on_oops=1` still turns any oops into a hard reboot, and an
-  oopsed task still wedges later `systemctl stop` until reboot.
-- "ATX reset works but power doesn't" = the SW_PWR pinmux trap: sysfs GPIO export
-  never programs the mux, gpio7 lives on the VI_D7 pad (mux reg `0x02300060`), and
-  capture init re-muxes it — the server re-asserts it per press. A GPIO `value`
-  read only echoes the output latch, it proves nothing about the ball. Details:
-  `docs/mini-display.md` ("The SW_PWR pinmux trap").
+  `docs/architecture.md` ("Load-bearing linker detail"), `pkgs/kvm-encoder.nix`
+  and the `kvmapp` derivation in `nixos/appliance.nix`, which re-rpaths it.
 - A register-image "golden table" captured from `/dev/mem` must carry the vendor's
   **zero-valued** config words too, or the open driver silently keeps reset values
   (WDMA `0x142f8` = 4 at reset, vendor writes 0 → every pixel word came out `<<4`;
@@ -103,23 +77,12 @@ that is arbitration, not a bug.
   (`dma_supported` = 0), so `dma_coerce_mask_and_coherent()` FAILS silently and the
   coherent mask stays 0 (WARN at every `dma_alloc_attrs`). Set `dev.coherent_dma_mask`
   / `dev.dma_mask` directly when the device only uses a declared carveout (#63).
-- The vendor encoder stack can be put back on the shipped open image **at
-  runtime, from the Nix inputs** (`.#ax-ko-blobs` + `.#axera-libs` + the stock-
-  rootfs `libax_venc.so`), no reflash — proven by the 2026-09-05 HEVC campaign.
-  Three traps: `ax_jenc.ko` is required for `AX_VENC_Init`; the SDK-snapshot
-  `libax_venc.so` is NOT the rootfs one (rejects pixel-unit strides); reboot
-  before the swap if `ax630c_venc_vcmd` shows a phantom refcount, else the vendor
-  `ax_venc.ko` loads inert. Recipe: device-re-subagent skill.
-- Deleting from the vendor ext4 with `debugfs`: `ls -p` also lists **ghost (deleted)
-  directory entries with inode 0** — filter `$2 != "0"` in every enumeration and
-  post-purge count, or the "still present" assertion trips on entries that are not
-  files (#54, cost a rebuild). Pattern + helpers: `pkgs/rootfs.nix` step 5d2.
 - A kernel with no rootfs is invisible unless you plan for it. The mainline
   bring-up channel (#75, reusable for every #26 child) is: milestone bits 12-15
   of the A/B slot register `0x02390024` (spare in every boot-chain stage; they
   survive a warm reboot AND a raw chip reset), plus ramoops and a verbatim
-  kernel-log copy in the 64 KiB TAIL of the vendor pstore window. Two traps
-  inside that: the vendor kernel **zaps every pstore zone it owns ~1.5 s into
+  kernel-log copy in the 64 KiB TAIL of the pstore window. Two traps
+  inside that: a kernel **zaps every pstore zone it owns ~1.5 s into
   the boot that would read yours**, so never put a log at `0x48000000`; and
   `/dev/kmsg` writes are ratelimited to ten records per five seconds per fd
   unless `printk_devkmsg` is `on` (systemd sets it, an initramfs does not) --
@@ -186,14 +149,14 @@ that is arbitration, not a bug.
   -- two boots in five, measured in #78. Locating the partition by name does not
   help, because in the losing case nothing is named. Fixed by `aliases { mmc0 =
   &emmc; ... }` in `dts/ax630c.dtsi`; #76/#77 never saw it because they won.
-- **A slot-B *appliance* has no way back to slot A** unless you give it one, and
-  NixOS stage 1's `fail()` is INTERACTIVE -- it blocks in `read` on a console
-  whose pads nobody can reach, while the kernel pets U-Boot's watchdog forever.
-  Set `panicOnFail=1` from `boot.initrd.preDeviceCommands` (upstream only reads
-  it from the cmdline, which here comes from the U-Boot env) and carry a
-  userspace deadman on `/proc/uptime` -- NOT `date +%s`, because timesyncd jumps
+- **NixOS stage 1's `fail()` is INTERACTIVE** -- it blocks in `read` on a console
+  whose pads nobody can reach, while the kernel pets U-Boot's watchdog forever, so
+  a generation that cannot find its root is a board that is powered, warm and
+  unreachable. Set `panicOnFail=1` from `boot.initrd.preDeviceCommands` (upstream
+  only reads it from the cmdline, which here comes from the U-Boot env) and carry
+  a userspace deadman on `/proc/uptime` -- NOT `date +%s`, because timesyncd jumps
   the clock months forward the moment DHCP lands and a wall-clock deadline
-  expires instantly. `nixos/loop-test.nix`; both halves hardware-proven in #78.
+  expires instantly. `nixos/appliance.nix`; both halves hardware-proven in #78.
 - **`boot.panic_on_fail=1` ON THE COMMAND LINE DOES NOTHING.** Upstream's
   stage-1 parser is `case $o in boot.panic_on_fail|stage1panic=1)` and a shell
   `case` pattern must match the WHOLE word, so the `=1` makes it match neither
@@ -207,6 +170,13 @@ that is arbitration, not a bug.
   emit the bare `boot.panic_on_fail` plus `stage1panic=1`. (Until #99 the
   initrd was inside the kernel Image, so applying that fix meant writing `/boot`
   from a board that still boots; now it is an ordinary generation switch.)
+- **A removal is only done when the last consumer is gone, and a default can be
+  the consumer.** #97 deleted the 4.19 image's `nanokvm-server` variant and left
+  the appliance calling the package without `gpioBackend = "libgpiod"` -- whose
+  default was `"sysfs"`. `nix flake check` passed; the appliance would have
+  shipped a server driving ATX through `/sys/class/gpio`. Caught by diffing the
+  derivation's store path against the pre-removal one, which is the check worth
+  running after any refactor that is supposed to change nothing.
 - **Three separate things decide the appliance's identity, and each looks
   sufficient alone.** `hostnamectl` must be `--transient` (the plain call writes
   `/etc/hostname`, a read-only store symlink); `networking.hostName` must be
@@ -261,10 +231,33 @@ that is arbitration, not a bug.
   and passes not one packet -- **that signature is always an RGMII delay
   problem** (#77, `docs/reference/mainline/ethernet-boot-20260906/`).
 
+## History: the 4.19 product (removed 2026-09-11, #97)
+
+Everything that built, flashed, updated or documented the vendor-derived Ubuntu
+22.04 / Linux 4.19.125 image is **deleted** -- `firmware-image`, the rootfs
+overlay, `base-axp`, the 4.19 kernel/dtb/initramfs, the vendor boot chain, the
+A/B `*-slot-image` packaging, `sd-image`, `migrate-layout`, `ax-ko-blobs`,
+`axera-libs`' library half, `libsns-dummy`, `ax-stub`, the closed-backend
+`kvm-encoder` variants, the `deploy-iterate` / `mainline-boot-test` /
+`sd-flash-remote` skills. Git history has all of it.
+
+The traps that only bit on that stack are gone from the list above, and are
+recorded where they happened: the vendor `ax_*.ko` vermagic-and-struct-layout
+contract (#49, `docs/vcmd-cma-unblock.md`), `kvmcomm.service` vs
+`nanokvm.service` and the tmpfs `/kvmapp` hot-patch rule
+(`docs/architecture.md`), the `ax_proton` nr138 oops (#50,
+`docs/blob-replacement.md`), the SW_PWR pinmux trap (`docs/mini-display.md`;
+retired by #81 -- requesting a libgpiod line programs the pad), and the
+`debugfs` ghost-entry count (#54, git history of `pkgs/rootfs.nix`).
+`docs/blob-replacement.md` and `docs/deblob-capture.md` are kept as the
+reverse-engineering record, not as instructions.
+
 ## Hardware tripwires
 
 - eMMC is `/dev/mmcblk0`; the SD card is `/dev/mmcblk1`. **Never write mmcblk0 during
   SD-card testing.** (Deliberate duplication with `docs/flashing-and-recovery.md` — keep both.)
+  There is no SD image any more (#97 removed the vendor-layout one); if the SD
+  story is wanted for the NixOS image it is new work -- #7/#9.
 - Hash-verify every firmware/block-device write; drop caches on the device before the
   read-back or you verify the page cache, not the medium.
 - U-Boot has `bootdelay=0`: no autoboot interrupt window even over serial. A bad
@@ -288,7 +281,8 @@ is `/dev/loop0p4`; U-Boot reads the same table through
 first-stage loader are one artefact, so a layout change means an SPL
 rebuild**, and a bad SPL is an AXDL bench trip. There are no A/B twins any
 more; both `_BAK` bases point at the A bases, so the slot register's SLOT
-bits select nothing. **That SPL is blob-free (#90):** signed with an empty
+bits select nothing, and since #97 there is no A/B packaging left to point them
+at. **That SPL is blob-free (#90):** signed with an empty
 `-fw` member, so the closed EIP-130 firmware is not spliced in at
 0xCC00/0x2CC00 at all — the BootROM accepts a header declaring `fw_size = 0`,
 proven across two warm reboots and a cold cycle. `.#spl-minimal-eip` rebuilds
@@ -420,32 +414,32 @@ flashed image. `docs/mainline-port.md` "What exists now (#100)".
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,
 `~/.claude/skills/power-switch/switch.sh "nanokvm switch" off|on|state`. A cold
-cycle clears the slot register and lands on slot A; SSH is back ~30 s after
-`on` for the 4.19 image, and ~90 s for the mainline chain since #91 was fixed
-(it was 3-18 min before). **Leave it OFF for at least 15 s.** An 8-second
+cycle clears the milestone register; SSH is back ~90 s after `on` since #91 was
+fixed (it was 3-18 min before). **Leave it OFF for at least 15 s.** An 8-second
 cycle on 2026-09-09 came back into the same dark state the cycle was meant to
 clear; the 15-second one after it booted normally. **A flat ~3.3 W with no
 open port is the hang signature**; a healthy board draws the same at idle, so
 power tells you nothing on its own — only SSH does. Read the
-slot register / pstore / console buffer BEFORE cycling — the cycle destroys
-them. Jeremy's standing word: with self-recovery available, take more risk on
-slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
+milestone register / `bootcount` / pstore / console buffer BEFORE cycling — the
+cycle destroys them. Jeremy's standing word: with self-recovery available, take
+more risk on on-device experiments; the plug is the way out of a stranded
+appliance, not AXDL.
 
 ## Docs index — read before working on X
 
 | Task | Read first |
 |---|---|
 | Anything architectural (boot chain, pipeline, services) | `docs/architecture.md` |
-| Building components / hashes / vermagic | `docs/building.md` |
-| Flashing, backup, recovery, SD boot | `docs/flashing-and-recovery.md` |
+| Building anything / flake outputs / pinned hashes | `docs/building.md` |
+| Flashing (AXDL), recovery, the chainload slot | `docs/flashing-and-recovery.md` |
 | How a device updates itself (channels, signing, rollback, GC) | `docs/updates.md` |
 | Cutting a release / the release workflow / versioning | `docs/releasing.md` |
 | Blob or network-endpoint questions | `docs/provenance.md` |
 | Mini-display | `docs/mini-display.md` |
-| Capture-pipeline internals / RE history | `docs/blob-replacement.md` |
-| Full deblob epic (#55): capture-stack replacement plan + scoping | `docs/deblob-capture.md` |
-| Open-encoder driver bring-up / #49 resolution (CMA = blob ABI break; no-flash coherent carveout) | `docs/vcmd-cma-unblock.md` |
-| Testing a kernel or generation on the board (since #99: a generation switch; the slot-B A/B harness is history, #97 removes it) | `docs/nixos-rootfs.md` §4b, kvm-device skill |
+| Capture-pipeline internals / RE history (HISTORICAL) | `docs/blob-replacement.md` |
+| Deblob epic #55: the capture-stack replacement, as it happened (HISTORICAL) | `docs/deblob-capture.md` |
+| Open-encoder driver bring-up / #49 resolution (HISTORICAL) | `docs/vcmd-cma-unblock.md` |
+| Testing a kernel or a whole system on the board: it is a generation switch | `docs/nixos-rootfs.md` §4b, kvm-device skill |
 | NixOS appliance / pure-Nix rootfs: boot contract, identity, gaps (#26, #78) | `docs/nixos-rootfs.md` |
 | Mainline port (#26): driver inventory, boot/rollback contract, child issues #74-#87, and how a serial-less first boot is made observable | `docs/mainline-port.md` |
 | SG2002 project (dormant) | `docs/plan-sg2002-research.md` |
@@ -453,8 +447,12 @@ slot-B experiments; the plug is the way out of a stranded appliance, not AXDL.
 ## Working with Jeremy
 
 - **Blob policy (2026-09-04):** the aic8800 wireless *firmware* is the only closed
-  content allowed on the image. No closed userspace, no closed `.ko`, ever. NixOS
-  goes **straight to mainline** (no 4.19 NixOS stage; the custom A/B scheme dies with it).
+  content on the image, and the only closed content allowed on it. No closed
+  userspace, no closed `.ko`, ever. What the vendor SDK snapshot is still read
+  for -- the SPL C source, the `imgsign` tool, the `ax_gzip` packer, the two FDL
+  download agents and the Axera `ax_*.h` headers our blob-free libkvm compiles
+  against -- is build-time only and ships nothing; `docs/provenance.md` is the
+  audit.
 - **Mainline everything (2026-09-07):** kernel, U-Boot, and TF-A where a port is
   tractable. Patches are fine, but against upstream, never a vendor fork; the
   SDK's U-Boot 2020.04 / TF-A 2.7 forks are a stopgap. Partition layout: the
