@@ -26,6 +26,10 @@
 , splDrvCmds ? "splmmc regs; splmmc init; splmmc probe 0x4a000000 0x4ae00"
 , splDrvTag ? ""
 , hangTest ? false
+  # #95. `gzip = false` (the DEFAULT since 2026-09-11) stores u-boot.bin RAW
+  # behind the signed header, for an SPL compiled with SUPPPORT_GZIPD=FALSE.
+  # It must match `.#spl-minimal`'s `gzipd`; the two are one artefact.
+, gzip ? false
 , ... }:
 
 # ===========================================================================
@@ -43,10 +47,10 @@
 # WHAT THIS PRODUCES
 #   images/u-boot.bin                    raw, DT appended, links at 0x5C000400
 #   images/u-boot.dtb                    the device tree that is inside it
-#   images/u-boot_mainline_signed.bin    axgzip'd + 1 KiB signed header,
-#                                        packaged exactly like the vendor's
-#                                        u-boot_signed.bin, `dd`-able into the
-#                                        `uboot` or `uboot_b` partition
+#   images/u-boot_mainline_signed.bin    1 KiB signed header + the RAW binary
+#                                        (#95; `gzip = true` restores the
+#                                        axgzip'd packing), `dd`-able into the
+#                                        `uboot` partition
 #   src/part_cmdline.c                   the patched partition driver, so the
 #                                        host-side parser test in
 #                                        checks.uboot-mainline builds the
@@ -1340,7 +1344,8 @@ let
     + lib.optionalString (emmcMaxFreq != null) "-f${toString (emmcMaxFreq / 1000000)}m"
     + lib.optionalString (emmcPhyHsmmc != null) "-phy${toString emmcPhyHsmmc}"
     + lib.optionalString splDrv ("-spldrv" + splDrvTag)
-    + lib.optionalString hangTest "-hangtest";
+    + lib.optionalString hangTest "-hangtest"
+    + lib.optionalString gzip "-gzipd";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -1488,9 +1493,10 @@ let
 
     meta = {
       description = "Mainline U-Boot ${version} with an AX630C / NanoKVM-Pro board port (#89)";
-      # The signed variant runs the prebuilt x86-64 ax_gzip; keep the whole
-      # package on one platform so the two halves cannot diverge.
-      platforms = [ "x86_64-linux" ];
+      # #95: only the `gzip = true` variant reaches for the prebuilt x86-64
+      # ax_gzip. Keep the whole package on one platform so the two halves
+      # cannot diverge.
+      platforms = if gzip then [ "x86_64-linux" ] else lib.platforms.linux;
       license = lib.licenses.gpl2Plus;
     };
   };
@@ -1500,6 +1506,7 @@ let
     name = "u-boot_mainline_signed.bin";
     payload = "${raw}/images/u-boot.bin";
     maxSize = ubootPart.size;
+    inherit gzip;
   };
 in
 
@@ -1507,7 +1514,7 @@ pkgs.runCommand "nanokvm-pro-uboot-mainline${variant}-${version}"
   {
     inherit version;
     passthru = {
-      inherit raw signed layout src patches;
+      inherit raw signed layout src patches gzip;
       textBase = textBase;
       ubootPartSize = ubootPart.size;
       patchList = map baseNameOf patches;

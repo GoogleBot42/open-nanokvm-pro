@@ -73,10 +73,13 @@
 #                -Werror -> -Wno-error (gcc13 array-bounds false positives on
 #                the fixed-address misc_info struct that gcc9 accepted).
 #
-# ax_gzip: install steps compress each stage with the PREBUILT x86-64 host tool
-# tools/ax_gzip_tool/ax_gzip (Axera's LZ77 "axgzip", decompressed by the SPL's
-# gzipd HW). It is an x86-64 static ELF, so this derivation only builds on an
-# x86_64-linux builder (see meta.platforms).
+# ax_gzip: GONE since #95. The install steps used to compress each stage with
+# the PREBUILT x86-64 host tool tools/ax_gzip_tool/ax_gzip (Axera's LZ77
+# "axgzip", decompressed by the SPL's gzipd HW), which is what pinned this
+# derivation -- and everything downstream of it -- to an x86_64-linux builder.
+# configurePhase now sets SUPPPORT_GZIPD := FALSE and deletes the tool; see the
+# block there for why that is safe for the only two things anyone consumes out
+# of this derivation.
 # ===========================================================================
 
 let
@@ -170,6 +173,76 @@ pkgs.stdenv.mkDerivation {
 
     # OP-TEE build scripts carry /bin/bash shebangs.
     patchShebangs "$HOME_PATH/boot/optee"
+
+    # --- #95: no ax_gzip anywhere in this build ----------------------------
+    # The ONLY reason this derivation existed on x86_64-linux alone was that
+    # the vendor install steps compress each stage with `tools/ax_gzip_tool/
+    # ax_gzip`, a prebuilt x86-64 static ELF. Nothing this derivation produces
+    # is flashed any more (#97): the two FDL download agents and the vendor
+    # `atf_bl31_signed.bin` the `atf-mainline` check compares headers against
+    # are all that is consumed. `SUPPPORT_GZIPD := FALSE` takes the vendor
+    # makefiles' OTHER branch -- Makefile.uboot:96-104, Makefile.fdl2:130-139,
+    # atf/Makefile:92-99 -- which signs each RAW binary with the same keys and
+    # the same `-cap`, and calls no host tool but python.
+    #
+    # FDL2 IS BYTE-IDENTICAL EITHER WAY. Both branches sign the raw
+    # `u-boot.bin` as `fdl2_signed.bin` (Makefile.fdl2:126 vs :136); only
+    # `u-boot_signed.bin`, which nothing flashes, changes. The assertion in
+    # installPhase checks that from the artefacts.
+    prj="$HOME_PATH/build/projects/${project}/project.mak"
+    grep -q '^SUPPPORT_GZIPD  *:= TRUE' "$prj" \
+      || { echo "ERROR: SUPPPORT_GZIPD is not ':= TRUE' in project.mak (SDK moved?)" >&2; exit 1; }
+    sed -i 's/^\(SUPPPORT_GZIPD  *\):= TRUE/\1:= FALSE/' "$prj"
+    grep -q '^SUPPPORT_GZIPD  *:= FALSE' "$prj" \
+      || { echo "ERROR: failed to set SUPPPORT_GZIPD := FALSE" >&2; exit 1; }
+    echo "project.mak: SUPPPORT_GZIPD := FALSE (#95)"
+
+    # The vendor U-Boot 2020.04 is 1 650 957 B raw and its partition in the
+    # DEAD vendor layout was 1536 KiB, so Makefile.uboot's size guard trips on
+    # the uncompressed image. That guard protects a partition this project no
+    # longer writes -- `u-boot_signed.bin` out of this tree is not flashed by
+    # anything, and the image's BL33 is `.#uboot-mainline` in a 2 MiB `uboot`
+    # (which the mainline binary uses 18% of). Drop the guard rather than
+    # resurrect a layout to satisfy it.
+    # The same guard is written twice, once in each U-Boot makefile
+    # (Makefile.uboot:105-109 and Makefile.fdl2:142-146); this board's build
+    # goes through the fdl2 one.
+    for ubmk in "$HOME_PATH/boot/uboot/Makefile.uboot" \
+                "$HOME_PATH/boot/uboot/Makefile.fdl2"; do
+      grep -q 'imgsize -gt \$(uboot_img_size)' "$ubmk" \
+        || { echo "ERROR: size guard not found in $ubmk (SDK moved?)" >&2; exit 1; }
+      sed -i 's/if \[ \$\$imgsize -gt \$(uboot_img_size) \]; then/if false; then/' "$ubmk"
+      grep -q 'if false; then' "$ubmk" \
+        || { echo "ERROR: failed to disable the size guard in $ubmk" >&2; exit 1; }
+    done
+
+    # ONE THING MUST NOT FOLLOW THE FLAG. `build/tools/config2defconfig.py`
+    # maps `SUPPPORT_GZIPD` onto the vendor U-Boot's `CONFIG_CMD_AXERA_GZIPD`
+    # (configs/axera_config_maps.txt:2) -- and the vendor's own FALSE path is
+    # broken for this board: `cmd/axera/boot/axera_boot.c:829,833` calls
+    # `gzip_decompress_image()` with no `#ifdef` around it, so turning the
+    # symbol off fails at link with two undefined references. The two flags
+    # are unrelated anyway: the makefile branch decides how the HOST packs a
+    # stage, the U-Boot symbol decides whether U-Boot can decompress a kernel
+    # at runtime. Dropping the mapping line leaves the defconfig's own
+    # `CONFIG_CMD_AXERA_GZIPD=y` standing, which is what keeps FDL2 byte-for-
+    # byte the binary it was.
+    maps="$HOME_PATH/boot/uboot/u-boot-2020.04/configs/axera_config_maps.txt"
+    grep -q '^SUPPPORT_GZIPD' "$maps" \
+      || { echo "ERROR: no SUPPPORT_GZIPD mapping in axera_config_maps.txt (SDK moved?)" >&2; exit 1; }
+    sed -i '/^SUPPPORT_GZIPD/d' "$maps"
+    if grep -q '^SUPPPORT_GZIPD' "$maps"; then
+      echo "ERROR: failed to drop the SUPPPORT_GZIPD config mapping" >&2; exit 1
+    fi
+    grep -q '^CONFIG_CMD_AXERA_GZIPD=y' \
+      "$HOME_PATH/boot/uboot/u-boot-2020.04/configs/${project}_defconfig" \
+      || { echo "ERROR: the defconfig no longer sets CONFIG_CMD_AXERA_GZIPD=y" >&2; exit 1; }
+    echo "config map: SUPPPORT_GZIPD -> CONFIG_CMD_AXERA_GZIPD dropped; U-Boot keeps its own =y"
+
+    # Belt and braces: with the flag off nothing should reach for the tool, so
+    # delete it from the writable tree. A recipe that still wanted it now fails
+    # the build loudly instead of quietly re-introducing the blob.
+    rm -rf "$HOME_PATH/tools/ax_gzip_tool"
 
     # --- A/B slot support for the WHOLE boot chain (ALL variants) -----------
     # Enable CONFIG_SUPPORT_AB so U-Boot honors the SPL's slot register
@@ -358,6 +431,17 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
     # Signed per-partition images (what the image/.axp layer consumes).
     # spl_<project>_sd_signed.bin is the SD-card boot SPL; nothing consumes it
     # since #97 deleted the SD image.
+    #
+    # `optee_signed.bin` IS NOT EXPORTED (#95, 2026-09-11). OP-TEE 3.21.0's
+    # `core/drivers/ax_cipher/ax_eip130_fw.h` carries the SAME closed EIP-130
+    # firmware U-Boot's `cmd/axera/cipher/eip130_fw.h` did -- and the #90
+    # assertion below never saw it, because until #95 this image was axgzip'd
+    # and compression hid the fingerprint. Turning the compression off made it
+    # visible at once, which is a second, unlooked-for argument for the raw
+    # path. Nothing consumes this file: the `optee` partition is gone with the
+    # vendor layout, `.#spl-minimal` is built `SUPPORT_OPTEE=FALSE`, and no
+    # image stores a BL32. It is still BUILT, because the vendor ATF makefile's
+    # dependency graph expects it; it just does not leave the sandbox.
     for f in \
       spl_${project}_signed.bin \
       spl_${project}_enc_signed.bin \
@@ -368,7 +452,6 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
       atf_b_bl31_signed.bin \
       u-boot_signed.bin \
       u-boot_b_signed.bin \
-      optee_signed.bin \
       fdl_${project}_signed.bin \
       fdl2_signed.bin \
       ; do
@@ -388,6 +471,24 @@ ${pkgs.lib.optionalString sdConsoleUart1 ''
              axera_logo.bmp; do
       [ -f "$imgs/$f" ] && cp "$imgs/$f" "$out/images/$f" || true
     done
+
+    # ---- #95: the FDL agents did not change -------------------------------
+    # This derivation exists for FDL1 and FDL2. FDL2 is the raw `u-boot.bin`
+    # behind a signed header in BOTH branches of Makefile.fdl2, so turning
+    # SUPPPORT_GZIPD off must leave it byte-identical. Asserted from the
+    # artefacts: header + payload, and the payload IS u-boot.bin.
+    python3 - "$out/images/fdl2_signed.bin" "$imgs/u-boot.bin" <<'PYEOF'
+import sys
+img = open(sys.argv[1], "rb").read()
+raw = open(sys.argv[2], "rb").read()
+if len(img) != 1024 + len(raw):
+    sys.exit("ERROR (#95): fdl2_signed.bin is %d B, expected 1024 + %d"
+             % (len(img), len(raw)))
+if img[1024:] != raw:
+    sys.exit("ERROR (#95): fdl2_signed.bin's payload is not u-boot.bin verbatim")
+print("FDL2 (#95): 1 KiB header + the %d B raw u-boot.bin, unchanged by "
+      "SUPPPORT_GZIPD" % len(raw))
+PYEOF
 
     # Sanity: every *_signed.bin must carry the AX boot header magic 0x55543322
     # at byte offset 4 (little-endian 22 33 54 55). Fail LOUDLY in-build, never
@@ -475,7 +576,9 @@ PYEOF
 
   meta = {
     description = "NanoKVM-Pro AX630C boot chain (SPL/DDR-init + ATF bl31 + OP-TEE bl32 + U-Boot 2020.04 bl33), signed with repo dev keys, from source";
-    # Install steps run the prebuilt x86-64 ax_gzip host tool.
-    platforms = [ "x86_64-linux" ];
+    # #95: no prebuilt host tool is run any more -- `SUPPPORT_GZIPD := FALSE`
+    # in configurePhase takes the vendor makefiles' raw-signing branch, and
+    # `tools/ax_gzip_tool` is deleted from the build tree.
+    platforms = pkgs.lib.platforms.linux;
   };
 }

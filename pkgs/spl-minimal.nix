@@ -11,6 +11,12 @@
   # vendor-shaped container as `.#spl-minimal-eip`, kept as the fallback a
   # `dd` away should a unit ever refuse it.
   withEip ? false
+, # #95. `gzipd = false` (the DEFAULT since 2026-09-11) compiles the SPL with
+  # SUPPPORT_GZIPD undefined, so every stage is read STRAIGHT from flash to its
+  # load address instead of through the gzipd hardware decompressor -- and
+  # `ax_gzip`, the last prebuilt x86-64 host tool in this build, is retired.
+  # THIS AND THE PACKING OF `atf`/`uboot` ARE ONE CHANGE; see the note below.
+  gzipd ? false
 , ... }:
 
 # ===========================================================================
@@ -59,14 +65,43 @@
 #      FALSE for this project -- dead code. The minimal layout has no `dtb`
 #      or `kernel` partition because extlinux carries both per generation.
 #
-# WHAT IT DELIBERATELY DOES NOT CHANGE. `SUPPPORT_GZIPD` stays TRUE. Turning
-# it off would let the stages be stored raw and would retire `ax_gzip`, the
-# last prebuilt x86-64 host tool -- but it swaps a code path the board runs on
-# every boot for one the vendor never ships, and it changes the on-disk format
-# of BL31 and BL33 at the same time. This rung writes p1, and a bad p1 is the
-# one state a shell cannot recover. One variable at a time; the raw path is a
-# follow-up, and `pkgs/ax-sign.nix` already takes `gzip = false` for when it
-# is taken.
+#   6. `SUPPPORT_GZIPD := FALSE` (#95, the default since 2026-09-11). This is
+#      the one flag that changes the ON-DISK FORMAT of the stages behind the
+#      SPL, so read this before touching either side.
+#
+#      What the macro gates, all of it in [SDK]/boot/bl1/:
+#        * `spl/Makefile:186-188` -- the only thing the flag does is define
+#          `-DSUPPPORT_GZIPD`. The gzipd driver object
+#          (`driver/gzipd/ax_gzipd_drv.o`) is in `OBJS` unconditionally and is
+#          still linked; it simply loses every caller.
+#        * `core/boot/boot.c:297-455` -- the whole of
+#          `gzip_pipeline_flash_read()` exists only under the macro.
+#        * `core/boot/boot.c:768-789` -- `read_image_data()` branches: with the
+#          macro, every image but DDRINIT is staged at `IMAGE_COMPRESSED_PADDR`
+#          (0x58000000) and DMA-decompressed to the load address; without it,
+#          `flash_read()` puts `round_up(img_size, 4)` bytes straight there.
+#        * `core/boot/boot.c:790-796, 847-849` -- the pointer fix-ups that only
+#          the staged-then-decompressed path needs.
+#        * `core/boot/boot.c:1007-1009` -- `gzipd_dev_init()` in `flash_boot()`.
+#
+#      What it does NOT change: the load address (`img_addr = boot_header +
+#      sizeof(struct img_header)` either way, boot.c:731 -- 0x40040000 for BL31,
+#      0x5C000400 for U-Boot), the header layout, the capability word, or any
+#      header flag. THERE IS NO "COMPRESSED" BIT: `struct img_header`
+#      (`core/include/boot.h:87-127`) has none, and the vendor's own ATF
+#      Makefile signs with `-cap 0x54FAFE` in both branches
+#      ([SDK]/boot/atf/Makefile:83-99). `img_size` and `img_check_sum` always
+#      describe the STORED payload, which is why each side reads fine on its
+#      own terms and neither can detect the other's format.
+#
+#      THAT IS THE HAZARD. A raw SPL reading a gzipped image passes the
+#      checksum (the sum is over the stored bytes) and jumps into axgzip data;
+#      a gzipped SPL reading a raw image fails `gzipd_dev_get_header_info()`
+#      and then the checksum. With `support_ab` set neither retries
+#      (boot.c:649-652, 806-808) and the caller spins in `while(1)`. Both
+#      directions are a dark board with no console. So `spl`, `atf` and `uboot`
+#      MUST be written in one step, and `.#spl-minimal-gzipd` exists so the
+#      previous trio can be rebuilt byte-for-byte if it ever has to go back.
 # ===========================================================================
 
 let
@@ -171,7 +206,7 @@ let
   partitionMakFile = pkgs.writeText "partition_ab.mak" partitionMak;
   layoutTableFile = pkgs.writeText "emmc-layout.txt" layout.table;
 
-  variant = lib.optionalString withEip "-eip";
+  variant = lib.optionalString withEip "-eip" + lib.optionalString gzipd "-gzipd";
 in
 pkgs.stdenv.mkDerivation {
   pname = "nanokvm-pro-spl-minimal${variant}";
@@ -188,7 +223,7 @@ pkgs.stdenv.mkDerivation {
 
   dontUnpack = true;
 
-  passthru = { inherit layout partitionMak; };
+  passthru = { inherit layout partitionMak gzipd withEip; };
 
   configurePhase = ''
     runHook preConfigure
@@ -211,8 +246,9 @@ pkgs.stdenv.mkDerivation {
     echo "=== generated partition_ab.mak ==="
     cat "$prj/partition_ab.mak"
 
-    # ---- the three build flags this SPL turns off ------------------------
-    for kv in "SUPPORT_OPTEE:FALSE" "SUPPORT_DDRINIT_PART:FALSE"; do
+    # ---- the build flags this SPL turns off ------------------------------
+    for kv in "SUPPORT_OPTEE:FALSE" "SUPPORT_DDRINIT_PART:FALSE" \
+              "SUPPPORT_GZIPD:${if gzipd then "TRUE" else "FALSE"}"; do
       k=''${kv%%:*}; v=''${kv##*:}
       grep -q "^$k  *:= TRUE" "$prj/project.mak" \
         || { echo "ERROR: $k is not ':= TRUE' in project.mak (SDK moved?)" >&2; exit 1; }
@@ -224,8 +260,6 @@ pkgs.stdenv.mkDerivation {
     # A/B stays ON, with both slots pointing at the same partitions.
     grep -q '^AX_SUPPORT_AB_PART  *:= TRUE' "$prj/project.mak" \
       || { echo "ERROR: AX_SUPPORT_AB_PART is not TRUE (the generated makefile would not be included)" >&2; exit 1; }
-    grep -q '^SUPPPORT_GZIPD  *:= TRUE' "$prj/project.mak" \
-      || { echo "ERROR: SUPPPORT_GZIPD is not TRUE (the stages are packed axgzip'd)" >&2; exit 1; }
 
     runHook postConfigure
   '';
@@ -244,9 +278,53 @@ pkgs.stdenv.mkDerivation {
     runHook preInstall
 
     imgs="$HOME_PATH/build/out/${project}/images"
-    mkdir -p "$out/images"
+    mkdir -p "$out/images" "$out/debug"
+
+    # The linked ELF and its disassembly, banked next to the image: they are
+    # what the #95 assertion below reads, and the only way to ask the ARTEFACT
+    # (rather than the makefile) which load path it carries.
+    cp "$HOME_PATH/boot/bl1/spl/spl_${project}.axf" "$out/debug/spl_${project}${variant}.axf"
+    cp "$HOME_PATH/boot/bl1/spl/spl.dis" "$out/debug/spl_${project}${variant}.dis"
 
     raw="$imgs/spl_${project}.bin"
+    # ---- #95: which load path is actually IN the binary --------------------
+    # Asked of the ELF, not of project.mak.
+    #
+    # THE ORACLE IS THE CALL SITES, NOT A SYMBOL. `gzip_pipeline_flash_read()`
+    # is a file-static with one caller, and at -Os gcc inlines it -- it has no
+    # symbol of its own in EITHER build, which is exactly the sort of oracle
+    # that looks like it passed when it never could have failed. What does
+    # survive is the `bl` to each gzipd driver entry point: `gzipd_dev_init`,
+    # `_cfg`, `_run`, `_run_last_tile`, `_wait_complete_finish`,
+    # `_get_header_info`, `_get_fifo_level`. Every one of those calls is inside
+    # `#ifdef SUPPPORT_GZIPD` (boot.c:297-455, 768-789, 1007-1009), and
+    # `driver/gzipd/ax_gzipd_drv.o` is in the SPL's `OBJS` unconditionally --
+    # so the driver's SYMBOLS are in both binaries and prove nothing, while the
+    # branches into it are 7 in the compressed build and 0 in the raw one.
+    #
+    # Each variant asserts its own side, so the pair is a differential test: a
+    # build that silently ignored the flag fails whichever way it went.
+    elf="$out/debug/spl_${project}${variant}.axf"
+    dis="$out/debug/spl_${project}${variant}.dis"
+
+    calls=$(grep -cE 'bl[[:space:]]+[0-9a-f]+ <gzipd_dev_' "$dis" || true)
+    echo "#95 SPL load path: branches into the gzipd driver = $calls"
+
+    ${if gzipd then ''
+    if [ "$calls" -lt 7 ]; then
+      echo "ERROR (#95): SUPPPORT_GZIPD=TRUE but only $calls branches into the gzipd driver (expected 7)" >&2
+      exit 1
+    fi
+    echo "#95: the decompressor is compiled in -- stages must be axgzip'd"
+    '' else ''
+    if [ "$calls" -ne 0 ]; then
+      echo "ERROR (#95): the SPL still calls the gzipd driver ($calls call sites)" >&2
+      grep -E 'bl[[:space:]]+[0-9a-f]+ <gzipd_dev_' "$dis" >&2 || true
+      exit 1
+    fi
+    echo "#95: the decompressor is gone -- stages are read straight to their load address"
+    ''}
+
     rawSz=$(stat -c %s "$raw")
     echo "SPL raw size: $rawSz B (BootROM slot is 51200 B)"
     if [ "$rawSz" -gt 51200 ]; then
@@ -314,7 +392,7 @@ pkgs.stdenv.mkDerivation {
     cp ${layoutTableFile} "$out/images/layout.txt"
     cp "$HOME_PATH/build/projects/${project}/partition_ab.mak" "$out/images/partition.mak"
 
-    echo "=== SPL (${layout.layoutName} layout, ${if withEip then "vendor container WITH the closed EIP-130 firmware" else "blob-free"}) ==="
+    echo "=== SPL (${layout.layoutName} layout, ${if withEip then "vendor container WITH the closed EIP-130 firmware" else "blob-free"}, stages ${if gzipd then "AXGZIP'd" else "RAW"}) ==="
     ls -l "$out/images"
 
     runHook postInstall
@@ -326,8 +404,12 @@ pkgs.stdenv.mkDerivation {
   meta = {
     description =
       "AX630C first-stage loader (bl1/spl) compiled for the ${layout.layoutName} eMMC layout"
-      + (if withEip then ", signed with the vendor container's closed EIP-130 firmware (the #90 fallback)" else ", signed without the closed EIP-130 firmware (#90)");
-    # The vendor sign flow reaches for prebuilt x86-64 host tooling.
-    platforms = [ "x86_64-linux" ];
+      + (if withEip then ", signed with the vendor container's closed EIP-130 firmware (the #90 fallback)" else ", signed without the closed EIP-130 firmware (#90)")
+      + (if gzipd then ", reading axgzip'd stages" else ", reading RAW stages (#95)");
+    # No prebuilt host tool anywhere in this build: the SPL is cross-compiled
+    # and the sign step is the SDK's own Python (`spl_AX620E_sign.py` + `rsa`)
+    # plus openssl. `ax_gzip` was never part of the SPL's own build -- it
+    # packed the stages BEHIND it, which is what #95 retires.
+    platforms = pkgs.lib.platforms.linux;
   };
 }

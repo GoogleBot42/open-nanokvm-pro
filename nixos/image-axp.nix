@@ -12,10 +12,11 @@
 #
 # The heavy lifting is `nanokvm.image` (nixos/axp-image.nix), passed in through
 # specialArgs by nixos/rootfs.nix. It has to arrive that way rather than being
-# imported here, because it needs the flake's x86_64 package set: the signing
-# tool (`ax_gzip`) is a prebuilt x86-64 host binary and the ext4 is packed by
-# make-ext4-fs on the build machine, while THIS module evaluates as
-# aarch64-linux.
+# imported here, because it needs the flake's BUILD-HOST package set -- the
+# ext4 is packed by make-ext4-fs and the boot chain is signed there -- while
+# THIS module evaluates as aarch64-linux. (Until #95 that host also had to be
+# x86-64, because the signing path ran the prebuilt `ax_gzip`. It no longer
+# does.)
 # ===========================================================================
 
 {

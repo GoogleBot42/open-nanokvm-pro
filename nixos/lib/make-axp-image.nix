@@ -317,7 +317,11 @@ let
 
   meta = {
     description = "AXDL .axp firmware bundle, packed from scratch (manifest + every stored partition from source)";
-    platforms = [ "x86_64-linux" ];
+    # Was x86_64-linux-only because every stored boot-chain member had to go
+    # through the prebuilt `ax_gzip`. #95 retired it; nothing in the members'
+    # build runs an x86-64 binary now, and `.#checks.<sys>.no-x86-blobs`
+    # asserts the closure carries none either.
+    platforms = pkgs.lib.platforms.linux;
   };
   };
 in

@@ -217,6 +217,111 @@ candidate goes through the chainload slot; a bad SPL is an AXDL trip.
 
 ---
 
+## #95: the raw boot chain
+
+**NOT DONE. This is the procedure, waiting on a go.** Since #95 the SPL is
+compiled `SUPPPORT_GZIPD=FALSE` and `atf`/`uboot` are stored uncompressed behind
+their signed headers. The board is still running the compressed chain.
+
+**The three partitions must be written together.** The container carries no
+"compressed" flag, so each SPL reads only the format it was compiled for and
+neither mismatch is detected: a raw SPL reading a gzipped image passes the
+checksum (it is taken over the stored bytes) and jumps into axgzip data; a
+gzipped SPL reading a raw image fails and spins. Both are a dark board.
+[mainline-port.md §11.12](mainline-port.md#1112-95-the-stages-go-raw-and-ax_gzip-is-retired-offline-2026-09-11)
+has the citations.
+
+**The chainload slot cannot test any of this.** It stages a raw `u-boot.bin`
+that `bootchain` `booti`s itself — no header, no `img_size`, no checksum, no SPL
+load path — and the U-Boot binary does not change. All it could prove is that
+the same binary still runs.
+
+**Recovery is AXDL of `.#nixos-firmware-image-mainline`**, which is why the go
+is Jeremy's.
+
+### The write, in one step
+
+```bash
+# ---- build, on the dev box -------------------------------------------------
+nix build .#spl-minimal .#atf-mainline .#uboot-mainline
+nix build .#checks.x86_64-linux.no-x86-blobs \
+          .#checks.x86_64-linux.atf-mainline \
+          .#checks.x86_64-linux.uboot-mainline
+
+# ---- confirm the numbering ON THE BOARD, never from this table -------------
+tools/kvmssh 'lsblk /dev/loop0; sgdisk -p /dev/loop0'
+#   p1 = atf (1 MiB)   p2 = uboot (2 MiB)   p3 = env   p4 = boot   p5 = rootfs
+
+# ---- save what is there ----------------------------------------------------
+tools/kvmssh 'mkdir -p /root/pre95
+  dd if=/dev/mmcblk0 of=/root/pre95/spl.img bs=1K count=768
+  dd if=/dev/loop0p1 of=/root/pre95/atf.img
+  dd if=/dev/loop0p2 of=/root/pre95/uboot.img
+  md5sum /root/pre95/*.img | tee /root/pre95/MD5'
+```
+
+Copy `/root/pre95/` off the board as well: it is on `rootfs`, which an AXDL
+recovery overwrites. The same three images are rebuildable from source at any
+time with `.#spl-minimal-gzipd`, `.#atf-mainline-gzipd` and
+`.#uboot-mainline-gzipd`, so the dumps are a convenience, not the safety net.
+
+```bash
+# ---- push and write --------------------------------------------------------
+tools/kvmscp result-spl/images/spl_*_signed.bin           root@board:/tmp/spl.bin
+tools/kvmscp result-atf/images/atf_bl31_mainline_signed.bin root@board:/tmp/atf.bin
+tools/kvmscp result-ub/images/u-boot_mainline_signed.bin  root@board:/tmp/uboot.bin
+
+tools/kvmssh '
+  set -e
+  dd if=/tmp/atf.bin   of=/dev/loop0p1 conv=fsync
+  dd if=/tmp/uboot.bin of=/dev/loop0p2 conv=fsync
+  dd if=/tmp/spl.bin   of=/dev/mmcblk0 conv=fsync      # spl LAST
+  sync; echo 3 > /proc/sys/vm/drop_caches'
+```
+
+`spl` goes **last**, the same order the `.axp` uses: an interrupted write then
+leaves a board that falls into AXDL rather than one whose loader runs with
+nothing behind it.
+
+### Verify from the medium, then reboot
+
+```bash
+tools/kvmssh 'echo 3 > /proc/sys/vm/drop_caches
+  for p in "spl /dev/mmcblk0 /tmp/spl.bin" "atf /dev/loop0p1 /tmp/atf.bin" \
+           "uboot /dev/loop0p2 /tmp/uboot.bin"; do
+    set -- $p
+    n=$(stat -c%s "$3")
+    echo "$1 $(head -c $n "$2" | sha256sum | cut -d" " -f1) $(sha256sum "$3" | cut -d" " -f1)"
+  done'
+```
+
+Both hashes on a line must match. Then, and only then, `reboot`.
+
+### Oracles
+
+| What | Where | Expected |
+|---|---|---|
+| it booted | SSH | back within **90 s**; poll 30 minutes before calling it dark |
+| how many attempts | `journalctl -u nanokvm-mark-good`, or `devmem 0x02390030 32` | `0xB0010001` — one attempt |
+| how far the chain got | `devmem 0x02390024 32` | a good boot reads `0x30000014` |
+| what U-Boot printed | the pre-console ring at `0x480E8000` | only if something went wrong |
+
+A first-stage failure prints nothing and reaches nothing: no milestone bits, no
+`bootcount`, no ring. **Dark plus a flat ~3.3 W is the signature**, and the only
+answer is AXDL:
+
+```bash
+nix build .#nixos-firmware-image-mainline
+nix run .#axdl -- --file result/*.axp --wait-for-device
+```
+
+Hold `User` ~10 s at power-on to enter AXDL. That image carries the **same**
+raw trio, so it is internally consistent; to go back to the proven compressed
+chain, write the three `-gzipd` images by the procedure above, from a board that
+still boots, or build an image from a commit before #95.
+
+---
+
 ## The eMMC map
 
 The eMMC is two logical devices. `spl` is the first 768 KiB — the BootROM's

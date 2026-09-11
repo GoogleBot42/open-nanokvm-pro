@@ -61,9 +61,14 @@ silent change in what runs on the radio.
 **None of these is closed content on the image.** They shape outputs, or they
 run on the host, or they run from RAM during a flash and are never stored.
 
+Since #95 **none of them is a binary, either**: every entry below is source,
+headers, or Python. `.#checks.<sys>.no-x86-blobs` asserts it — no `EM_X86_64`
+ELF and no `ax_gzip` in the closure of `boot`, `spl-minimal`, `atf-mainline`,
+`uboot-mainline` or the flashable image.
+
 | Input | Origin | Role | Status |
 |---|---|---|---|
-| `ax_gzip` | `maix_ax620e_sdk` `tools/ax_gzip_tool/` — an Axera **x86-64 static ELF** | `-9` compresses each signed boot payload; its "axgzip" LZ77 is the format the SPL's gzipd hardware decompresses. Driven by `pkgs/ax-sign.nix` and `pkgs/boot.nix`. | **The only closed binary left anywhere in the build.** No source exists and the format is a BootROM/SPL contract. It is why every flashable output of this flake is `x86_64-linux`-only. |
+| ~~`ax_gzip`~~ | `maix_ax620e_sdk` `tools/ax_gzip_tool/` — an Axera **x86-64 static ELF** | `-9` used to compress each signed boot payload into the "axgzip" LZ77 the SPL's gzipd hardware decompresses. | **RETIRED — pending #95 hardware.** Nothing in a default build runs it: `.#spl-minimal` is compiled with `SUPPPORT_GZIPD=FALSE` and `atf`/`uboot` are stored raw behind the signed header, so there is **no closed binary anywhere in the build**. `pkgs/boot.nix` deletes the tool from its own build tree. It is still reachable through the `-gzipd` package variants, which exist only so the previously-proven boot chain can be rebuilt; **delete this row and those variants once a board has booted the raw chain.** |
 | `imgsign` + its keys | `maix_ax620e_sdk` `build/tools/imgsign/`, `tools/imgsign/{public,private}.pem`, `aes-256.key` | Wraps each payload in the 1 KiB container the SPL loads: magic `0x55543322`, header and payload checksums, a capability word, an RSA-2048 key/signature pair. `pkgs/ax-sign.nix` drives it for anything built outside the vendor makefiles. | Python, not a binary. The keys are the SDK's **committed dev/test keys** (the public modulus is a visible repeating pattern; `aes-256.key` is ASCII zeros). Enforcement is a runtime decision the SPL makes from the `SECURE_BOOT_EN` efuse, which is unburned on retail units — so the signature satisfies a check that never runs. |
 | bl1/SPL C source | `maix_ax620e_sdk` `boot/bl1/` | `.#spl-minimal` recompiles it for our eMMC layout's byte offsets (#89 rung 4). | Source, built here. **Blob-free since #90** — see below. |
 | Axera `ax_*.h` headers | `maix_ax620e_sdk_msp` | Our blob-free `libkvm.so` compiles against them for the SDK's frame and stream types. | Headers only. **No library out of this tree is linked or shipped**, and the image closure is asserted to contain none of it. |

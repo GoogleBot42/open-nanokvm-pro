@@ -2952,13 +2952,11 @@ driver, and the Linux-side `fb_jd9853` (#84) is the real display path anyway.
 by this block; so are ATF, OP-TEE and U-Boot, decompressed by the **SPL**. With
 a mainline U-Boot the kernel/dtb side simply goes away (the uncompressed `Image`
 fits the 64 MiB slot with room to spare, and extlinux replaces the raw read
-entirely) — but the **U-Boot binary itself must still be axgzip-compressed**,
-because the SPL demands it (§11.2). `tools/ax_gzip_tool/ax_gzip` is a prebuilt
-x86-64 host binary; that is why `pkgs/boot.nix` declares
-`meta.platforms = ["x86_64-linux"]`. Rebuilding the SPL with
-`SUPPPORT_GZIPD=FALSE` would remove the last prebuilt binary from the boot-chain
-build and make it buildable on aarch64 — a real blob-policy win, and the same
-SPL rebuild the new layout forces anyway.
+entirely), and **since #95 the U-Boot binary is not compressed either**: the SPL
+is rebuilt with `SUPPPORT_GZIPD=FALSE`, which removed the last prebuilt binary
+from the boot-chain build. `tools/ax_gzip_tool/ax_gzip` is a prebuilt x86-64
+host binary, and it is why `pkgs/boot.nix` used to declare
+`meta.platforms = ["x86_64-linux"]`. §11.12.
 
 **FDL2.** Not a separate defconfig for this board: with `SUPPPORT_GZIPD=TRUE`,
 `Makefile.fdl2:120-133` signs the **raw** `u-boot.bin` as `fdl2_signed.bin` and
@@ -3079,13 +3077,15 @@ flag in `project.mak:50`. **The partition can be dropped**, provided the SPL is
 rebuilt with it dropped from `FLASH_PARTITIONS` — otherwise every downstream
 `*_HEADER_FLASH_BASE` shifts by 0x80000 and nothing loads.
 
-**axgzip is mandatory on this build.** `read_image_data` sends every image
-except DDRINIT through `gzip_pipeline_flash_read` (`boot.c:768-789`), staging the
-raw bytes at `0x58000000` and DMA-ing the decompressed output to
-`ram_ops + 1024`. A raw payload fails the `"20"` magic check
-(`driver/gzipd/ax_gzipd_drv.c:132-155`) and returns `BOOT_FLASH_READ_FAIL`. The
-output address must be 8-byte aligned. Rebuilding with `SUPPPORT_GZIPD=FALSE`
-switches to the plain `flash_read` at `boot.c:783`.
+**axgzip was mandatory on this build, and since #95 it is not.**
+`read_image_data` sends every image except DDRINIT through
+`gzip_pipeline_flash_read` (`boot.c:768-789`), staging the raw bytes at
+`0x58000000` and DMA-ing the decompressed output to `ram_ops + 1024`. A raw
+payload fails the `"20"` magic check (`driver/gzipd/ax_gzipd_drv.c:132-155`)
+and returns `BOOT_FLASH_READ_FAIL`. `SUPPPORT_GZIPD=FALSE` switches to the
+plain `flash_read` at `boot.c:781-787`, which puts `round_up(img_size, 4)`
+bytes straight at `ram_ops + 1024` — the SAME address, so no stage moves and
+no linker script changes. `.#spl-minimal` is built that way now; see §11.12.
 
 **A/B, and what happens on a bad image.** `select_slot_ab()`
 (`boot.c:934-995`) reads `TOP_CHIPMODE_GLB_BACKUP0 = 0x02390024` and consumes
@@ -6327,3 +6327,161 @@ generation that failed to boot — and it spends one of the three rollback
 attempts anyway. Clearing the counter in `bootcmd`'s exhaust path would keep
 #91 out of the rollback budget without weakening it: a generation that boots and
 then wedges resets with the load having *succeeded*, so it still counts.
+
+---
+
+### 11.12 #95: the stages go raw, and `ax_gzip` is retired (offline, 2026-09-11)
+
+`ax_gzip` was the last prebuilt x86-64 binary anywhere in this build — an Axera
+static ELF with no source, packing every stage the SPL loads into the "axgzip"
+LZ77 that the SoC's gzipd block decompresses in hardware. It is gone. The SPL is
+compiled with `SUPPPORT_GZIPD=FALSE`, `atf` and `uboot` are stored raw behind
+their signed headers, and `pkgs/boot.nix` deletes the tool from its own build
+tree. **Not on hardware yet** — this section is the offline half.
+
+#### What the macro actually gates
+
+Everything is in `[SDK]/boot/bl1/`, and all of it is in `core/boot/boot.c`
+except the flag itself:
+
+| Site | What `SUPPPORT_GZIPD` does there |
+|---|---|
+| `spl/Makefile:186-188` | the whole of it: `CPPFLAGS += -DSUPPPORT_GZIPD`. `driver/gzipd/ax_gzipd_drv.o` is in `OBJS` **unconditionally** (`spl/Makefile:39`) and is linked either way |
+| `boot.c:297-455` | `gzip_pipeline_flash_read()` exists only under the macro — the tile pump that stages the compressed image at `IMAGE_COMPRESSED_PADDR` (`0x58000000`) and feeds gzipd's 16-deep FIFO |
+| `boot.c:768-789` | the branch in `read_image_data()`: with the macro, every image but `DDRINIT` goes through that pump; without it, `flash_read()` reads `round_up(img_size, 4)` bytes straight to the load address |
+| `boot.c:790-796, 847-849` | the two `img_addr` fix-ups the staged path needs so the checksum is taken over the *compressed* bytes and the return value still points at the decompressed image |
+| `boot.c:1007-1009` | `gzipd_dev_init()` in `flash_boot()` |
+
+**It changes nothing else.** The load address is `boot_header +
+sizeof(struct img_header)` in both paths (`boot.c:731`) — `0x40040000` for BL31,
+`0x5C000400` for U-Boot — so no stage moves and no linker script changes. The
+container is identical: `struct img_header` (`core/include/boot.h:87-127`) has
+**no compressed flag**, none of the 24 capability bits
+(`boot.h:143-177`) means anything of the sort, and the vendor's own ATF makefile
+passes `-cap 0x54FAFE` in both branches (`[SDK]/boot/atf/Makefile:83-99`).
+`img_size` and `img_check_sum` always describe the **stored** payload, whatever
+it is.
+
+#### The hazard that follows from that
+
+Because the container cannot say which it holds, each side reads the other's
+image on its own terms and neither notices:
+
+- **raw SPL, gzipped image** — `flash_read()` pulls `img_size` bytes (the
+  compressed length) to `0x40040000`, `calc_word_chksum` over them **matches**
+  `img_check_sum`, and the SPL jumps into axgzip data.
+- **gzipped SPL, raw image** — `gzipd_dev_get_header_info()` finds no `"20"`
+  magic, returns `-1`, and the checksum over `0x58000000` then fails too.
+
+With `support_ab` set neither failure retries (`boot.c:649-652`, `806-808`) and
+the caller spins in `while(1)`. Both directions are a dark board with no
+console. **So `spl`, `atf` and `uboot` are one set and must be written
+together** — which is what makes this an AXDL-risk change rather than a
+reversible one.
+
+#### What is in the tree
+
+| Package | Packing | Platform |
+|---|---|---|
+| `.#spl-minimal` | `SUPPPORT_GZIPD=FALSE` | any linux |
+| `.#atf-mainline` | raw BL31 behind the header | any linux |
+| `.#uboot-mainline` | raw `u-boot.bin` behind the header | any linux |
+| `.#spl-minimal-gzipd` / `.#atf-mainline-gzipd` / `.#uboot-mainline-gzipd` | the pre-#95 trio, byte-for-byte rebuildable | `x86_64-linux` (`ax_gzip`) |
+
+Sizes, measured from the built artefacts:
+
+| Stage | raw | signed | partition | used |
+|---|---|---|---|---|
+| BL31 | 24 676 B | 25 700 B | `atf`, 1 MiB | 2.5 % |
+| U-Boot | 383 336 B | 384 360 B | `uboot`, 2 MiB | 18.3 % |
+
+(BL31 also has to fit the 256 KiB DRAM window at `0x40040000` —
+`ATF_IMG_PKG_SIZE` — which is a different limit from the partition, and both are
+asserted separately now.)
+
+#### How each claim is checked, from the artefact
+
+- **The decompressor is gone from the SPL**: `pkgs/spl-minimal.nix` counts `bl`
+  instructions targeting the gzipd driver in the SPL's own `objdump -S` output.
+  Seven in the `-gzipd` build, zero in the default one — each variant asserts
+  its own side, so the pair is a differential test.
+  *Do not use `gzip_pipeline_flash_read` as the oracle*: it is a file-static
+  with one caller and `-Os` inlines it, so the symbol is absent from **both**
+  builds. That version of the check looked like it passed and could never have
+  failed.
+- **The stages are raw**: `pkgs/ax-sign-verify.py` reads the signed image back
+  and asserts `len(img) == 1024 + len(payload)`, `img_size == len(payload)`,
+  both checksums recomputed with the SPL's own arithmetic
+  (`calc_word_chksum`, `boot.c:140-154`), the eight trailing header bytes zero,
+  `fw_size == fw_check_sum == 0`, and — the #95 assertion — that the stored
+  payload **is** the raw binary byte for byte. It runs in `pkgs/ax-sign.nix`,
+  in `pkgs/atf-mainline.nix` and again in both flake checks.
+- **No x86-64 binary survives**: `.#checks.<sys>.no-x86-blobs` walks the outputs
+  of `boot`, `spl-minimal`, `atf-mainline`, `uboot-mainline` and the flashable
+  image — 37 files, 3 ELFs, all `EM_AARCH64` — and fails on any ELF with
+  `e_machine == EM_X86_64` or any file named `ax_gzip`; and it refuses any of
+  those packages still declaring `meta.platforms = ["x86_64-linux"]`, which is
+  how this tree spells "needs a prebuilt host tool".
+  **Their outputs, not their closures.** Anything cross-compiled has the x86-64
+  cross toolchain in its closure by construction — `atf-mainline` and
+  `uboot-mainline` keep unstripped `.elf`/`.map` debug artefacts, which
+  reference `aarch64-unknown-linux-gnu-gcc` — so the closure version of this
+  check found 401 "failures" and could never have passed.
+
+#### `pkgs/boot.nix`, and two vendor bugs in the FALSE path
+
+`boot.nix` builds the vendor chain for one reason: the FDL1/FDL2 download agents
+AXDL pushes into BootROM RAM. Its install steps were the other `ax_gzip` caller,
+so it is built with `SUPPPORT_GZIPD := FALSE` too. **FDL2 is unchanged by that**
+— both branches of `Makefile.fdl2` sign the *raw* `u-boot.bin` as
+`fdl2_signed.bin` (`:126` vs `:136`); only `u-boot_signed.bin`, which nothing
+flashes any more, differs. `installPhase` asserts it from the artefacts: header
+plus payload, and the payload is `u-boot.bin` verbatim.
+
+Two things in the vendor's own FALSE path do not work and are patched in
+`configurePhase`:
+
+1. `build/tools/config2defconfig.py` maps `SUPPPORT_GZIPD` onto the vendor
+   U-Boot's `CONFIG_CMD_AXERA_GZIPD` (`configs/axera_config_maps.txt:2`), but
+   `cmd/axera/boot/axera_boot.c:829,833` calls `gzip_decompress_image()` with no
+   `#ifdef` around it — so turning the symbol off fails at **link**, with two
+   undefined references. The mapping line is deleted; the defconfig's own
+   `CONFIG_CMD_AXERA_GZIPD=y` stands, which is also what keeps FDL2 identical.
+2. The uncompressed vendor U-Boot is 1 650 957 B and the size guard in
+   `Makefile.uboot:105-109` **and** `Makefile.fdl2:142-146` compares it against
+   `UBOOT_PARTITION_SIZE` = 1536 KiB from the **dead vendor layout**. Both
+   guards are disabled: nothing writes that partition, and the real BL33 is
+   `.#uboot-mainline` in a 2 MiB `uboot` it uses 18 % of.
+
+#### Two things turning the compression off made visible
+
+**OP-TEE carries the same closed EIP-130 firmware U-Boot did**, and the #90
+assertion had never seen it. `optee_os-3.21.0/core/drivers/ax_cipher/
+ax_eip130_fw.h` is the same `int const eip130_firmware[]` array that
+`cmd/axera/cipher/eip130_fw.h` held; until #95 `optee_signed.bin` was axgzip'd,
+and compression hid the 8-byte fingerprint the check greps for. Turning the
+compression off made it fail on the first build. `optee_signed.bin` is no longer
+exported from `pkgs/boot.nix` — nothing consumes it, the `optee` partition went
+with the vendor layout, and `.#spl-minimal` is built `SUPPORT_OPTEE=FALSE` — so
+no BL32 leaves the sandbox. **A blob check that runs over compressed data is not
+a blob check.**
+
+**`pkgs/boot.nix` is not reproducible, and was not before #95.** `nix build
+.#boot --rebuild` fails on it, and FDL1 (`fdl_<project>_signed.bin`, 92 160 B)
+differs by ~47 700 bytes over the range 1..57716 between any two builds — three
+historical store paths of it all hash differently, and a `.check` pair from an
+older revision differs too. So FDL1 could not be shown unchanged by #95, and the
+~47 700-byte difference between the pre- and post-#95 builds is exactly the
+pre-existing spread. What *can* be shown, and is asserted in-build, is that
+**FDL2 is byte-identical**: 1 KiB header + the 1 650 957 B raw `u-boot.bin`,
+matching the pre-#95 artefact exactly. FDL2 is the partition writer; FDL1 only
+fetches it. Worth its own issue.
+
+#### Ready for hardware
+
+The write is three partitions in one step, and the recovery is AXDL — see
+[flashing-and-recovery.md](flashing-and-recovery.md#95-the-raw-boot-chain).
+The chainload slot cannot help here: it stages a **raw `u-boot.bin`** that
+`bootchain` `booti`s itself, so it exercises no header, no `img_size`, no
+checksum and no SPL load path. All it could prove is that the same U-Boot binary
+still runs — which is not in question, because the binary does not change.
