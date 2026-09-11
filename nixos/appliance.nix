@@ -493,6 +493,11 @@ let
 
 in
 {
+  # WiFi is its own module (#85): the AIC8800 needs an out-of-tree driver, a
+  # firmware package, a supplicant and a script the server execs, and none of
+  # that belongs in the middle of this file. It declares `nanokvm.wifi.enable`.
+  imports = [ ./wifi.nix ];
+
   # =====================================================================
   # 0. Options -- the knobs the hardware tests and the sibling issues use
   # =====================================================================

@@ -141,18 +141,20 @@ Note both Sipeed's and M5Stack's trees carry files with an SPDX `GPL-2.0` tag
 before vendoring text (describing-subagent specs sidestep it; see the
 clean-room rule in CLAUDE.md).
 
-### aic8800 (WiFi/BT)
+### aic8800 (WiFi/BT) — PACKAGED (#85, 2026-09-11)
 
 No mainline driver, none in progress, not in `linux-firmware`. Best-maintained
-out-of-tree GPL source: `radxa-pkg/aic8800` (pushed 2026-09-02; changelog "fix
-building on kernels 7.1 and 7.2"; Armbian hard-skips ≥ 7.3 because cfg80211
-changed `remain_on_channel`/`mgmt_tx` cookies and removed `probe_client`).
-Debian/Ubuntu do not package it; Radxa's apt, Armbian, Gentoo (orphaned) and
-AUR do. <https://github.com/radxa-pkg/aic8800>. The firmware blob is the one
-closed item our policy permits; pin it by the per-file MD5s in
-`radxa-pkg/aic8800/src/firmware_version.md`. WiFi is explicitly not a
-constraint on #26 (issue text) — carry it as an out-of-tree module on a kernel
-≤ 7.2, or drop it.
+out-of-tree GPL source: `radxa-pkg/aic8800` (Armbian hard-skips ≥ 7.3 because
+cfg80211 changed `remain_on_channel`/`mgmt_tx` cookies and removed
+`probe_client`). Debian/Ubuntu do not package it; Radxa's apt, Armbian, Gentoo
+(orphaned) and AUR do. <https://github.com/radxa-pkg/aic8800>.
+
+`pkgs/aic8800-src.nix` pins it at `516e3b0`, and the kernel ceiling above is
+what `pkgs/kernel-mainline.nix` asserts. The firmware blob is the one closed
+item our policy permits and is pinned by the per-file MD5s in
+`src/firmware_version.md` — all 62 of the SDIO ones, checked in both
+directions. See "What exists now (#85)" below for what is built and what the
+hardware round still has to answer.
 
 ---
 
@@ -195,10 +197,10 @@ have / can be dropped).
 |---|---|---|---|---|---|---|
 | eMMC | `axera,sdhc` @`0x1B40000` (`mmc0`), HS400-ES, 8-bit, `cdns,phy-*` tuning props, 3 resets (`prst`/`arst`/`cardrst`), hw-reset GPIO2_A23 | `drivers/mmc/host/sdhci-axera.c` 1208 LOC | **Cadence SD4HC** — the vendor file is `sdhci-cadence.c` (Socionext header intact, `sdhci_cdns_*` names kept) with Axera additions; DT already uses the mainline `cdns,phy-*` properties (V) | `sdhci-cadence` (`cdns,sd4hc`) + `clocks =` (vendor gates by hand via `ax_set_mmc_clk`) + **no `resets`** — mainline binds index 0 as the *card* `RST_n`, so listing the vendor's `prst` there makes error recovery assert the controller's own APB reset; use `reset-gpios = <&gpio2 23 GPIO_ACTIVE_LOW>` for the real card reset. Tuning is byte-identical to upstream; the 1208-vs-675 gap is clock/reset integration plus dead code, not Axera tuning. Stock `sdhci-cadence` drives this IP — the only code needed is a 15-line `drv_data` entry for `SDHCI_QUIRK2_PRESET_VALUE_BROKEN`. See [sdhci-model-20260906.md](reference/mainline/sdhci-model-20260906.md) | S–M | **boot** |
 | SD | `axera,sdhc` @`0x104E0000` (`mmc1`), UHS to SDR104, `broken-cd` | same | same | same | S | opt (test path) |
-| SDIO | `axera,sdhc` @`0x104D0000` (`mmc2`), no-1.8V, WiFi | same | same | same | S | opt (WiFi) |
+| SDIO | `axera,sdhc` @`0x104D0000` (`mmc2`), no-1.8V, WiFi | same | same | **DONE (#85)**: the same `sdhci-cadence` binding as the other two, enabled on the board with `non-removable` + `mmc-pwrseq-simple` — the radio does not answer a bus scan until its reset line is released, and the MMC core is the only thing that can release it early enough | S | opt (WiFi) |
 | Ethernet MAC | `axera,dwmac-4.10a` @`0x104C0000`, 5 clocks, 3 resets, `phy-mode = "rgmii"`, `snps,dwmac-mdio` | `drivers/net/ethernet/stmicro/stmmac/dwmac-axera-plat.c` 187 LOC glue over stmmac | **Synopsys DWMAC 4.10a** (V) | **DONE (#77)**: `dwmac-axera.c`, ~230 lines over mainline stmmac — four of the five clocks, the PHY-interface select and block reset as flash-syscon bits, an RGMII tx-clock hook, and a register poke for PHY reset GPIO1_A27 until #81 | S–M | **boot** (SSH) |
 | Ethernet PHY | `ethernet-phy-id937c.4030` (JLSemi **JL2101**), 20 `jl2xxx,*` tuning props | `drivers/net/phy/jlsemi.c` 561 + `jlsemi-core.c` 3043 LOC | **The part is a Realtek RTL8211F, not a JL2101** — PHYID 0x001cc916 read over MDIO 2026-09-06 (V). The vendor DT's `ethernet-phy-id*` compatible forces the MDIO core to skip the bus read, so the JLSemi driver binds to a Realtek chip and works only because it programs almost nothing | **DONE (#77)**: mainline's own realtek driver, with `phy-mode = "rgmii-id"` — the RTL8211F's two 2 ns delays are pin-strapped on and mainline's driver *writes* them to match phy-mode. No JLSemi driver is needed or wanted | S | **boot** (SSH) |
-| WiFi/BT | `aicsemi,aic_bsp` (reset GPIO1_A29) + SDIO | `drivers/net/wireless/aic8800/` (`aic8800_bsp/btlpm/fdrv`, `=m`) | out-of-tree vendor GPL driver, see §1 | carry `radxa-pkg/aic8800` on a ≤ 7.2 kernel + the firmware blob; or drop | M | opt |
+| WiFi/BT | `aicsemi,aic_bsp` (reset GPIO1_A29) + SDIO | `drivers/net/wireless/aic8800/` (`aic8800_bsp/btlpm/fdrv`, `=m`) | out-of-tree vendor GPL driver, see §1 | **DONE (#85), NOT hardware-proven**: `pkgs/aic8800.nix` builds `aic8800_bsp` + `aic8800_fdrv` out of tree against the appliance kernel's KDIR; firmware MD5-pinned in `pkgs/aic8800-firmware.nix`; the reset GPIO is an `mmc-pwrseq-simple`, not a driver-private line. BT (`btlpm`) deliberately not built | M | opt |
 | USB | `axera,dwc3` glue → `snps,dwc3` @`0x8000000`, `dr_mode = "otg"`, `extcon` = `linux,extcon-usb-gpio` (GPIO1_A4), `phy_type = "utmi"`, high-speed only | `drivers/usb/dwc3/dwc3-axera.c` 531 LOC ("DesignWare USB3 OF Simple Glue Layer"); PHY handling is one `USB2_PHY_SW_RST` bit (V) | **Synopsys DWC3** (V) | **DONE (#82)**: `dwc3-axera.c`, ~210 lines of of-simple-class glue over the mainline core — three flash-syscon clock gates, the two software resets, and VBUSVALID, which is the one thing no generic glue can express. Gadget functions (`hid`, `mass_storage`, `ncm`, `uac2`, `acm`) are all mainline configfs and are built in; only `f_udisp` (USB display) is vendor and unused. `dr_mode = "peripheral"` until #81 gives OTG ID detection a GPIO | M | KVM (HID) |
 
 ### Board peripherals
@@ -647,9 +649,15 @@ still owes is the CPUPLL/cpufreq half and the dispc/mm/vpu reset alias windows.
     `designware-i2s` slave glue (routing word via syscon, `snd-soc-dummy`) for
     the LT6911 audio card — PIO first, else a `dma_per` dmaengine driver.
     Depends on: #80, #81.
-12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — Package
-    `radxa-pkg/aic8800` (SDIO) against the pinned kernel, `aic_bsp` reset GPIO,
-    firmware MD5-pinned; or record the drop decision. Depends on: #76.
+12. **#85 WiFi: aic8800 out-of-tree module + firmware pin** — **offline half
+    DONE, 2026-09-11.** `radxa-pkg/aic8800` pinned and patched
+    (`pkgs/aic8800-src.nix`), two modules built out of tree against the
+    appliance kernel's new KDIR (`pkgs/aic8800.nix`), 62 firmware files
+    MD5-pinned (`pkgs/aic8800-firmware.nix`), the SDIO node enabled with an
+    `mmc-pwrseq-simple` over GPIO1_A29, and `nanokvm.wifi.enable`
+    (`nixos/wifi.nix`) wiring a supplicant plus the `/kvmcomm/scripts/wifi.sh`
+    the server's WiFi routes exec. Nothing has run on hardware. See "What
+    exists now (#85)". Depends on: #76.
 13. **#86 Flake-based updates replace the custom OTA / #100 nix on the device**
     — **offline half DONE, 2026-09-11.** The appliance has `nix`
     (`nix.enable = true`, single-user), and an update is the standard NixOS
@@ -2011,6 +2019,191 @@ has still never held three kernels. A generation that genuinely fails to boot �
 every rollback was forced with `devmem`, deliberately. And the store database
 built **into** the image by `mkStoreDb`: this board's came from
 `nix-store --load-db`, and nothing has been flashed since #100.
+
+---
+
+### What exists now (#85, 2026-09-11) — WIFI IS PACKAGED, AND UNPROVEN
+
+**Everything builds and nothing has touched hardware.** `nanokvm.wifi.enable`
+is on by default, the appliance closure carries two out-of-tree modules and
+5.1 MB of MD5-pinned radio firmware, and the board has never been asked to
+load any of it. Read the hardware plan at the end of this section before
+pointing it at the device.
+
+**What it costs: 6.27 MiB**, measured as `nix path-info -S` on
+`.#appliance-toplevel` with the option on and off — 1 386 009 032 against
+1 379 436 776 bytes. Eleven store paths, and only four are real: the firmware
+(5.12 MB), the two modules (1.0 MB), `iw`, and `wireless-regdb` (which the
+nixpkgs wireless module pulls in through
+`hardware.wirelessRegulatoryDatabase`). `wpa_supplicant` costs nothing — it was
+already in the closure, because it is in NanoKVM-Server's PATH contract.
+
+The build gates: `nix flake check --no-build` passes, both modules report
+`vermagic 7.1.3-nanokvm SMP preempt mod_unload aarch64` (asserted from the
+finished `.ko`, not from the KDIR path), the compiled-in firmware path is
+greppable in `aic8800_bsp.ko`, the 62 firmware MD5s reconcile in both
+directions, and the pinned source's fixed-output hash was re-validated with
+`nix build --rebuild` rather than trusted from a store that already held it.
+
+**The driver.** There is no mainline aic8800 driver and no one is writing one.
+`pkgs/aic8800-src.nix` pins `radxa-pkg/aic8800` at `516e3b0` — an AICsemi SDK
+drop plus a `debian/patches` series that is where every kernel-version fix
+actually lives. The repo carries three independent copies of the same SDK
+(SDIO, PCIE, USB); this board's radio is on `mmc@104d0000`, so the tree is
+trimmed to `src/SDIO` and the series is applied through `filterdiff -i
+'src/SDIO/*'` with `-F0`. Sixteen of the twenty-seven patches touch that tree
+and all sixteen apply with zero fuzz; the count is asserted, so a bump that
+adds an SDIO fix fails the build rather than absorbing it silently.
+
+That filtering is not tidiness. Two patches in the series have hunks that do
+not apply at all — `fix-usb-firmware-path` and
+`fix-Lower-the-debugging-log-level` — and **both failures are CRLF line endings
+in `src/USB` files**. Applied whole, the series is broken; applied to SDIO, it
+is clean. Anyone bumping this pin should expect the same shape.
+
+`pkgs/aic8800.nix` builds `aic8800_bsp` (SDIO transport and firmware loader)
+and `aic8800_fdrv` (the FULLMAC cfg80211 driver that creates `wlan0`).
+**Bluetooth is deliberately not built**: `aic8800_btlpm` is a low-power-mode
+helper for a BT HCI on a UART this board does not wire to any named DT node,
+and bringing it up means a host controller, bluez and a hardware round of its
+own. `CONFIG_AIC8800_BTLPM_SUPPORT=n` on the make line, asserted absent in the
+install phase.
+
+**The kernel grew a KDIR, and that is the part with teeth.** An out-of-tree
+module needs a prepared kernel build tree, and `pkgs/kernel-mainline.nix` had
+never produced one — the six modular drivers it ships are all in-tree grafts.
+The appliance variant's `dev` output now carries
+`lib/modules/<release>/{source,build}`, built the way nixpkgs builds one
+(`manual-config.nix`'s `postInstall`): rsync the source, drop in `.config` and
+`Module.symvers`, `make modules_prepare`, then keep only headers, linker
+scripts, the root and arch Makefiles and all of `scripts/`. 112 MB, in the
+output no generation and no image references.
+
+Three things about that prune cost a build round each, and all three are the
+same mistake in different clothes — **the prune deletes targets and leaves
+symlinks**:
+
+- `tools/testing/selftests` is full of relative links into `arch/<other>/` and
+  `drivers/`, both of which the prune removes. 84 dangling links, and nixpkgs'
+  `noBrokenSymlinks` fixup fails the build. Excluded at the rsync, not pruned
+  after.
+- `scripts/dtc/include-prefixes/*` and `tools/perf/pmu-events/*` do the same
+  thing across the tree. `find . -xtype l -delete` handles them generically,
+  which is better than naming directories a kernel bump can rename.
+- ...but that sweep needs a **writable parent directory**, and
+  `chmod -R u-w scripts` had just made one read-only. Mark files read-only,
+  never directories.
+
+`CONFIG_CFG80211` and `CONFIG_RFKILL` move from modular (arm64 defconfig) to
+built in. Same call the video stack's core makes and for the same reason: a
+modular core means resolving a dependency chain at boot instead of insmod'ing
+two files in a fixed order. The driver is fullmac, so `mac80211` is not
+involved at all — it includes `<linux/wireless.h>` for uapi types and registers
+no `iw_handler` ops, so `CFG80211_WEXT` stays off and wpa_supplicant drives it
+over nl80211.
+
+**The firmware.** 62 `.bin` files, 5.1 MB, checked against AICsemi's own
+`src/firmware_version.md` **in both directions** — a manifest row with no file
+and a file with no manifest row are each a failed build. All five chip
+directories ship (`aic8800`, `aic8800DC`, `aic8800D80`, `aic8800D80N`,
+`aic8800D80X2`), because *which* AIC8800 is soldered to this board is one of
+the things nobody has asked it yet; the per-chip firmware patch in the pinned
+commit makes the driver append the detected chip's own subdirectory to the
+firmware path, so all five is correct and no module parameter has to name one.
+Narrowing to the one the board has is a follow-up the first `dmesg` enables.
+
+Two traps live in how that firmware is reached:
+
+- **This driver does not use `request_firmware`.** The SDK builds with
+  `CONFIG_USE_FW_REQUEST = n` and opens a literal path with `filp_open`. So
+  `hardware.firmwareCompression` — zstd by default on a 7.x kernel — would
+  turn every file into a `.bin.zst` the driver cannot see. The package sets
+  `passthru.compressFirmware = false`, which is the documented opt-out.
+- The path is **compiled into `aic8800_bsp.ko`**
+  (`/run/current-system/firmware/aic8800_fw/SDIO`, the stable name
+  `hardware.firmware` gives its store path) and the build greps the finished
+  `.ko` for it. It is not passed as the `aic_fw_path` module parameter,
+  because setting that parameter makes the driver skip the per-chip
+  subdirectory logic entirely.
+
+**Device tree.** `&sdio` is enabled on the board with `non-removable`,
+`cap-power-off-card`, `keep-power-in-suspend` and an `mmc-pwrseq-simple` whose
+`reset-gpios` is `<&gpio1 29 GPIO_ACTIVE_LOW>` — GPIO1_A29, pad `EPHY_LED1`,
+mux word `0x104F0078`, deliberately excluded from `gmac_pins` and claimed by
+nothing else. The vendor models this radio as a platform device
+(`aicsemi,aic_bsp`) whose driver toggles reset itself; that cannot work here,
+because the line has to be released **before** the host scans the bus or the
+scan finds nothing and the SDIO driver is never probed. **No child node**: the
+driver binds by SDIO vendor/device ID off the card's own CIS (`0xc8a1` for the
+DC/D80 family, `0x5449` for the 8801), and a `compatible` child would describe
+nothing the bus does not already say.
+
+The polarity is the one DT fact that is *not* verified. `GPIO_ACTIVE_LOW` is
+the family's convention and what the live pad reads, but nothing has driven it.
+If the card never enumerates, invert this first.
+
+**The web UI's WiFi page drives a script this repo has never had.**
+NanoKVM-Server's network routes exec **`/kvmcomm/scripts/wifi.sh`** with
+`try_scan`, `connect_start <ssid> [pass]`, `connect_stop` and `ap_stop`, and
+read status from a bare `wpa_cli -i wlan0 status`
+(`server/service/network/{wifi,wifi_scan}.go`, `server/utils/wifi.go`).
+`pkgs/rootfs/wifi.sh` is a **different script at a different path**
+(`/opt/scripts/wifi.sh`, verbs `start|stop|restart`) that the vendor's own
+`wifi.service` ran at boot and that implements none of the four. `nixos/wifi.nix`
+provides the path the server compiles in, implemented over `wpa_cli`.
+
+Two consequences worth knowing before debugging a "WiFi page does nothing":
+
+- The supplicant's control socket must be `/run/wpa_supplicant/wlan0`, because
+  that is where a bare `wpa_cli` looks. Upstream's
+  `networking.wireless.userControlled` puts it in
+  `/run/wpa_supplicant/control/` instead — one directory level, and the whole
+  difference between a working page and one that reports "not connected"
+  forever. So `userControlled = false` plus an explicit `ctrl_interface` in
+  `extraConfig`, with `allowAuxiliaryImperativeNetworks` for the
+  update_config=1 writable primary config the UI needs.
+- **AP mode is not configured.** The server's provisioning flow (the `/wifi`
+  page, `X-AP-Key`, `/tmp/ap.pass`, `pgrep hostapd`) needs hostapd, a DHCP
+  server on `wlan0` and a decision about the appliance's AP SSID and password.
+  `ap_stop` is implemented because the server calls it on the way *in* to every
+  connect; `isAPMode()` answers false, and the UI shows the station flow.
+
+`wlan0` is auto-configured by networkd through nixpkgs' generic
+`99-wireless-client-dhcp` (RouteMetric 1025, so ethernet stays preferred). That
+network does **not** inherit the appliance's `ClientIdentifier = mac` override,
+which only patches the ethernet one — `nixos/wifi.nix` gives it the same
+treatment, for the identical reason the ethernet one needed it.
+
+**The hardware plan (two rounds at most).**
+
+Round 1, modules and enumeration — no credentials needed:
+
+1. `systemctl status nanokvm-wifi` — the unit insmods `aic8800_bsp` then
+   `aic8800_fdrv` and fails loudly if `wlan0` has not appeared in 10 s.
+2. `dmesg | grep -i -E 'aic|sdio|mmc2'` — the three things worth reading:
+   whether the SDIO card enumerated at all (if not, the pwrseq polarity or the
+   `sdio_pins` mux is wrong), **which chip id the driver reports** (that is the
+   answer that lets the firmware package be narrowed from five directories to
+   one), and whether the firmware files were found at the compiled path.
+3. `ip link show wlan0`, `iw dev wlan0 info`.
+4. `iw dev wlan0 scan | grep SSID` — networks visible from the bench. This is
+   the real end-to-end proof: a scan means the firmware runs, the MAC answers
+   and cfg80211 is wired.
+5. `wpa_cli -i wlan0 status` — must answer, not "Failed to connect". This is
+   what the server's status route depends on and it is the one thing the
+   control-socket path decision above could get wrong.
+6. `/kvmcomm/scripts/wifi.sh try_scan` — must print parseable JSON.
+
+Round 2 is only if round 1 fails; the likely fixes in order are the pwrseq
+polarity, then `max-frequency`/`bus-width` on the SDIO node, then the firmware
+path.
+
+**`needs-human`: joining a network.** Associating requires an SSID and a
+password, which are credentials and are not going in this repo or into any
+agent's hands. A full test — the settings page listing networks, joining one,
+`wpa_state=COMPLETED`, a DHCP lease on `wlan0` and the UI reporting connected —
+is Jeremy at the web UI with his own network. Everything up to that point is
+agent-testable.
 
 ---
 ---

@@ -407,7 +407,14 @@ Full panel details, the blob-free story, and the sleep/wake behavior are in
   `insmod`/`rmmod /soc/ko/aic8800_*.ko` lines rewritten to `modprobe` /
   `modprobe -r`: the vendor `/soc/ko` copies are gone and our from-source
   `aic8800_{bsp,btlpm,fdrv}.ko` live in `/usr/lib/modules/4.19.125`, where udev
-  autoloads them anyway (device-proven).
+  autoloads them anyway (device-proven). **None of this is how the mainline
+  appliance does WiFi** (#85): there the modules are built out of tree from
+  `radxa-pkg/aic8800`, loaded by `nanokvm-wifi.service`, the firmware is
+  MD5-pinned and reached through `hardware.firmware`, and the script the
+  server's WiFi routes actually exec — `/kvmcomm/scripts/wifi.sh`, which is a
+  different path with different verbs from the one above — is provided by
+  `nixos/wifi.nix`. See [mainline-port.md](mainline-port.md) "What exists now
+  (#85)".
 - **`nanokvm-display.service`** (ours, independent of the two stacks above) runs
   the mini-display status daemon from `/opt/nanokvm-display`; it only reads
   `/dev/fb0`, the backlight sysfs, the knob evdev devices, and the server's

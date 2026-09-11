@@ -254,6 +254,19 @@
           kernel = kernel-mainline-appliance;
         };
 
+        # --- WiFi (#85) ------------------------------------------------------
+        # The AIC8800 on mmc@104d0000. The DRIVER is GPL source, pinned from
+        # radxa-pkg/aic8800 and built out of tree against the appliance
+        # kernel's KDIR; the FIRMWARE is the one piece of closed content the
+        # blob policy permits, MD5-pinned to AICsemi's own manifest. Neither is
+        # in any image unless `nanokvm.wifi.enable` is on (nixos/wifi.nix).
+        aic8800-src = callPkg ./pkgs/aic8800-src.nix { };
+        aic8800-firmware = callPkg ./pkgs/aic8800-firmware.nix { inherit aic8800-src; };
+        aic8800 = callPkg ./pkgs/aic8800.nix {
+          kernel = kernel-mainline-appliance;
+          inherit aic8800-src;
+        };
+
         # NOTE (#49, resolved 2026-08-30): there is deliberately NO CMA kernel
         # variant. CONFIG_CMA/CONFIG_DMA_CMA are vermagic-invisible but ABI-
         # BREAKING for the vendor ax_*.ko blobs -- DMA_CMA adds `cma_area` to
@@ -530,6 +543,10 @@
           # The open capture/encode modules (#83), built against the kernel
           # the appliance boots and carried in the generation's closure.
           inherit video-modules;
+          # WiFi (#85), same shape: the out-of-tree aic8800 modules built
+          # against that kernel, and the MD5-pinned radio firmware. Both are
+          # dropped from the closure entirely by `nanokvm.wifi.enable = false`.
+          inherit aic8800 aic8800-firmware;
         };
         # The shipped variant also carries the .axp builder: nixos/image-axp.nix
         # defines `system.build.axpImage` from this configuration's own closure,
@@ -951,6 +968,7 @@
             kernel-mainline-appliance-slot-image
             nixos-appliance-qemu nixos-appliance-qemu-run
             open-vin-csi2 open-vin-capture video-modules
+            aic8800-src aic8800 aic8800-firmware
             kernel-slot-image
             kvm-encoder kvm-encoder-open kvm-encoder-openvenc kvm-encoder-v4l2
             kvm-encoder-openvenc-axsysprobe kvm-encoder-geom-test

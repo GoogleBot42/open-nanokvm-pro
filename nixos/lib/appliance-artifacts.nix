@@ -295,6 +295,11 @@ let
         # reference to one -- most likely a store path left in an RPATH. Assert it
         # here, where the whole closure is visible, rather than discovering it in a
         # provenance audit.
+        #
+        # The one closed thing this policy allows is the aic8800 RADIO firmware
+        # (#85, docs/provenance.md) -- `aic8800-firmware`, which executes on the
+        # radio and never on the A53s, and which is gated by
+        # `nanokvm.wifi.enable`. It is deliberately not in the list below.
         echo "=== verifying the image carries no closed Axera code ==="
         for p in $(cat ${pkgs.writeClosure [ toplevel ]}); do
           case "$p" in
