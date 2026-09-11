@@ -1637,12 +1637,20 @@ in
     # target's power-LED sense on mainline -- there is no sysfs GPIO export any
     # more and global line numbers are not stable, so the line is addressed by
     # its device-tree name (#81, #84).
+    #
+    # AND iproute2, which is the whole of the daemon's network line. NixOS
+    # gives a unit coreutils, findutils, gnugrep, gnused and systemd and
+    # nothing else, so `ip -j -4 addr` was an ENOENT the daemon caught and
+    # turned into an empty address list -- a panel that read "no network" in
+    # amber on a board that was routed, serving and reachable over SSH. It
+    # cost nothing to find on hardware and would have been invisible offline
+    # (the 4.19 image ran this daemon with an Ubuntu PATH). #84, 2026-09-11.
     systemd.services.nanokvm-display = {
       description = "NanoKVM-Pro mini-display status screen";
       wantedBy = [ "multi-user.target" ];
       after = [ "nanokvm-panel.service" ];
       unitConfig.ConditionPathExists = "/dev/fb0";
-      path = [ nanokvm.nanokvm-gpio ];
+      path = [ nanokvm.nanokvm-gpio pkgs.iproute2 ];
       serviceConfig = {
         Type = "simple";
         ExecStart = "${pkgs.python3}/bin/python3 ${nanokvm.nanokvm-display}/opt/nanokvm-display/nanokvm_display.py";

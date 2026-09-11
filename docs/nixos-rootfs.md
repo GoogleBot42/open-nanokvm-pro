@@ -374,6 +374,25 @@ fixed or its failure accepted, is `systemctl reset-failed <unit>` and then
 `systemctl restart nanokvm-mark-good` (**restart**: the unit is a
 `RemainAfterExit` oneshot, so `start` is a no-op).
 
+**…EXCEPT FOR THE UNITS ON `nanokvm.markGood.tolerateFailed`** (#84,
+2026-09-11). When `is-system-running` says `degraded` and **every** failed unit
+is on that list, the boot counts as healthy: the counter is cleared, the
+fallback is promoted, and the journal says which units were tolerated. The
+default list is the three peripheral units — `nanokvm-wifi`, `nanokvm-panel`,
+`nanokvm-display` — and nothing else. Anything not on it still fails the gate,
+which is what keeps the rollback meaningful for the things this appliance is
+for: the server, the network, the capture stack.
+
+It is the second of two fixes for the same failure, and the order matters. The
+**first** is that optional hardware must not produce a failed unit at all: a
+`Type=oneshot` over a radio or a panel that is not there logs its diagnosis and
+`exit 0`s. #85 and #84 each cost a hardware round to a unit that did not — a
+KVM whose HDMI, USB and ethernet all worked sat one attempt from rolling itself
+back over a missing WiFi card, and then over a dark status screen. The list is
+belt and braces on top of that: a peripheral unit that starts failing for a
+*new* reason, or one whose next author forgets the rule, still cannot arm the
+rollback. Neither fix relaxes the gate for anything else.
+
 **systemd's runtime watchdog is armed at 60 s** (`RuntimeWatchdogSec`), so a
 PID 1 that stops running resets the board into that count instead of leaving it
 dark. Without it the ax630c watchdog is petted from kernel context for as long

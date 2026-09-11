@@ -7,17 +7,18 @@
  * reconciled clock by clock against a running device. Issue #80. Section
  * numbers in the comments below refer to that document.
  *
- * 282 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
- * 55 muxes, 23 dividers, 114 gates. Per controller: common 135, mm 40, flash
- * 33, periph 41, dispc 14, cpu 11, vpu 7, pllc 1. Counted out of the compiled
+ * 287 clocks over eight controllers: 1 PLL, 9 fixed-rate, 80 fixed-factor,
+ * 56 muxes, 23 dividers, 118 gates. Per controller: common 135, mm 40, flash
+ * 33, periph 46, dispc 14, cpu 11, vpu 7, pllc 1. Counted out of the compiled
  * tables in vmlinux, not re-read from the source that generated them; a
- * clk_summary on a running kernel should therefore list 283 names -- these
+ * clk_summary on a running kernel should therefore list 288 names -- these
  * plus the unrelated DT fixed-clock.
  *
- * 246 of those are the set the vendor CCF driver registers. The other 36 are
+ * 246 of those are the set the vendor CCF driver registers. The other 41 are
  * ids it declares and leaves unregistered because its own drivers programmed
  * those windows by hand: thirteen for eMMC/SD/SDIO (#76), six for the two
- * watchdogs (#75), fourteen for I2C and GPIO (#81) and three for USB (#82).
+ * watchdogs (#75), fourteen for I2C and GPIO (#81), three for USB (#82) and
+ * five for SPI2 and PWM0 (#84).
  * Anything that calls clk_get() on a block the vendor drove by hand needs the
  * same treatment.
  *
@@ -904,6 +905,23 @@ static const char * const ax630c_clk_i2c_sel_parents[] = {
 };
 
 /*
+ * The SPI masters' shared source, MUX0 [12:11] (#84). The same four-source
+ * arrangement as the I2C mux above and the UART mux beside it in the same
+ * word -- clk-model §5 gives the UART values as "00 24m, 01 50m, 10 156m,
+ * 11 208m" and only the frequencies are cited there, so the names are the
+ * obvious mapping onto registered clocks (I).
+ *
+ * Index 3 is not inferred: the running board reads MUX0 = 0x000FBF98, whose
+ * [12:11] is 3, on a system where the vendor spi-dw-mmio hard-codes
+ * dws->max_freq = 208000000 as the frequency the bus runs at. Registering
+ * the mux is what lets stock spi-dw-mmio take its SSI clock from
+ * clk_get_rate() rather than a constant.
+ */
+static const char * const ax630c_clk_spi_m_sel_parents[] = {
+	"cpll_24m", "epll_50m", "cpll_156m", "cpll_208m",
+};
+
+/*
  * The GPIO blocks' shared source, MUX0 bit 2, likewise named by the vendor
  * GPIO driver's comment on it ("0 32k, 1 24m"). It clocks the per-line
  * debounce filter and the interrupt synchroniser, not the register file --
@@ -945,6 +963,27 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_MUX_C(AX630C_CLK_I2C_SEL, "clk_i2c_sel", ax630c_clk_i2c_sel_parents, 0x00, 3, 2),
 	AX630C_MUX_C(AX630C_CLK_GPIO_SEL, "clk_gpio_sel", ax630c_clk_gpio_sel_parents, 0x00, 2, 1),
 
+	/*
+	 * SPI2 and PWM0 (#84), five more IDs in the same "declared and never
+	 * registered" category -- and the reason the mini-display did not come
+	 * up on its first hardware round: the binding header declared all five,
+	 * the tables carried none, so of_clk_hw_onecell_get() handed
+	 * ERR_PTR(-ENOENT) to dw_spi_mmio and dwc-pwm-of and both probes failed
+	 * with -2. A clock ID without a row here is not a silent no-op the way
+	 * it was in the vendor driver; it is a consumer that cannot probe.
+	 *
+	 * Each bit below is cited, and each was then read back off the running
+	 * board (periph MUX0/EB0/EB1/EB2/EB3 = 0x000FBF98 / 0x00007DF2 /
+	 * 0x7FFBFEF8 / 0x97FDE7FF / 0x000FFFDF, 2026-09-11). That read is
+	 * unusually good corroboration here: every gate this table already
+	 * registers and nothing consumes reads 0, because clk_disable_unused()
+	 * turned it off, while all four gates below read 1 -- left on by the
+	 * boot chain and owned by nobody. clk_timer_eb (EB0 b9), clk_timer0_eb
+	 * (EB1 b31), clk_lpc_peri_eb (EB1 b18) and pclk_timer0_eb (EB3 b5) are
+	 * the four zeros that bracket them.
+	 */
+	AX630C_MUX_C(AX630C_CLK_SPI_M2_SEL, "clk_spi_m2_sel", ax630c_clk_spi_m_sel_parents, 0x00, 11, 2),
+
 	/* pclk_top_sel below lives in common_clk; parents resolve by name. */
 	AX630C_GATE_C(AX630C_SCLK_I2S_TDM_EB, "sclk_i2s_tdm_eb", "sclk_i2s_tdm_divn", 0x04, 17, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_SCLK_I2S_M_EB, "sclk_i2s_m_eb", "sclk_i2s_m_divn", 0x04, 16, CLK_SET_RATE_PARENT),
@@ -961,6 +1000,12 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_GATE_C(AX630C_CLK_WDT0_EB, "clk_wdt0_eb", "clk_wdt0_sel", 0x04, 14, CLK_SET_RATE_PARENT),
 	/* The class gates (#81), one level above the per-instance ones. */
 	AX630C_GATE_C(AX630C_CLK_I2C_EB, "clk_i2c_eb", "clk_i2c_sel", 0x04, 2, CLK_SET_RATE_PARENT),
+	/*
+	 * The SPI masters' functional gates are EB0 bits 6..8 and their APB
+	 * gates EB3 bits 2..4, one per instance (V, clk-model §5 and the vendor
+	 * spi-dw-mmio's own BIT(6 + id) / BIT(2 + id)). Only spi2 has a DT node.
+	 */
+	AX630C_GATE_C(AX630C_CLK_SPI_M2_EB, "clk_spi_m2_eb", "clk_spi_m2_sel", 0x04, 8, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_GPIO_EB, "clk_gpio_eb", "clk_gpio_sel", 0x04, 1, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_TIMER0_EB, "clk_timer0_eb", "clk_timer_sel", 0x08, 31, CLK_SET_RATE_PARENT),
 	/*
@@ -974,7 +1019,23 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_GATE_C(AX630C_CLK_GPIO1_EB, "clk_gpio1_eb", "clk_gpio_eb", 0x08, 5, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_GPIO0_EB, "clk_gpio0_eb", "clk_gpio_eb", 0x08, 4, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_CLK_LPC_PERI_EB, "clk_lpc_peri_eb", "cpll_24m", 0x08, 18, CLK_SET_RATE_PARENT),
+	/*
+	 * PWM0 channel 0 (#84), the backlight. The block IS the DesignWare APB
+	 * timer block, so its source mux and class gate are the timer ones and
+	 * the chain is clk_timer_sel -> clk_timer_eb -> clk_pwm00_eb: the
+	 * vendor pwm0 node names all four words by offset and bit
+	 * (clk-sel-offset = <0xD> = MUX0 b13, clk-glb-eb-offset = <0x9> = EB0
+	 * b9, clk-eb-addr-offset = <0x8> with clk-eb-offset = <0x13 0x14 0x15
+	 * 0x16> = EB1 b19..b22 for channels 0..3, clk-p-eb-addr-offset = <0xC>
+	 * with clk-p-eb-offset = <0x1F> = EB2 b31).
+	 *
+	 * Parenting on the CLASS gate rather than on clk_timer_sel is what
+	 * makes a pwm_enable() turn EB0 b9 back on: clk_disable_unused() clears
+	 * it on every boot, because until this row existed nothing consumed it.
+	 */
+	AX630C_GATE_C(AX630C_CLK_PWM00_EB, "clk_pwm00_eb", "clk_timer_eb", 0x08, 19, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_ACLK_AX_DMA_PER_EB, "aclk_ax_dma_per_eb", "pclk_top_sel", 0x08, 0, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_PWM0_EB, "pclk_pwm0_eb", "pclk_top_sel", 0x0c, 31, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_TDM_S_EB, "pclk_i2s_tdm_s_eb", "pclk_top_sel", 0x0c, 30, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_TDM_M_EB, "pclk_i2s_tdm_m_eb", "pclk_top_sel", 0x0c, 29, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_I2S_S_EB, "pclk_i2s_s_eb", "pclk_top_sel", 0x0c, 28, CLK_SET_RATE_PARENT),
@@ -994,6 +1055,7 @@ static const struct ax630c_clk ax630c_periph_clks[] = {
 	AX630C_GATE_C(AX630C_PCLK_GPIO0_EB, "pclk_gpio0_eb", "pclk_top_sel", 0x0c, 13, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_AX_DMA_PER_EB, "pclk_ax_dma_per_eb", "pclk_top_sel", 0x0c, 11, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_TIMER0_EB, "pclk_timer0_eb", "pclk_top_sel", 0x10, 5, CLK_SET_RATE_PARENT),
+	AX630C_GATE_C(AX630C_PCLK_SPI_M2_EB, "pclk_spi_m2_eb", "pclk_top_sel", 0x10, 4, CLK_SET_RATE_PARENT),
 	/* The APB gates of the same two blocks. */
 	AX630C_GATE_C(AX630C_PCLK_WDT2_EB, "pclk_wdt2_eb", "pclk_top_sel", 0x10, 20, CLK_SET_RATE_PARENT),
 	AX630C_GATE_C(AX630C_PCLK_WDT0_EB, "pclk_wdt0_eb", "pclk_top_sel", 0x10, 19, CLK_SET_RATE_PARENT),
