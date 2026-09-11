@@ -45,19 +45,11 @@
 # `gpt_base_lba` and `bootpart`, /etc/fw_env.config, the NixOS `fileSystems`
 # devices, the extlinux APPEND, and the migration script's `dd seek=`.
 #
-# THE INVARIANT: `rootfs` KEEPS ITS PHYSICAL START, byte 0x115C0000 -- the
-# same byte the vendor's 17-partition map put it at. That is what lets the
-# whole conversion happen in place, from a shell, on a running system: the
-# filesystem the script is executing from is never moved. Everything before
-# it is sized to fit the span the old p1-p16 occupied. The assertion at the
-# bottom of this file is what keeps it true.
-#
-# TWO LAYOUTS EXIST, and both are real.
-#
-#   `vendor`  the 17-partition A/B map the board shipped with, and the one
-#             the vendor SPL is compiled for. `.#nixos-firmware-image` flashes
-#             it; it is the AXDL recovery.
-#   `minimal` the two-device GPT layout above.
+# `rootfs` STARTS AT BYTE 0x115C0000, and the assertion at the bottom keeps it
+# there. That was originally the vendor 17-partition map's rootfs offset, so
+# the conversion could be done in place on a running board; the vendor layout
+# is gone (#97) but the number stays pinned, because the SPL is compiled for
+# these offsets and everything in front of rootfs is sized to fit the span.
 # ===========================================================================
 
 let
@@ -78,77 +70,6 @@ let
 
   # Nix has no % operator.
   mod = a: b: a - (a / b) * b;
-
-  # ---- the vendor's 17, as a flat physical list --------------------------
-  mkFlatLayout =
-    { name, partitions, deviceBytes ? null }:
-    let
-      walk = lib.foldl'
-        (acc: e:
-          let bytes = toBytes e.size; in {
-            n = acc.n + 1;
-            off = if bytes == null then acc.off else acc.off + bytes;
-            out = acc.out ++ [{
-              inherit (e) name;
-              sizeSpec = e.size;
-              size = bytes;
-              number = acc.n;
-              offset = acc.off;
-              device = "/dev/mmcblk0p${toString acc.n}";
-            }];
-          })
-        { n = 1; off = 0; out = [ ]; }
-        partitions;
-      parts = walk.out;
-      byName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) parts);
-      need = n: if byName ? ${n} then byName.${n}
-      else throw "emmc-layout(${name}): no partition named '${n}'";
-      clause = lib.concatStringsSep "," (map (p: "${p.sizeSpec}(${p.name})") parts);
-    in
-    {
-      layoutName = name;
-      gpt = false;
-      # What the `blkdevparts=` clause describes. For the vendor layout that
-      # is the whole table; the GPT layout below overrides it with two.
-      kernelParts = parts;
-      inherit parts byName need clause hex deviceBytes;
-      has = n: byName ? ${n};
-      blkdevparts = "blkdevparts=mmcblk0:${clause}";
-      root = need "rootfs";
-      bootfs = need "boot";
-      env = need "env";
-      fwEnvConfig = "/dev/mmcblk0 ${hex (need "env").offset} ${hex (need "env").size}\n";
-      slotA = { kernel = need "kernel"; dtb = need "dtb"; };
-      slotB = { kernel = need "kernel_b"; dtb = need "dtb_b"; };
-      table = lib.concatMapStrings
-        (p: "p${toString p.number}\t${p.name}\t${hex p.offset}\t"
-          + (if p.size == null then "(remainder)" else "${hex p.size}\t${p.sizeSpec}") + "\n")
-        parts;
-    };
-
-  vendor = mkFlatLayout {
-    name = "vendor";
-    deviceBytes = null;
-    partitions = [
-      { name = "spl"; size = "768K"; }
-      { name = "ddrinit"; size = "512K"; }
-      { name = "atf"; size = "256K"; }
-      { name = "atf_b"; size = "256K"; }
-      { name = "uboot"; size = "1536K"; }
-      { name = "uboot_b"; size = "1536K"; }
-      { name = "env"; size = "1M"; }
-      { name = "logo"; size = "6M"; }
-      { name = "logo_b"; size = "6M"; }
-      { name = "optee"; size = "1M"; }
-      { name = "optee_b"; size = "1M"; }
-      { name = "dtb"; size = "1M"; }
-      { name = "dtb_b"; size = "1M"; }
-      { name = "kernel"; size = "64M"; }
-      { name = "kernel_b"; size = "64M"; }
-      { name = "boot"; size = "128M"; }
-      { name = "rootfs"; size = "-"; }
-    ];
-  };
 
   # ======================================================================
   # THE MINIMAL LAYOUT: spl + a GPT-carrying `disk`
@@ -366,18 +287,12 @@ let
 in
 
 # ---- build-time agreement checks ------------------------------------------
-assert lib.assertMsg (lib.length vendor.parts == 17)
-  "emmc-layout: the vendor layout must have 17 partitions";
-assert lib.assertMsg (vendor.root.number == 17 && vendor.bootfs.number == 16)
-  "emmc-layout: the vendor layout's rootfs/boot moved off p17/p16";
-assert lib.assertMsg (vendor.env.offset == 4980736 && vendor.env.size == 1048576)
-  "emmc-layout: the vendor env is not at 0x4C0000/0x100000";
-
-# THE invariant: the in-place migration is only possible while these agree.
-assert lib.assertMsg (minimal.root.offset == vendor.root.offset)
-  ("emmc-layout: the minimal layout's rootfs starts at ${hex minimal.root.offset}, "
-    + "the vendor layout's at ${hex vendor.root.offset} -- an in-place migration "
-    + "would have to move 29 GiB of root filesystem");
+# The pinned rootfs start. `.#spl-minimal` is compiled for the offsets in
+# front of it and the shipped GPT declares it; moving it is a new SPL, a new
+# GPT and an AXDL flash, never an accident.
+assert lib.assertMsg (minimal.root.offset == 291241984)
+  ("emmc-layout: rootfs starts at ${hex minimal.root.offset}, not 0x115C0000 -- "
+    + "the boot chain in front of it is sized for that byte");
 
 # Nothing may reach back into the ROM's region, and nothing but rootfs may
 # reach past the rootfs start.
@@ -400,7 +315,4 @@ assert lib.assertMsg
 assert lib.assertMsg (mod (minimal.firstPartLba * minimal.sector) 1048576 == 0)
   "emmc-layout: partitions are not 1 MiB aligned inside `disk`";
 
-{
-  inherit vendor minimal hex toBytes;
-  byLayoutName = { inherit vendor minimal; };
-}
+minimal // { inherit hex toBytes; }

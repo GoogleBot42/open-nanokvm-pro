@@ -1,7 +1,7 @@
 { pkgs, crossPkgs, maix_ax620e_sdk
 , # The layout the SPL is compiled for. Its `atf` and `uboot` offsets become
   # the SPL's ATF_HEADER_FLASH_BASE / UBOOT_HEADER_FLASH_BASE constants.
-  layout ? import ../nixos/emmc-partitions.nix { inherit (pkgs) lib; layout = "minimal"; }
+  layout ? import ../nixos/emmc-partitions.nix { inherit (pkgs) lib; }
 , # #90. `withEip = false` (the DEFAULT since 2026-09-09) signs the SPL with an
   # EMPTY firmware member: `fw_size` and `fw_check_sum` are 0 and no EIP-130
   # bytes are spliced at 0xCC00/0x2CC00 at all. The BootROM was not documented

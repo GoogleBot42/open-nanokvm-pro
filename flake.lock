@@ -35,23 +35,6 @@
         "type": "github"
       }
     },
-    "maix_ax620e_sdk_kernel": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1783058575,
-        "narHash": "sha256-jMJtvQ0LPBpiXhjJbLerUDS37Kipd5gmqjOF68i9OSE=",
-        "owner": "sipeed",
-        "repo": "maix_ax620e_sdk_kernel",
-        "rev": "ee5d79590ba85c1fd08eed587ba13c6f98da862c",
-        "type": "github"
-      },
-      "original": {
-        "owner": "sipeed",
-        "repo": "maix_ax620e_sdk_kernel",
-        "rev": "ee5d79590ba85c1fd08eed587ba13c6f98da862c",
-        "type": "github"
-      }
-    },
     "maix_ax620e_sdk_msp": {
       "flake": false,
       "locked": {
@@ -106,7 +89,6 @@
       "inputs": {
         "flake-utils": "flake-utils",
         "maix_ax620e_sdk": "maix_ax620e_sdk",
-        "maix_ax620e_sdk_kernel": "maix_ax620e_sdk_kernel",
         "maix_ax620e_sdk_msp": "maix_ax620e_sdk_msp",
         "nanokvm-pro-src": "nanokvm-pro-src",
         "nixpkgs": "nixpkgs"

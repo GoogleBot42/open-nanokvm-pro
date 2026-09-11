@@ -53,14 +53,10 @@
 # ===========================================================================
 
 let
-  # THE eMMC LAYOUT (#89 rung 4). `nanokvm.emmcLayout` picks which of the two
-  # layouts nixos/lib/emmc-layout.nix defines this system is built for:
-  # "minimal" (six partitions, the mainline chain, the default) or "vendor"
-  # (the shipped 17, which the vendor chain's SPL is compiled for and which an
-  # AXDL recovery puts back). The root device, /boot, its filesystem type and
-  # /etc/fw_env.config all follow from it.
-  layoutOf = n: import ./emmc-partitions.nix { inherit lib; layout = n; };
-  parts = layoutOf cfg.emmcLayout;
+  # THE eMMC LAYOUT (#89 rung 4), from the one place it is defined. The root
+  # device, /boot and /etc/fw_env.config all follow from it. There is one
+  # layout since #97 -- `spl` plus a GPT-carrying `disk`.
+  parts = import ./emmc-partitions.nix { inherit lib; };
   cfg = config.nanokvm;
 
   # ---- /kvmapp : the app tree the service model copies to tmpfs ----------
@@ -502,71 +498,14 @@ in
   # 0. Options -- the knobs the hardware tests and the sibling issues use
   # =====================================================================
   options.nanokvm = {
-    emmcLayout = lib.mkOption {
-      type = lib.types.enum [ "minimal" "vendor" ];
-      default = "minimal";
-      description = ''
-        Which eMMC partition layout this system is built for
-        (nixos/lib/emmc-layout.nix).
-
-        `minimal` is the six-partition layout the mainline boot chain runs on
-        (#89 rung 4): spl, atf, uboot, env, boot, rootfs -- no A/B twins, no
-        ddrinit, no OP-TEE, no separate kernel/dtb partitions, /boot on ext4.
-
-        `vendor` is the 17-partition A/B map the board shipped with. The
-        vendor boot chain's SPL is COMPILED for it, so a system imaged with
-        that chain must be built with this, and it is what an AXDL recovery
-        restores.
-      '';
-    };
-
     rootDevice = lib.mkOption {
       type = lib.types.str;
-      default = (layoutOf config.nanokvm.emmcLayout).root.device;
+      default = parts.root.device;
       description = ''
         Block device holding the NixOS root filesystem. Derived from the
         `blkdevparts=` clause, which is the only definition of this eMMC's
         layout (there is no on-disk partition table).
       '';
-    };
-
-    rootImage = {
-      enable = lib.mkEnableOption ''
-        booting from a rootfs IMAGE FILE loop-mounted off another filesystem
-        instead of from a partition.
-
-        This is the reversible hardware-test root. The device's only writable
-        medium is the eMMC, whose p17 carries the running vendor system, and
-        there is no SD card in the unit. Dropping a file onto p17 and
-        loop-mounting it from stage 1 boots a real NixOS root without
-        overwriting anything: rolling back is `rm` plus a slot-B restore
-      '';
-      hostDevice = lib.mkOption {
-        type = lib.types.str;
-        default = parts.root.device;
-        description = "Filesystem holding the image file.";
-      };
-      hostFsType = lib.mkOption {
-        type = lib.types.str;
-        default = "ext4";
-        description = "Filesystem type of the carrier.";
-      };
-      hostPartition = lib.mkOption {
-        type = lib.types.int;
-        default = parts.root.number;
-        description = ''
-          Partition number of the carrier, used to FIND it rather than to name
-          it. Stage 1 takes whichever `mmcblk*` disk has this partition,
-          because the three SD4HC instances probe in no fixed order and the
-          eMMC is not reliably `mmcblk0` -- one #78 hardware run had it as
-          `mmcblk1`. Seventeen partitions is unique to the eMMC on this board.
-        '';
-      };
-      path = lib.mkOption {
-        type = lib.types.str;
-        default = "/nixos-root.img";
-        description = "Path of the image file, relative to `hostDevice`'s root.";
-      };
     };
 
     panel.enable = lib.mkOption {
@@ -1057,15 +996,10 @@ in
     # everywhere, and is the only one that takes `-P`.
     # `resize2fs` is the minimal layout's one-time shrink -- see the comment on
     # preLVMCommands below.
-    boot.initrd.extraUtilsCommands = lib.mkMerge [
-      (lib.mkIf cfg.rootImage.enable ''
-        copy_bin_and_libs ${pkgs.util-linux}/bin/losetup
-      '')
-      (lib.mkIf (cfg.emmcLayout == "minimal") ''
-        copy_bin_and_libs ${pkgs.util-linux}/bin/losetup
-        copy_bin_and_libs ${pkgs.e2fsprogs}/bin/resize2fs
-      '')
-    ];
+    boot.initrd.extraUtilsCommands = ''
+      copy_bin_and_libs ${pkgs.util-linux}/bin/losetup
+      copy_bin_and_libs ${pkgs.e2fsprogs}/bin/resize2fs
+    '';
 
     # THE STAGE-1 DEADMAN, and it is not optional on this board.
     #
@@ -1106,7 +1040,7 @@ in
     #
     # This has to happen before any filesystem is mounted, which is what
     # preLVMCommands is: after udev has settled, before the root is looked for.
-    boot.initrd.preLVMCommands = lib.mkIf (cfg.emmcLayout == "minimal") ''
+    boot.initrd.preLVMCommands = ''
       # THE eMMC IS NOT RELIABLY mmcblk0 unless something makes it so -- three
       # SD4HC instances probe concurrently on this SoC. `aliases { mmc0 =
       # &emmc; }` in dts/ax630c.dtsi is what pins it, and the blkdevparts=
@@ -1159,63 +1093,17 @@ in
       fi
     '';
 
-    # Mount the carrier filesystem and attach the image before stage 1 goes
-    # looking for the root device. Runs after udev has settled the block
-    # devices, which is exactly when the eMMC partitions exist.
-    boot.initrd.postDeviceCommands = lib.mkIf cfg.rootImage.enable ''
-      # LOCATE THE CARRIER, DO NOT ASSUME IT. The AX630C has three SD4HC
-      # instances and nothing orders their probes, so the eMMC is not reliably
-      # mmcblk0: one #78 run had it as mmcblk1 and stage 1 sat waiting for a
-      # /dev/mmcblk0p17 that was never going to appear. #75's bring-up init
-      # already knew this and located its partition by name out of
-      # /proc/partitions; this is the same discipline. The eMMC is the only
-      # device on this board with seventeen partitions, so "the disk that has
-      # a p17" identifies it exactly.
-      nkhost=""
-      nktry=0
-      while [ "$nktry" -lt 60 ]; do
-        for nkp in /sys/class/block/mmcblk*p${toString cfg.rootImage.hostPartition}; do
-          [ -e "$nkp" ] || continue
-          nkhost="/dev/$(basename "$nkp")"
-          break
-        done
-        [ -n "$nkhost" ] && break
-        sleep 1
-        nktry=$((nktry + 1))
-      done
-
-      if [ -z "$nkhost" ]; then
-        echo "nanokvm: no mmcblk*p${toString cfg.rootImage.hostPartition} appeared -- no carrier" >&2
-        nkhost=${cfg.rootImage.hostDevice}
-      fi
-
-      echo "nanokvm: loop-mounting ${cfg.rootImage.path} off $nkhost"
-      mkdir -p /nanokvm-host
-      # rw, and it has to be: losetup opens the backing file O_RDWR, which
-      # fails with EROFS on a read-only mount, and a read-only loop device
-      # cannot carry a writable root. The only blocks written on the carrier
-      # filesystem are the ones already allocated to our image file, plus its
-      # journal -- the same traffic every vendor boot generates.
-      mount -t ${cfg.rootImage.hostFsType} "$nkhost" /nanokvm-host \
-        || echo "nanokvm: could not mount $nkhost" >&2
-      losetup /dev/loop0 /nanokvm-host${cfg.rootImage.path} \
-        || echo "nanokvm: could not attach /nanokvm-host${cfg.rootImage.path}" >&2
-      # /nanokvm-host is deliberately left mounted: the loop device holds the
-      # backing file open for the life of the system, and switch_root does not
-      # delete across a mount point.
-    '';
-
     # =====================================================================
     # 3. Filesystems -- all three numbers derived from the blkdevparts clause
     # =====================================================================
     fileSystems."/" = {
-      device = if cfg.rootImage.enable then "/dev/loop0" else cfg.rootDevice;
+      device = cfg.rootDevice;
       fsType = "ext4";
       options = [ "noatime" ];
       # make-ext4-fs shrinks the image to its contents, so a partition root is
       # ~1 GB inside a ~30 GB partition. Stage 1 grows it, which is what the
       # vendor /init did with static binaries copied out of the rootfs.
-      autoResize = !cfg.rootImage.enable;
+      autoResize = true;
     };
 
     # /boot, and it must be WRITABLE: the server keeps its USB-gadget feature
@@ -1231,13 +1119,11 @@ in
     # documented in docs/nixos-rootfs.md (without those tables the mount fails
     # -EINVAL and every USB-gadget flag silently reads as absent). `umask` is
     # a vfat-only option; on ext4 the permissions are in the filesystem.
-    fileSystems."/boot" =
-      let vfat = cfg.emmcLayout == "vendor"; in
-      {
-        device = parts.bootfs.device;
-        fsType = if vfat then "vfat" else "ext4";
-        options = [ "nofail" "noatime" ] ++ lib.optional vfat "umask=000";
-      };
+    fileSystems."/boot" = {
+      device = parts.bootfs.device;
+      fsType = "ext4";
+      options = [ "nofail" "noatime" ];
+    };
 
     swapDevices = [ ];
 
