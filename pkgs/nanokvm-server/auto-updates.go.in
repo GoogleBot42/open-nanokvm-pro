@@ -1,0 +1,83 @@
+package application
+
+// THE "AUTOMATIC UPDATES" CHECKBOX (#86).
+//
+// A flag file beside upstream's preview one, read by exactly the same rule --
+// the file exists, or it does not. `nanokvm-update` (nixos/lib/updater.nix)
+// reads it too and does nothing at all when it is absent, so the box in the
+// settings page IS the state of the timer; there is no NixOS option behind it
+// that could disagree.
+//
+// Presence rather than contents, because that is how preview_updates works and
+// two flags in one directory that mean "on" two different ways is how a device
+// ends up updating when nobody asked it to.
+//
+// Installed as service/application/auto_updates.go by pkgs/nanokvm-server.nix,
+// which also adds the two routes next to the preview pair.
+
+import (
+	"os"
+
+	"NanoKVM-Server/proto"
+
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
+)
+
+const AutoUpdatesFlag = "/etc/kvm/auto_updates"
+
+type GetAutoUpdatesRsp struct {
+	Enabled bool `json:"enabled"`
+}
+
+type SetAutoUpdatesReq struct {
+	Enable bool `validate:"omitempty"`
+}
+
+func (s *Service) GetAutoUpdates(c *gin.Context) {
+	var rsp proto.Response
+
+	isEnabled := isAutoUpdatesEnabled()
+
+	rsp.OkRspWithData(c, &GetAutoUpdatesRsp{
+		Enabled: isEnabled,
+	})
+	log.Debugf("get automatic updates state: %t", isEnabled)
+}
+
+func (s *Service) SetAutoUpdates(c *gin.Context) {
+	var req SetAutoUpdatesReq
+	var rsp proto.Response
+
+	if err := proto.ParseFormRequest(c, &req); err != nil {
+		rsp.ErrRsp(c, -1, "invalid arguments")
+		return
+	}
+
+	if req.Enable == isAutoUpdatesEnabled() {
+		rsp.OkRsp(c)
+		return
+	}
+
+	if req.Enable {
+		if err := os.WriteFile(AutoUpdatesFlag, []byte("1"), 0o644); err != nil {
+			log.Errorf("failed to write %s: %s", AutoUpdatesFlag, err)
+			rsp.ErrRsp(c, -2, "enable failed")
+			return
+		}
+	} else {
+		if err := os.Remove(AutoUpdatesFlag); err != nil {
+			log.Errorf("failed to remove %s: %s", AutoUpdatesFlag, err)
+			rsp.ErrRsp(c, -3, "disable failed")
+			return
+		}
+	}
+
+	rsp.OkRsp(c)
+	log.Debugf("set automatic updates state: %t", req.Enable)
+}
+
+func isAutoUpdatesEnabled() bool {
+	_, err := os.Stat(AutoUpdatesFlag)
+	return err == nil
+}

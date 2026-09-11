@@ -1,0 +1,58 @@
+package common
+
+// WHO IS USING THE KVM -- the two signals nothing upstream records (#86).
+//
+// An unattended update installs whenever the timer fires but must only REBOOT
+// when the room is empty, and the server is the only process that can answer
+// "is the room empty": it holds every stream consumer, every HID websocket and
+// every web request. Two of those signals had nowhere to live, so they live
+// here, in the leaf package every other one imports:
+//
+//   * TERMINAL SESSIONS. service/vm/terminal.go upgrades a websocket, starts a
+//     pty and blocks -- it keeps no registry at all, so nothing outside that
+//     function could ever know a shell was open. Two calls around the blocking
+//     read are the whole of it.
+//   * LAST WEB ACTIVITY. middleware.CheckToken() is stateless HS256 validation
+//     and records nothing, so there is no "last authenticated request" anywhere.
+//     middleware/activity.go stamps this on every request it counts.
+//
+// ONLY REQUESTS FROM SOMEWHERE ELSE COUNT. The mini-display daemon polls
+// /api/streamer/local about once a second from 127.0.0.1, and the updater's own
+// idle poll arrives the same way; if either stamped this clock the device would
+// never be idle and would never take an update. The filter is in the
+// middleware, not here.
+//
+// Installed as common/activity.go by pkgs/nanokvm-server.nix.
+
+import (
+	"sync/atomic"
+	"time"
+)
+
+var (
+	terminalSessions atomic.Int32
+	lastAPIActivity  atomic.Int64 // unix-nano
+)
+
+func init() {
+	lastAPIActivity.Store(time.Now().UnixNano())
+}
+
+// TerminalOpened records a web-terminal session that has just started.
+func TerminalOpened() { terminalSessions.Add(1) }
+
+// TerminalClosed records one that has ended.
+func TerminalClosed() { terminalSessions.Add(-1) }
+
+// TerminalSessions reports how many web-terminal shells are open.
+func TerminalSessions() int { return int(terminalSessions.Load()) }
+
+// MarkAPIActivity stamps "a person did something" (middleware/activity.go).
+func MarkAPIActivity() { lastAPIActivity.Store(time.Now().UnixNano()) }
+
+// SinceAPIActivity reports how long ago that was. It is seeded at process
+// start, so a freshly booted server reads as its own uptime rather than
+// infinity -- which is the conservative direction.
+func SinceAPIActivity() time.Duration {
+	return time.Since(time.Unix(0, lastAPIActivity.Load()))
+}

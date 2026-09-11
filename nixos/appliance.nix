@@ -296,6 +296,15 @@ let
     previewUrl = cfg.update.previewUrl;
     manifestName = cfg.update.manifestName;
     keepGenerations = cfg.update.keepGenerations;
+    idleQuietSec = cfg.update.idleQuietSec;
+    # No server = nothing that could be using the device, so the idle gate is
+    # satisfied by construction rather than by a curl that can only fail.
+    idleUrl = lib.optionalString cfg.server.enable
+      "https://127.0.0.1/api/update/idle";
+    # A configured window means the install must never reboot on its own: the
+    # window is enforced by `nanokvm-update-reboot`'s OnCalendar, and an
+    # `update` that rebooted at install time would walk straight past it.
+    rebootImmediately = cfg.update.rebootWindow == null;
   };
 
   # ---- the U-Boot chainload test slot ------------------------------------
@@ -791,24 +800,53 @@ in
         '';
       };
 
-      auto = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = ''
-          Check for and install updates on a timer, unattended.
-
-          OFF by default, and deliberately: applying an update REBOOTS the
-          board, and a KVM rebooting on its own schedule is a surprise in the
-          middle of someone's console session. Turn it on for a fleet that
-          wants it; the rollback that catches a bad generation is the same
-          either way.
-        '';
-      };
+      # THERE IS NO `auto` OPTION, and that is the design (#86). Automatic
+      # updates are a CHECKBOX in the web UI -- a flag file, /etc/kvm/auto_updates,
+      # beside the one the "preview updates" toggle already writes -- because
+      # the person who owns the box is the person who decides whether it
+      # updates itself, and they never see this file. A NixOS option would also
+      # lie: the flake would read `auto = false` on a device that had been
+      # updating itself for months. The timer therefore runs whenever `enable`
+      # is set, and `nanokvm-update update` is a no-op while the box is
+      # unticked.
 
       schedule = lib.mkOption {
         type = lib.types.str;
         default = "daily";
-        description = "systemd OnCalendar expression for the unattended check.";
+        description = ''
+          systemd OnCalendar expression for the unattended check. The CHECK,
+          not the reboot: an update installs whenever this fires and the
+          checkbox is ticked, and reboots only once nobody is using the device
+          (see `rebootWindow`).
+        '';
+      };
+
+      rebootWindow = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "*-*-* 03..05:00/10:00";
+        description = ''
+          Maintenance window for the reboot half, as an OnCalendar expression.
+          Null (the default) means any time, as soon as the device is idle:
+          `nanokvm-update-reboot` runs every ten minutes.
+
+          When set, THIS EXPRESSION IS THE TIMER -- so it has to fire
+          repeatedly inside the window you want, not once at its start. The
+          example above is every ten minutes between 03:00 and 05:00. Installs
+          are unaffected; only the reboot waits.
+        '';
+      };
+
+      idleQuietSec = lib.mkOption {
+        type = lib.types.int;
+        default = 600;
+        description = ''
+          How long the last web request and the last frame read must be in the
+          past before the device counts as unused. The zero-valued terms of the
+          idle test -- stream clients, HID sessions, web terminals, the
+          mini-display preview lease, a mounted virtual-media image -- are not
+          subject to it; this is the grace period on top of them.
+        '';
       };
 
       stableUrl = lib.mkOption {
@@ -1504,13 +1542,17 @@ in
     };
 
     # ---- unattended updates (#86) ---------------------------------------
-    # OFF unless `nanokvm.update.auto` is set. Applying an update reboots the
-    # board, and a KVM that reboots itself mid-session is a worse surprise than
-    # a device a version behind; the timer exists for fleets that want it.
+    # THE TIMER ALWAYS RUNS; THE CHECKBOX DECIDES WHAT IT DOES.
+    # `nanokvm-update update` exits 0 immediately unless /etc/kvm/auto_updates
+    # exists -- the file the web UI's "Automatic updates" switch writes, beside
+    # the "preview updates" one. Gating the UNIT on a NixOS option instead
+    # would mean the toggle could not take effect without a rebuild, which is
+    # the opposite of what a checkbox is for.
+    #
     # `Persistent` so a board that is off at the scheduled hour still checks
     # once it is back, rather than waiting a whole period.
-    systemd.services.nanokvm-update = lib.mkIf (cfg.update.enable && cfg.update.auto) {
-      description = "Fetch and install a NanoKVM system bundle, then reboot into it";
+    systemd.services.nanokvm-update = lib.mkIf cfg.update.enable {
+      description = "Fetch and install a NanoKVM system bundle (reboots when idle)";
       after = [ "network-online.target" "nanokvm-mark-good.service" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
@@ -1523,7 +1565,7 @@ in
       };
     };
 
-    systemd.timers.nanokvm-update = lib.mkIf (cfg.update.enable && cfg.update.auto) {
+    systemd.timers.nanokvm-update = lib.mkIf cfg.update.enable {
       description = "Periodic NanoKVM system-bundle update check";
       wantedBy = [ "timers.target" ];
       timerConfig = {
@@ -1531,6 +1573,42 @@ in
         Persistent = true;
         RandomizedDelaySec = "30m";
       };
+    };
+
+    # ---- the reboot half, which is the whole point (#86) -----------------
+    # An update installs the moment the timer above fires, but `switch-to-
+    # configuration boot` makes nothing live until the board restarts -- and a
+    # KVM is the machine you are using to fix the machine, so the restart waits
+    # for an empty room. `update` leaves /run/nanokvm-update-pending when it
+    # finds the device in use; this asks the server the same question again and
+    # takes the reboot as soon as the answer is yes. It also settles the
+    # persistent note left by an update that HAS booted, which is what lets the
+    # web UI say "updated to X" on the other side.
+    systemd.services.nanokvm-update-reboot = lib.mkIf cfg.update.enable {
+      description = "Reboot into a pending NanoKVM update once nobody is using the device";
+      after = [ "nanokvm-mark-good.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${updateTools.updater}/bin/nanokvm-update reboot-if-idle";
+      };
+    };
+
+    systemd.timers.nanokvm-update-reboot = lib.mkIf cfg.update.enable {
+      description = "Re-check whether a pending NanoKVM update may reboot the device";
+      wantedBy = [ "timers.target" ];
+      # `Persistent = false`: a missed re-check is nothing to catch up on. The
+      # marker is still there and the next tick asks again; running a backlog of
+      # them at boot would only ask the same question several times in a row.
+      timerConfig = {
+        Persistent = false;
+      } // (if cfg.update.rebootWindow == null then {
+        # OnBootSec settles the note from an update that just booted, within a
+        # couple of minutes, so the UI stops showing a restart that has happened.
+        OnBootSec = "2min";
+        OnUnitActiveSec = "10min";
+      } else {
+        OnCalendar = cfg.update.rebootWindow;
+      });
     };
 
     systemd.timers.nanokvm-mark-good = lib.mkIf cfg.markGood.enable {

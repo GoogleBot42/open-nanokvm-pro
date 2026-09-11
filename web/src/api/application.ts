@@ -26,3 +26,23 @@ export function setPreviewUpdates(enable: boolean) {
 export function getPreviewUpdates() {
   return http.get('/api/application/preview');
 }
+
+// enable/disable automatic (unattended) updates
+export function setAutoUpdates(enable: boolean) {
+  const data = {
+    enable
+  };
+  return http.post('/api/application/auto', data);
+}
+
+// get automatic updates state
+export function getAutoUpdates() {
+  return http.get('/api/application/auto');
+}
+
+// An update that is installed but not yet booted, plus what (if anything) is
+// keeping the device from rebooting into it on its own.
+// pkgs/nanokvm-server/update-status.go.in.
+export function getUpdateStatus() {
+  return http.get('/api/application/pending');
+}

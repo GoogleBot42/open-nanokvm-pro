@@ -495,6 +495,58 @@ EOF
 '	stream.ReleaseStreamType(common.STREAM_TYPE_H264_WEBRTC, count)
 
 	log.Debugf("removed client %s, total clients: %d", ws.RemoteAddr(), count)'
+
+    # 13. Automatic updates: the checkbox, and the idle gate the reboot waits on
+    #     (#86). Three surfaces, one idea -- a KVM may install an update
+    #     whenever it likes, but it may only REBOOT into one when the room is
+    #     empty, because it is the machine you are using to fix the machine.
+    #
+    #     a) /etc/kvm/auto_updates, a flag file beside upstream's
+    #        preview_updates, read the same way (presence = on) by the web UI's
+    #        new "Automatic updates" switch AND by `nanokvm-update`. The
+    #        checkbox is the whole state; there is no NixOS option behind it.
+    cp ${./nanokvm-server/auto-updates.go.in} service/application/auto_updates.go
+    substituteInPlace router/application.go \
+      --replace-fail '	api.POST("/application/preview", service.SetPreview) // set preview updates state' \
+'	api.POST("/application/preview", service.SetPreview) // set preview updates state
+
+	api.GET("/application/auto", service.GetAutoUpdates)  // get automatic updates state
+	api.POST("/application/auto", service.SetAutoUpdates) // set automatic updates state'
+
+    #     b) The two signals nothing upstream records: web-terminal sessions
+    #        (Terminal() keeps no registry at all -- it upgrades, starts a pty
+    #        and blocks) and the time of the last web request from somewhere
+    #        other than loopback (CheckToken is stateless). Both live in
+    #        `common`, the leaf package, so any handler can read them.
+    cp ${./nanokvm-server/activity.go.in} common/activity.go
+    cp ${./nanokvm-server/activity-middleware.go.in} middleware/activity.go
+    substituteInPlace main.go \
+      --replace-fail '	r.Use(gin.Recovery())' \
+'	r.Use(gin.Recovery())
+
+	// "somebody is using the web UI" clock, for the update reboot gate
+	r.Use(middleware.RecordActivity())'
+
+    sed -i 's|^\t"NanoKVM-Server/proto"$|\t"NanoKVM-Server/common"\n\t"NanoKVM-Server/proto"|' \
+      service/vm/terminal.go
+    sed -i 's|^\tgo wsWrite(ws, ptmx)$|\tcommon.TerminalOpened()\n\tdefer common.TerminalClosed()\n\n\tgo wsWrite(ws, ptmx)|' \
+      service/vm/terminal.go
+    grep -q 'common.TerminalOpened()' service/vm/terminal.go \
+      && grep -q '"NanoKVM-Server/common"' service/vm/terminal.go \
+      || { echo "ERROR: the terminal-session counter did not apply to service/vm/terminal.go" >&2; exit 1; }
+
+    #     c) The report itself, on two routes: loopback for `nanokvm-update`
+    #        (the same LocalAuth group the mini-display preview uses) and
+    #        token-gated for the web UI's update page, so the machine's decision
+    #        and the banner a person reads come from one computation.
+    cp ${./nanokvm-server/update-status.go.in} service/ui/update_status.go
+    substituteInPlace router/local.go \
+      --replace-fail '	api.POST("/streamer/preview", ui.PanelPreview)' \
+'	api.POST("/streamer/preview", ui.PanelPreview)
+	api.GET("/update/idle", ui.GetUpdateStatus) // loopback: is anybody using the KVM?
+
+	auth := r.Group("/api").Use(middleware.CheckToken())
+	auth.GET("/application/pending", ui.GetUpdateStatus) // the same answer, for the UI'
   '';
 
   # cgo on for the kvm_vision + opus bindings.

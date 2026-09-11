@@ -7,6 +7,20 @@
 , keepGenerations ? 3
 , stateDir ? "/var/lib/nanokvm"
 , cacheDir ? "/var/cache/nanokvm-update"
+, # The web UI's "Automatic updates" checkbox, as a flag file beside the
+  # "preview updates" one. THE CHECKBOX IS THE STATE -- there is no NixOS
+  # option behind it (see the header).
+  autoFlag ? "/etc/kvm/auto_updates"
+, # Where the server answers "is anybody using this box". Empty = no server on
+  # this system, which is then treated as idle.
+  idleUrl ? "https://127.0.0.1/api/update/idle"
+, # How long the last web/API activity must be in the past before the device
+  # counts as unused.
+  idleQuietSec ? 600
+, # false when `nanokvm.update.rebootWindow` is set: the install may happen at
+  # any hour but the reboot only inside the window, so `update` never reboots
+  # itself and always leaves the decision to `nanokvm-update-reboot`.
+  rebootImmediately ? true
 }:
 
 # ===========================================================================
@@ -29,6 +43,24 @@
 # rolled back by `altbootcmd` on the fourth attempt with nobody watching --
 # which is the only rollback story a box with no console can have. `switch`
 # would activate an untested userspace with no way back, and is never used.
+#
+# BUT THE REBOOT WAITS FOR AN EMPTY ROOM. A KVM is the machine you are using to
+# fix the machine, so a reboot in the middle of someone's console session is
+# the one failure mode an update must not have. `update` therefore INSTALLS
+# immediately and reboots only if the server says nobody is connected --
+# otherwise it leaves `/run/nanokvm-update-pending` and exits 0, and
+# `nanokvm-update-reboot` (a second timer) asks the same question every ten
+# minutes until the answer is yes. The web UI shows the pending state and a
+# "restart now" button, because the person looking at that page is usually the
+# person the wait is for.
+#
+# THE SWITCH IS A CHECKBOX, NOT AN OPTION. `update` does nothing at all unless
+# /etc/kvm/auto_updates exists -- the file the web UI's "Automatic updates"
+# toggle writes, beside the "preview updates" one it already wrote. There is no
+# `nanokvm.update.auto` any more: a NixOS default the UI can override has to be
+# stored tri-state and shipped into the server as well, and the flake would
+# still read `auto = false` on a device that had been updating itself for
+# months. One file, one truth, and the user owns it.
 #
 # TWO CALLERS, ONE IMPLEMENTATION. The web UI's "update" button reaches this
 # through the server's install() override (pkgs/nanokvm-server/
@@ -64,11 +96,22 @@ let
     usage: nanokvm-update [--root DIR] [--no-activate] [--no-reboot] <command>
 
       check                    what is installed, and what the channel offers
-      update                   check, download, install, reboot (what the timer runs)
+      update                   check, download, install, reboot when idle
+                               (what the timer runs; a no-op unless the web
+                               UI's "Automatic updates" box is ticked)
       install <bundle.tar.gz>  verify + unpack + install a bundle from a file
       install-staged <dir> [v] install an already-unpacked bundle (the web UI path)
+      pending                  the installed-but-not-yet-booted update, if any
+      reboot-if-idle           reboot into a pending update if nobody is using
+                               the device (what nanokvm-update-reboot runs)
       gc                       drop old generations and the store paths only they used
       status                   generations, boot configs, /boot payload
+
+    ONLY TAGGED RELEASES ARE EVER INSTALLED. Both channels are GitHub releases
+    cut from a vX.Y.Z tag -- stable is `releases/latest/download` (which never
+    serves a prerelease) and preview is the rolling `preview` release, which
+    only a tag-triggered run refreshes. Nothing publishes from a branch, so no
+    device can be offered the tip of main.
 
     A bundle is built by "nix build .#system-bundle"; see docs/updates.md.
   '';
@@ -96,12 +139,140 @@ let
     P() { printf '%s%s' "$ROOT" "$1"; }
   '';
 
+  # ---- the idle gate and the pending marker ------------------------------
+  # Shared verbatim by `nanokvm-update` and `nanokvm-update-reboot`, because
+  # the two have to agree exactly about what "pending" and "idle" mean -- one
+  # writes the marker the other consumes, and a disagreement is either a reboot
+  # nobody asked for or a board that never takes its update.
+  pending = ''
+    AUTO_FLAG='${autoFlag}'
+    PENDING=/run/nanokvm-update-pending
+    NOTE='${stateDir}/update-pending'
+    IDLE_URL='${idleUrl}'
+    IDLE_QUIET=${toString idleQuietSec}
+
+    current_version() {
+      for f in "$(P /run/current-system)/etc/nanokvm-version" \
+               "$(P /etc/nanokvm-version)"; do
+        if [ -r "$f" ]; then tr -d '[:space:]' < "$f"; return 0; fi
+      done
+      echo "0.0.0-unknown"
+    }
+
+    # The checkbox. Presence is the whole state, exactly as for
+    # /etc/kvm/preview_updates, so the server and this tool cannot disagree.
+    auto_updates_enabled() { [ -e "$(P "$AUTO_FLAG")" ]; }
+
+    # IS ANYBODY USING THIS BOX? Only the server knows: it holds every stream
+    # consumer, every HID and terminal websocket, the mini-display's preview
+    # lease and the timestamp of the last authenticated API call. So ask it,
+    # over the same loopback route nanokvm-mark-good already proves reachable.
+    #
+    # A SERVER THAT DOES NOT ANSWER IS NOT IDLE. An unanswered question must
+    # never become a reboot: if curl fails, if the JSON is not what we expect,
+    # if `idle` is anything but true, the device is busy. The one exception is
+    # a system built without the server at all, where there is nothing that
+    # could be using it -- that is IDLE_URL empty, decided at build time.
+    device_idle() {
+      if [ -z "$IDLE_URL" ]; then
+        say "no server on this system -- nothing can be using it"
+        return 0
+      fi
+      local body verdict
+      if ! body=$(curl -sk -m 10 "$IDLE_URL?quiet=$IDLE_QUIET" 2>/dev/null); then
+        say "the server did not answer $IDLE_URL -- treating the device as BUSY"
+        return 1
+      fi
+      verdict=$(printf '%s' "$body" | jq -r '.data.idle' 2>/dev/null || echo "")
+      case "$verdict" in
+        true)  say "idle: $(printf '%s' "$body" | jq -rc '.data' 2>/dev/null)"; return 0 ;;
+        false) say "in use: $(printf '%s' "$body" | jq -rc '.data' 2>/dev/null)"; return 1 ;;
+        *)     say "unparseable idle report from the server -- treating the device as BUSY"
+               return 1 ;;
+      esac
+    }
+
+    # TWO MARKERS, AND THEY ANSWER DIFFERENT QUESTIONS.
+    #   /run/...            "a reboot is owed" -- tmpfs, so the reboot itself
+    #                       is what clears it, which is the only clearing that
+    #                       cannot be wrong.
+    #   /var/lib/nanokvm/   "an update was installed" -- survives the reboot so
+    #                       the UI can say what happened, and is settled on the
+    #                       next `reboot-if-idle` by comparing versions.
+    mark_pending() {
+      local v="$1" top="$2" from="$3"
+      mkdir -p "$(P "$(dirname "$NOTE")")"
+      printf 'VERSION=%s\nFROM=%s\nTOPLEVEL=%s\nUPTIME=%s\n' \
+        "$v" "$from" "$top" "$(cut -d. -f1 "$(P /proc/uptime)" 2>/dev/null || echo 0)" \
+        > "$(P "$NOTE").new"
+      mv -f "$(P "$NOTE").new" "$(P "$NOTE")"
+      mkdir -p "$(P /run)"
+      cp "$(P "$NOTE")" "$(P "$PENDING")"
+      sync
+    }
+
+    note_field() { sed -n "s/^$2=//p" "$1" | head -1; }
+
+    # THE ONE PLACE A REBOOT IS DECIDED. Idle -> go; in use -> say who, leave
+    # the marker, exit 0. Exit 0 both ways on purpose: "someone is using the
+    # KVM" is the system working, not a failed unit, and a systemd failure
+    # counter climbing every ten minutes while a colleague is on the console
+    # would be pure noise.
+    #
+    # Under --root the reboot is RECORDED, not taken: the offline check
+    # (nixos/lib/updater-test.nix) reads /run/nanokvm-reboot-requested back out
+    # of its fake root. A PATH stub could not do this -- writeShellApplication
+    # puts its own systemd first on PATH -- and a build sandbox is no place to
+    # find out.
+    do_reboot() {
+      if [ -n "$ROOT" ]; then
+        mkdir -p "$(P /run)"
+        printf 'reboot requested\n' > "$(P /run/nanokvm-reboot-requested)"
+        say "--root: recorded the reboot request instead of taking it"
+        return 0
+      fi
+      systemctl --no-block reboot
+    }
+
+    reboot_if_idle() {
+      local v="$1"
+      if device_idle; then
+        say "nobody is using this device -- rebooting into $v"
+        do_reboot
+      else
+        say "$v is installed and the reboot is pending; the device is in use."
+        say "nanokvm-update-reboot will take it as soon as the room is empty,"
+        say "and the web UI offers a restart button to whoever is there."
+      fi
+      return 0
+    }
+
+    # After the reboot the /run marker is gone and the note is not. Whichever
+    # version is running now settles it: the update landed, or the boot counter
+    # rolled it back -- and the second is worth a log line, because it is the
+    # rollback firing on something we installed.
+    settle_note() {
+      local f; f="$(P "$NOTE")"
+      [ -r "$f" ] || return 0
+      [ ! -e "$(P "$PENDING")" ] || return 0
+      local want cur; want=$(note_field "$f" VERSION); cur=$(current_version)
+      if [ "$want" = "$cur" ]; then
+        say "update $want is live"
+      else
+        say "update $want was installed but $cur is running -- it did not survive"
+        say "the boot; the bootcount rollback put the previous generation back."
+      fi
+      rm -f "$f"
+    }
+  '';
+
   updater = pkgs.writeShellApplication {
     name = "nanokvm-update";
     runtimeInputs = tools ++ [ bootInstaller ];
     text = ''
       set -eu
       ${common}
+      ${pending}
 
       STABLE_URL='${stableUrl}'
       PREVIEW_URL='${previewUrl}'
@@ -126,14 +297,6 @@ let
         else
           printf '%s' "$STABLE_URL"
         fi
-      }
-
-      current_version() {
-        for f in "$(P /run/current-system)/etc/nanokvm-version" \
-                 "$(P /etc/nanokvm-version)"; do
-          if [ -r "$f" ]; then tr -d '[:space:]' < "$f"; return 0; fi
-        done
-        echo "0.0.0-unknown"
       }
 
       fetch_manifest() {
@@ -260,6 +423,14 @@ let
         rm -f "$(P /run/nanokvm-pending-boot)"
         sync
 
+        # --- 6. the pending markers ---------------------------------------
+        # WRITTEN HERE, so BOTH callers get them: the timer, which may have to
+        # wait hours for an empty room, and the web UI's button, which reboots
+        # at once and still wants the note on the other side to say what
+        # happened. Nothing has rebooted yet -- this generation is installed
+        # and not live.
+        mark_pending "$(jq -r '.version' "$mf")" "$top" "$(current_version)"
+
         say "installed. The reboot is what proves it: U-Boot counts the attempt"
         say "and nanokvm-mark-good clears the counter only once this system is"
         say "running, routed and serving. Three bad attempts roll it back."
@@ -324,6 +495,26 @@ let
         ;;
 
       update)
+        # THE CHECKBOX IS THE SWITCH (#86). The timer runs whenever
+        # `nanokvm.update.enable` is set -- there is no unit-level gate any
+        # more -- so this file is what decides whether anything happens, and
+        # the web UI's "Automatic updates" toggle is what writes it. Exit 0,
+        # because a device whose owner has not asked for updates is not a
+        # failed update.
+        if ! auto_updates_enabled; then
+          say "automatic updates are off (no $AUTO_FLAG) -- nothing to do"
+          exit 0
+        fi
+
+        # A reboot already owed is a reboot not yet taken: installing a second
+        # update on top of the first would leave a generation nothing has ever
+        # booted underneath one nobody has booted either.
+        if [ -e "$(P "$PENDING")" ]; then
+          say "$(note_field "$(P "$PENDING")" VERSION) is installed and waiting for an"
+          say "idle moment to reboot -- not installing anything on top of it."
+          exit 0
+        fi
+
         # NEVER INSTALL OVER AN UNPROVEN BOOT. `bootcount` is only cleared once
         # nanokvm-mark-good has seen this system running, routed and serving;
         # writing a new extlinux.conf before that would replace the very thing
@@ -361,10 +552,41 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         top=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
         install_staged "$top"
         rm -rf "$d" "$tarball"
-        if [ "$REBOOT" = 1 ] && [ -z "$ROOT" ]; then
-          say "rebooting into $av"
-          systemctl --no-block reboot
+        [ "$REBOOT" = 1 ] || exit 0
+        ${lib.optionalString (!rebootImmediately) ''
+        say "a reboot window is configured, so this install does not reboot."
+        say "nanokvm-update-reboot takes $av inside the window, once idle."
+        exit 0
+        ''}
+        reboot_if_idle "$av"
+        ;;
+
+      # What `nanokvm-update-reboot` runs every ten minutes (or, when
+      # `nanokvm.update.rebootWindow` is set, on that calendar). Two jobs:
+      # settle the note left by an update that has already booted, and take the
+      # reboot an installed update is still owed as soon as the room empties.
+      reboot-if-idle)
+        settle_note
+        if [ ! -e "$(P "$PENDING")" ]; then
+          say "no update is waiting to be booted"
+          exit 0
         fi
+        v=$(note_field "$(P "$PENDING")" VERSION)
+        [ "$REBOOT" = 1 ] || { say "$v is pending; --no-reboot given"; exit 0; }
+        reboot_if_idle "$v"
+        ;;
+
+      pending)
+        if [ -e "$(P "$PENDING")" ]; then
+          echo "reboot pending    : $(note_field "$(P "$PENDING")" VERSION) (installed, not yet booted)"
+          echo "replacing         : $(note_field "$(P "$PENDING")" FROM)"
+        elif [ -r "$(P "$NOTE")" ]; then
+          echo "last update       : $(note_field "$(P "$NOTE")" VERSION) (booted; note not settled yet)"
+        else
+          echo "no pending update"
+        fi
+        echo "running version   : $(current_version)"
+        echo "automatic updates : $(if auto_updates_enabled; then echo on; else echo off; fi)"
         ;;
 
       install)
@@ -387,6 +609,10 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
 
       status)
         echo "installed version : $(current_version)"
+        echo "automatic updates : $(if auto_updates_enabled; then echo "on ($AUTO_FLAG)"; else echo "off"; fi)"
+        if [ -e "$(P "$PENDING")" ]; then
+          echo "reboot pending    : $(note_field "$(P "$PENDING")" VERSION), waiting for an idle moment"
+        fi
         echo "booted system     : $(readlink -f "$(P /run/booted-system)" 2>/dev/null || echo '?')"
         echo "current system    : $(readlink -f "$(P /run/current-system)" 2>/dev/null || echo '?')"
         echo "profile           : $(readlink -f "$(P /nix/var/nix/profiles/system)" 2>/dev/null || echo '?')"
