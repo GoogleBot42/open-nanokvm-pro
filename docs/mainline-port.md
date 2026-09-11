@@ -1702,6 +1702,192 @@ the content-addressed names — because bootstrapping that layout is #86's own
 hardware round, not this one's. The `.prev` pair is the hand-made rollback the
 brief called for while `Image` and the fallback still named one kernel.
 
+**Superseded by #99 below**: `/boot` has carried NixOS's own layout since
+2026-09-11, and `/Image`, `/ax630c-nanokvm-pro.dtb` and both `.prev` files are
+gone from the board.
+
+---
+---
+
+### What exists now (#99, 2026-09-11) — ON HARDWARE: NIXOS WRITES `/boot`
+
+`boot.loader.generic-extlinux-compatible` ran on the board, U-Boot booted the
+file it wrote, and the rollback works on top of it — including the one property
+#86 needed four mechanisms for: **the fallback boots an older generation's
+kernel.** The kernel, the initrd and the device tree are ordinary store paths
+inside a NixOS generation now, copied into `/boot/nixos/` by NixOS's own
+builder. Nothing in this repo writes a byte of that partition any more.
+
+Four rounds, six boots, all from a running appliance. No reflash, no power
+cycle, nothing written as a block device.
+
+#### Round 1 — the bootstrap
+
+The board started on the pre-#86 shape: a flat `/boot/Image`,
+`/boot/ax630c-nanokvm-pro.dtb`, and two hand-written configs from
+`pkgs/extlinux.nix` naming them. The new toplevel's closure went over by the
+manual tar recipe — **37 store paths, 37.5 MB gzipped**, md5-verified on the
+board after `drop_caches` — the profile got a `system-4-link`, the old fallback
+was saved to `/root/fallback.pre99`, and then
+`<toplevel>/bin/switch-to-configuration boot`.
+
+It wrote what the offline half predicted:
+
+```
+DEFAULT nixos-default
+TIMEOUT 1
+LABEL nixos-default     LINUX/INITRD/FDT ../nixos/<hash>-…   APPEND init=<gen 4>/init …
+LABEL nixos-4-default   the same three files, the same init=
+```
+
+**No top-level `MENU` line**, because `boot.loader.timeout = 0` makes the
+builder set `menu=0`. That is the property that keeps `cfg->prompt` at 0 and
+stops U-Boot reading this board's hidden console. `TIMEOUT 1` — one centisecond
+— is what the builder emits in that mode; it is not a prompt, and U-Boot never
+read the console on any of the six boots.
+
+**Generations 1-3 were silently skipped, and that is the builder working.**
+`addEntry()` returns early unless `$path/kernel` and `$path/initrd` both exist,
+and those three predate #99: they were built with `boot.kernel.enable = false`
+and have neither link. So the bootstrap wrote ONE generation's files — 43 MB
+Image + 7.7 MB initrd + an 18 KiB dtb directory, 51 MB — into a partition with
+92 MB free. **A board migrating from a pre-#99 `/boot` never needs
+`configurationLimit` generations' worth of space at once**, which is what made
+the bootstrap fit beside the old `/Image` pair with room to spare.
+
+`extlinux-fallback.conf` was **not** touched by the builder — md5-identical to
+the saved copy afterwards — so through the whole round the way back was still
+the old `/Image` and generation 3.
+
+| oracle | value |
+|---|---|
+| SSH back after `reboot` | **68 s** (43 s of it kernel-to-SSH) |
+| `bootcount` at the health gate | `0xB0010001` — **one** U-Boot attempt — cleared to `0xB0010000` |
+| `/run/booted-system` | `08vk0dsrvx0zjsix18gbvvbcc8hc559l`, the new toplevel |
+| `/proc/cmdline` | begins `init=<new toplevel>/init`, carries every appliance param, and **no `nanokvmboot=`** |
+| `uname -r` | `7.1.3-nanokvm` |
+| mark-good | `fallback promoted to generation 4` |
+| `diff extlinux.conf extlinux-fallback.conf` | exactly two lines, both `DEFAULT` |
+| services | `nanokvm`, `nanokvm-video` active; `/dev/video0` present; web 200; `systemctl --failed` empty |
+
+#### Round 2 — the forced rollback
+
+`devmem 0x02390030 32 0xB001000A; reboot`. Back in **71 s**, slot register
+**`0x70000008`** (bit 30 set — this boot came via `altbootcmd`), `bootcount`
+`0xB001000B` at the health gate and cleared, mark-good saying `fallback is
+already generation 4`.
+
+**What this proves, and what it does not.** The fallback and the default named
+the same generation here, so the round proves `bootcount_error()` →
+`altbootcmd` → `sysboot ${extlinux_fallback}` and that U-Boot parses the
+*derived* file — the one mark-good produced by changing one `DEFAULT` line in
+NixOS's output. It does not prove that a fallback naming a different generation
+selects it. Round 3 is that.
+
+#### Round 3 — a kernel-only generation, and rolling back onto the old kernel
+
+Generation 5 differed from generation 4 in `CONFIG_LOCALVERSION` and nothing
+else: `7.1.3-nanokvm-r3` instead of `7.1.3-nanokvm`. **The change has to be made
+in two places** — `pkgs/kernel-mainline/ax630c.config` sets it, and
+`pkgs/kernel-mainline.nix` asserts the built `include/config/kernel.release`
+matches the string it computed. Editing only the Nix side fails the build, which
+is that assertion doing its job.
+
+Eleven missing store paths, 24.4 MB, and `switch-to-configuration boot` again.
+`/boot/nixos` then held **two Images, two initrds and two dtb directories**
+(201 MB of 245 MB used, 41 MB free), and `extlinux.conf` had three labels —
+`nixos-default` and `nixos-5-default` on the new kernel, `nixos-4-default` on
+the old one. `extlinux-fallback.conf` still said `DEFAULT nixos-4-default`,
+because the builder does not touch it.
+
+**Boot A** (the new generation): back in **69 s**, `uname -r` =
+`7.1.3-nanokvm-r3`, `/run/booted-system` = generation 5, no failed units, web
+200. `nanokvm-mark-good.timer` was stopped on the first answered SSH connection
+— see the note below — so the fallback stayed on generation 4 and `bootcount`
+stayed at `0xB0010001`.
+
+**Boot B** (`devmem 0x02390030 32 0xB001000A; reboot`): back in **67 s** on
+**`uname -r` = `7.1.3-nanokvm`, the OLD kernel**, `/run/booted-system` =
+generation 4, `init=` in `/proc/cmdline` = generation 4's init — while
+`/nix/var/nix/profiles/system` still pointed at `system-5-link`. That last
+detail is the sharp end of the oracle: **the extlinux entry's pinned `init=`
+decided which generation ran, not the profile symlink**, which is exactly the
+property that lets two config files name two generations. `bootcount` read
+`0xB001000B` at the health gate, and mark-good re-derived the fallback from the
+three-label `extlinux.conf` and promoted generation 4.
+
+**How the timer race was handled, and why it is a race at all.**
+`nanokvm-mark-good.timer` is `OnBootSec=60s`; SSH answers at uptime 42-45 s.
+For the fallback to still name the old generation when the counter is forced,
+the timer has to be stopped inside that ~15 s window, so the polling loop's
+probe command *is* `systemctl stop nanokvm-mark-good.timer …`. It landed at
+uptime 42.8 s. There is no non-racy way to have a board boot healthy and *not*
+promote — the alternative is to hand-write the fallback, which would have
+tested the test rather than the mechanism.
+
+#### Round 4 — collection, and the hand-written files go
+
+Removing `system-5-link` and running generation 4's
+`switch-to-configuration boot` made the builder print the three lines that
+matter:
+
+```
+Removing no longer needed boot file: /boot/nixos/40kvzfdm…-r3-Image
+Removing no longer needed boot file: /boot/nixos/fr99pc4r…-r3-initrd
+Removing no longer needed boot file: /boot/nixos/r3gjw9j1…-dtb
+```
+
+Then `/boot/Image`, `/boot/Image.prev`, `/boot/ax630c-nanokvm-pro.dtb` and
+`.dtb.prev` were deleted by hand — the builder never managed them and never
+would have — and the board was rebooted once more to prove it boots with no
+`/boot/Image` in existence: **69 s, `bootcount` `0xB0010001` at the gate, one
+U-Boot attempt.**
+
+**One gap this round found.** The extlinux builder collects boot files keyed on
+the generations *it* just wrote entries for; it knows nothing about
+`extlinux-fallback.conf`. Dropping a generation from the menu while the fallback
+still names it would leave the fallback pointing at files that no longer exist.
+It cannot happen through the update path — mark-good only ever promotes a label
+that is in `extlinux.conf`, and `nanokvm-update` refuses to install over a boot
+that was not marked good — but it is one `rm` away by hand, which is what this
+round did deliberately (safely: the fallback's `DEFAULT` stayed on generation 4,
+which stayed in the menu). Re-running mark-good re-derives the fallback and
+closes the window.
+
+**And `systemctl start nanokvm-mark-good` does nothing after a boot.** The unit
+is `Type=oneshot` with `RemainAfterExit=yes`, so it is still `active` from the
+boot's own run and `start` is a no-op — silently, with the stale fallback left
+on disk. Use `systemctl restart`.
+
+#### Device end state
+
+| | |
+|---|---|
+| kernel | `7.1.3-nanokvm`, **69 s** from `reboot` to SSH |
+| `bootcount` (`0x02390030`) | `0xB0010000`; `0xB0010001` at the health gate — one attempt |
+| slot register (`0x02390024`) | `0x70000004` — bit 30 is sticky from round 2's forced rollback and clears only on a cold cycle |
+| profile / booted system | `system-4-link` → `08vk0dsrvx0zjsix18gbvvbcc8hc559l` |
+| `extlinux.conf` `DEFAULT` | `nixos-default` (`7c98156e577bb0a928d2cf40bf5931d6`) |
+| `extlinux-fallback.conf` `DEFAULT` | `nixos-4-default` (`d5af249a19692ca1b626c0c9df5876e8`) — the two differ in that line and nothing else |
+| `/boot/nixos/…-Image` | `fd01cd1aff391a6e73c36250c6ac931c`, 44,915,200 B |
+| `/boot/nixos/…-initrd` | `51c4e7562a29c8df1aff724e4ffb970c`, 8,000,945 B |
+| `/boot/nixos/…-dtb/ax630c-nanokvm-pro.dtb` | `378e1b642c8100d65196888896592779`, 18,589 B |
+| `/boot` contents | `extlinux/`, `nixos/`, `ver`, `lost+found` — **no `Image`, no `.dtb`, no `.prev`** |
+| `df /boot` | **51 MB of 245 MB used**, 191 MB free (was 100 MB used before the round) |
+| services | `nanokvm`, `nanokvm-video`, `nanokvm-mark-good` active; `systemctl --failed` empty |
+| nodes | `/dev/video0`, `/dev/es_venc`; web 200 |
+
+**What is NOT proven.** The image build's `/boot` (this was a running-board
+bootstrap, not a flash — `.#nixos-firmware-image-mainline` runs the same builder
+but has not been flashed since #99). `nanokvm-update install` end to end, the
+web UI's update button, `nanokvm-gc`, and the automatic-update checkbox — rounds
+4 and 5 of [updates.md](updates.md), all untouched here. A real rollback
+triggered by a generation that genuinely fails to boot: every rollback in this
+round was forced with `devmem`, which is deliberate. And
+`configurationLimit = 3` has never actually held three kernels at once, because
+the board has never had three generations that carry one; the round peaked at
+two.
+
 ---
 ---
 
@@ -5056,8 +5242,8 @@ for three rungs, and it had never once worked.
 
 ### Handoff after rung 5
 
-Current as of 2026-09-09, after rung 5. No history; read "What exists now
-(rung 4)" and "(rung 5)" above if a claim here surprises you.
+Current as of 2026-09-11, after rung 5 and #99. No history; read "What exists
+now (rung 4)", "(rung 5)" and "(#99)" above if a claim here surprises you.
 
 **The board boots, and it now recovers from a boot that does not.** The eMMC is
 unchanged from rung 4 — `spl` plus a GPT-carrying `disk`, root `/dev/loop0p5`,
@@ -5068,35 +5254,48 @@ replaced:
 |---|---|---|---|
 | mainline U-Boot | `uboot`, `0x2C0000` | **`003eaffdc66b874dc182937641a3a603` over 187344 B** (2026-09-10, the #91 fix; `88b65081496b6f9f75e71a55a121b0a0` over the whole 2 MiB partition) | previous at `/root/uboot-prev-91.img`; rung 5's was `6713c38d5158b37372a0defbb7530b05` |
 | the generated environment | `env`, `0x4C0000` | `7d449d891ac140a9f7dc89a3d61795df`, 1 MiB | previous at `/root/rung5/env-prev.bin`, `fcf35dbf42c168b8a1af0d93b3a304b8` |
-| kernel `Image` with the armed deadman | `/boot/Image` *(as of this run — see below)* | `7bccba9d6f443c2cb06d81cecf373356` | previous at `/boot/Image.prev`, `affd23b9556197c444417172089aa5c9` |
+| the kernel | `/boot/nixos/5qc7j1ii…-Image` (#99) | `fd01cd1aff391a6e73c36250c6ac931c`, 44,915,200 B | with `…-initrd` `51c4e7562a29c8df1aff724e4ffb970c` and `…-dtb/ax630c-nanokvm-pro.dtb` `378e1b642c8100d65196888896592779` |
 
 Both partition writes were verified from the medium after `drop_caches`. The
-two `*-prev` files are on the ROOTFS, so an AXDL recovery destroys them —
-rebuild from the flake rather than relying on them.
+`*-prev` U-Boot and environment copies are on the ROOTFS, so an AXDL recovery
+destroys them — rebuild from the flake rather than relying on them.
 
-**`/boot/Image` and `/boot/Image.prev` are how it looked on 2026-09-10, and the
-names have since changed.** #86 made the boot payload content-addressed:
-`/boot/Image-<16 hex of its sha256>` and `<dtbname>-<hash>.dtb`, one per
-generation, each named by its own extlinux config, with `nanokvm-mark-good`
-collecting whatever neither names. So a board updated after #86 has no
-`/boot/Image` at all, and `Image.prev` is retired as a hand-managed stand-in.
+**`/boot` IS NIXOS'S SINCE #99 (2026-09-11), and there is no `/boot/Image`.**
+It holds `extlinux/extlinux.conf`, `extlinux/extlinux-fallback.conf`, one
+`nixos/<store-hash>-…-{Image,initrd,dtb}` set per generation in the menu, plus
+`ver` and `lost+found` — 51 MB of 245 MB. `switch-to-configuration boot` runs
+NixOS's own `generic-extlinux-compatible` builder and is the only writer; it
+also collects the boot files of generations that have left the menu.
+`/boot/Image`, `/boot/Image.prev` and the two `.dtb` files were deleted in #99
+round 4 and are not coming back. #86's content-addressed `Image-<hash>` naming
+and the `nanokvmboot=` token are gone too, superseded before they ever ran on
+hardware.
 
 **Generations.** `/nix/var/nix/profiles/system` → `system-4-link` →
-`/nix/store/aklnqir1…`, the generation carrying the `panicOnFail` fix and the
-corrected APPEND. `extlinux.conf` and `extlinux-fallback.conf` both name it
-(mark-good promoted the fallback after it came up healthy). Generation 3
-(`/nix/store/nqp0gz1m…`) is still on the board and is what the board rolled back
-onto during the drill.
+`/nix/store/08vk0dsr…`, the first generation that carries its own kernel,
+initrd and dtb. `extlinux.conf` says `DEFAULT nixos-default` and
+`extlinux-fallback.conf` says `DEFAULT nixos-4-default`; the two files are
+otherwise identical, which is the shape #99 gave them. Generations 1-3 are
+still on the board but carry no kernel, so the builder writes no entry for
+them and they are not bootable — the rollback's reach is the generations with
+a `LABEL`, not every profile link.
 
 **Reading the state**, all from a shell:
 
 ```sh
 devmem 0x02390030 32        # bootcount: 0xB0010000 healthy, 0xB001000N = N attempts
 devmem 0x02390024 32        # 0x70000014 -> bit 30 set = this boot came via altbootcmd
-grep -o 'init=[^ ]*' /boot/extlinux/extlinux.conf          # default generation
-grep -o 'init=[^ ]*' /boot/extlinux/extlinux-fallback.conf # fallback generation
+grep ^DEFAULT /boot/extlinux/extlinux.conf                 # the default LABEL
+grep ^DEFAULT /boot/extlinux/extlinux-fallback.conf        # the fallback LABEL
+diff /boot/extlinux/extlinux.conf /boot/extlinux/extlinux-fallback.conf
+readlink -f /run/booted-system                             # which generation ran
 journalctl -u nanokvm-mark-good -b 0
 ```
+
+Since #99 both files list every generation in the menu, so read the `DEFAULT`
+label — **not** the first `init=` in the file, which is `nixos-default`'s and
+answers the wrong question. `systemctl start nanokvm-mark-good` is a no-op
+after a boot (`Type=oneshot`, `RemainAfterExit=yes`); use `restart`.
 
 Bit 30 is sticky until a power cycle, so it says "a rollback has happened since
 the last cold start", not "this boot is the rollback" — pair it with
@@ -5201,13 +5400,20 @@ the chain with `devmem` identifies a bad handler for zero boot cycles.
 `SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt x86-64 host
 tool, and is a clean follow-up now that the layout is settled.
 
-**The kernel half of the rollback is no longer open (#86, 2026-09-10).** `/boot`
-now carries `Image-<sha256 prefix>` and `<dtb>-<hash>.dtb`, each extlinux config
-names its own pair, and `nanokvm-mark-good` promotes the pair that booted
-healthy — it learns which one that was from a `nanokvmboot=` token the config
-puts on the command line. `/boot/Image.prev` is retired as a hand-managed
-stand-in. The first hardware round is where that mechanism is actually watched
-to fire; [updates.md](updates.md) has the plan.
+**The kernel half of the rollback is closed, and #86's mechanism is gone with
+it (#99, hardware-proven 2026-09-11).** The kernel, the initrd and the device
+tree are part of the NixOS generation — `boot.kernelPackages` and
+`hardware.deviceTree` — and `boot.loader.generic-extlinux-compatible` is the
+only writer of `/boot`. `switch-to-configuration boot` copies this generation's
+three files into `/boot/nixos/` and writes `/boot/extlinux/extlinux.conf` with
+one `LABEL` per generation, each pinning its own `init=`;
+`nanokvm-mark-good` derives `extlinux-fallback.conf` from that file by changing
+one `DEFAULT` line. There is no `nanokvmboot=` token, no content-addressed
+`Image-<hash>`, no `Image.prev`, and no code of ours that copies a kernel.
+**On the board:** the bootstrap, a forced rollback, a kernel-only generation,
+and a rollback that came back on the OLD kernel while the profile symlink still
+pointed at the new one — six boots, 67-71 s each, one U-Boot attempt every
+time. See "What exists now (#99)" in section 8.
 
 ---
 

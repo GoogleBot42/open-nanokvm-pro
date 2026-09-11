@@ -29,18 +29,26 @@ edits on GitHub directly** — all git data flows one way, Gitea → GitHub.
 
 ---
 
-> **Status (2026-09-11, #86 + #99): built and proven offline; not yet run on
-> hardware.** Four `nix flake check` gates cover the loop and the policy around
+> **Status (2026-09-11, #86 + #99): the BOOT half is hardware-proven; the
+> UPDATE half is not.** Rounds 1-3 below ran on the board on 2026-09-11 —
+> `switch-to-configuration boot` wrote `/boot`, U-Boot booted what it wrote,
+> a forced rollback took `altbootcmd` to the derived fallback, and a
+> kernel-only generation rolled back onto the OLD kernel. Six boots, 67-71 s
+> each, one U-Boot attempt every time; full oracles in
+> [mainline-port.md](mainline-port.md) "What exists now (#99)". Every
+> generation was shipped by the manual closure-tar recipe, not by a bundle.
+> Still unproven on hardware: `nanokvm-update install`, the web UI's update
+> button, `nanokvm-gc`, the automatic-update checkbox and the idle gate —
+> rounds 4 and 5 of the plan below, neither of which this run touched.
+>
+> Four `nix flake check` gates cover the loop and the policy around
 > it — `nanokvm-updater-loop` applies a real bundle to a fake root with the real
 > scripts, `nanokvm-update-idle` drives the checkbox, the pending markers and
 > the idle reboot gate against a fake release host,
 > `nanokvm-mark-good-fallback` derives a rollback config and refuses the cases
 > it must, and `nanokvm-system-bundle` reads the published artefact back against
 > the closure it claims. Since #99 the appliance also boots end to end under
-> QEMU with the generation's own kernel and initrd, zero failed units. What is
-> unproven is everything that needs the board: `switch-to-configuration`, the
-> `/nix/store` remount, whether U-Boot boots the `/boot` NixOS wrote, and
-> whether the server's own idle answer is right.
+> QEMU with the generation's own kernel and initrd, zero failed units.
 > See [the hardware plan](#what-hardware-still-has-to-prove).
 
 ## The idea
@@ -470,7 +478,7 @@ ending in a state the plug recovers from — a cold cycle clears `bootcount`, an
 a candidate that does not come up is on the fallback config by the fourth
 attempt.
 
-**Round 1 — bootstrap onto the official layout (#99).** The board's `/boot` is
+**Round 1 — bootstrap onto the official layout (#99). DONE 2026-09-11.** The board's `/boot` is
 the pre-#86 shape: a flat `/Image`, `/ax630c-nanokvm-pro.dtb` and two
 hand-written extlinux configs, 245 MB with 97 MB free. One generation of the
 new shape is 50 MB, so it fits beside the old files with room to spare and
@@ -498,14 +506,14 @@ nanokvm-mark-good` shows `fallback promoted to generation N`; and
 `diff /boot/extlinux/extlinux{,-fallback}.conf` is exactly two lines, both
 `DEFAULT`.
 
-**Round 2 — the forced rollback.** `devmem 0x02390030 32 0xB001000A; reboot`.
+**Round 2 — the forced rollback. DONE 2026-09-11.** `devmem 0x02390030 32 0xB001000A; reboot`.
 **Oracles:** the board comes up on the generation the fallback's `DEFAULT`
 named, bit 30 of `0x02390024` is set, and `nanokvm-update status` resolves both
 configs to the two different generations. This is the way to exercise the
 rollback — not a deliberately broken generation, which is what cost a bench
 trip in #89 rung 5.
 
-**Round 3 — a kernel-only change.** Build a bundle whose *only* difference is a
+**Round 3 — a kernel-only change. DONE 2026-09-11, by hand rather than by bundle.** Build a bundle whose *only* difference is a
 kernel config string, install it, reboot. **Oracles:** `uname -r`/`uname -v`
 moves; `ls /boot/nixos` holds two Image files; `nanokvm-update status` shows
 generation N+1. Then force the counter again and confirm the board comes back

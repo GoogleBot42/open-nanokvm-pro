@@ -213,6 +213,22 @@ that is arbitration, not a bug.
   already set"); and `dhcpV4Config.ClientIdentifier` must be `mac`, because the
   same MAC does not get the same lease when networkd sends a DUID in option 61.
   Four hardware runs, one per discovery -- `docs/reference/mainline/nixos-appliance-20260907/HARDWARE.md`.
+- **NixOS's extlinux builder collects `/boot/nixos` against the MENU, and the
+  rollback fallback is not in the menu.** `extlinux-conf-builder.sh` deletes
+  every file under `/boot/nixos` that the generations it just wrote entries for
+  do not name; it has never heard of `extlinux-fallback.conf`. Drop a
+  generation from the menu (a smaller `configurationLimit`, or an `rm` of its
+  profile link) while the fallback still names it and the rollback points at
+  files that no longer exist. `nanokvm-mark-good` closes the window by
+  re-deriving the fallback — but `systemctl start nanokvm-mark-good` is a
+  **no-op** after a boot (`Type=oneshot`, `RemainAfterExit=yes`, still
+  `active`), so it must be `restart`. Both seen in #99 round 4, 2026-09-11.
+- **`CONFIG_LOCALVERSION` lives in two files and the build checks both.**
+  `pkgs/kernel-mainline/ax630c.config` sets it; `pkgs/kernel-mainline.nix`
+  asserts the built `include/config/kernel.release` equals the string it
+  computed from its own `localversion`. Changing only the Nix side fails the
+  build with `CONFIG_LOCALVERSION is not '…'` — that is the assertion working,
+  not a stale config. (#99 round 3, 2026-09-11.)
 - **The board's ethernet PHY is a Realtek RTL8211F, not the JLSemi JL2101 the
   vendor DT names** (PHYID 0x001cc916, read over MDIO 2026-09-06). An
   `ethernet-phy-id*` compatible makes Linux skip the bus read, so the vendor has
@@ -266,6 +282,22 @@ poll 30 minutes before calling a mainline board dark**: a candidate that hangs
 costs a 300 s watchdog cycle, and ten minutes was what made #94 look like a bad
 flash. `docs/mainline-port.md` §11.10 "Handoff" is the current device contract;
 §11.11 is #94.
+
+**`/boot` is NixOS's since #99 (hardware-proven 2026-09-11) — there is no
+`/boot/Image`.** The kernel, the initrd and the dtb are store paths in the
+generation, and `boot.loader.generic-extlinux-compatible`, run by
+`switch-to-configuration boot`, is the ONLY writer of `/boot`: it copies the
+three files into `/boot/nixos/<store-hash>-…` and writes
+`/boot/extlinux/extlinux.conf` with one `LABEL` per generation, each pinning
+its own `init=`. `nanokvm-mark-good` derives `extlinux-fallback.conf` from that
+file by changing one `DEFAULT` line. Consequences when you touch the board:
+`/boot` must be mounted before any switch (`mountpoint -q /boot`), a kernel
+change needs no extra copy, `nanokvmboot=` and `Image-<hash>` are gone, and
+**read the `DEFAULT` label, never the first `init=`** — both files list every
+generation. A generation built with `boot.kernel.enable = false` gets NO menu
+entry (the builder skips any toplevel with no `kernel`/`initrd` link), which is
+why generations 1-3 on this board are not bootable and why migrating a pre-#99
+`/boot` costs one generation of space, not three.
 
 **Try a U-Boot candidate through the one-shot chainload slot, never by writing
 the `uboot` partition** — there is one copy and no B twin. `nanokvm-uboot-test
