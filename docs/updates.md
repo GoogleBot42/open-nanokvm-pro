@@ -25,7 +25,8 @@ directly** — all git data flows one way, Gitea → GitHub.
 - [Garbage collection](#garbage-collection)
 - [What a release publishes](#what-a-release-publishes)
 - [Local testing](#local-testing)
-- [What hardware proved](#what-hardware-proved-100-2026-09-11)
+- [What hardware proved — the update](#what-hardware-proved-100-2026-09-11)
+- [What hardware proved — the button](#what-hardware-proved-101-2026-09-11)
 - [Weighed and rejected](#weighed-and-rejected)
 - [Caveats](#caveats)
 - [History](#history)
@@ -684,19 +685,68 @@ password prompt to answer.
 - **A real cache.** Everything above used a `file://` cache over loopback. The
   attic endpoint, its TLS, its key custody and `attic push` from a release
   runner are #96, untouched.
-- **The web UI button as a user presses it** — see round 4. Also the UI itself:
-  every call here was `curl`, no browser.
+- **The web UI button as a user presses it.** The route is proven (#101,
+  [below](#what-hardware-proved-101-2026-09-11)); the UI itself is not — every
+  call in both campaigns was `curl`, no browser.
 - **A release cut from a tag**, and therefore the manifest asset actually
   existing at `releases/latest/download`.
-- **An update that changes the kernel.** Every generation here shared one
-  kernel, so `/boot` never grew and `configurationLimit = 3` has still never
-  held three kernels at once.
+- **An update that changes the kernel.** Every generation in #100 shared one
+  kernel, so `/boot` never grew. (Done in #101's last round: 51 MB → 102 MB of
+  245 MB with two kernels. `configurationLimit = 3` has still never held three.)
 - **A generation that genuinely fails to boot.** Every rollback was forced with
   `devmem`, deliberately.
 - **An image flashed from `.#nixos-firmware-image-mainline`** since #100 — the
   store database built into the image (`mkStoreDb`) has never been booted; this
   board's database came from `nix-store --load-db`.
 
+
+## What hardware proved (#101, 2026-09-11)
+
+The same harness as #100 — `.#appliance-toplevel-cachetest`, a signed `file://`
+cache and a manifest served over an SSH reverse tunnel — with two synthetic
+versions, `2.1.0-t101a` and `2.1.0-t101b`, offered to each other in turn. Every
+call below was made **from the build host** against the device's HTTPS API with
+a real token; nothing was done over the loopback shortcut except the one capture
+that had to be.
+
+**The button works, and it takes 2.6 s.** `POST /api/application/update`
+answered `{"code":0,"msg":"success"}` — where before #101 it answered
+`{"code":-2}` with a `404` in the log — and the board installed the generation
+and rebooted itself into it. Three presses: an upgrade, a **downgrade** and a
+second upgrade, generations 11, 12 and 13, `bootcount` `0xB0010001` at every
+health gate, one U-Boot attempt each.
+
+| oracle | value |
+|---|---|
+| `GET /api/application/version`, update available | `{"current":"2.1.0-t101a","latest":"2.1.0-t101b","up_to_date":false}`, 177 ms |
+| ...with the channel offering what is running | `{"current":"2.1.0-t101b","latest":"2.1.0-t101b","up_to_date":true}` |
+| ...offering an OLDER version | `latest":"2.1.0-t101a","up_to_date":false` — the page offers the downgrade, which is what the updater would install |
+| `GET /api/application/pending` with a reboot owed | `{"version":"2.1.0-t101a","from":"2.1.0-t101b","reboot_pending":true,"current":"2.1.0-t101b"}` |
+| `nanokvm-update check --json`, channel up | the nine fields, `error":""`, exit 0 |
+| ...channel down (tunnel closed) | same object, `available":""`, `up_to_date":false`, `error":"could not reach …"`, **exit 1** |
+| `POST /api/application/preview {"enable":true}` | `check --json` then reports `preview":true` — the web UI's toggle and the updater read one flag file |
+| the marker the button writes, read back after the reboot | `VERSION=2.1.0-t101b FROM=2.1.0-t101a TOPLEVEL=/nix/store/…` |
+
+**The window between the marker and the reboot is about a second.** `install()`
+writes the pending marker, sends progress 100 and calls
+`systemctl --no-block reboot`, so a host polling `/api/application/pending`
+across the press never catches `reboot_pending:true` — three tries, none of
+them. It was read by running `nanokvm-update install-now` (exactly what
+`install()` execs) and querying the route before rebooting by hand. **A device-
+side poller did not help either**: it caught the marker file but its own `curl`
+to the loopback route came back empty, because the server was already stopping.
+
+**A JWT does not survive the reboot the button takes.** The token from before
+the press is rejected afterwards — `"unauthorized"`, `HTTP 401` — which reads
+exactly like an authorization bug in the pending route and is not one. Log in
+again after any update.
+
+**Two kernels in `/boot`, for the first time.** The final generation carried a
+different kernel (#85's), and `/boot` went 51 MB → **102 MB of 245 MB**. That
+closes one of #100's unproven items; `configurationLimit = 3` has still never
+held three.
+
+---
 
 ## Weighed and rejected
 

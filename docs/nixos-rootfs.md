@@ -359,6 +359,21 @@ gate does not run, or runs and finds the system unhealthy, the counter is simply
 not cleared and the next boot counts one higher. Only *not* rolling back
 requires something to work.
 
+**ONE FAILED UNIT IS ENOUGH TO WITHHOLD THE COUNTER CLEAR**, and that is the gate
+working, not a bug — but it does not look like one from a distance. A unit that
+fails at boot makes `is-system-running` `degraded` forever, so `mark-good` polls
+for four minutes and gives up, `bootcount` stays `0xB001000N`, and three more
+reboots roll the board back. Worse, the wait is self-worsening: while it polls,
+`nanokvm-update-reboot.timer` fires a service ordered `After=nanokvm-mark-good`,
+which queues a job and turns `degraded` into **`starting`** — so by the time the
+gate reports, the reason it names is no longer the reason the check returns
+false. Read its own log, which prints both (`is-system-running=…` and the failed
+units) before exiting; seen on hardware 2026-09-11 with `nanokvm-wifi.service`
+failing on a board with no enumerable SDIO card. The repair, once the unit is
+fixed or its failure accepted, is `systemctl reset-failed <unit>` and then
+`systemctl restart nanokvm-mark-good` (**restart**: the unit is a
+`RemainAfterExit` oneshot, so `start` is a no-op).
+
 **systemd's runtime watchdog is armed at 60 s** (`RuntimeWatchdogSec`), so a
 PID 1 that stops running resets the board into that count instead of leaving it
 dark. Without it the ax630c watchdog is petted from kernel context for as long
