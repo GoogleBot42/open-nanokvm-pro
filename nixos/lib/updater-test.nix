@@ -4,15 +4,26 @@
 }:
 
 # ===========================================================================
-# THE OFFLINE UPDATER LOOP (#86) -- `nix flake check`'s `nanokvm-updater-loop`.
+# THE OFFLINE UPDATER LOOP (#86, reshaped by #99) -- `nix flake check`'s
+# `nanokvm-updater-loop`.
 #
-# It runs the REAL `nanokvm-update`, the REAL `nanokvm-gc` and the REAL
-# `nanokvm-install-boot` against a fake root inside a build sandbox: apply a
-# bundle, check the profile advanced and the boot config names the new
-# generation AND its kernel, then collect and check the right things survived.
-# This is the whole of what can be proven about an update before it meets
-# hardware, and it is a lot: everything after this is "does the board boot the
-# thing the script installed".
+# It runs the REAL `nanokvm-update` and the REAL `nanokvm-gc` against a fake
+# root inside a build sandbox: apply a bundle, check the profile advanced and
+# the closure record was written, then collect and check the right things
+# survived. This is the whole of what can be proven about an update before it
+# meets hardware.
+#
+# WHAT MOVED IN #99. The updater no longer writes /boot at all -- the kernel,
+# the initrd and the dtb are store paths inside the closure, and
+# `switch-to-configuration boot` is the only thing that copies them out. So
+# what this check now owns on the /boot side is the OTHER half of the
+# contract: that `nanokvm-gc` pins the generation each config's DEFAULT entry
+# names, out of a file that lists several. Reading the first `init=` in a
+# NixOS-written extlinux.conf would pin whichever generation the builder
+# emitted first and leave the fallback's own collectable -- and the fallback is
+# what gets used precisely when the default does not work.
+# `nanokvm-mark-good-fallback` (nixos/lib/mark-good-test.nix) owns the writing
+# half.
 #
 # WHY THE SCRIPTS ARE INSTANTIATED AGAINST `pkgs` AND NOT THE APPLIANCE'S.
 # The appliance is aarch64; running its copies would need binfmt, which a
@@ -31,19 +42,8 @@
 # ===========================================================================
 
 let
-  extlinuxTemplate = pkgs.writeText "extlinux.conf.in" (import ../../pkgs/extlinux.nix {
-    inherit pkgs lib;
-    init = "@INIT@";
-    kernelFile = "@KERNEL@";
-    dtbFile = "@FDT@";
-    bootId = "@KERNEL@,@FDT@";
-  });
-
-  installBoot = import ./install-boot.nix { inherit pkgs lib extlinuxTemplate; };
-
   tools = import ./updater.nix {
     inherit pkgs lib;
-    bootInstaller = installBoot;
     stableUrl = "https://example.invalid/latest";
     previewUrl = "https://example.invalid/preview";
     keepGenerations = 3;
@@ -56,12 +56,38 @@ let
   shared = "00000000000000000000000000000003-shared-lib";
   oldOnly = "00000000000000000000000000000004-old-only";
   newOnly = "00000000000000000000000000000005-new-only";
+
+  # One LABEL per generation and a single DEFAULT that selects among them --
+  # the shape NixOS's builder writes, and the reason `conf_default_toplevel`
+  # exists.
+  entry = tag: sys: ''
+
+    LABEL nixos-${tag}
+      MENU LABEL NixOS - ${tag}
+      LINUX ../nixos/${sys}-kernel
+      INITRD ../nixos/${sys}-initrd
+      APPEND init=/nix/store/${sys}/init root=/dev/loop0p5 panic=10
+      FDT ../nixos/${sys}-dtbs/ax630c-nanokvm-pro.dtb
+  '';
+
+  mkConf = def: pkgs.writeText "extlinux.conf" (''
+    # Generated file, all changes will be lost on nixos-rebuild!
+
+    DEFAULT ${def}
+
+    TIMEOUT 1
+  ''
+  # nixos-default is emitted FIRST and names the newest generation, which is
+  # exactly what makes "read the first init=" the wrong answer.
+  + entry "default" newSys
+  + entry "2-default" newSys
+  + entry "1-default" oldSys);
 in
 pkgs.runCommand "nanokvm-updater-loop"
 {
   nativeBuildInputs = [
-    tools.updater tools.gc installBoot
-    pkgs.coreutils pkgs.gnugrep pkgs.gnused pkgs.jq pkgs.findutils
+    tools.updater tools.gc
+    pkgs.coreutils pkgs.gnugrep pkgs.gnused pkgs.gawk pkgs.jq pkgs.findutils
   ];
   meta.description =
     "Offline proof of the #86 update loop: apply a bundle to a fake root, then collect";
@@ -74,11 +100,11 @@ pkgs.runCommand "nanokvm-updater-loop"
   ok()   { echo "  ok: $*"; }
 
   # =====================================================================
-  # The fake root: one installed generation, a /boot with its kernel, and
-  # the closure record the image build would have written.
+  # The fake root: one installed generation and the closure record the image
+  # build would have written.
   # =====================================================================
   mkdir -p "$R/nix/store" "$R/nix/var/nix/profiles" "$R/boot/extlinux" \
-           "$R/var/lib/nanokvm/closures" "$R/run" "$R/etc"
+           "$R/boot/nixos" "$R/var/lib/nanokvm/closures" "$R/run" "$R/etc"
 
   for p in ${oldSys} ${shared} ${oldOnly}; do
     mkdir -p "$R/nix/store/$p/bin"
@@ -97,18 +123,11 @@ pkgs.runCommand "nanokvm-updater-loop"
   printf '/nix/store/%s\n' ${oldSys} ${shared} ${oldOnly} \
     | sort > "$R/var/lib/nanokvm/closures/${oldSys}.txt"
 
-  echo "old kernel"  > "$R/boot/Image-old0000000000000"
-  echo "old dtb"     > "$R/boot/ax630c-nanokvm-pro-old0000000000000.dtb"
-  nanokvm-install-boot --root "$R" \
-    --kernel /Image-old0000000000000 \
-    --fdt /ax630c-nanokvm-pro-old0000000000000.dtb \
-    "/nix/store/${oldSys}"
-  cp "$R/boot/extlinux/extlinux.conf" "$R/boot/extlinux/extlinux-fallback.conf"
-
   # =====================================================================
   # The bundle: a new toplevel, one new path, one shared path it already has.
+  # NO boot/ directory -- that is the #99 contract.
   # =====================================================================
-  mkdir -p "$B/store" "$B/boot"
+  mkdir -p "$B/store"
   for p in ${newSys} ${newOnly}; do
     mkdir -p "$B/store/$p/bin"
     echo "$p" > "$B/store/$p/marker"
@@ -119,16 +138,8 @@ pkgs.runCommand "nanokvm-updater-loop"
   printf '/nix/store/%s\n' ${newSys} ${newOnly} ${shared} \
     | sort > "$B/closure.txt"
 
-  echo "new kernel" > "$B/boot/Image-new0000000000000"
-  echo "new dtb"    > "$B/boot/ax630c-nanokvm-pro-new0000000000000.dtb"
-  ksha=$(sha256sum "$B/boot/Image-new0000000000000" | cut -d' ' -f1)
-  fsha=$(sha256sum "$B/boot/ax630c-nanokvm-pro-new0000000000000.dtb" | cut -d' ' -f1)
-  jq -n --arg k "$ksha" --arg f "$fsha" \
-    '{ format: "nanokvm-system-bundle/1", version: "9.9.9", layout: "minimal",
-       toplevel: "/nix/store/${newSys}", closureCount: 3,
-       boot: { kernel: "Image-new0000000000000",
-               fdt: "ax630c-nanokvm-pro-new0000000000000.dtb",
-               kernelSha256: $k, fdtSha256: $f } }' > "$B/MANIFEST.json"
+  jq -n '{ format: "nanokvm-system-bundle/1", version: "9.9.9", layout: "minimal",
+           toplevel: "/nix/store/${newSys}", closureCount: 3 }' > "$B/MANIFEST.json"
 
   # =====================================================================
   # 1. APPLY
@@ -154,37 +165,29 @@ pkgs.runCommand "nanokvm-updater-loop"
     || fail "no closure record for the new generation -- gc could never run again"
   ok "the new generation's closure list was recorded"
 
-  [ -f "$R/boot/Image-new0000000000000" ] || fail "the new kernel is not in /boot"
-  ok "the new kernel is in /boot"
-  [ -f "$R/boot/Image-old0000000000000" ] || fail "the old kernel was removed by the update"
-  ok "the old kernel is still in /boot (mark-good collects it, not the updater)"
+  # THE UPDATER MUST NOT HAVE TOUCHED /boot (#99). It was empty going in and it
+  # stays empty: `switch-to-configuration boot` is the only writer, and this
+  # run was --no-activate.
+  [ -z "$(ls -A "$R/boot/extlinux" "$R/boot/nixos")" ] \
+    || { ls -lR "$R/boot" >&2; fail "the updater wrote /boot"; }
+  ok "/boot is untouched -- the extlinux builder owns it, not this script"
 
-  conf="$R/boot/extlinux/extlinux.conf"
-  fb="$R/boot/extlinux/extlinux-fallback.conf"
-  grep -q "init=/nix/store/${newSys}/init" "$conf" \
-    || fail "extlinux.conf does not name the new generation"
-  grep -q "LINUX /Image-new0000000000000" "$conf" \
-    || fail "extlinux.conf does not name the new kernel"
-  grep -q "nanokvmboot=/Image-new0000000000000," "$conf" \
-    || fail "extlinux.conf carries no nanokvmboot= token for the new kernel"
-  ok "extlinux.conf names the new generation AND the new kernel"
-
-  grep -q "init=/nix/store/${oldSys}/init" "$fb" \
-    || fail "the fallback moved -- only nanokvm-mark-good may promote it"
-  grep -q "LINUX /Image-old0000000000000" "$fb" \
-    || fail "the fallback's kernel moved"
-  ok "the fallback still names the OLD generation and the OLD kernel"
-
-  [ ! -e "$R/run/nanokvm-pending-boot" ] || fail "the pending-boot note was left behind"
-  ok "the pending-boot note was consumed"
+  [ ! -e "$R/run/nanokvm-pending-boot" ] || fail "a pending-boot note was left behind"
+  ok "no pending-boot note (the mechanism it served is gone)"
 
   # =====================================================================
-  # 2. COLLECT -- while the fallback still names generation 1
+  # 2. COLLECT -- while the FALLBACK's DEFAULT still names generation 1
   # =====================================================================
-  echo "=== nanokvm-gc --keep 1, with generation 1 named by the fallback ==="
+  # Both files list all three entries; only their DEFAULT differs. Pinning the
+  # first `init=` instead of the DEFAULT's would pin the NEW generation from
+  # both files and collect the one the rollback needs.
+  install -m 0644 ${mkConf "nixos-default"}   "$R/boot/extlinux/extlinux.conf"
+  install -m 0644 ${mkConf "nixos-1-default"} "$R/boot/extlinux/extlinux-fallback.conf"
+
+  echo "=== nanokvm-gc --keep 1, with generation 1 named by the fallback's DEFAULT ==="
   nanokvm-gc --root "$R" --keep 1
   [ -e "$R/nix/var/nix/profiles/system-1-link" ] \
-    || fail "gc dropped the generation the ROLLBACK config names"
+    || fail "gc dropped the generation the ROLLBACK config's DEFAULT names"
   [ -e "$R/nix/store/${oldOnly}/marker" ] \
     || fail "gc deleted a path the fallback generation needs"
   [ -e "$R/nix/store/${shared}/marker" ] || fail "gc deleted a shared path"
@@ -193,11 +196,11 @@ pkgs.runCommand "nanokvm-updater-loop"
   # =====================================================================
   # 3. COLLECT -- after the fallback has been promoted (what mark-good does)
   # =====================================================================
-  echo "=== nanokvm-gc --keep 1, with the fallback promoted to generation 2 ==="
-  cp "$conf" "$fb"
+  install -m 0644 ${mkConf "nixos-2-default"} "$R/boot/extlinux/extlinux-fallback.conf"
   rm -f "$R/run/booted-system" "$R/run/current-system"
   ln -s "$R/nix/store/${newSys}" "$R/run/booted-system"
   ln -s "$R/nix/store/${newSys}" "$R/run/current-system"
+  echo "=== nanokvm-gc --keep 1, with the fallback promoted to generation 2 ==="
   nanokvm-gc --root "$R" --keep 1
 
   [ ! -e "$R/nix/var/nix/profiles/system-1-link" ] \
@@ -215,10 +218,10 @@ pkgs.runCommand "nanokvm-updater-loop"
   ok "the stale closure record is gone"
 
   # =====================================================================
-  # 4. THE REFUSAL -- a kept generation with no closure record
+  # 4. THE REFUSALS -- an unknown live set must mean NO deletion at all
   # =====================================================================
-  # Without nix there is no way to recompute a closure, so an unknown live set
-  # must mean NO deletion at all. A gc that guessed here would be a bench trip.
+  # (a) a kept generation with no closure record. Without nix there is no way
+  #     to recompute one, so a gc that guessed here would be a bench trip.
   echo "=== nanokvm-gc must refuse when a kept generation has no closure list ==="
   mv "$R/var/lib/nanokvm/closures/${newSys}.txt" "$PWD/hidden.txt"
   if nanokvm-gc --root "$R" --keep 1 2>"$PWD/gc-refusal.log"; then
@@ -228,8 +231,23 @@ pkgs.runCommand "nanokvm-updater-loop"
     || { cat "$PWD/gc-refusal.log" >&2; fail "gc failed for the wrong reason"; }
   [ -e "$R/nix/store/${shared}/marker" ] || fail "gc deleted something before refusing"
   ok "gc refuses, and deletes nothing, when a closure list is missing"
+  mv "$PWD/hidden.txt" "$R/var/lib/nanokvm/closures/${newSys}.txt"
+
+  # (b) a boot config whose DEFAULT names a label that is not in it. An empty
+  #     pin list is NOT "nothing is pinned" -- it is "we do not understand this
+  #     file", and the answer is to stop.
+  echo "=== nanokvm-gc must refuse a boot config it cannot read a generation out of ==="
+  printf 'DEFAULT nixos-nonexistent\n\nLABEL nixos-default\n  APPEND root=/dev/loop0p5\n' \
+    > "$R/boot/extlinux/extlinux-fallback.conf"
+  if nanokvm-gc --root "$R" --keep 1 2>"$PWD/gc-refusal2.log"; then
+    fail "gc collected from a boot config whose DEFAULT names nothing"
+  fi
+  grep -q "names no generation on its DEFAULT entry" "$PWD/gc-refusal2.log" \
+    || { cat "$PWD/gc-refusal2.log" >&2; fail "gc failed for the wrong reason"; }
+  [ -e "$R/nix/store/${newSys}/marker" ] || fail "gc deleted something before refusing"
+  ok "gc refuses when a config's DEFAULT resolves to no generation"
 
   echo
-  echo "the #86 update loop holds offline."
+  echo "the #86 update loop holds offline, on the #99 boot contract."
   touch "$out"
 ''

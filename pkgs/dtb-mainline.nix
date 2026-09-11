@@ -9,8 +9,14 @@
 # upstreamed, #87), and `make dtbs` on arm64 would build every other vendor's
 # device trees to produce our one file.
 #
-# The dt-bindings headers come from pkgs/kernel-mainline.nix's output, so the
-# DT is always compiled against the exact kernel that will boot it.
+# The dt-bindings headers come from pkgs/kernel-mainline.nix's `dev` output, so
+# the DT is always compiled against the exact kernel that will boot it.
+#
+# `$out/dtb` HOLDS EXACTLY ONE FILE, and that is a contract since #99:
+# `hardware.deviceTree.dtbSource` points at it, and NixOS's extlinux builder
+# copies the whole directory into /boot/nixos/. Anything else in there would be
+# copied onto a 272 MiB partition for no reason. The decompiled source, which
+# the assertions below read, is installed beside it rather than inside it.
 # ---------------------------------------------------------------------------
 
 let
@@ -41,7 +47,7 @@ pkgs.stdenvNoCC.mkDerivation {
     # -x assembler-with-cpp so cpp keeps `/* */` handling sane for dts.
     cpp -nostdinc \
       -I . \
-      -I ${kernel-mainline}/include \
+      -I ${kernel-mainline.dev}/include \
       -undef -D__DTS__ -x assembler-with-cpp \
       -o ${board}.dts.pp ${board}.dts
 
@@ -164,7 +170,12 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p "$out/dtb"
     cp ${board}.dtb "$out/dtb/"
-    cp ${board}.decompiled.dts "$out/dtb/"
+    cp ${board}.decompiled.dts "$out/"
+
+    # The contract in the header, asserted: one file in $out/dtb, and it is the
+    # blob. `hardware.deviceTree.dtbSource` is this directory.
+    n=$(find "$out/dtb" -type f | wc -l)
+    [ "$n" = 1 ] || fail "$out/dtb holds $n files; it must hold only ${board}.dtb"
 
     runHook postInstall
   '';

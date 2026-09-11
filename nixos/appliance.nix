@@ -16,29 +16,30 @@
 #
 # What is unusual about this system, and why every switch below is here:
 #
-#   * NO BOOTLOADER, but a real boot contract. BootROM -> SPL -> ATF -> OP-TEE
-#     -> U-Boot, all from pkgs/boot.nix. U-Boot raw-reads the kernel and dtb
-#     out of signed A/B partitions BY NAME and `booti`s them; nothing in the
-#     rootfs picks a kernel. So `boot.loader.external` owns "install", and the
-#     installer writes the inactive A/B slot (#79 turns that on).
+#   * A REAL BOOTLOADER, AND ONE WRITER OF /boot (#99). BootROM -> SPL -> TF-A
+#     -> U-Boot, all mainline. U-Boot's `bootcmd` runs `sysboot` on
+#     /boot/extlinux/extlinux.conf, and that file is written by NixOS's own
+#     `boot.loader.generic-extlinux-compatible` builder -- nothing in this
+#     repo generates it, and nothing but `switch-to-configuration boot` writes
+#     it. The kernel, the initrd and the dtb are copied into /boot/nixos/ by
+#     the same builder, from the generation that owns them.
 #
-#   * NIXOS INITRD, EMBEDDED IN THE KERNEL IMAGE. U-Boot passes no initrd
-#     address and there is no partition to hold one, so the initrd rides in
-#     the Image via CONFIG_INITRAMFS_SOURCE (pkgs/kernel-mainline.nix). The
-#     vendor /init -- which fsck'd, resized, derived the MAC and
-#     `switch_root`ed -- is GONE; every one of its jobs is a NixOS mechanism
-#     or a unit below.
+#   * THE KERNEL IS PART OF THE GENERATION. `boot.kernelPackages` is
+#     pkgs/kernel-mainline, so a generation carries its own kernel, initrd and
+#     device tree, and a kernel change is a generation change: it rolls back
+#     with everything else and needs no out-of-band copy. This replaced an
+#     initrd baked into the Image with CONFIG_INITRAMFS_SOURCE, which was a
+#     workaround for the VENDOR U-Boot's initrd-less `booti` and outlived it
+#     by two issues.
 #
-#   * NO `init=` ON THE COMMAND LINE. The cmdline comes from the U-Boot
-#     environment, not from us and not from the device tree (U-Boot's
-#     fdt_chosen overwrites /chosen/bootargs at `booti`). NixOS stage 1
-#     therefore falls back to its default `stage2Init=/init`, so the image
-#     ships `/init` as a symlink to the system profile -- which is also what
-#     makes a generation switch take effect with no bootloader involved.
+#   * `init=` COMES FROM THE BOOTLOADER, per entry. Each LABEL's APPEND pins
+#     `init=<generation>/init`, which is what lets extlinux.conf and
+#     extlinux-fallback.conf name two different generations. The image's
+#     `/init` symlink to the system profile is kept as a backstop, not as the
+#     mechanism.
 #
-#   * NO NIXOS KERNEL. `boot.kernel.enable = false`: the running kernel lives
-#     in its own eMMC partition and every driver it needs is built in. There
-#     is no /lib/modules tree at all yet -- see the video-stack stub below.
+#   * NO MODULES TREE. Every driver this board has is built into the Image, so
+#     there is no /lib/modules at all -- see the video-stack stub below.
 #
 #   * NO CLOSED CODE. The shipped video stack has been blob-free since #60,
 #     so unlike its predecessor this module stages no Axera libraries and no
@@ -247,51 +248,33 @@ let
     '';
   };
 
-  # ---- the boot payload's two configs ------------------------------------
-  # ONE generator, two files, and the difference between them is one token.
+  # ---- the two boot configs ----------------------------------------------
   #
-  #   /boot/extlinux/extlinux.conf           the generation to boot
-  #   /boot/extlinux/extlinux-fallback.conf  the last one that was healthy
+  #   /boot/extlinux/extlinux.conf           NixOS writes it; the default boot
+  #   /boot/extlinux/extlinux-fallback.conf  DERIVED from it by mark-good
   #
   # U-Boot's `bootcmd` runs `sysboot ... ${extlinux_cfg}`; its `altbootcmd`,
   # which `bootcount` > `bootlimit` selects, runs the same command against
   # ${extlinux_fallback}. `sysboot` boots a config's DEFAULT entry and has no
-  # way to name a LABEL, so the choice of generation IS the choice of file --
-  # which is also why generations are not labels in one config here.
+  # way to be told a LABEL, so the choice of generation is made by choosing a
+  # FILE -- but since #99 the two files have the SAME labels, and only their
+  # DEFAULT line differs. That is what makes the fallback a derivation of the
+  # official config rather than a second generator: nothing in this repo
+  # renders an extlinux.conf any more.
   #
-  # The template carries THREE placeholders: @INIT@ for the generation's
-  # `init=`, and @KERNEL@/@FDT@ for the /boot files this entry loads.
-  # nanokvm-install-boot substitutes all three.
-  #
-  # THE KERNEL IS A PLACEHOLDER SINCE #86, and that is what made the rollback
-  # cover the kernel too. Before it, both configs named one `/boot/Image`, so a
-  # kernel update had no fallback and `/boot/Image.prev` was a manual stand-in.
-  # pkgs/boot-payload.nix names each kernel `Image-<hash>`, an update writes its
-  # own under a name nothing else uses, and the two configs can then name two
-  # different (generation, kernel) PAIRS. `nanokvm-mark-good` promotes the pair
-  # that booted healthy -- it learns which kernel that was from the
-  # `nanokvmboot=` token this same template puts on the command line, because
-  # `sysboot` tells the kernel nothing about the files it loaded.
-  extlinuxTemplate = pkgs.writeText "extlinux.conf.in"
-    (import ../pkgs/extlinux.nix {
-      inherit pkgs lib;
-      init = "@INIT@";
-      kernelFile = "@KERNEL@";
-      dtbFile = "@FDT@";
-      bootId = "@KERNEL@,@FDT@";
-    });
-  # ---- boot.loader.external installer ------------------------------------
-  # nixos/lib/install-boot.nix is the script and its reasoning; it lives there
-  # rather than here so the offline updater check can instantiate it against
-  # the build host's package set and actually run it.
-  bootInstaller = import ./lib/install-boot.nix {
-    inherit pkgs lib extlinuxTemplate;
+  # nixos/lib/mark-good.nix is the script and its reasoning; it lives there
+  # rather than here so `nix flake check`'s `nanokvm-mark-good-fallback` can
+  # instantiate it against the BUILD host's package set and run it for real.
+  markGood = import ./lib/mark-good.nix {
+    inherit pkgs lib;
+    serverEnabled = cfg.server.enable;
+    timeoutSec = cfg.markGood.timeoutSec;
   };
 
   # ---- the updater and the collector (#86) --------------------------------
   # nixos/lib/updater.nix's header is the design; this is only the wiring.
   updateTools = import ./lib/updater.nix {
-    inherit pkgs lib bootInstaller;
+    inherit pkgs lib;
     stableUrl = cfg.update.stableUrl;
     previewUrl = cfg.update.previewUrl;
     manifestName = cfg.update.manifestName;
@@ -488,143 +471,6 @@ let
     '';
   };
 
-  # ---- the health gate ---------------------------------------------------
-  # What "healthy" means for a KVM, in the three things it is FOR: the system
-  # finished starting, the web server answers, and the network works. A board
-  # that reaches a shell but serves nothing is not a board worth keeping as
-  # the rollback target.
-  #
-  # `systemctl is-system-running` is polled rather than ordered against,
-  # because it only becomes `running` when the initial transaction is EMPTY --
-  # a unit inside that transaction waiting for it would wait for itself. Hence
-  # the timer: the service it starts is its own job, outside the boot's.
-  markGood = pkgs.writeShellApplication {
-    name = "nanokvm-mark-good";
-    runtimeInputs = with pkgs; [ coreutils busybox curl iproute2 systemd gnugrep gnused ];
-    text = ''
-      set -eu
-
-      # TOP_CHIPMODE_GLB_BACKUP1, and the value U-Boot's DM_BOOTCOUNT_SYSCON
-      # backend reads as "magic present, count zero": CONFIG_SYS_BOOTCOUNT_MAGIC
-      # is 0xB001C041 and the four-byte mode keeps its top half in bits 31..16.
-      # A plain 32-bit store is right here -- nothing else owns this word, and
-      # unlike BACKUP0 there are no neighbouring bits to preserve.
-      BOOTCOUNT_REG=0x02390030
-      BOOTCOUNT_CLEAR=0xB0010000
-
-      deadline=$(( ${toString cfg.markGood.timeoutSec} ))
-      start=$(cut -d. -f1 /proc/uptime)
-
-      # /proc/uptime, never `date +%s`: timesyncd jumps the clock the moment
-      # DHCP lands, and a wall-clock deadline expires instantly when it does.
-      elapsed() { echo $(( $(cut -d. -f1 /proc/uptime) - start )); }
-
-      healthy() {
-        [ "$(systemctl is-system-running 2>/dev/null || true)" = running ] || return 1
-        ip -4 route show default | grep -q . || return 1
-        ${lib.optionalString cfg.server.enable ''
-          curl -sk -o /dev/null -m 5 https://127.0.0.1/ || return 1
-        ''}
-        return 0
-      }
-
-      while ! healthy; do
-        if [ "$(elapsed)" -ge "$deadline" ]; then
-          echo "mark-good: NOT healthy after ''${deadline}s -- leaving bootcount alone." >&2
-          echo "mark-good: is-system-running=$(systemctl is-system-running 2>&1 || true)" >&2
-          systemctl --failed --no-legend --no-pager >&2 || true
-          exit 1
-        fi
-        sleep 5
-      done
-
-      echo "mark-good: healthy after $(elapsed)s (bootcount was $(devmem $BOOTCOUNT_REG 32))"
-      devmem $BOOTCOUNT_REG 32 $BOOTCOUNT_CLEAR
-      echo "mark-good: bootcount cleared -> $(devmem $BOOTCOUNT_REG 32)"
-
-      # The fallback is regenerated from /run/booted-system, NOT copied from
-      # extlinux.conf. A `nixos-rebuild switch` between this boot and now has
-      # already rewritten extlinux.conf to name a generation that has never
-      # booted; copying it would promote an untested system on the strength of
-      # a different one's health. /run/booted-system is the only thing here
-      # that says what actually came up.
-      #
-      # THE DIRECTORY HAS TO BE THERE, and checking is not paranoia (#94).
-      # /boot is mounted `nofail`, and on the VENDOR layout there is no
-      # extlinux boot method at all -- the vendor U-Boot loads the kernel from
-      # a signed partition by byte offset. In both cases this `sed` would
-      # otherwise write into the root filesystem's own /boot directory: on the
-      # vendor layout it fails outright and every first boot of
-      # `.#nixos-firmware-image` ends up `degraded`, and with /boot unmounted
-      # it would SUCCEED, reporting a promotion into a file U-Boot can never
-      # read. Skipping is right either way -- the counter is already cleared,
-      # which is the half that keeps the board off the rollback path.
-      booted=$(readlink -f /run/booted-system)
-      dir=/boot/extlinux
-      if [ ! -d "$dir" ]; then
-        echo "mark-good: no $dir -- not promoting a fallback."
-        echo "mark-good: that is expected on the vendor layout, whose U-Boot does"
-        echo "           not read extlinux; anywhere else it means /boot is not mounted."
-        exit 0
-      fi
-      fallback="$dir/extlinux-fallback.conf"
-      conf="$dir/extlinux.conf"
-
-      # WHICH KERNEL THIS BOOT ACTUALLY USED (#86). `sysboot` loads LINUX and
-      # FDT and then tells the kernel nothing about which files they were, so
-      # the only honest source is the token pkgs/extlinux.nix puts on the
-      # command line -- and it is honest precisely because U-Boot copied it out
-      # of the config it chose, whichever of the two that was.
-      #
-      # Promoting a generation with the WRONG kernel would be worse than not
-      # promoting at all: the fallback would name a pair that has never booted
-      # together. So an absent token means keep the fallback's current kernel,
-      # and if there is no fallback yet, the default config's.
-      bootid=$(sed -n 's|.*[[:space:]]nanokvmboot=\([^[:space:]]*\).*|\1|p' /proc/cmdline)
-      if [ -n "$bootid" ]; then
-        K=''${bootid%%,*}
-        F=''${bootid#*,}
-      else
-        src="$fallback"; [ -r "$src" ] || src="$conf"
-        K=$(sed -n 's|^[[:space:]]*LINUX[[:space:]]\+||p' "$src" 2>/dev/null | head -1)
-        F=$(sed -n 's|^[[:space:]]*FDT[[:space:]]\+||p' "$src" 2>/dev/null | head -1)
-        echo "mark-good: no nanokvmboot= on the command line (a pre-#86 /boot?);"
-        echo "           keeping the fallback's kernel $K."
-      fi
-      if [ -z "$K" ] || [ -z "$F" ] || [ ! -f "/boot$K" ] || [ ! -f "/boot$F" ]; then
-        echo "mark-good: cannot establish this boot's kernel ($K / $F) -- not promoting." >&2
-        exit 0
-      fi
-
-      sed -e "s|@INIT@|$booted/init|g" -e "s|@KERNEL@|$K|g" -e "s|@FDT@|$F|g" \
-        ${extlinuxTemplate} > "$fallback.new"
-      if cmp -s "$fallback.new" "$fallback"; then
-        rm -f "$fallback.new"
-        echo "mark-good: fallback already $booted on $K"
-      else
-        sync "$fallback.new"
-        mv "$fallback.new" "$fallback"
-        sync
-        echo "mark-good: fallback promoted to $booted on $K"
-      fi
-
-      # COLLECT THE BOOT FILES NOTHING NAMES ANY MORE. This is the only moment
-      # it is safe: both configs are final (the default names the installed
-      # generation, the fallback now names the one that just proved itself) and
-      # /boot is the one partition with no room to leak. A file named by EITHER
-      # config is kept, so the worst case of a racing update is that a kernel
-      # survives one cycle longer.
-      keep=$(sed -n 's|^[[:space:]]*\(LINUX\|FDT\)[[:space:]]\+/||p' "$conf" "$fallback" 2>/dev/null | sort -u)
-      for f in /boot/Image-* /boot/*.dtb; do
-        [ -e "$f" ] || continue
-        b=$(basename "$f")
-        if printf '%s\n' "$keep" | grep -qxF "$b"; then continue; fi
-        echo "mark-good: /boot/$b is named by neither config -- removing"
-        rm -f "$f"
-      done
-      sync
-    '';
-  };
 in
 {
   # =====================================================================
@@ -917,41 +763,149 @@ in
     nixpkgs.hostPlatform = "aarch64-linux";
     system.stateVersion = "26.11";
 
-    # The kernel is pkgs/kernel-mainline, in its own signed eMMC partition;
-    # every driver this board needs is built in, so there is no modules tree.
-    boot.kernel.enable = false;
+    # =====================================================================
+    # 1a. The kernel, the device tree, and the bootloader (#99)
+    # =====================================================================
+    # THE KERNEL IS THE GENERATION'S. `pkgs/kernel-mainline` with no embedded
+    # initramfs, wrapped by `linuxPackagesFor` so NixOS's own machinery --
+    # `system.build.toplevel`'s `kernel`/`initrd`/`dtbs` links, the extlinux
+    # builder, the closure -- treats it as any other kernel. `nanokvm.kernel`
+    # is handed in through specialArgs because it is a cross build owned by the
+    # flake (nixos/rootfs.nix), not a package in this pkgs set.
+    #
+    # There are no modules: every driver is built in. `aggregateModules` copes
+    # ("No modules found"), and `makeModulesClosure` over an empty tree with an
+    # empty root list is a no-op -- which is why the two mkForce'd lists below
+    # are not optional.
+    boot.kernelPackages = pkgs.linuxPackagesFor nanokvm.kernel;
 
-    # "Install the bootloader" here means "write the inactive A/B slot", which
-    # is #79. Declaring it keeps `nixos-rebuild switch` honest instead of
-    # silently doing nothing.
-    boot.loader.external = {
-      enable = true;
-      installHook = "${bootInstaller}/bin/nanokvm-install-boot";
-    };
+    # OUR dtb, from dts/ in this repo -- NOT `make dtbs` inside the kernel
+    # tree, which on arm64 would build every other vendor's device trees to
+    # produce our one file (pkgs/dtb-mainline.nix). `name` makes the builder
+    # emit `FDT <dir>/<name>` rather than `FDTDIR <dir>`, which matters: an
+    # FDTDIR is resolved against `$fdtfile` or `$soc-$board.dtb` at boot
+    # (boot/pxe_utils.c, label_boot()), so it would put a second copy of this
+    # filename in the U-Boot environment. FDT names the file outright.
+    hardware.deviceTree.enable = true;
+    hardware.deviceTree.dtbSource = "${nanokvm.dtb}/dtb";
+    hardware.deviceTree.name = "ax630c-nanokvm-pro.dtb";
+
+    # THE BOOTLOADER IS NIXOS'S OWN, and it is the only writer of /boot.
+    # `switch-to-configuration boot` runs
+    # nixos/modules/system/boot/loader/generic-extlinux-compatible's builder,
+    # which copies this generation's kernel, initrd and dtbs into /boot/nixos/
+    # and writes /boot/extlinux/extlinux.conf. Nothing in this repo renders
+    # that file, and nothing else writes it -- the updater does not, the image
+    # build runs this same builder, and `nanokvm-mark-good` only ever derives
+    # the fallback FROM it.
+    boot.loader.generic-extlinux-compatible.enable = true;
+
+    # TIMEOUT 0 IS NOT A SPEED SETTING, it is what keeps U-Boot off the
+    # console. The builder emits a top-level `MENU TITLE` line whenever the
+    # timeout is non-zero, and `parse_pxefile_top()` sets `cfg->prompt = 1` on
+    # ANY top-level MENU keyword (boot/pxe_utils.c); `menu_get_choice()` then
+    # takes `menu_interactive_choice()`, which calls
+    # `cli_readline_into_buffer("Enter choice: ", ...)`. This board's console
+    # is a hidden, unterminated UART pad: a character of line noise is an
+    # unmatched key, the loop prints "<junk> not found" and asks again, and the
+    # timeout is reset each time -- forever. With 0 the builder writes no MENU
+    # line at all, `cfg->prompt` stays 0, and `menu_default_choice()` picks
+    # DEFAULT without reading anything. The per-LABEL `MENU LABEL` lines the
+    # builder still emits are parsed by `parse_label_menu()`, which does not
+    # touch `cfg->prompt`.
+    boot.loader.timeout = 0;
+
+    # HOW MANY GENERATIONS THE BOOT MENU NAMES, and it is squeezed from both
+    # sides.
+    #
+    # FROM BELOW: `nanokvm-mark-good` promotes by setting DEFAULT to the booted
+    # generation's LABEL, so that label has to be in the file -- a fallback
+    # naming a label U-Boot cannot match falls through to the FIRST label,
+    # which is the generation the rollback exists to escape. The deepest gap
+    # that can open is one: an update makes generation N+1 the default while
+    # the fallback still names N, and `nanokvm-update` refuses to install over
+    # a boot that has not been marked good, so N+2 cannot appear first. Two
+    # would do; three leaves a spare.
+    #
+    # FROM ABOVE: /boot. Each generation in the menu is a ~50 MB copy of its
+    # kernel, initrd and dtbs under /boot/nixos/, and the builder writes the
+    # new set BEFORE collecting the obsolete one -- so the partition has to
+    # hold `configurationLimit + 1` of them at the moment of a switch.
+    # pkgs/bootfs.nix asserts exactly that against the 272 MiB partition, from
+    # the sizes the image actually carries.
+    boot.loader.generic-extlinux-compatible.configurationLimit = 3;
+
     boot.loader.grub.enable = false;
     boot.loader.systemd-boot.enable = false;
-    boot.loader.generic-extlinux-compatible.enable = false;
+
+    # THE COMMAND LINE, minus `init=`, which the builder pins per LABEL -- that
+    # is what lets extlinux.conf and extlinux-fallback.conf name two different
+    # generations. Everything here was hardware-proven in #89 rung 2q round 6,
+    # minus that round's two test-only tokens:
+    #
+    #   * `watchdog.open_timeout=` is a DEADMAN, not a setting. Nothing in the
+    #     appliance opens /dev/watchdog, so the watchdog core pets U-Boot's dog
+    #     from kernel context forever; with an open deadline it stops and a
+    #     perfectly healthy board resets a few minutes in.
+    #   * `systemd.mask=systemd-pstore.service` keeps a boot's ramoops readable
+    #     by stopping systemd archiving and unlinking it. Also a harness
+    #     setting.
+    #
+    # `mem=512M` STAYS for now. The board has 1 GiB and the appliance sees
+    # 428 MB usable; dropping it made the kernel die before any console in
+    # rung 2p, and what lives above 512 MB has not been established.
+    #
+    # `blkdevparts=` is the layout, and it is the same string U-Boot's own
+    # `part_cmdline` driver reads -- nixos/emmc-partitions.nix parses it out of
+    # dts/ax630c-nanokvm-pro.dts, so there is one definition, not three.
+    #
+    # `boot.panic_on_fail` AND `stage1panic=1` CARRY NO `=1`, and that is the
+    # whole point. Upstream's stage-1 parser is
+    # `case $o in boot.panic_on_fail|stage1panic=1)`, and a shell `case`
+    # pattern must match the WHOLE word -- so `boot.panic_on_fail=1`, which is
+    # what this line said until 2026-09-09, matched NOTHING and silently left
+    # `panicOnFail` unset. It cost the rung-5 drill and a bench trip.
+    # `preDeviceCommands` below sets the variable too, depending on no string.
+    boot.kernelParams = [
+      "mem=512M"
+      "console=ttyS0,115200n8"
+      "earlycon=uart8250,mmio32,0x4880000"
+      "board_id=0x5,boot_reason=0x00,initcall_debug=0"
+      "usbcore.autosuspend=-1"
+      "root=${parts.root.device}"
+      "rootfstype=ext4"
+      "rw"
+      "rootwait"
+      parts.blkdevparts
+      "logomode=vo0@dsi_dpi_video"
+      "boot.panic_on_fail"
+      "stage1panic=1"
+      "panic=10"
+    ];
+    # `loglevel=` is emitted by nixos/modules/system/boot/kernel.nix from this
+    # option, so setting it here rather than in kernelParams keeps one of them.
+    boot.consoleLogLevel = 8;
 
     # =====================================================================
     # 2. The initrd -- what replaces the vendor /init
     # =====================================================================
-    # Classic (script) stage 1, not systemd-in-initrd. Two reasons, both
-    # specific to this board: the initrd is EMBEDDED IN THE KERNEL IMAGE and
-    # every byte of it is charged against a 64 MiB partition shared with the
-    # kernel; and the failure mode of a stage-1 that dies here is a board with
-    # no console and no autoboot interrupt window. A shell script that mounts
-    # one ext4 is the smaller, more inspectable thing.
+    # Classic (script) stage 1, not systemd-in-initrd. The failure mode of a
+    # stage 1 that dies on this board is a board with no console and no
+    # autoboot interrupt window; a shell script that mounts one ext4 is the
+    # smaller, more inspectable thing, and `panicOnFail` below is a property of
+    # that script specifically.
     boot.initrd.enable = true;
     boot.initrd.systemd.enable = false;
 
-    # Uncompressed, because pkgs/kernel-mainline.nix hands this straight to
-    # CONFIG_INITRAMFS_SOURCE and lets the KERNEL compress it (zstd). Compress
-    # it twice and the Image grows.
-    boot.initrd.compressor = "cat";
+    # Compressed the way NixOS compresses an initrd (zstd), because it is a
+    # FILE now: U-Boot loads /boot/nixos/<gen>-initrd to `ramdisk_addr_r` and
+    # hands the address to `booti`. It used to be `cat`, because
+    # pkgs/kernel-mainline.nix fed it to CONFIG_INITRAMFS_SOURCE and let the
+    # kernel do the compression -- compress it twice and the Image grew.
+    # Nothing embeds it any more (#99).
 
     # There are no kernel modules at all -- every driver this board has is
-    # built into the Image, and `boot.kernel.enable = false` means there is no
-    # modules tree to draw a closure from.
+    # built into the Image, and the kernel derivation ships no modules tree.
     #
     # mkForce, not `= [ ]`: option lists MERGE, and nixos/modules/tasks/
     # filesystems/ext.nix adds "ext2 ext4" to availableKernelModules for the
@@ -1132,8 +1086,9 @@ in
     # flags there (usb.ncm, usb.disk0, usb.uac2, eth.nodhcp, ...), the module
     # loader sources /boot/configs, and the vendor initramfs contract still
     # uses /boot/rec and /boot/check_resize2fs on a vendor boot. Since #89
-    # rung 3 it also holds the boot payload -- extlinux.conf, the kernel and the
-    # dtb, both content-addressed since #86 (Image-<hash>).
+    # rung 3 it also holds the boot payload, and since #99 that payload is
+    # NixOS's: /boot/extlinux/extlinux.conf plus one /boot/nixos/<hash>-kernel,
+    # -initrd and -dtbs per generation in the menu.
     #
     # EXT4 UNDER THE MINIMAL LAYOUT. The kernel needs ext4 for root anyway, so
     # putting /boot on it retires the CONFIG_VFAT_FS + NLS-codepage trap
@@ -1668,6 +1623,9 @@ in
       # the server reaches it by store path, not through PATH.
       nanokvm.nanokvm-gpio
     ] ++ lib.optional cfg.ubootTest.enable ubootTest
+    # On PATH so a hardware run can force the promotion by hand and read what
+    # it decided, rather than inferring it from the unit's journal.
+    ++ lib.optional cfg.markGood.enable markGood
     ++ lib.optionals cfg.update.enable [ updateTools.updater updateTools.gc ]
     ++ (with pkgs; [
       busybox # devmem, udhcpd/udhcpc
@@ -1710,17 +1668,20 @@ in
         assertion = !config.boot.initrd.systemd.enable;
         message = ''
           nixos/appliance.nix: boot.initrd.systemd.enable must stay false.
-          The initrd is embedded in the kernel Image and shares a 64 MiB
-          partition with it, and a stage 1 that dies on this board is silent
-          (no console, no autoboot interrupt window).
+          A stage 1 that dies on this board is silent -- no console, no
+          autoboot interrupt window -- and the `panicOnFail` deadman below is
+          a property of the SCRIPTED stage 1 specifically. top-level.nix also
+          swaps <system>/init for a copy of the systemd binary when it is on,
+          which breaks the /init contract the rootfs asserts.
         '';
       }
       {
-        assertion = !config.boot.kernel.enable;
+        assertion = config.boot.kernel.enable;
         message = ''
-          nixos/appliance.nix: boot.kernel.enable must stay false. The kernel
-          is pkgs/kernel-mainline in eMMC partitions p14/p15; a NixOS kernel in
-          the closure would be dead weight nothing boots.
+          nixos/appliance.nix: boot.kernel.enable must stay true (#99). The
+          kernel, the initrd and the dtb ARE the generation now; with this off
+          there is no $out/kernel for the extlinux builder to copy and /boot
+          would name files nothing produces.
         '';
       }
       {
@@ -1729,6 +1690,47 @@ in
           nixos/appliance.nix: boot.initrd.enable must stay true. Nothing else
           mounts the root filesystem -- the vendor initramfs that used to do it
           is not on this kernel.
+        '';
+      }
+      {
+        assertion = config.boot.loader.generic-extlinux-compatible.enable;
+        message = ''
+          nixos/appliance.nix: generic-extlinux-compatible must stay enabled.
+          It is the only writer of /boot/extlinux/extlinux.conf, and U-Boot's
+          `bootcmd` reads exactly that file. Nothing else on this system
+          writes a boot config.
+        '';
+      }
+      {
+        assertion = config.boot.loader.timeout == 0;
+        message = ''
+          nixos/appliance.nix: boot.loader.timeout must be 0. Any other value
+          makes the builder emit a top-level `MENU TITLE`, which sets
+          `cfg->prompt = 1` in U-Boot's parse_pxefile_top() -- and this board's
+          console is a hidden, unterminated UART pad, so the prompt loop reads
+          line noise forever and the board never boots.
+        '';
+      }
+      {
+        assertion =
+          config.boot.loader.generic-extlinux-compatible.configurationLimit >= 3;
+        message = ''
+          nixos/appliance.nix: the boot menu must name at least three
+          generations. nanokvm-mark-good promotes the BOOTED one by name, and
+          an update can put the default one generation ahead of it -- so with
+          fewer than two the fallback ends up naming a LABEL the file does not
+          define, and a DEFAULT U-Boot cannot match falls through to the FIRST
+          label, which is the generation the rollback exists to escape. The
+          third is a spare. The ceiling is /boot, asserted in pkgs/bootfs.nix.
+        '';
+      }
+      {
+        assertion = config.hardware.deviceTree.name != null;
+        message = ''
+          nixos/appliance.nix: hardware.deviceTree.name must be set. Without
+          it the builder writes FDTDIR, which U-Boot resolves through
+          $fdtfile / $soc-$board.dtb -- putting the filename in the U-Boot
+          environment, where nothing in this repo maintains it.
         '';
       }
     ];

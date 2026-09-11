@@ -1,8 +1,8 @@
 { pkgs, nixpkgs }:
 
 # ===========================================================================
-# The two artifacts a NanoKVM-Pro NixOS system turns into: the stage-1 initrd
-# the kernel embeds, and the ext4 the eMMC carries.
+# The two artifacts a NanoKVM-Pro NixOS system turns into: the `/boot`
+# directory the bootloader reads, and the ext4 the eMMC carries.
 #
 # They live here, as PURE FUNCTIONS OF THE SYSTEM CLOSURE, for one reason: the
 # `.axp` builder (nixos/lib/make-axp-image.nix, wired up by nixos/image-axp.nix)
@@ -25,58 +25,91 @@
 let
   lib = pkgs.lib;
 
-  # /dev/console and /dev/null, as a cpio fragment.
+  # ---- /boot, written by NixOS's own extlinux builder (#99) --------------
   #
-  # THE TRAP THIS EXISTS FOR. The kernel ALWAYS unpacks a built-in initramfs;
-  # when CONFIG_INITRAMFS_SOURCE is empty it unpacks usr/default_cpio_list,
-  # which does nothing except create /dev, /dev/console and /root. So on an
-  # ordinary machine -- bootloader hands the initrd to the kernel separately --
-  # /dev/console exists before PID 1 starts, and a NixOS initrd carries no
-  # device nodes because it has never needed to.
+  # THE IMAGE'S /boot AND THE DEVICE'S ARE THE SAME PROGRAM'S OUTPUT. On the
+  # board `switch-to-configuration boot` runs
+  # nixos/modules/system/boot/loader/generic-extlinux-compatible's builder;
+  # here we run THAT SCRIPT against the image's toplevel, exactly the way
+  # nixpkgs' sd-image does in `populateRootCommands`. So a freshly flashed
+  # board and one that has switched once have a /boot of identical shape, and
+  # there is no second generator to keep in step.
   #
-  # Setting INITRAMFS_SOURCE REPLACES that default list. PID 1 then starts with
-  # fd 0/1/2 closed ("Warning: unable to open an initial console"), and NixOS
-  # stage 1 dies on its first `exec 8>&1` with no output whatsoever -- observed
-  # as a panic 330 ms after "Run /init as init process", with nothing between.
-  # On the real board that is indistinguishable from a kernel that hung.
-  #
-  # fakeroot, because mknod(2) needs privileges the build sandbox does not
-  # have; it fakes the node and cpio records the type and rdev from its stat.
-  # Appended AFTER the NixOS archive, so these entries win if anything ever
-  # collides: the kernel's unpacker resets at each TRAILER and keeps going,
-  # which is exactly how concatenated initramfs images are supported.
-  devNodes = pkgs.runCommand "nanokvm-initrd-dev-nodes.cpio"
-    {
-      nativeBuildInputs = [ pkgs.fakeroot pkgs.cpio ];
-      mkNodes = pkgs.writeShellScript "mk-dev-nodes" ''
-        set -eu
-        mknod dev/console c 5 1
-        mknod dev/null    c 1 3
-        chmod 0600 dev/console
-        chmod 0666 dev/null
-        printf 'dev\ndev/console\ndev/null\n' | cpio -o -H newc --quiet > "$out"
-      '';
-    } ''
-    mkdir -p root/dev
-    cd root
-    fakeroot -- "$mkNodes"
-    cpio -itv --quiet < "$out"
-  '';
+  # WHY NOT `config.boot.loader.generic-extlinux-compatible.populateCmd`: that
+  # attribute instantiates the builder from `pkgs.buildPackages`, which for a
+  # natively-evaluated aarch64 system is aarch64 -- so running it at image
+  # build time would need binfmt on whatever machine cuts the release. The
+  # builder is bash + coreutils + sed + grep and the files it copies are
+  # architecture-neutral, so it is instantiated from the BUILD host's set
+  # instead. The three arguments that shape its output are passed in from the
+  # module's own options, so the two cannot disagree about them.
+  extlinuxBuilder = import
+    (nixpkgs + "/nixos/modules/system/boot/loader/generic-extlinux-compatible/extlinux-conf-builder.nix")
+    { inherit lib pkgs; };
 
-  # `boot.initrd.compressor = "cat"` in the appliance makes this a PLAIN cpio.
-  # pkgs/kernel-mainline.nix hands it to CONFIG_INITRAMFS_SOURCE and lets the
-  # kernel do the compression (a .cpio source is used verbatim, then compressed
-  # once -- usr/Makefile). Compressing it here too would only make the Image
-  # bigger.
-  mkInitrd = { initialRamdisk, initrdFile }:
-    pkgs.runCommand "nanokvm-appliance-initramfs.cpio" { } ''
-      src=${initialRamdisk}/${initrdFile}
-      if [ "$(head -c 6 "$src")" != "070701" ]; then
-        echo "ERROR: the initrd is not a plain (newc) cpio -- boot.initrd.compressor" >&2
-        echo "       must be \"cat\", or the kernel will compress it twice." >&2
+  mkBootDir = { toplevel, configurationLimit, timeout, dtbName }:
+    pkgs.runCommand "nanokvm-boot-dir"
+      {
+        nativeBuildInputs = with pkgs; [ coreutils gnugrep gnused ];
+        meta.description =
+          "The /boot tree for one NixOS generation, written by NixOS's own extlinux builder";
+      } ''
+      mkdir -p "$out"
+      ${extlinuxBuilder} \
+        -g ${toString configurationLimit} \
+        -t ${if timeout == null then "-1" else toString timeout} \
+        -n ${lib.escapeShellArg dtbName} \
+        -d "$out" \
+        -c ${toplevel}
+
+      # THE SEED FALLBACK. `altbootcmd` reads this file and nothing creates it
+      # on a board that has never switched, so it ships as a copy: the only
+      # known-good generation on a freshly flashed board is the one being
+      # flashed. `nanokvm-mark-good` derives every later version of it from
+      # extlinux.conf (nixos/lib/mark-good.nix).
+      cp "$out/extlinux/extlinux.conf" "$out/extlinux/extlinux-fallback.conf"
+
+      # --- contract checks, every one of them a silent non-boot ----------
+      conf="$out/extlinux/extlinux.conf"
+      echo "=== $conf ==="
+      cat "$conf"
+
+      n=$(find "$out/extlinux" -name 'extlinux.conf' | wc -l)
+      [ "$n" = 1 ] || { echo "ERROR: $n extlinux.conf files under $out/extlinux" >&2; exit 1; }
+
+      # NO TOP-LEVEL `MENU` KEYWORD. `parse_pxefile_top()` sets
+      # `cfg->prompt = 1` on any of them (boot/pxe_utils.c) and U-Boot then
+      # reads this board's unterminated console forever. The indented
+      # `MENU LABEL` lines inside a LABEL go to `parse_label_menu()`, which
+      # does not. So the test is on the COLUMN, and it is exact.
+      if grep -q '^MENU' "$conf"; then
+        echo "ERROR: a top-level MENU keyword makes U-Boot prompt on a console" >&2
+        echo "       nobody can reach. Set boot.loader.timeout = 0." >&2
         exit 1
       fi
-      cat "$src" ${devNodes} > "$out"
+
+      grep -qx 'DEFAULT nixos-default' "$conf" \
+        || { echo "ERROR: the config does not default to nixos-default" >&2; exit 1; }
+      grep -qx 'LABEL nixos-default' "$conf" \
+        || { echo "ERROR: the config has no nixos-default entry" >&2; exit 1; }
+      grep -q 'APPEND init=${toplevel}/init ' "$conf" \
+        || { echo "ERROR: the default entry does not pin this image's generation" >&2; exit 1; }
+
+      # Every file the config names has to BE there. A config naming a missing
+      # kernel is a board that loads nothing and has no console to say so.
+      for kw in LINUX INITRD FDT; do
+        f=$(sed -n "s|^[[:space:]]*$kw[[:space:]]\+||p" "$conf" | head -1)
+        [ -n "$f" ] || { echo "ERROR: no $kw line in $conf" >&2; exit 1; }
+        # Paths are relative to the config's own directory (ctx->bootdir in
+        # U-Boot's get_relfile()), which is /extlinux -- hence ../nixos/...
+        [ -f "$out/extlinux/$f" ] \
+          || { echo "ERROR: $kw names $f, which is not in this /boot" >&2; exit 1; }
+        echo "  $kw $f -> $(stat -Lc%s "$out/extlinux/$f") bytes"
+      done
+
+      echo "=== /boot tree ==="
+      find "$out" -maxdepth 2 | sort
+      du -sh "$out"
     '';
 
   mkRootImage = toplevel: import (nixpkgs + "/nixos/lib/make-ext4-fs.nix") {
@@ -97,11 +130,12 @@ let
       ln -s system-1-link ./files/nix/var/nix/profiles/system
       ln -s /nix/var/nix/profiles ./files/nix/var/nix/gcroots/profiles
 
-      # THE switch_root TARGET. NixOS stage 1 execs $targetRoot/init unless the
-      # command line carries init=, and this board's command line comes from the
-      # U-Boot environment, which we do not write. /sbin/init is kept as well:
-      # it costs a symlink and it is what the vendor initramfs would exec if
-      # this image were ever booted by the 4.19 kernel.
+      # THE switch_root BACKSTOP. Every extlinux LABEL pins `init=` since #99,
+      # so this is no longer the mechanism -- but stage 1 falls back to
+      # $targetRoot/init when the command line carries none, and a /boot
+      # written by hand during a hardware round might. /sbin/init is kept as
+      # well: it costs a symlink and it is what the vendor initramfs would
+      # exec if this image were ever booted by the 4.19 kernel.
       ln -s /nix/var/nix/profiles/system/init ./files/init
       ln -s /nix/var/nix/profiles/system/init ./files/sbin/init
 
@@ -129,7 +163,7 @@ let
   # Android-sparse copy the .axp carries. Every contract check that can be made
   # offline is made here, on the packed image -- each one would otherwise be a
   # silent non-boot on a board with no console and bootdelay=0.
-  mkRootfs = { toplevel, initrd, version, variant, rootDevice }:
+  mkRootfs = { toplevel, bootDir, version, variant, rootDevice }:
     pkgs.stdenvNoCC.mkDerivation {
       pname = "nanokvm-pro-nixos-rootfs";
       inherit version;
@@ -172,6 +206,16 @@ let
         }
         echo "  /init -> profile -> ${toplevel}/init: present, and is a stage-2 script."
 
+        # THE KERNEL IS IN THE CLOSURE (#99), and so are the initrd and the
+        # dtbs. Without them the extlinux builder has nothing to copy and
+        # /boot names files that do not exist -- and the only symptom on the
+        # board is a bootloader that loads nothing, silently.
+        for l in kernel initrd dtbs; do
+          debugfs -R "stat ${toplevel}/$l" rootfs.ext4 2>/dev/null | grep -q "Inode:" \
+            || { echo "ERROR: ${toplevel}/$l is not in the image -- is boot.kernel.enable off?" >&2; exit 1; }
+        done
+        echo "  the generation carries its own kernel, initrd and dtbs."
+
         # BLOB POLICY (CLAUDE.md, #54, #60). The shipped video stack has been
         # blob-free since #60 and the image carries no vendor kernel module, so a
         # closed Axera library appearing in this closure means something grew a
@@ -200,18 +244,18 @@ let
         cp rootfs.ext4               "$out/nixos_rootfs.ext4"
         cp ubuntu_rootfs_sparse.ext4 "$out/ubuntu_rootfs_sparse.ext4"
         ln -s "${toplevel}" "$out/system"
-        ln -s "${initrd}"   "$out/initramfs.cpio"
+        ln -s "${bootDir}"  "$out/boot"
         cat > "$out/NOTES.txt" <<EOF
         NanoKVM-Pro NixOS appliance rootfs (issue #78) -- variant: ${variant}
 
         system closure : ${toplevel}
         nixpkgs pin    : ${toString nixpkgs}
         root device    : ${rootDevice}
-        init contract  : /init -> /nix/var/nix/profiles/system/init (NixOS stage 2)
-        stage 1        : NixOS initrd, embedded in the kernel Image
-                         (.#kernel-mainline-appliance)
+        init contract  : each extlinux LABEL pins init=<generation>/init;
+                         /init -> /nix/var/nix/profiles/system/init is the backstop
+        stage 1        : the generation's own initrd, loaded off /boot by U-Boot
         outputs        : nixos_rootfs.ext4 (raw), ubuntu_rootfs_sparse.ext4 (.axp),
-                         initramfs.cpio (uncompressed, for CONFIG_INITRAMFS_SOURCE)
+                         boot/ (the extlinux tree this generation's /boot carries)
 
         DO NOT FLASH THE eMMC ROOTFS PARTITION WITH THIS while the vendor system is
         the only way back onto the board. Read docs/nixos-rootfs.md; the reversible
@@ -229,4 +273,4 @@ let
       };
     };
 in
-{ inherit devNodes mkInitrd mkRootImage mkRootfs; }
+{ inherit mkBootDir mkRootImage mkRootfs; }

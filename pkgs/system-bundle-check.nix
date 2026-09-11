@@ -1,7 +1,6 @@
 { pkgs
 , lib ? pkgs.lib
 , system-bundle
-, bootPayload
 , toplevel
 , version ? "0.0.0-dev"
 , manifestName ? "nanokvm_pro_sys_latest.json"
@@ -27,7 +26,9 @@
 #   3. MANIFEST.json's `toplevel`, and that closure.txt contains it
 #   4. closure.txt == the toplevel's real closure, exactly
 #   5. one `store/<base>` per closure line
-#   6. the boot payload the manifest names, present and matching its hashes
+#   6. the kernel, initrd and dtbs the generation boots are IN that closure --
+#      since #99 they are ordinary store paths, and a bundle without them
+#      installs a system the extlinux builder cannot write an entry for
 #   7. no hardlink entries, because the device's extractor drops them silently
 # ===========================================================================
 
@@ -116,38 +117,26 @@ pkgs.runCommand "nanokvm-system-bundle-check"
   [ -z "$extra" ] || { echo "$extra" >&2; fail "the archive carries store paths outside the closure"; }
   ok "store/ carries exactly the closure, no more and no less"
 
-  # ---- 6. the boot payload ---------------------------------------------
-  echo "=== the boot payload ==="
-  # shellcheck source=/dev/null
-  . ${bootPayload}/NAMES
-  bk=$(jq -r '.boot.kernel' "$B/MANIFEST.json")
-  bf=$(jq -r '.boot.fdt'    "$B/MANIFEST.json")
-  [ "$bk" = "$KERNEL" ] || fail "MANIFEST.json names kernel $bk, the payload is $KERNEL"
-  [ "$bf" = "$FDT" ]    || fail "MANIFEST.json names dtb $bf, the payload is $FDT"
-  [ "$(jq -r '.boot.kernelSha256' "$B/MANIFEST.json")" = "$KERNEL_SHA256" ] \
-    || fail "the kernel hash in MANIFEST.json is not the kernel's"
-  [ "$(jq -r '.boot.fdtSha256' "$B/MANIFEST.json")" = "$FDT_SHA256" ] \
-    || fail "the dtb hash in MANIFEST.json is not the dtb's"
-  ok "the manifest names the bundled kernel and dtb, with their real hashes"
+  # ---- 6. the boot payload is IN the closure ---------------------------
+  # Not beside it. Since #99 the generation carries its own kernel, initrd and
+  # dtbs, and `switch-to-configuration boot` is what puts them on /boot -- so
+  # what this has to prove is that those three store paths travelled with the
+  # closure and are extractable from the archive like everything else.
+  echo "=== the kernel, initrd and dtbs the generation boots ==="
+  ! jq -e 'has("boot")' "$B/MANIFEST.json" >/dev/null \
+    || fail "MANIFEST.json still carries a separate boot payload -- the bundle must not"
+  ok "the manifest declares no out-of-band boot payload"
 
-  grep -qxF "${root}/boot/$KERNEL" names.txt || fail "the kernel is not in the archive"
-  grep -qxF "${root}/boot/$FDT"    names.txt || fail "the dtb is not in the archive"
-  ok "both are actually in the archive"
-
-  # The kernel's name IS its hash -- that is what lets two extlinux configs name
-  # two kernels, so the two must agree or the rollback names a file that is not
-  # what it says it is.
-  case "$KERNEL_SHA256" in
-    "''${KERNEL#Image-}"*) ;;
-    *) fail "the kernel's content-addressed name is not a prefix of its sha256" ;;
-  esac
-  ok "the kernel's name is a prefix of its own sha256"
-
-  # The flashed image's config must name the same kernel the bundle ships, or a
-  # freshly flashed board and an updated one would not be the same system.
-  grep -q "LINUX /$KERNEL" ${bootPayload}/boot/extlinux/extlinux.conf \
-    || fail "the /boot payload's config does not name the kernel it ships"
-  ok "the shipped extlinux.conf names the same kernel"
+  for l in kernel initrd dtbs; do
+    p=$(readlink -f "${toplevel}/$l")
+    # $out/kernel and $out/initrd point AT the file inside the store path.
+    sp=$(printf '%s' "$p" | sed 's|^\(/nix/store/[^/]*\).*|\1|')
+    grep -qxF "$sp" "$B/closure.txt" \
+      || fail "$l ($sp) is not in closure.txt"
+    grep -qxF "${root}/store/''${sp#/nix/store/}" names.txt \
+      || fail "$l ($sp) is not carried by the archive"
+    ok "$l -> $sp, in the closure and in the archive"
+  done
 
   echo
   echo "the published bundle describes the system it was built from."

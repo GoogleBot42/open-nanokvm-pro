@@ -1,6 +1,5 @@
 { pkgs
 , lib ? pkgs.lib
-, bootInstaller # nanokvm-install-boot, the boot.loader.external hook
 , stableUrl # release base URL: <base>/<manifestName>, <base>/<payload>
 , previewUrl # the rolling preview channel's base URL
 , manifestName ? "nanokvm_pro_sys_latest.json"
@@ -13,13 +12,22 @@
 # `nanokvm-update` and `nanokvm-gc` -- the appliance's whole update mechanism
 # (#86).
 #
-# WHAT AN UPDATE IS HERE. The appliance has no `nix` (nixos/appliance.nix,
-# `nix.enable = false`): the rootfs is a fixed closure the build host produced,
-# which is what keeps the image small and the device auditable. So an update is
-# not a `nixos-rebuild`; it is a SYSTEM BUNDLE -- the new toplevel's whole
-# closure, the kernel that closure's stage-1 initrd is baked into, and a list
-# saying which store paths belong to it -- unpacked into the store, made the
-# system profile, and booted into.
+# WHAT AN UPDATE IS HERE. The appliance has no `nix` yet (nixos/appliance.nix,
+# `nix.enable = false`; #100 turns it on): the rootfs is a fixed closure the
+# build host produced, which is what keeps the image small and the device
+# auditable. So an update is not a `nixos-rebuild`; it is a SYSTEM BUNDLE --
+# the new toplevel's whole closure and a list saying which store paths belong
+# to it -- unpacked into the store, made the system profile, and booted into.
+# Once #100 lands, the profile and closure bookkeeping below become
+# `nix-env -p .../system --set` and a real store database; the shape of the
+# bundle does not change.
+#
+# THE BUNDLE CARRIES NO /boot HALF ANY MORE (#99). The kernel, the initrd and
+# the device tree are part of the generation, so they arrive as ordinary store
+# paths in the closure, and `switch-to-configuration boot` -- NixOS's own
+# extlinux builder -- is what copies them into /boot. This script does not
+# write a single byte of /boot, which is the whole point of the change: there
+# is one writer, and it is the official one.
 #
 # THE REBOOT IS THE POINT, not an afterthought. The generation is installed
 # with `switch-to-configuration boot`, so nothing about it is live until the
@@ -56,7 +64,7 @@ let
   # Everything the scripts shell out to. `busybox` last, so the real tools win
   # and only `devmem` comes from it.
   tools = with pkgs; [
-    coreutils gnused gnugrep gnutar gzip findutils curl openssl jq util-linux
+    coreutils gnused gnugrep gawk gnutar gzip findutils curl openssl jq util-linux
     systemd busybox
   ];
 
@@ -68,7 +76,7 @@ let
       install <bundle.tar.gz>  verify + unpack + install a bundle from a file
       install-staged <dir> [v] install an already-unpacked bundle (the web UI path)
       gc                       drop old generations and the store paths only they used
-      status                   generations, boot configs, /boot payload
+      status                   generations, both boot configs, /boot usage
 
     A bundle is built by "nix build .#system-bundle"; see docs/updates.md.
   '';
@@ -94,11 +102,39 @@ let
       mount -o remount,bind,ro /nix/store
     }
     P() { printf '%s%s' "$ROOT" "$1"; }
+
+    # WHICH GENERATION AN EXTLINUX CONFIG ACTUALLY BOOTS (#99).
+    #
+    # NixOS's builder writes one LABEL per generation and a single top-level
+    # DEFAULT that selects among them, so "the `init=` in this file" is no
+    # longer a question with one answer -- there are several, and only one of
+    # them is live. Reading the first would pin the wrong generation, and for
+    # `nanokvm-gc` that means deleting the one the ROLLBACK depends on.
+    #
+    # Prints the toplevel store path the file's DEFAULT entry pins, or nothing
+    # at all. Every caller must treat "nothing" as "do not delete", never as
+    # "nothing is pinned".
+    conf_default_toplevel() {
+      [ -r "$1" ] || return 0
+      awk '
+        $1 == "DEFAULT" && !d { want = $2; d = 1; next }
+        $1 == "LABEL"         { cur = $2; next }
+        cur == want && $1 == "APPEND" {
+          for (i = 2; i <= NF; i++)
+            if (substr($i, 1, 5) == "init=") {
+              p = substr($i, 6)
+              sub(/\/init$/, "", p)
+              print p
+              exit
+            }
+        }
+      ' "$1"
+    }
   '';
 
   updater = pkgs.writeShellApplication {
     name = "nanokvm-update";
-    runtimeInputs = tools ++ [ bootInstaller ];
+    runtimeInputs = tools;
     text = ''
       set -eu
       ${common}
@@ -157,15 +193,11 @@ let
         local mf="$dir/MANIFEST.json"
         [ -r "$mf" ] || die "$dir is not a system bundle (no MANIFEST.json)"
 
-        local fmt top kern fdt ksha fsha
+        local fmt top
         fmt=$(jq -r '.format' "$mf")
         [ "$fmt" = "nanokvm-system-bundle/1" ] \
           || die "unknown bundle format '$fmt' -- this system installs nanokvm-system-bundle/1"
         top=$(jq -r '.toplevel' "$mf")
-        kern=$(jq -r '.boot.kernel' "$mf")
-        fdt=$(jq -r '.boot.fdt' "$mf")
-        ksha=$(jq -r '.boot.kernelSha256' "$mf")
-        fsha=$(jq -r '.boot.fdtSha256' "$mf")
         [ -r "$dir/closure.txt" ] || die "$dir has no closure.txt"
         grep -qxF "$top" "$dir/closure.txt" \
           || die "closure.txt does not contain the toplevel it claims ($top)"
@@ -215,27 +247,19 @@ let
         mkdir -p "$(P "$STATE")/closures"
         install -m 0644 "$dir/closure.txt" "$(P "$STATE")/closures/''${top#/nix/store/}.txt"
 
-        # --- 3. /boot ------------------------------------------------------
-        # Content-addressed names, so a file that is already there is already
-        # the right bytes -- but verify the ones we write, because /boot is
-        # what U-Boot reads and a bad kernel here costs a rollback cycle.
-        local bootdir; bootdir="$(P /boot)"
-        [ -d "$bootdir/extlinux" ] || die "$bootdir/extlinux is missing -- is /boot mounted?"
-        install_boot_file "$dir/boot/$kern" "$bootdir/$kern" "$ksha"
-        install_boot_file "$dir/boot/$fdt"  "$bootdir/$fdt"  "$fsha"
-
-        # --- 4. the system profile ----------------------------------------
-        # AFTER /boot, and that ordering is the failure plan: everything that
-        # can fail on a full filesystem or a bad hash has already run, and if
-        # anything below this line dies, what boots is still decided by the
-        # extlinux.conf already on the partition -- which pins `init=`, so the
-        # profile the next boot follows does not matter.
+        # --- 3. the system profile ----------------------------------------
+        # AFTER the store, and that ordering is the failure plan: everything
+        # that can fail on a full filesystem has already run, and if anything
+        # below this line dies, what boots is still decided by the
+        # extlinux.conf already on /boot -- which pins `init=` per entry, so
+        # the profile the next boot follows does not matter.
         #
-        # The one exception is a FRESHLY FLASHED board, whose baked config
-        # carries no `init=` at all and therefore follows the profile. A crash
-        # between here and step 5 would boot the new generation on the old
-        # kernel there. Both are this flake's and stage 1 mounts root by
-        # device, so it comes up; it is worth knowing, not worth a transaction.
+        # THE SYMLINK DANCE IS A STAND-IN. The official way to advance a
+        # profile is `nix-env -p /nix/var/nix/profiles/system --set <toplevel>`,
+        # and #100 puts `nix` on the appliance so this can be exactly that.
+        # Until then there is no nix here to run it, and the store has no
+        # database for it to consult, so the links are made by hand -- in the
+        # same order and with the same atomic rename nix-env uses.
         local prof; prof="$(P /nix/var/nix/profiles)"
         mkdir -p "$prof"
         local next; next=$(next_generation "$prof")
@@ -245,43 +269,29 @@ let
         sync
         say "generation $next is now the system profile"
 
-        # --- 5. the boot config -------------------------------------------
-        # The pending note is what makes `switch-to-configuration boot` -- which
-        # calls nanokvm-install-boot as boot.loader.external's hook, with no
-        # arguments of ours -- name THIS bundle's kernel rather than the running
-        # one.
-        printf 'KERNEL=/%s\nFDT=/%s\n' "$kern" "$fdt" > "$(P /run/nanokvm-pending-boot)"
+        # --- 4. /boot, written by NixOS and by nothing else ----------------
+        # `switch-to-configuration boot` runs the generation's own
+        # `installBootLoader` -- the generic-extlinux-compatible builder --
+        # which copies THIS generation's kernel, initrd and dtbs into
+        # /boot/nixos/ and rewrites /boot/extlinux/extlinux.conf. It also
+        # collects the boot files no entry names any more. Nothing in this
+        # script touches /boot at all (#99): one writer, and it is the
+        # official one.
+        #
+        # It runs LAST, and out of the NEW toplevel, because it is the step
+        # that decides what the next boot is. Everything before it is undone
+        # by simply not doing this.
         if [ "$ACTIVATE" = 1 ] && [ -z "$ROOT" ]; then
           "$top/bin/switch-to-configuration" boot
         else
-          say "not activating (--no-activate or --root); writing the boot config directly"
-          nanokvm-install-boot ''${ROOT:+--root "$ROOT"} --kernel "/$kern" --fdt "/$fdt" "$top"
+          say "not activating (--no-activate or --root): /boot is UNCHANGED, so the"
+          say "next boot still runs whatever extlinux.conf already names."
         fi
-        rm -f "$(P /run/nanokvm-pending-boot)"
         sync
 
         say "installed. The reboot is what proves it: U-Boot counts the attempt"
         say "and nanokvm-mark-good clears the counter only once this system is"
         say "running, routed and serving. Three bad attempts roll it back."
-      }
-
-      install_boot_file() {
-        local src="$1" dst="$2" want="$3" got
-        if [ -f "$dst" ]; then
-          got=$(sha256sum "$dst" | cut -d' ' -f1)
-          if [ "$got" = "$want" ]; then say "/boot/$(basename "$dst") already present"; return 0; fi
-          say "/boot/$(basename "$dst") differs from the bundle -- rewriting"
-        fi
-        [ -f "$src" ] || die "the bundle does not carry $(basename "$dst")"
-        got=$(sha256sum "$src" | cut -d' ' -f1)
-        [ "$got" = "$want" ] || die "$(basename "$src") does not match the hash in MANIFEST.json"
-        cp "$src" "$dst.new"
-        sync "$dst.new"
-        mv -f "$dst.new" "$dst"
-        sync
-        got=$(sha256sum "$dst" | cut -d' ' -f1)
-        [ "$got" = "$want" ] || die "read-back of /boot/$(basename "$dst") does not match"
-        say "/boot/$(basename "$dst") written and verified"
       }
 
       next_generation() {
@@ -394,9 +404,10 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
         for c in extlinux.conf extlinux-fallback.conf; do
           f="$(P /boot/extlinux)/$c"
           [ -r "$f" ] || { echo "$c: (absent)"; continue; }
-          echo "$c: $(sed -n 's|.*init=\([^ ]*\).*|\1|p' "$f" | head -1) on $(sed -n 's|^[[:space:]]*LINUX[[:space:]]\+||p' "$f" | head -1)"
+          l=$(awk '$1 == "DEFAULT" { print $2; exit }' "$f")
+          echo "$c: DEFAULT $l -> $(conf_default_toplevel "$f")"
         done
-        echo "boot payload      : $(find "$(P /boot)" -maxdepth 1 -name "Image-*" -printf "%f " 2>/dev/null)"
+        echo "boot files        : $(du -sh "$(P /boot/nixos)" 2>/dev/null | cut -f1) in /boot/nixos"
         ;;
 
       *) usage ;;
@@ -444,10 +455,24 @@ Wait for nanokvm-mark-good, or fix what is unhealthy first." ;;
       add_pin "$prof/system"
       add_pin "$(P /run/booted-system)"
       add_pin "$(P /run/current-system)"
+      #
+      # THE DEFAULT ENTRY OF EACH FILE, and only it. Both configs list every
+      # generation the boot menu names; what each one BOOTS is its DEFAULT.
+      # Pinning the first `init=` in the file instead would pin whichever
+      # generation the builder happened to emit first and leave the fallback's
+      # own generation collectable -- which is precisely the one that gets used
+      # when the default does not work.
+      #
+      # A file that yields nothing is a file we do not understand, and an
+      # unreadable pin is not the same as an absent one: refuse rather than
+      # collect. (The same rule the /boot collector this replaced got wrong: a
+      # broken keep-list read as "keep nothing".)
       for c in extlinux.conf extlinux-fallback.conf; do
         f="$(P /boot/extlinux)/$c"
         [ -r "$f" ] || continue
-        t=$(sed -n 's|.*[[:space:]]init=\([^[:space:]]*\)/init.*|\1|p' "$f" | head -1)
+        t=$(conf_default_toplevel "$f")
+        [ -n "$t" ] \
+          || die "$f names no generation on its DEFAULT entry -- refusing to collect anything"
         add_pin "$(P "$t")"
       done
 

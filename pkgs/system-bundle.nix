@@ -1,7 +1,6 @@
 { pkgs
 , lib ? pkgs.lib
 , toplevel # the NixOS system closure this bundle installs
-, bootPayload # pkgs/boot-payload.nix: the content-addressed kernel + dtb
 , version ? "0.0.0-dev"
 , layout ? "minimal"
 , manifestName ? "nanokvm_pro_sys_latest.json"
@@ -12,12 +11,19 @@
 # ===========================================================================
 # THE SYSTEM BUNDLE -- what a release publishes for the NixOS appliance (#86).
 #
-# The appliance has no `nix`, so an update cannot be a `nixos-rebuild` and
-# cannot be a binary-cache fetch. It is this: the new toplevel's ENTIRE closure,
-# the kernel that closure's stage-1 initrd is baked into, and the list of store
-# paths that says which is which. `nanokvm-update` on the device unpacks the
-# paths it does not already have, makes the toplevel the system profile, writes
-# the kernel into /boot, and reboots into the bootcount-guarded boot.
+# The appliance has no `nix` yet (#100), so an update cannot be a
+# `nixos-rebuild` and cannot be a binary-cache fetch. It is this: the new
+# toplevel's ENTIRE closure and the list of store paths that says what belongs
+# to it. `nanokvm-update` on the device unpacks the paths it does not already
+# have, makes the toplevel the system profile, and runs
+# `switch-to-configuration boot`.
+#
+# THERE IS NO /boot HALF SINCE #99, and that is the point of the change. The
+# kernel, the initrd and the device tree are part of the generation now, so
+# they are ordinary store paths inside `closure.txt` -- and NixOS's own
+# extlinux builder, run by `switch-to-configuration boot`, is the one thing
+# that copies them into /boot. A bundle that carried them separately would be a
+# second copy of the same bytes and a second writer of the same directory.
 #
 # TWO FILES ARE PUBLISHED, and their shape is the legacy OTA's on purpose:
 #
@@ -33,11 +39,9 @@
 # PAYLOAD LAYOUT (single top-level dir `nanokvm_pro_sys_<version>/`, which is
 # what the server's UnTarGz hands to install()):
 #
-#   MANIFEST.json     format, version, toplevel, boot payload + sha256s
+#   MANIFEST.json     format, version, toplevel, closure count
 #   closure.txt       every store path in the toplevel's closure, one per line
 #   store/<base>/     those store paths, as ordinary directories
-#   boot/Image-<h>    the kernel, content-addressed
-#   boot/<dtb>        its device tree, likewise
 #
 # --hard-dereference IS LOAD-BEARING, and it is not an optimisation. The
 # server's own extractor (server/utils/untar.go) handles TypeDir, TypeReg and
@@ -72,7 +76,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preBuild
     set -euo pipefail
 
-    mkdir -p "${root}/store" "${root}/boot"
+    mkdir -p "${root}/store"
 
     # ---- 1. the closure -------------------------------------------------
     cp ${closure} "${root}/closure.txt"
@@ -91,34 +95,30 @@ pkgs.stdenvNoCC.mkDerivation {
     [ "$staged" = "$n" ] \
       || { echo "ERROR: staged $staged of $n closure paths" >&2; exit 1; }
 
-    # ---- 2. the boot payload --------------------------------------------
-    # shellcheck source=/dev/null
-    . ${bootPayload}/NAMES
-    cp ${bootPayload}/boot/"$KERNEL" "${root}/boot/$KERNEL"
-    cp ${bootPayload}/boot/"$FDT"    "${root}/boot/$FDT"
-    chmod u+w "${root}/boot/$KERNEL" "${root}/boot/$FDT"
+    # THE KERNEL IS IN THERE, as a store path like any other (#99). Assert it,
+    # because a bundle whose generation has no kernel installs a system the
+    # extlinux builder cannot write a boot entry for -- and the board finds
+    # that out with no console.
+    grep -q "$(readlink -f ${toplevel}/kernel | sed 's|/Image$||')" "${root}/closure.txt" \
+      || { echo "ERROR: the toplevel's kernel is not in the closure" >&2; exit 1; }
+    echo "kernel: $(readlink -f ${toplevel}/kernel) ($(stat -Lc%s ${toplevel}/kernel) B)"
+    echo "initrd: $(readlink -f ${toplevel}/initrd) ($(stat -Lc%s ${toplevel}/initrd) B)"
 
-    # ---- 3. the bundle manifest ------------------------------------------
+    # ---- 2. the bundle manifest ------------------------------------------
     jq -n \
       --arg version   "${version}" \
       --arg toplevel  "${toplevel}" \
       --arg layout    "${layout}" \
-      --arg kernel    "$KERNEL" \
-      --arg fdt       "$FDT" \
-      --arg ksha      "$KERNEL_SHA256" \
-      --arg fsha      "$FDT_SHA256" \
       --argjson count "$n" \
       '{ format: "nanokvm-system-bundle/1",
          version: $version,
          toplevel: $toplevel,
          layout: $layout,
-         closureCount: $count,
-         boot: { kernel: $kernel, fdt: $fdt,
-                 kernelSha256: $ksha, fdtSha256: $fsha } }' \
+         closureCount: $count }' \
       > "${root}/MANIFEST.json"
     cat "${root}/MANIFEST.json"
 
-    # ---- 4. the tarball, and the manifest the device polls ---------------
+    # ---- 3. the tarball, and the manifest the device polls ---------------
     # Deterministic: sorted, no owner names, epoch mtimes. --hard-dereference
     # because the server's extractor drops hardlink entries on the floor.
     tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 \
@@ -157,7 +157,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
   meta = {
     description =
-      "NanoKVM-Pro NixOS system bundle (#86): the appliance's whole system closure + its kernel + the manifest a device polls";
+      "NanoKVM-Pro NixOS system bundle (#86): the appliance's whole system closure -- kernel included, as a store path -- plus the manifest a device polls";
     platforms = [ "x86_64-linux" ];
   };
 }
