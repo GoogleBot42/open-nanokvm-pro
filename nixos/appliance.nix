@@ -758,9 +758,11 @@ in
         type = lib.types.str;
         default = "https://github.com/GoogleBot42/open-nanokvm-pro/releases/latest/download";
         description = ''
-          Where the updater fetches the manifest and the bundle. The same base
-          URL the server is built with -- the Gitea source of truth is
-          Tailscale-only, so devices poll the public GitHub mirror's releases.
+          Where the updater fetches the manifest. THE ONLY CHANNEL THIS DEVICE
+          KNOWS since #101 -- the server used to carry a second one compiled
+          into its binary, and one press of the update button read both. The
+          Gitea source of truth is Tailscale-only, so devices poll the public
+          GitHub mirror's releases.
         '';
       };
 
@@ -777,12 +779,12 @@ in
         type = lib.types.str;
         default = "nanokvm_pro_sys_latest.json";
         description = ''
-          The manifest this system polls. It must match what the server build
-          is compiled against (`updateMode` in `pkgs/nanokvm-server.nix`), so
-          that the web UI's button and this tool can never install from
-          different places.
+          The manifest this system polls. Nothing else on the device names one
+          any more: since #101 the web UI's version route and its update button
+          both go through `nanokvm-update`, so they cannot poll a different
+          place than this tool does.
 
-          The `_sys_` name is also what keeps the retired 4.19 channel
+          The `_sys_` name is what keeps the retired 4.19 channel
           separate: that image polls `nanokvm_pro_latest.json`, which nothing
           publishes any more, so it is offered nothing rather than being
           offered a store closure no Ubuntu rootfs could apply.

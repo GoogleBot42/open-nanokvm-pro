@@ -18,8 +18,8 @@ name: release
 #      a manifest naming a path no cache has is an update every device on the
 #      channel fails.
 #   2. `nanokvm_pro_sys_latest.json` -- a few hundred bytes naming that store
-#      path -- is attached to the release, where NanoKVM-Server and
-#      `nanokvm-update` poll it (flake.nix `updateBaseUrl`, docs/updates.md).
+#      path -- is attached to the release, where `nanokvm-update` polls it
+#      (`nanokvm.update.stableUrl`, docs/updates.md).
 #
 # The 460 MB tarball of #86 is gone: the device substitutes what it does not
 # already have, which for a typical update is a few percent of the closure.
@@ -216,8 +216,8 @@ jobs:
 
       - name: Refresh the rolling preview-channel release
         # The preview/alpha channel polls the fixed URL
-        # releases/download/preview/nanokvm_pro_sys_latest.json (flake.nix
-        # `previewUpdateBaseUrl`): a rolling release on the mirrored `preview`
+        # releases/download/preview/nanokvm_pro_sys_latest.json
+        # (`nanokvm.update.previewUrl`): a rolling release on the mirrored `preview`
         # tag, refreshed on EVERY cut (stable or alpha) so preview devices
         # always see the newest version of either kind. Since #100 the only
         # asset is the manifest -- the payload lives in the binary cache, which

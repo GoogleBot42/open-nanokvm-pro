@@ -191,10 +191,36 @@ from `main`; the alpha channel is prerelease **tags**.
 
 ## How the device installs one
 
-`nanokvm-update` (`nixos/lib/updater.nix`) is the whole implementation, with two
-callers: the systemd timer runs `update`, and the web UI's button reaches
-`install-now` through the server's `install()` override
-(`pkgs/nanokvm-server/install-update.go.in`). Both end in the same function.
+`nanokvm-update` (`nixos/lib/updater.nix`) is the whole implementation, and since
+**#101** every caller goes through it — there is no channel URL in any other
+binary on the device:
+
+| caller | command | what it is |
+|---|---|---|
+| `nanokvm-update.timer` | `update` | the unattended path: checkbox, install, idle-gated reboot |
+| the web UI's update button | `install-now` | through the server's `install()` override, `pkgs/nanokvm-server/install-update.go.in` |
+| `GET /api/application/version` | `check --json` | what the update page shows, `pkgs/nanokvm-server/version-updater.go.in` |
+
+The first two end in the same function. The third is why the page and the button
+can no longer disagree: **the version the page shows comes from the manifest
+`install-now` will install**, fetched from the same channel by the same tool.
+Before #101 the server fetched its own manifest from a URL compiled into the Go
+binary, and since no release published that manifest the button answered
+`{"code":-2}` with a `404` on a board whose timer path updated perfectly. If the
+button fails, read `/var/log/nanokvm/NanoKVM-Server.log` before you debug the
+cache.
+
+`check --json` prints one object and always prints it:
+
+```json
+{"installed":"2.1.0-test1","available":"2.1.0-test2","toplevel":"/nix/store/…",
+ "channel":"https://…","manifest":"nanokvm_pro_sys_latest.json","preview":false,
+ "cache":"https://…","up_to_date":false,"error":""}
+```
+
+An unreachable channel fills `error` and exits 1 **with the same object** —
+`installed` needs no network and the page has to be able to say it. A caller that
+got nothing could not tell "no update" from "no answer".
 
 `update` refuses before it fetches anything, in this order: no
 `/etc/kvm/auto_updates`, exit 0 (the checkbox); a reboot already owed, exit 0 (never
@@ -219,7 +245,7 @@ know about is not a store path, and `nix-env --set` on one tries to *download* i
 hence the shipped database ([below](#nix-on-the-appliance)).
 
 ```
-nanokvm-update check              what is installed, and what the channel offers
+nanokvm-update check [--json]     what is installed, and what the channel offers
                 update            check, install, reboot when idle (the timer)
                 install-now       install what the channel offers, right now
                                   (the web UI button; no checkbox, no idle gate)
@@ -231,7 +257,7 @@ nanokvm-update check              what is installed, and what the channel offers
                 status            generations, boot configs, store health
 
 options: --root DIR  --cache URL  --trusted-key K  --keep N
-         --no-activate  --no-reboot
+         --json  --no-activate  --no-reboot
 ```
 
 `--root` prefixes every path and turns every nix invocation into
@@ -459,7 +485,15 @@ nothing and is not an error; ticked-and-in-use installs, writes both markers and
 not reboot; a second update refuses to stack on an unbooted one; the reboot timer waits
 while the room is full and takes it when it empties; an **unreachable** idle route
 fails closed; the note settles after the boot; ticked-and-idle installs and reboots in
-one run.
+one run. Phase **I2** is #101's half — `check --json`, which is what the web UI's
+version route reads. Its field list is not written out in the check: it is read from
+the `json:` tags of the Go struct that decodes it
+(`pkgs/nanokvm-server/version-updater.go.in`), so adding a field to one side without
+the other fails the build rather than the board. Then the values for an available
+update, the up-to-date case, the preview flag selecting the preview channel — the
+same flag file the web UI writes, and the thing that must agree on both sides — and
+a dead channel: one JSON object, the installed version kept, the channel it could
+not reach named in `error`, exit 1.
 
 **`nanokvm-system-manifest`** (`pkgs/system-manifest-check.nix`) reads the release
 artefact back: the manifest names **this commit's** appliance toplevel, carries
@@ -627,6 +661,9 @@ Go binary** (`updateBaseUrl` in `flake.nix`, the GitHub release), not from
 `nanokvm_pro_sys_latest.json` yet, so the button 404s on a device whose timer
 path updates perfectly. **The button needs the first real release, not the
 cache** — and the two channel sources in one press are worth collapsing.
+(**#101 collapsed them**, 2026-09-11: the version route now runs
+`nanokvm-update check --json` and no URL is compiled into the server at all —
+[below](#what-hardware-proved-101-2026-09-11).)
 
 Everything downstream of that 404 is proven: `nanokvm-update install-now` —
 the exact command `install()` execs — installed generation 8 (9 paths) with no
@@ -752,17 +789,21 @@ the test.
   writes into whatever `/boot` is, and an unmounted one is a directory in the rootfs
   U-Boot never reads. The install still succeeds, the profile still moves, and the
   board still boots the old generation.
-- **The URL is baked in twice, and one press of the button uses both.**
-  `nanokvm.update.stableUrl` (the updater) and `updateBaseUrl` in `flake.nix` (the
-  server, compiled in). The web UI's route calls the server's `getLatest()` — the
-  compiled URL — *before* it hands off to `nanokvm-update install-now`, which then
-  fetches the module's channel. So the version the page shows and the closure the
-  device installs come from two different places, and a manifest missing from the
-  **GitHub** channel fails the button even when the device's own channel is
-  serving one. Measured on hardware 2026-09-11: `404`, `{"code":-2}`, and the
-  timer path updating perfectly on the same board (**#101**). Changing where you host means a
-  rebuild — and for the server half, an update carrying the new binary or a
-  reflash.
+- **Changing where you host means rebuilding the device's configuration.**
+  `nanokvm.update.{stableUrl,previewUrl}` are the only channel a device knows, and
+  they are build-time. (They used to be baked in *twice* — the server carried its own
+  compiled-in `updateBaseUrl`, and one press of the button read both, 404ing on the
+  first; that is **#101**, fixed 2026-09-11, and the server now asks
+  `nanokvm-update check --json`.)
+- **The version route runs a subprocess, and an unreachable channel costs it
+  ~12 s.** `GET /api/application/version` execs `nanokvm-update check --json`,
+  which curls the channel with one retry and a ten-second ceiling — deliberately
+  shorter than the updater's install-time budget, because a browser gives up on
+  the request after 60 s. When the fetch fails the route reports the running
+  version as the latest one, which the page renders as "up to date"; the reason
+  is in `/var/log/nanokvm/NanoKVM-Server.log`, not on the page. A device that
+  cannot reach its channel is not a device whose version is unknown, but it is
+  also not a device you can tell is current from the UI alone.
 - **A mounted virtual-media image blocks the reboot for as long as it is mounted.**
   Intended — the host may be installing from it — but it is the one idle term that can
   stay true forever with nobody present. The update page names it, and *Restart now*

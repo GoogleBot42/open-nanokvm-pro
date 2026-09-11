@@ -1969,7 +1969,7 @@ harmless, because both `DEFAULT` entries are exactly what `gc` pinned. The next
 activation repairs `extlinux.conf`; `systemctl restart nanokvm-mark-good`
 (**restart**: `RemainAfterExit` oneshot) repairs `extlinux-fallback.conf`.
 
-#### The web UI's button — blocked upstream of #100
+#### The web UI's button — blocked upstream of #100 (fixed by #101)
 
 `POST /api/application/update` with a real token answered
 `{"code":-2,"msg":"failed to update service"}`, and the server log says
@@ -1980,6 +1980,11 @@ publishes `nanokvm_pro_sys_latest.json` yet. Everything past that 404 is proven:
 `nanokvm-update install-now` — what `install()` execs — installed a generation
 with no checkbox and no idle gate, and `GET /api/application/pending` answered
 token-gated from the host with the pending version and `reboot_pending:true`.
+
+**#101 deleted the compiled URL** (2026-09-11). The version route now runs
+`nanokvm-update check --json`, so the page and the button read one channel —
+the device's own — and `flake.nix` has no `updateBaseUrl` any more.
+`docs/updates.md`.
 
 #### `nix copy --to ssh://`
 

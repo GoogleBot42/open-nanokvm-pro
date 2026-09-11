@@ -27,6 +27,16 @@ lockfile `pnpm-lock.yaml` is pinned by the `pnpmDeps` hash in that derivation
   shows `<from> -> <version>`, what the device is waiting for, and a **Restart
   now** button (the existing `POST /api/vm/system/reboot`). While a restart is
   owed it does not offer to install that version again.
+- **The up-to-date verdict is the server's** (`index.tsx`, #101). Upstream
+  decides it here, with `semver.gt(latest, current)`; this appliance installs
+  whatever the channel offers, so a deliberate downgrade has to read as an
+  update rather than as "you are up to date". `GET /api/application/version`
+  answers `up_to_date` alongside `current`/`latest` — it is what
+  `nanokvm-update check` decided about the device's own channel — and the page
+  uses it when the field is present, falling back to upstream's comparison when
+  it is not. No new strings.
+- **The changelog link points at this repo**, not `sipeed/NanoKVM-Pro`: the
+  versions the update page offers are ours.
 
 **i18n:** new strings go in `src/i18n/locales/en.ts` only. i18next is configured
 with `fallbackLng: 'en'` and falls back per key, which is why upstream's own

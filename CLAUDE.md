@@ -231,14 +231,14 @@ that is arbitration, not a bug.
   — it needs `remount,bind,ro`. `nanokvm-update` flips it both ways around its
   `nix copy`; anything writing the store by hand has to do the same. `nix` itself
   needs no help (as root it unshares a mount namespace). #100, 2026-09-11.
-- **Two different URLs decide one press of the web UI's update button.** The
-  server's `getLatest()` runs BEFORE it hands off to `nanokvm-update install-now`
-  and fetches the manifest from `updateBaseUrl` — **compiled into the Go binary**,
-  the GitHub release — while the closure comes from `nanokvm.update.stableUrl`. No
-  release publishes `nanokvm_pro_sys_latest.json` yet, so the button answers
-  `{"code":-2}` with a `404` in the server log on a board whose timer path updates
-  perfectly. Do not debug the cache when the button fails; read
-  `/var/log/nanokvm/NanoKVM-Server.log` first. #101, filed 2026-09-11.
+- **When the web UI's update button fails, read
+  `/var/log/nanokvm/NanoKVM-Server.log` before you debug the cache.** For a week
+  it failed because the server fetched its own manifest from a URL compiled into
+  the Go binary while the install read the device's configured channel — two
+  sources of truth, and a `404` the page reported as `{"code":-2}` (#101, fixed
+  2026-09-11). There is one channel now: `GET /api/application/version` runs
+  `nanokvm-update check --json` and `install()` runs `install-now`, both against
+  `nanokvm.update.stableUrl`.
 - **`nanokvm-update gc` leaves BOTH extlinux menus naming generations it just
   deleted.** The collector rewrites no boot config, so a `LABEL` can point at an
   `init=` that is gone. Never unsafe — the `DEFAULT` entries are exactly what `gc`
