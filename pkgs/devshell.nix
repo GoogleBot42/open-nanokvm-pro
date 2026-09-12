@@ -7,6 +7,10 @@ pkgs.mkShell {
   name = "nanokvm-pro-dev";
 
   packages = with pkgs; [
+    # device + forge access (tools/kvmssh, tools/kvmscp, the tea CLI); the host
+    # may be a fresh container with no user profile (2026-09-12)
+    sshpass tea
+
     # cross toolchain bundle (stock aarch64 gcc + binutils)
     toolchain
     crossPkgs.stdenv.cc

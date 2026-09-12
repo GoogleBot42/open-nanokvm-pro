@@ -20,6 +20,11 @@
 #   Note: sshpass cannot distinguish "wrong password" from "remote command
 #   legitimately exited 5" -- see the comment above the rc==5 check below.
 set -u
+# The host may be a fresh container with no user profile (2026-09-12): if
+# sshpass is not on PATH, re-exec inside a nix shell that has it.
+if ! command -v sshpass >/dev/null 2>&1; then
+  exec nix shell nixpkgs#sshpass -c "$0" "$@"
+fi
 
 ENV_FILE="${NANOKVM_DEVICE_ENV:-$HOME/.config/nanokvm/device.env}"
 
