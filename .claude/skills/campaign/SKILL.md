@@ -136,3 +136,16 @@ cd .claude/worktrees/agent-<id> && nix flake check --no-build && nix build .#<th
   identical; two regressions (list-option ordering, a comment inside a build
   string) were found by that diff alone. Demand it of every "no functional
   change" branch.
+
+# 6. When the host changes under you
+
+- **A rebooted or rebuilt build host is a new host.** On 2026-09-12 the
+  container came back with an empty Nix store and no user profile: every
+  artefact needed a from-source rebuild, `tea`/`sshpass` were gone, and one
+  `Agent` launch with `isolation: "worktree"` silently got NO worktree and
+  pushed to `main`. After any restart: check `command -v tea sshpass nix`,
+  `git worktree list`, and the store (`nix path-info` of yesterday's toplevel)
+  before launching; and tell every agent to `git worktree list` first and to
+  REFUSE to commit if its branch is `main`. A branch that did land on `main`
+  is verified after the fact exactly as a branch would be (identifier scan,
+  flake check, artefact hashes against the device), never waved through.
