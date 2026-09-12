@@ -129,6 +129,20 @@ those:
 
 - Panel asleep is the norm (3-min idle blank): `bl_power=1` in
   `/sys/class/backlight/backlight/` and `/dev/fb0` reads all-zero.
+- **`bl_power` is not the backlight** (#106). Read the PWM:
+  `grep -A2 pwm-0 /sys/kernel/debug/pwm` — `actual configuration: disabled`
+  is off, `enabled, <duty>/<period>` is lit at that duty. The registers behind
+  it are `0x06060000` (low period), `0x060600b0` (high) and `0x06060008` bit 0
+  (enable). The pad (`EMAC_PTP_PPS0`) cannot be sampled while it is muxed to
+  PWM: `EXT_PORT` only reads GPIO-muxed pads.
+- ATX sense: `nanokvm-gpio get <line>` is LOGICAL (1 on `atx-power-led` means
+  the host is on), `nanokvm-gpio raw <line>` is the pad. The polarity is a
+  table in `pkgs/nanokvm-gpio/nanokvm-gpio.c`, not in the device tree (#105).
+- **Is there an HDMI bit clock?** `devmem 0x605100c 32` (the DW I2S `CER`)
+  reads 0 whenever the LT6911UXC is not clocking the port — the bit lives in
+  the external `sclk` domain, so even a hand write of 1 will not stick. With
+  `/proc/lt6911_info/asr` = 0 and SPI 145 at 0 in `/proc/interrupts`, that is
+  a source sending no audio, not a driver bug (#104).
 - Wake it with a synthetic knob press (gpio_keys = `/dev/input/event0`,
   KEY_ENTER=28; struct is `qqHHi` on aarch64):
 
