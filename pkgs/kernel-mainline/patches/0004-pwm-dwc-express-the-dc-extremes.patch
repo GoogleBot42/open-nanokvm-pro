@@ -1,0 +1,71 @@
+From: open-nanokvm-pro <noreply@example.invalid>
+Subject: [PATCH] pwm: dwc: express the two DC extremes instead of -ERANGE
+
+The DesignWare APB timer holds the low period in LD_CNT and the high
+period in LD_CNT2, and each is "count + 1" input clock periods long. A
+waveform with no high period at all, and one with no low period, are
+therefore the two requests the hardware cannot generate, and the driver
+returns -ERANGE for both.
+
+Both of those are a DC level, and the timer does have one DC level: the
+one it drives while it is stopped. Meet the no-high-period request by
+stopping the timer -- the only constant-inactive output this IP has for
+a normal-polarity consumer -- and clamp the no-low-period request to the
+shortest low period there is, a single tick out of the whole period.
+
+The caller this matters for is pwm-backlight, which asks for exactly
+these two states at the ends of its brightness range. It ignores the
+apply() return value, so on a board with neither an enable GPIO nor a
+regulator -- where pwm_backlight_power_off() keeps the PWM enabled at
+duty 0 deliberately, to get a constant inactive output -- a backlight
+told to go out simply keeps the duty cycle it already had, and the panel
+stays lit with bl_power reading 1. The other end is the same bug in the
+other direction: default-brightness-level at max never applies.
+
+diff -u -r a/drivers/pwm/pwm-dwc-core.c b/drivers/pwm/pwm-dwc-core.c
+--- a/drivers/pwm/pwm-dwc-core.c	2026-09-12 14:38:47.973711416 -0600
++++ b/drivers/pwm/pwm-dwc-core.c	2026-09-12 14:39:19.288302541 -0600
+@@ -60,17 +60,37 @@
+ 	 * Calculate width of low and high period in terms of input clock
+ 	 * periods and check are the result within HW limits between 1 and
+ 	 * 2^32 periods.
++	 *
++	 * Both ends of that range are one whole period long, because a load
++	 * count is "value + 1" input clock periods -- so a waveform with no
++	 * high period at all, and one with no low period, are the two
++	 * requests this timer cannot generate. Both are DC, and the timer has
++	 * exactly one DC level: whatever it drives while it is stopped. Meet
++	 * the no-high-period request by stopping it, and clamp the no-low-
++	 * period one to the shortest low period there is, a single tick out
++	 * of the whole period.
++	 *
++	 * -ERANGE would be worse for every caller. pwm-backlight asks for
++	 * precisely these two states at the ends of its brightness range and
++	 * ignores the error, so a backlight told to go out keeps whatever
++	 * duty cycle it had.
+ 	 */
+-	tmp = DIV_ROUND_CLOSEST_ULL(active, dwc->clk_ns);
+-	if (tmp < 1 || tmp > (1ULL << 32))
+-		return -ERANGE;
+-	low = tmp - 1;
+-
+ 	tmp = DIV_ROUND_CLOSEST_ULL(idle, dwc->clk_ns);
+-	if (tmp < 1 || tmp > (1ULL << 32))
++	if (tmp > (1ULL << 32))
+ 		return -ERANGE;
++	if (tmp < 1) {
++		__dwc_pwm_set_enable(dwc, pwm->hwpwm, false);
++		return 0;
++	}
+ 	high = tmp - 1;
+ 
++	tmp = DIV_ROUND_CLOSEST_ULL(active, dwc->clk_ns);
++	if (tmp > (1ULL << 32))
++		return -ERANGE;
++	if (tmp < 1)
++		tmp = 1;
++	low = tmp - 1;
++
+ 	/*
+ 	 * Specification says timer usage flow is to disable timer, then
+ 	 * program it followed by enable. It also says Load Count is loaded

@@ -184,6 +184,11 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
     # the capture stream on, a syscon word that has to be written before the
     # block is used, and the clock gates a slave-mode port still needs held.
     ./kernel-mainline/patches/0003-ASoC-dwc-integration-properties.patch
+    # #106. The same PWM core cannot express either DC extreme -- each load
+    # count is "value + 1" ticks -- and returns -ERANGE, which pwm-backlight
+    # ignores. So `bl_power = 1` left the mini-display's backlight at whatever
+    # duty it had, and `default-brightness-level = <100>` never applied.
+    ./kernel-mainline/patches/0004-pwm-dwc-express-the-dc-extremes.patch
   ];
 
   configFragment = ./kernel-mainline/ax630c.config;
