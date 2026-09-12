@@ -242,7 +242,11 @@ Rules: read every volatile channel first (milestone register
 `devmem 0x02390024`, `bootcount` `devmem 0x02390030 32`, the chainload oracle
 `CHLD` at `0x480EE000`, the U-Boot pre-console ring at `0x480E8000`,
 ramoops/pstore) — a cold cycle clears DRAM and the
-register. Confirm with `state`, not with the publish. Do not cycle during a
+register. **Read the milestone register as bits 28+29 (`0x30000000`), not as a
+whole word**: bits 2-5 are the SPL's own A/B slot bookkeeping, rewritten by
+`select_slot_ab()` on every boot, so the low nibble differs between two equally
+healthy boots (`0x30000008` and `0x30000004` were both good boots in #95) and a
+diff of the full word says nothing. Confirm with `state`, not with the publish. Do not cycle during a
 block write (`dd` to an eMMC partition) — wait for the hash-verify. One cycle per
 failed boot. Since #91 was fixed (2026-09-10, the eMMC node asks for 200 MHz)
 SSH is back ~90 s after `on`; still poll **30 minutes** before calling a board
