@@ -216,6 +216,20 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -q 'snps,designware-i2s' ${board}.decompiled.dts \
       || fail "the i2s node is not the stock DesignWare compatible"
 
+    # --- #107: the VC8000E's core clock ---------------------------------
+    # clk_vpu_glb_sel comes out of reset on cpll_208m, which is 41.6 ms for a
+    # 4096x2160 H.264 frame -- a 24 fps encoder under a 30 fps source, and the
+    # board silently drops every fourth frame. The only thing that moves the
+    # mux is this assigned-clock-parents pair, and losing it is invisible
+    # except as a frame rate, so assert BOTH cells: the mux id (0 =
+    # AX630C_CLK_VPU_GLB_SEL) and the parent id (15 = AX630C_CPLL_312M).
+    vencmux=$(fdtget -t u ${board}.dtb /soc/video-encoder@4010000 assigned-clocks | awk '{print $2}')
+    [ "$vencmux" = "0" ] \
+      || fail "the venc node's assigned-clocks names clock $vencmux, not clk_vpu_glb_sel (0)"
+    vencpar=$(fdtget -t u ${board}.dtb /soc/video-encoder@4010000 assigned-clock-parents | awk '{print $2}')
+    [ "$vencpar" = "15" ] \
+      || fail "the venc core clock's parent is id $vencpar, not cpll_312m (15); the encoder would run at 208 MHz and cap 4K at 24 fps"
+
     # The knob's button name is an ABI: nanokvm-display finds its wake sources
     # by EVIOCGNAME, and gpio_keys takes the input device's name from `label`.
     lbl=$(fdtget -t s ${board}.dtb /gpio-keys label)

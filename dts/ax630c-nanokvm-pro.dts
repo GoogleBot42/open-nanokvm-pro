@@ -448,10 +448,30 @@
 	memory-region = <&capture_pool>;
 };
 
+/*
+ * The VC8000E and the clock that decides its frame rate (#107).
+ *
+ * clk_venc_eb's parent mux `clk_vpu_glb_sel` comes out of reset on its
+ * LOWEST tap, cpll_208m, and nothing in a mainline boot moves it -- the
+ * vendor's own software must have, because 208 MHz is not enough for this
+ * part at 4K. The encoder is cycle-deterministic and compute-bound: it
+ * spends 8.64 Mcycles on a 4096x2160 H.264 frame whatever the clock (0.98
+ * cycles/pixel, measured identical at 208/312/416 MHz, so nothing here is
+ * waiting on DDR -- aclk_vpu_top already runs at 533 MHz). At 208 MHz that
+ * is 41.6 ms a frame and a hard 24 fps ceiling, which is why the board
+ * delivered 21-23 fps from a 30 fps source and lost every fourth frame.
+ *
+ * cpll_312m is the next tap up (the mux also offers 375/416/500/533) and
+ * buys 27.8 ms a frame -- 36 fps of encoder, enough for 4096x2400 as well
+ * as 4096x2160, with the smallest step that clears the source rate.
+ * Hardware-proven: 299 frames at 4096x2160 decoded with zero errors.
+ */
 &venc {
 	status = "okay";
 	memory-region = <&venc_cmdbuf>, <&venc_framebuf>;
 	memory-region-names = "cmdbuf", "framebuf";
+	assigned-clocks = <&vpu_clk AX630C_CLK_VPU_GLB_SEL>;
+	assigned-clock-parents = <&common_clk AX630C_CPLL_312M>;
 };
 
 /*

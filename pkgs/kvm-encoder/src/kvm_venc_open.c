@@ -67,6 +67,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <time.h>
 
 #include <jpeglib.h>
 
@@ -393,6 +394,15 @@ void kvm_venc_destroy(int chn)
 
 void kvm_venc_module_deinit(void) { venc_open_down(); mj_down(); }
 
+/* #107 bench instrumentation: OPENKVM_VENC_TIME=<n> prints the per-stage
+ * split of kvm_venc_send every n frames. Off unless the env var is set. */
+static double vt_now(void)
+{
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec + t.tv_nsec / 1e9;
+}
+static struct { int every; unsigned long n; double build, run, wait, copy, rest; } VT;
+
 int kvm_venc_send(int chn, const kvm_frame *f)
 {
     if (M.active) return (chn == M.chn) ? mj_send(f) : -1;
@@ -410,6 +420,13 @@ int kvm_venc_send(int chn, const kvm_frame *f)
 
     uint32_t gopn = V.gop ? V.n % V.gop : V.n;
     int is_idr = (gopn == 0);
+
+    if (!VT.every) {
+        const char *e = getenv("OPENKVM_VENC_TIME");
+        VT.every = e ? atoi(e) : -1;
+        if (!VT.every) VT.every = -1;
+    }
+    double vt0 = VT.every > 0 ? vt_now() : 0, vt1 = vt0, vt2 = vt0, vt3 = vt0;
 
     struct exchange_parameter ex;
     memset(&ex, 0, sizeof ex);
@@ -445,8 +462,11 @@ int kvm_venc_send(int chn, const kvm_frame *f)
                 fr.qp, fr.rc_mode);
         goto out;
     }
+    if (VT.every > 0) vt1 = vt_now();
     if (ioctl(V.fd, HANTRO_IOCH_LINK_RUN_CMDBUF, &ex) < 0) goto out;
+    if (VT.every > 0) vt2 = vt_now();
     if (ioctl(V.fd, HANTRO_IOCH_WAIT_CMDBUF, &wid) < 0) goto out;
+    if (VT.every > 0) vt3 = vt_now();
 
     volatile uint32_t *rr = (volatile uint32_t *)
         (V.status_pool + STATUS_SLOT_REG_OFF(id, 0));
@@ -487,7 +507,44 @@ int kvm_venc_send(int chn, const kvm_frame *f)
     }
     volatile uint8_t *sb = (volatile uint8_t *)V.fb_map + V.g.off_out
                          + ENC_STREAM_SUBOFF;
-    for (uint32_t i = 0; i < bytes; i++) V.pack[off + i] = sb[i];
+    /* READ THE BITSTREAM BACK 8 BYTES AT A TIME, NOT ONE (#107). The
+     * framebuf is mapped pgprot_writecombine (Normal non-cacheable): every
+     * load is a bus transaction of its own width, so a byte loop costs one
+     * round trip per byte -- measured 5.0 ms for a 25 kB 4K frame (5 MB/s),
+     * which is 11% of the whole encode budget spent copying 25 kB. The same
+     * copy as 64-bit loads is 0.5 ms. (Both `off_out` (4 kB) and
+     * ENC_STREAM_SUBOFF (0x28) are 8-aligned, so the source is; the
+     * destination is not, hence the memcpy of each word rather than a
+     * uint64_t store.) Measured on the board at 4096x2160: venc_send 45.2 ms
+     * byte-wise vs 42.1 ms word-wise, 22.1 -> 23.7 fps. */
+    double vt4 = VT.every > 0 ? vt_now() : 0;
+    {
+        const volatile uint64_t *s8 = (const volatile uint64_t *)sb;
+        uint8_t *d = V.pack + off;
+        uint32_t w = bytes / 8, i;
+        for (i = 0; i < w; i++) {
+            uint64_t v = s8[i];
+            memcpy(d + (size_t)i * 8, &v, 8);
+        }
+        for (i = w * 8; i < bytes; i++) d[i] = sb[i];
+    }
+    if (VT.every > 0) {
+        double vt5 = vt_now();
+        VT.build += vt1 - vt0;
+        VT.run   += vt2 - vt1;
+        VT.wait  += vt3 - vt2;
+        VT.copy  += vt5 - vt4;
+        VT.rest  += (vt4 - vt3);
+        if (++VT.n % (unsigned long)VT.every == 0) {
+            double n = (double)VT.n;
+            fprintf(stderr, "[openvenc][time] n=%lu build=%.2f run=%.2f "
+                    "wait=%.2f hdr=%.2f copyout=%.2f ms/frame "
+                    "(%u B out, %u cycles)\n",
+                    VT.n, 1e3 * VT.build / n, 1e3 * VT.run / n,
+                    1e3 * VT.wait / n, 1e3 * VT.rest / n, 1e3 * VT.copy / n,
+                    bytes, cycles);
+        }
+    }
     V.nalu[V.nalu_num] = (kvm_nalu){ .offset = off, .length = bytes,
                                      .kind = is_idr ? KVM_NAL_IDR : KVM_NAL_P };
     V.nalu_num++;
