@@ -79,10 +79,10 @@ enumerated a gadget off this board; what is missing is the gadget *policy*.
 
 ## How it's put together
 
-Cross-compiled from `x86_64-linux` — the only supported build system, because
-the Axera `ax_gzip` packer every signed boot payload passes through is an
-x86-64-only static ELF — via nixpkgs `pkgsCross.aarch64-multiplatform`. Stock
-aarch64 glibc GCC; no exotic toolchain.
+Cross-compiled from `x86_64-linux` — the only supported build system, which the
+kernel build declares — via nixpkgs `pkgsCross.aarch64-multiplatform`. Stock
+aarch64 glibc GCC; no exotic toolchain, and since #95 no prebuilt host binary
+anywhere in the build.
 
 ```
 nixos-firmware-image-mainline (.axp)   packed from scratch, no vendor bundle

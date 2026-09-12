@@ -659,8 +659,10 @@ propose SG2002 work without flagging this gap up front.
   **The open list after #97** (`tea issues list --state open`, read
   2026-09-11): **#84** mini-display + audio on mainline — packaged, never run
   on the board, and the biggest remaining functional gap; **#95**
-  `SUPPPORT_GZIPD=FALSE` (retires `ax_gzip`, the last prebuilt x86-64 host
-  tool); **#96** the binary cache — Jeremy provides the endpoint, cache name,
+  `SUPPPORT_GZIPD=FALSE` (**CLOSED on hardware 2026-09-12** — the raw trio was
+  written from the running board, booted in 47 s on one attempt, and is the
+  default now; `ax_gzip` is gone and the build has no prebuilt binary left);
+  **#96** the binary cache — Jeremy provides the endpoint, cache name,
   token and public key, and it is the one blocker on a real update; **#88**
   boot logo; **#87** nixosModules split and upstreaming; **#98** the 4096-wide
   capture cap. #86, #83, #85, #89, #91, #99, #100 and #101 are closed;
