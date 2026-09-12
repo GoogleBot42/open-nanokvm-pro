@@ -390,8 +390,15 @@ at. **That SPL is blob-free (#90):** signed with an empty
 `-fw` member, so the closed EIP-130 firmware is not spliced in at
 0xCC00/0x2CC00 at all — the BootROM accepts a header declaring `fw_size = 0`,
 proven across two warm reboots and a cold cycle. `.#spl-minimal-eip` rebuilds
-the vendor-shaped container if a unit ever needs it. A good boot reads
-`0x30000014`. **A mainline boot is 71 seconds to SSH since #91 was fixed
+the vendor-shaped container if a unit ever needs it. **It is also compiled
+`SUPPPORT_GZIPD=FALSE` (#95, on hardware 2026-09-12)**, so it reads `atf` and
+`uboot` straight from flash — those two are stored RAW behind their signed
+headers and `ax_gzip` is gone from the tree. The container carries no
+"compressed" flag, so `pkgs/spl-minimal.nix`, `pkgs/atf-mainline.nix` and
+`pkgs/uboot-mainline.nix` are **one artefact**: change one alone and the board
+is dark with no console, in either direction. A good boot sets milestone bits
+28+29 (`0x30000000`); the low nibble of `0x02390024` is the SPL's own A/B slot
+bookkeeping, rewritten every boot, and means nothing. **A mainline boot is 71 seconds to SSH since #91 was fixed
 (2026-09-10)** — one U-Boot attempt, `bootcount` = `0xB0010001` at the health
 gate. It used to be 2:49 to 24:51 with up to four attempts, because the eMMC
 node asked for HS400ES at 50 MHz and no multi-block read ever framed; the tree
@@ -574,9 +581,10 @@ appliance, not AXDL.
 - **Blob policy (2026-09-04):** the aic8800 wireless *firmware* is the only closed
   content on the image, and the only closed content allowed on it. No closed
   userspace, no closed `.ko`, ever. What the vendor SDK snapshot is still read
-  for -- the SPL C source, the `imgsign` tool, the `ax_gzip` packer and the two
-  FDL download agents -- is build-time only and ships nothing, and since #102 it
-  is the boot chain only: libkvm has its own headers (`kvm_types.h`) and the
+  for -- the SPL C source, the `imgsign` script and the two FDL download
+  agents -- is build-time only, ships nothing, and since #95 contains **no
+  prebuilt binary at all** (`ax_gzip` is retired). Since #102 it is the boot
+  chain only: libkvm has its own headers (`kvm_types.h`) and the
   `maix_ax620e_sdk_msp` input is gone. `docs/provenance.md` is the audit.
 - **Mainline everything (2026-09-07):** kernel, U-Boot, and TF-A where a port is
   tractable. Patches are fine, but against upstream, never a vendor fork; the

@@ -18,19 +18,16 @@ How to build the firmware and its components with the flake. For what the pieces
 
 - Nix with flakes enabled (`experimental-features = nix-command flakes`).
 - An **`x86_64-linux`** dev box. This is the flake's only supported build
-  system, and the reason is one prebuilt tool: Axera's `ax_gzip` partition
-  packer (`tools/ax_gzip_tool/ax_gzip` in the SDK snapshot) is an **x86-64-only
-  static ELF**, and every stage the default SPL loads must be axgzip'd — that
-  SPL rejects a raw payload.
-  **#95 has built the way out, but it is not the default yet.** The `-raw`
-  variants (`.#spl-minimal-raw`, `.#atf-mainline-raw`, `.#uboot-mainline-raw`,
-  `.#nixos-firmware-image-mainline-raw`) compile the SPL with
-  `SUPPPORT_GZIPD=FALSE`, store `atf` and `uboot` uncompressed, use no prebuilt
-  binary and declare `platforms = lib.platforms.linux`;
-  `.#checks.<sys>.no-x86-blobs` asserts they carry no x86-64 ELF. They stay
-  non-default until the raw chain has booted the board, because
-  `.#nixos-firmware-image-mainline` is also the AXDL recovery image.
-  `pkgs/boot.nix` (the FDL agents) already drops `ax_gzip` unconditionally.
+  system, but **the boot chain is no longer what pins it** (#95, on hardware
+  2026-09-12). Axera's `ax_gzip` partition packer — an x86-64-only static ELF —
+  used to pack every stage the SPL loads, and it is gone: the SPL is compiled
+  `SUPPPORT_GZIPD=FALSE`, `atf` and `uboot` are stored uncompressed behind
+  their signed headers, and `.#spl-minimal`, `.#atf-mainline`,
+  `.#uboot-mainline` and the flashable image all declare
+  `platforms = lib.platforms.linux`, asserted by
+  `.#checks.<sys>.no-x86-blobs`. What pins the list now is
+  `pkgs/kernel-mainline.nix`, which declares `x86_64-linux` for its cross
+  toolchain, and through it the image. Widening it is separate work.
 - Cross-compilation to aarch64 uses the stock nixpkgs cross set; no exotic
   toolchain is needed.
 
@@ -97,11 +94,10 @@ All are `nix build .#<name>`.
 
 | Package | Output | Notes |
 |---|---|---|
-| `spl-minimal` | signed SPL | blob-free (empty firmware member, #90), compiled for this layout's byte offsets |
+| `spl-minimal` | signed SPL | blob-free (empty firmware member, #90), compiled for this layout's byte offsets, `SUPPPORT_GZIPD=FALSE` (#95) |
 | `spl-minimal-eip` | signed SPL | the vendor-shaped container with the closed EIP-130 firmware spliced in. Kept as a `dd`-away fallback; no image stores it |
-| `atf-mainline` | signed BL31 | upstream TF-A 2.15 + our `plat/axera/ax630c` |
-| `uboot-mainline` | signed BL33 | upstream U-Boot 2026.07 + our 25-patch AX630C board port |
-| `spl-minimal-raw` / `atf-mainline-raw` / `uboot-mainline-raw` / `nixos-firmware-image-mainline-raw` | the #95 chain | `SUPPPORT_GZIPD=FALSE` and the stages stored uncompressed — no `ax_gzip`, no prebuilt binary. **One set — never mix a `-raw` stage with a default one**: the SPL reads only the format it was compiled for, and either mismatch is a dark board with no console. Not yet on hardware; see [flashing-and-recovery.md](flashing-and-recovery.md#95-the-raw-boot-chain) |
+| `atf-mainline` | signed BL31 | upstream TF-A 2.15 + our `plat/axera/ax630c`, stored raw behind the header (#95) |
+| `uboot-mainline` | signed BL33 | upstream U-Boot 2026.07 + our 25-patch AX630C board port, stored raw behind the header (#95) |
 | `uboot-env` | the `env` partition | generated from the mainline U-Boot's own compiled-in default, so partition and binary cannot disagree |
 | `gpt-image` | primary + alternate GPT | generated from `nixos/lib/emmc-layout.nix` |
 | `boot` | the vendor SDK boot chain | **nothing boots from it.** Two things come out: the FDL1/FDL2 download agents the flasher pushes into BootROM RAM, and the vendor `atf_bl31_signed.bin` the `atf-mainline` check compares its header against |
@@ -191,8 +187,7 @@ nix build .#checks.x86_64-linux.<name> -L
 | `nanokvm-updater-loop` | the update loop for real against a fake root: apply, check the profile advanced and the boot config names the new generation and its kernel, then collect and check the right things survived — including that `gc` refuses when it cannot know the live set |
 | `nanokvm-update-idle` | the policy around it: the automatic-updates checkbox gating the timer, the pending markers, and the reboot that waits for an empty room — including that an unanswerable idle question fails **closed** |
 | `nanokvm-system-manifest` | the release artefact read back: the manifest names the toplevel *this commit* builds, carries this commit's version, and its closure list is the toplevel's real closure |
-| `no-x86-blobs` | #95's acceptance test, run on the **`-raw`** chain and on `boot`: no `EM_X86_64` ELF, no `ax_gzip`, and none of them still declaring itself `x86_64-linux`-only. Their *outputs*, not their closures — anything cross-compiled has the x86-64 cross toolchain in its closure by construction |
-| `atf-mainline-raw` / `uboot-mainline-raw` | the raw chain's own header assertions: `img_size`, both checksums recomputed with the SPL's arithmetic, and the stored payload byte-identical to the raw binary |
+| `no-x86-blobs` | #95's acceptance test, run on the boot chain and the flashable image: no `EM_X86_64` ELF, no `ax_gzip`, and none of those packages still declaring itself `x86_64-linux`-only. Their *outputs*, not their closures — anything cross-compiled has the x86-64 cross toolchain in its closure by construction |
 
 The two updater checks run **real nix inside the build sandbox** — a signed
 `file://` cache and two chroot stores — so they are slower than they look. They
@@ -251,9 +246,9 @@ cache, and that closure contains the server this FOD builds.
 ## Cross-compile notes
 
 - `crossPkgs` is `pkgsCross.aarch64-multiplatform`; `supportedSystems` is
-  `x86_64-linux` alone, because the default boot chain is packed with the
-  prebuilt `ax_gzip`. #95's `-raw` variants need no prebuilt tool; the
-  constraint goes when they become the default.
+  `x86_64-linux` alone. Since #95 that is **not** the boot chain's doing — the
+  chain needs no prebuilt host tool at all — but `pkgs/kernel-mainline.nix`
+  still declares `x86_64-linux`, and the flashable image inherits it.
 - **Go/cgo:** use `crossPkgs.buildGoModule` (the cross-capable `go`). Overriding
   it with a native `pkgs.go_*` breaks cgo — native go passes `-m64` to the
   aarch64 gcc. `GOEXPERIMENT=boringcrypto` is kept for parity with upstream's

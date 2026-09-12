@@ -217,34 +217,30 @@ candidate goes through the chainload slot; a bad SPL is an AXDL trip.
 
 ---
 
-## #95: the raw boot chain
+## #95: the raw boot chain — DONE, on hardware 2026-09-12
 
-**NOT DONE. This is the procedure, waiting on a go.** #95 builds a boot chain
-whose SPL is compiled `SUPPPORT_GZIPD=FALSE` and whose `atf`/`uboot` are stored
-uncompressed behind their signed headers — `.#spl-minimal-raw`,
-`.#atf-mainline-raw`, `.#uboot-mainline-raw`. It is **not** the default and
-**not** what `.#nixos-firmware-image-mainline` contains, precisely because that
-image is the AXDL recovery: if the raw SPL fails on the board, a recovery image
-built the same way fails the same way. So the raw chain is written from a
-**running board**, with the proven gzip image as the way back.
+**The boot chain stores every stage uncompressed.** `.#spl-minimal` is compiled
+`SUPPPORT_GZIPD=FALSE`, so it reads `atf` and `uboot` straight from flash to
+their load addresses instead of through the SoC's gzipd hardware, and
+`.#atf-mainline` / `.#uboot-mainline` store their payloads raw behind the same
+1 KiB signed header. That retired `ax_gzip`, the last prebuilt x86-64 host tool
+in this build. `.#nixos-firmware-image-mainline` carries the same trio, so the
+AXDL recovery image and the board's chain are the same chain again.
 
-**The three partitions must be written together.** The container carries no
-"compressed" flag, so each SPL reads only the format it was compiled for and
-neither mismatch is detected: a raw SPL reading a gzipped image passes the
-checksum (it is taken over the stored bytes) and jumps into axgzip data; a
-gzipped SPL reading a raw image fails and spins. Both are a dark board.
-[mainline-port.md §11.12](mainline-port.md#1112-95-the-stages-go-raw-and-ax_gzip-is-retired-offline-2026-09-11)
-has the citations.
+**The three are one artefact.** The container carries no "compressed" flag, so
+each SPL reads only the format it was compiled for and neither mismatch is
+detected: a raw SPL reading a gzipped image passes the checksum (it is taken
+over the stored bytes) and jumps into axgzip data; a gzipped SPL reading a raw
+image fails and spins. Both are a dark board.
+[mainline-port.md §11.12](mainline-port.md#1112-95-the-stages-go-raw-and-ax_gzip-is-retired-on-hardware-2026-09-12)
+has the citations. **Never change one of `pkgs/spl-minimal.nix`,
+`pkgs/atf-mainline.nix` and `pkgs/uboot-mainline.nix` without the other two.**
 
-**The chainload slot cannot test any of this.** It stages a raw `u-boot.bin`
-that `bootchain` `booti`s itself — no header, no `img_size`, no checksum, no SPL
-load path — and the U-Boot binary does not change. All it could prove is that
-the same binary still runs.
+### How it was written, and how to write it again
 
-**Recovery is AXDL of `.#nixos-firmware-image-mainline`**, which is why the go
-is Jeremy's.
-
-### The write, in one step
+The `spl` region has no A/B twin and no chainload slot, so this is a one-way
+write with AXDL as the only way back. It was done from the running appliance,
+and the procedure below is the one that worked.
 
 ```bash
 # ---- build, on the dev box -------------------------------------------------
@@ -254,33 +250,37 @@ nix build .#checks.x86_64-linux.no-x86-blobs \
           .#checks.x86_64-linux.uboot-mainline
 
 # ---- confirm the numbering ON THE BOARD, never from this table -------------
-tools/kvmssh 'lsblk /dev/loop0; sgdisk -p /dev/loop0'
+tools/kvmssh 'lsblk /dev/loop0; blkid; ls -l /dev/disk/by-partlabel/'
 #   p1 = atf (1 MiB)   p2 = uboot (2 MiB)   p3 = env   p4 = boot   p5 = rootfs
 
 # ---- save what is there ----------------------------------------------------
 tools/kvmssh 'mkdir -p /root/pre95
-  dd if=/dev/mmcblk0 of=/root/pre95/spl.img bs=1K count=768
-  dd if=/dev/loop0p1 of=/root/pre95/atf.img
-  dd if=/dev/loop0p2 of=/root/pre95/uboot.img
-  md5sum /root/pre95/*.img | tee /root/pre95/MD5'
+  dd if=/dev/mmcblk0 of=/root/pre95/spl.bin bs=1K count=768
+  dd if=/dev/disk/by-partlabel/atf   of=/root/pre95/atf.bin
+  dd if=/dev/disk/by-partlabel/uboot of=/root/pre95/uboot.bin
+  sync; echo 3 > /proc/sys/vm/drop_caches
+  md5sum /root/pre95/*.bin | tee /root/pre95/MD5'
 ```
 
-Copy `/root/pre95/` off the board as well: it is on `rootfs`, which an AXDL
-recovery overwrites. The same three images are rebuildable from source at any
-time — they are the DEFAULT `.#spl-minimal`, `.#atf-mainline` and
-`.#uboot-mainline` — so the dumps are a convenience, not the safety net.
+Copy `/root/pre95/` off the board as well (`tools/kvmssh 'cat …' > file`;
+`kvmscp` is push-only): it lives on `rootfs`, which an AXDL recovery
+overwrites. **Verify the backup against a build before trusting it** — the
+2026-09-12 run confirmed all three regions were byte-identical to what the tree
+then built, which is what made the rollback reproducible from source rather
+than dependent on the dump.
 
 ```bash
 # ---- push and write --------------------------------------------------------
-tools/kvmscp result-spl/images/spl_*_signed.bin           root@board:/tmp/spl.bin
-tools/kvmscp result-atf/images/atf_bl31_mainline_signed.bin root@board:/tmp/atf.bin
-tools/kvmscp result-ub/images/u-boot_mainline_signed.bin  root@board:/tmp/uboot.bin
+tools/kvmscp result-atf/images/atf_bl31_mainline_signed.bin  /root/pre95/new/
+tools/kvmscp result-ub/images/u-boot_mainline_signed.bin     /root/pre95/new/
+tools/kvmscp result-spl/images/spl_*_signed.bin              /root/pre95/new/
+tools/kvmssh 'sync; echo 3 > /proc/sys/vm/drop_caches; md5sum /root/pre95/new/*'
 
 tools/kvmssh '
   set -e
-  dd if=/tmp/atf.bin   of=/dev/loop0p1 conv=fsync
-  dd if=/tmp/uboot.bin of=/dev/loop0p2 conv=fsync
-  dd if=/tmp/spl.bin   of=/dev/mmcblk0 conv=fsync      # spl LAST
+  dd if=/root/pre95/new/atf_bl31_mainline_signed.bin of=/dev/loop0p1 conv=fsync
+  dd if=/root/pre95/new/u-boot_mainline_signed.bin   of=/dev/loop0p2 conv=fsync
+  dd if=/root/pre95/new/spl_*_signed.bin of=/dev/mmcblk0 bs=512 conv=fsync
   sync; echo 3 > /proc/sys/vm/drop_caches'
 ```
 
@@ -292,11 +292,12 @@ nothing behind it.
 
 ```bash
 tools/kvmssh 'echo 3 > /proc/sys/vm/drop_caches
-  for p in "spl /dev/mmcblk0 /tmp/spl.bin" "atf /dev/loop0p1 /tmp/atf.bin" \
-           "uboot /dev/loop0p2 /tmp/uboot.bin"; do
-    set -- $p
-    n=$(stat -c%s "$3")
-    echo "$1 $(head -c $n "$2" | sha256sum | cut -d" " -f1) $(sha256sum "$3" | cut -d" " -f1)"
+  for p in "spl /dev/mmcblk0 spl_*_signed.bin" \
+           "atf /dev/loop0p1 atf_bl31_mainline_signed.bin" \
+           "uboot /dev/loop0p2 u-boot_mainline_signed.bin"; do
+    set -- $p; f=/root/pre95/new/$3
+    n=$(stat -c%s $f)
+    echo "$1 $(head -c $n "$2" | md5sum | cut -d" " -f1) $(md5sum $f | cut -d" " -f1)"
   done'
 ```
 
@@ -307,29 +308,41 @@ Both hashes on a line must match. Then, and only then, `reboot`.
 | What | Where | Expected |
 |---|---|---|
 | it booted | SSH | back within **90 s**; poll 30 minutes before calling it dark |
-| how many attempts | `journalctl -u nanokvm-mark-good`, or `devmem 0x02390030 32` | `0xB0010001` — one attempt |
-| how far the chain got | `devmem 0x02390024 32` | a good boot reads `0x30000014` |
+| how many attempts | `journalctl -u nanokvm-mark-good`, or `devmem 0x02390030 32` | `0xB0010001` at the gate, `0xB0010000` after — one attempt |
+| how far the chain got | `devmem 0x02390024 32` | bits 28+29 (`0x30000000`). **Bits 2-5 are the SPL's own A/B slot bookkeeping**, rewritten by `select_slot_ab()` every boot, so the low nibble changes between boots and means nothing |
 | what U-Boot printed | the pre-console ring at `0x480E8000` | only if something went wrong |
+
+What the 2026-09-12 run measured: SSH answered with the board at **47 s**
+uptime, one attempt, `is-system-running` = `running`, `systemctl --failed`
+empty, web 200, `psci: PSCIv1.1 detected in firmware`, and all three regions
+still md5-correct read back off the eMMC.
 
 A first-stage failure prints nothing and reaches nothing: no milestone bits, no
 `bootcount`, no ring. **Dark plus a flat ~3.3 W is the signature**, and the only
 answer is AXDL:
 
 ```bash
-nix build .#nixos-firmware-image-mainline     # the axgzip'd chain
+nix build .#nixos-firmware-image-mainline
 nix run .#axdl -- --file result/*.axp --wait-for-device
 ```
 
-Hold `User` ~10 s at power-on to enter AXDL. **That image carries the proven
-axgzip'd chain, not the raw one** — which is the whole reason the raw chain is
-not the default — so the recovery cannot fail the way the candidate did. Once
-the board is back, the raw attempt can simply be repeated or abandoned.
+Hold `User` ~10 s at power-on to enter AXDL.
 
-After the raw chain HAS booted, a follow-up commit flips the defaults
-(`gzipd`/`gzip` to `false` in `pkgs/spl-minimal.nix`, `pkgs/atf-mainline.nix`
-and `pkgs/uboot-mainline.nix`), deletes the frozen gzip branches and the `-raw`
-package names, and drops the `ax_gzip` row from
-[provenance.md](provenance.md#build-time-only-vendor-inputs).
+### Rolling the board back
+
+The gzip chain is no longer buildable from this tree, so the `/root/pre95/`
+dumps are the only copy of it. Restoring them is the same three writes in the
+same order:
+
+```bash
+dd if=/root/pre95/atf.bin   of=/dev/loop0p1  conv=fsync
+dd if=/root/pre95/uboot.bin of=/dev/loop0p2  conv=fsync
+dd if=/root/pre95/spl.bin   of=/dev/mmcblk0  bs=512 conv=fsync
+```
+
+In practice there is nothing to roll back to: the current chain is what every
+image builds and what the board has booted.
+
 
 ---
 
