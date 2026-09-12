@@ -31,7 +31,14 @@
 # ===========================================================================
 
 let
-  markGood = import ./mark-good.nix { inherit pkgs lib; };
+  # The list is spelled out here rather than taken from the module so that the
+  # test says what it is testing. It is the same SHAPE as
+  # `nanokvm.markGood.tolerateFailed`'s default: peripherals only.
+  tolerated = [ "nanokvm-wifi.service" "nanokvm-panel.service" ];
+  markGood = import ./mark-good.nix {
+    inherit pkgs lib;
+    tolerateFailed = tolerated;
+  };
 
   oldSys = "00000000000000000000000000000001-nixos-system-old";
   newSys = "00000000000000000000000000000002-nixos-system-new";
@@ -162,7 +169,36 @@ pkgs.runCommand "nanokvm-mark-good-fallback"
   [ ! -e "$R/boot/extlinux" ] || fail "it created a /boot that is not mounted"
   ok "an absent /boot/extlinux is a clean skip"
 
+  # =====================================================================
+  # 5. THE HEALTH GATE'S TOLERATE LIST (#106). Since the peripheral units
+  #    fail honestly again, this list is the ONLY thing standing between a
+  #    missing WiFi radio and a rollback nobody asked for -- so it is worth
+  #    an offline proof rather than a hardware round. `--check-system` runs
+  #    the real `system_ok` against the two answers below.
+  # =====================================================================
+  echo "=== the tolerate list ==="
+  mkdir -p "$R/test"
+  gate() {  # gate <expect-ok> <state> <failed units...>
+    want="$1"; shift
+    printf '%s\n' "$1" > "$R/test/is-system-running"; shift
+    printf '%s' "" > "$R/test/failed-units"
+    for u in "$@"; do echo "$u" >> "$R/test/failed-units"; done
+    if nanokvm-mark-good --root "$R" --check-system > gate.log 2>&1; then got=yes; else got=no; fi
+    [ "$got" = "$want" ] \
+      || { cat gate.log >&2; fail "gate said $got, expected $want"; }
+    ok "$(cat gate.log)"
+  }
+
+  gate yes running
+  gate yes degraded nanokvm-wifi.service
+  gate yes degraded nanokvm-wifi.service nanokvm-panel.service
+  gate no  degraded nanokvm.service
+  gate no  degraded nanokvm-wifi.service nanokvm.service
+  gate no  degraded sshd.service
+  gate no  starting
+  gate no  ""
+
   echo
-  echo "the derived fallback holds offline."
+  echo "the derived fallback and the health gate hold offline."
   touch "$out"
 ''

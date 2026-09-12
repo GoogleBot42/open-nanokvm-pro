@@ -14,9 +14,11 @@
 # fb_jd9853 runs ~560 ms of power-on mdelay over SPI, which is why it is a
 # module rather than built in; and the modules must never be unloaded.
 #
-# THIS UNIT NEVER FAILS. A KVM whose HDMI, USB and ethernet all work is not
-# unhealthy because it has no status screen -- see `markGood.tolerateFailed`
-# in the rollback module.
+# THIS UNIT FAILS WHEN THE PANEL DOES NOT COME UP, and the rollback is kept
+# off it by `markGood.tolerateFailed` in the rollback module -- not by a unit
+# that cannot fail. A KVM whose HDMI, USB and ethernet all work is not
+# unhealthy because it has no status screen, but it IS missing one, and
+# `systemctl --failed` is where that belongs (#106).
 # ===========================================================================
 
 let
@@ -61,15 +63,16 @@ in
     # driver that hard-hangs the board; the cause is structurally absent from
     # our port, and it has never been tested. Test at boot.
     #
-    # THIS UNIT NEVER FAILS, for the reason nanokvm-wifi does not (#85): a
-    # `Type=oneshot` that exits non-zero over absent optional hardware makes
-    # `systemctl is-system-running` report `degraded`, which makes
-    # nanokvm-mark-good poll its whole timeout and give up, which leaves
-    # `bootcount` uncleared -- so every reboot counts as a failed attempt and
-    # the fourth rolls the board onto the fallback generation. A KVM whose
-    # HDMI, USB and ethernet all work is not unhealthy because it has no
-    # status screen. Every dead end here is a journal line and `exit 0`, and
-    # nanokvm.markGood.tolerateFailed is the second belt on the same trousers.
+    # THIS UNIT FAILS HONESTLY (#106), for the reason nanokvm-wifi does. A
+    # `Type=oneshot` that exits non-zero over absent optional hardware does
+    # make `systemctl is-system-running` report `degraded`, and #84 lost a
+    # hardware round to what that used to cost -- nanokvm-mark-good polled its
+    # whole timeout, `bootcount` stayed uncleared, and the fourth such boot
+    # would have rolled the board onto the fallback generation. The fix for
+    # that is `nanokvm.markGood.tolerateFailed`, which names this unit, and
+    # NOT an `exit 0` that hides the panel's absence from every tool anyone
+    # would use to find it. Every dead end here is a journal line and a failed
+    # unit.
     systemd.services.nanokvm-panel = {
       description = "NanoKVM-Pro mini-display panel (fbtft + JD9853)";
       wantedBy = [ "multi-user.target" ];
@@ -94,7 +97,7 @@ in
             note "$dir does not exist: this generation's panel modules were"
             note "built for a different kernel than the one /boot booted."
             note "No /dev/fb0; the status daemon will not start."
-            exit 0
+            exit 1
           fi
           while read -r ko; do
             [ -n "$ko" ] || continue
@@ -140,7 +143,7 @@ in
             note "       /sys/kernel/debug/devices_deferred"
           fi
           note "spi devices: $(ls /sys/bus/spi/devices 2>/dev/null | tr '\n' ' ')"
-          exit 0
+          exit 1
         '' else ''
           echo "nanokvm-panel: DISABLED (nanokvm.panel.enable = false)."
           echo "               No /dev/fb0; the status daemon will not start."

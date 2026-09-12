@@ -19,9 +19,10 @@
 # and this board has no console, so an unattended rollback is the ONLY way
 # back from a generation that cannot boot.
 #
-# A PERIPHERAL THAT IS ALLOWED TO BE ABSENT MUST NOT BE ALLOWED TO FAIL:
-# `markGood.tolerateFailed` is the second line of defence behind units that
-# log and `exit 0` (#84, #85).
+# A PERIPHERAL THAT IS ALLOWED TO BE ABSENT MUST STILL BE ALLOWED TO FAIL:
+# `markGood.tolerateFailed` names the units whose failure does not arm the
+# rollback (#84, #85), and since #106 it is the only thing doing that job --
+# the units fail honestly so `systemctl --failed` can be believed.
 # ===========================================================================
 
 let
@@ -307,14 +308,19 @@ in
         in this list, the boot counter is cleared and the generation is
         promoted anyway.
 
-        This is the second half of a rule the units themselves implement
-        first: optional hardware gets a journal line and `exit 0`, never a
-        failed unit (#85's WiFi, #84's panel). Both cost a hardware round to
-        the same mechanism -- a peripheral unit that `exit 1`-ed made the
-        system `degraded`, `nanokvm-mark-good` polled `markGood.timeoutSec`
-        and gave up, `bootcount` was never cleared, and the fourth such boot
-        would have rolled a working KVM onto its previous generation over a
-        missing radio or a dark status screen.
+        This is the ONLY half of that rule (#106). The units themselves used
+        to implement the other one -- optional hardware got a journal line and
+        `exit 0`, never a failed unit -- and that hid the thing an operator
+        needs to see: a unit that cannot fail is absent from
+        `systemctl --failed`, leaves `is-system-running` at `running`, and
+        makes a radio that stopped enumerating for a new reason look exactly
+        like a board that never had one. #85's WiFi and #84's panel both fail
+        honestly now, and this list is what stops them arming the rollback --
+        a peripheral unit that `exit 1`-ed made the system `degraded`,
+        `nanokvm-mark-good` polled `markGood.timeoutSec` and gave up,
+        `bootcount` was never cleared, and the fourth such boot would have
+        rolled a working KVM onto its previous generation over a missing radio
+        or a dark status screen.
 
         Keep it to peripherals. A unit that is not listed still fails the
         gate, which is what keeps the rollback meaningful for the things this

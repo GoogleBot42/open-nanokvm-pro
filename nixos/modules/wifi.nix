@@ -285,22 +285,29 @@ in
         RemainAfterExit = true;
       };
       # ===================================================================
-      # THIS UNIT NEVER FAILS, AND THAT IS THE POINT.
+      # THIS UNIT FAILS WHEN THE RADIO DOES NOT COME UP, AND THAT IS THE
+      # POINT (#106, 2026-09-12).
       #
-      # It used to `exit 1` when the radio did not come up, and on 2026-09-11
-      # the board showed what that costs: the AIC8800 never enumerated, the
-      # unit failed, `systemctl is-system-running` went `degraded`,
-      # nanokvm-mark-good polled for 240 s and gave up, `bootcount` was never
-      # cleared -- so every reboot counted as a failed boot attempt and the
-      # fourth would have rolled the board onto the fallback generation. A
-      # KVM whose HDMI, USB and ethernet all work is not unhealthy because it
-      # has no wireless.
+      # It used to `exit 0` on every failure, because on 2026-09-11 a failing
+      # one held `bootcount` uncleared and three more boots would have rolled
+      # the board back over a missing radio. That was the wrong half to fix.
+      # A unit that cannot fail cannot be SEEN: `systemctl --failed` is empty,
+      # `systemctl is-system-running` says `running`, the journal line scrolls
+      # away, and a radio that stopped enumerating for a NEW reason is
+      # indistinguishable from a board that never had one. Diagnosis by
+      # grepping the journal for a note nobody is looking for is not
+      # diagnosis.
       #
-      # So every failure here is a journal line and an inactive interface.
-      # The diagnosis stays in the journal -- including the one line that
-      # actually explains a dead radio, which is whether the SDIO HOST probed
-      # at all. If `104d0000.mmc` is not in /sys/class/mmc_host then no card
-      # can possibly have enumerated and the fault is the host or its power
+      # The rollback is kept off this unit by `nanokvm.markGood.tolerateFailed`
+      # instead, which is a deliberate, readable list in one place and is
+      # exercised offline by `nix flake check`'s nanokvm-mark-good-fallback.
+      # A KVM whose HDMI, USB and ethernet all work is still not unhealthy
+      # because it has no wireless -- but it is now visibly missing wireless.
+      #
+      # The journal keeps the diagnosis either way, including the one line
+      # that actually explains a dead radio: whether the SDIO HOST probed at
+      # all. If `104d0000.mmc` is not in /sys/class/mmc_host then no card can
+      # possibly have enumerated and the fault is the host or its power
       # sequencer, not the module, the firmware or the chip.
       # ===================================================================
       script = ''
@@ -327,7 +334,7 @@ in
         if [ ! -r "$dir/load-order" ]; then
           note "$dir does not exist: the aic8800 modules were built for a"
           note "different kernel than the one running ($(uname -r)). No WiFi."
-          exit 0
+          exit 1
         fi
 
         failed=""
@@ -351,7 +358,7 @@ in
 
         if [ -n "$failed" ]; then
           note "no WiFi on this boot. The appliance is otherwise unaffected."
-          exit 0
+          exit 1
         fi
 
         # The oracle. A successful insmod proves nothing: the modules load
@@ -364,7 +371,7 @@ in
           note "modules loaded but ${iface} never appeared."
           note "check dmesg for the SDIO scan and the firmware path."
           note "no WiFi on this boot. The appliance is otherwise unaffected."
-          exit 0
+          exit 1
         fi
         say "${iface} up"
       '';

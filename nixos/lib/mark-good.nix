@@ -65,14 +65,39 @@ pkgs.writeShellApplication {
 
     ROOT=""
     WAIT=1
+    CHECK_SYSTEM=0
     while [ $# -gt 0 ]; do
       case "$1" in
-        --root)    ROOT="''${2%/}"; shift 2 ;;
-        --no-wait) WAIT=0; shift ;;
-        *) echo "usage: nanokvm-mark-good [--root DIR] [--no-wait]" >&2; exit 2 ;;
+        --root)         ROOT="''${2%/}"; shift 2 ;;
+        --no-wait)      WAIT=0; shift ;;
+        --check-system) CHECK_SYSTEM=1; shift ;;
+        *) echo "usage: nanokvm-mark-good [--root DIR] [--no-wait] [--check-system]" >&2; exit 2 ;;
       esac
     done
     P() { printf '%s%s' "$ROOT" "$1"; }
+
+    # The two questions the health gate asks systemd. They are indirected so
+    # that `--check-system` can be run against a fake root in a build sandbox
+    # -- `nanokvm-mark-good-tolerated` is the only caller that supplies the
+    # files, and a board never has them. Without this seam the tolerate list
+    # is a rule nothing offline can exercise, which is how the FIRST version
+    # of it shipped.
+    sys_state() {
+      if [ -n "$ROOT" ] && [ -r "$(P /test/is-system-running)" ]; then
+        cat "$(P /test/is-system-running)"
+      else
+        systemctl is-system-running 2>/dev/null || true
+      fi
+    }
+
+    failed_units() {
+      if [ -n "$ROOT" ] && [ -r "$(P /test/failed-units)" ]; then
+        cat "$(P /test/failed-units)"
+      else
+        systemctl list-units --failed --plain --no-legend --no-pager \
+          | awk '{ print $1 }'
+      fi
+    }
 
     # TOP_CHIPMODE_GLB_BACKUP1, and the value U-Boot's DM_BOOTCOUNT_SYSCON
     # backend reads as "magic present, count zero": CONFIG_SYS_BOOTCOUNT_MAGIC
@@ -103,15 +128,19 @@ pkgs.writeShellApplication {
     # `exit 1`-ed held `bootcount` uncleared on every boot, three boots from a
     # rollback nobody asked for).
     #
-    # The units themselves are the first fix -- optional hardware gets a
-    # journal line and `exit 0` -- and this is the second. It is belt and
-    # braces on purpose: a unit that starts failing for a NEW reason, or a
-    # NixOS unit we do not own, must not be able to arm the rollback over a
-    # peripheral. Anything NOT in the list still fails the gate, so a broken
-    # server, a dead network or a failed nanokvm-video is as fatal as it ever
-    # was.
+    # THIS LIST IS THE ONLY FIX (#106 round 1). It used to be the second of
+    # two, the first being units that logged and `exit 0`-ed when their
+    # hardware was missing -- and that first one is worse than it looks: a
+    # unit that cannot fail cannot be seen. `systemctl --failed` is empty, the
+    # journal line scrolls away, and a WiFi radio that stopped enumerating for
+    # a NEW reason is indistinguishable from a board that never had one. The
+    # peripheral units fail honestly now; this is what keeps a missing radio
+    # or a dark status screen from arming the rollback.
+    #
+    # Anything NOT in the list still fails the gate, so a broken server, a
+    # dead network or a failed nanokvm-video is as fatal as it ever was.
     system_ok() {
-      state=$(systemctl is-system-running 2>/dev/null || true)
+      state=$(sys_state)
       case "$state" in
         running) return 0 ;;
         degraded) ;;
@@ -120,8 +149,7 @@ pkgs.writeShellApplication {
       [ -n "$TOLERATE" ] || return 1
 
       # `--plain` drops the leading bullet; column 1 is the unit name.
-      for u in $(systemctl list-units --failed --plain --no-legend --no-pager \
-                   | awk '{ print $1 }'); do
+      for u in $(failed_units); do
         case " $TOLERATE " in
           *" $u "*) ;;
           *) return 1 ;;
@@ -129,6 +157,15 @@ pkgs.writeShellApplication {
       done
       return 0
     }
+
+    if [ "$CHECK_SYSTEM" = 1 ]; then
+      if system_ok; then
+        echo "system_ok: yes (state=$(sys_state), failed='$(failed_units | tr '\n' ' ')')"
+        exit 0
+      fi
+      echo "system_ok: no (state=$(sys_state), failed='$(failed_units | tr '\n' ' ')')"
+      exit 1
+    fi
 
     healthy() {
       system_ok || return 1
@@ -154,8 +191,8 @@ pkgs.writeShellApplication {
       # Say so out loud when the board is healthy DESPITE a failed unit -- the
       # whole point of the list is that it is a deliberate, readable decision
       # rather than a silently relaxed gate.
-      if [ "$(systemctl is-system-running 2>/dev/null || true)" = degraded ]; then
-        echo "mark-good: degraded, and tolerated: $(systemctl list-units --failed --plain --no-legend --no-pager | awk '{ print $1 }' | tr '\n' ' ')"
+      if [ "$(sys_state)" = degraded ]; then
+        echo "mark-good: degraded, and tolerated: $(failed_units | tr '\n' ' ')"
       fi
       devmem $BOOTCOUNT_REG 32 $BOOTCOUNT_CLEAR
       echo "mark-good: bootcount cleared -> $(devmem $BOOTCOUNT_REG 32)"
