@@ -3,12 +3,6 @@
   # instrumentation" below: identical BL31 plus seven register writes, used
   # only to find out how far a BL31 that never reaches BL33 actually got.
 , debugMilestones ? false
-  # #95. `gzip = false` stores BL31 RAW behind the signed header, for an SPL
-  # compiled with SUPPPORT_GZIPD=FALSE -- `.#atf-mainline-raw`, which must be
-  # paired with `.#spl-minimal-raw`; the two are one artefact. `true` is STILL
-  # THE DEFAULT and byte-for-byte the pre-#95 build, because the raw chain has
-  # not booted the board and the flashable image is also the AXDL recovery.
-, gzip ? true
 , ... }:
 
 # ===========================================================================
@@ -28,26 +22,20 @@
 #
 # Packaging matches the vendor `atf_bl31_signed.bin` byte protocol exactly,
 # because the SPL is what reads it:
-#   bl31.bin -> ax_gzip -9 -> bl31_axgzip.bin -> sec_boot_AX620E_sign.py
-#     -cap 0x54FAFE -key_bit 2048 with the SDK's committed dev keys
-# which is the recipe in [SDK]/boot/atf/Makefile:82-89 for SUPPPORT_GZIPD=TRUE
-# (which this project still sets, project.mak:23). An SPL built that way
-# rejects a raw payload -- every stage but DDRINIT goes through the gzipd
-# hardware -- so for the DEFAULT build the axgzip step is mandatory.
-#
-# `gzip = false` (#95) takes the vendor's OTHER branch instead --
-# Makefile:92-99, the `SUPPPORT_GZIPD != TRUE` arm -- and signs the RAW
-# bl31.bin with the same keys and the same `-cap`, because the container
-# carries no "compressed" flag: which of the two the stored bytes are is
-# decided by the SPL's compile-time `SUPPPORT_GZIPD` and by nothing else. That
-# is `.#atf-mainline-raw`, and it is only readable by `.#spl-minimal-raw`.
+#   bl31.bin -> sec_boot_AX620E_sign.py -cap 0x54FAFE -key_bit 2048
+#     with the SDK's committed dev keys
+# which is [SDK]/boot/atf/Makefile:92-99, the `SUPPPORT_GZIPD != TRUE` arm:
+# BL31 stored RAW behind the signed header. The container carries no
+# "compressed" flag, so which of the two the stored bytes are is decided by
+# the SPL's compile-time `SUPPPORT_GZIPD` and by nothing else -- this file and
+# `.#spl-minimal` are ONE ARTEFACT and must always change together. (#95;
+# the raw chain booted the board 2026-09-12.)
 #
 # The result is a drop-in replacement for the `atf` partition: BL31 is ~24 KB,
 # the window at 0x40040000 is 256 KiB, and the partition is 1 MiB.
 #
-# ax_gzip is a prebuilt x86-64 static host tool shipped in the SDK, so the
-# default variant only builds on x86_64-linux. `gzip = false` needs no prebuilt
-# binary at all.
+# No prebuilt host binary is involved: cross-compile plus the SDK's Python
+# signing script. `ax_gzip`, which used to sit between the two, is gone (#95).
 # ===========================================================================
 
 let
@@ -59,23 +47,12 @@ let
   # layout, and NOT the same thing as the 256 KiB DRAM window below.
   atfPart = (import ../nixos/emmc-partitions.nix { inherit lib; }).byName.atf;
 
-  # #95. Spliced onto the END of the preceding line so the `gzip = true`
-  # build's script is BYTE-FOR-BYTE the pre-#95 one and keeps its store path;
-  # when the default flips, these collapse to the raw forms unconditionally.
-  storedPath = if gzip then "$work/bl31_axgzip.bin" else "$work/bl31.bin";
-
-  axgzipStep = lib.optionalString gzip ''
-
-    "${maix_ax620e_sdk}/tools/ax_gzip_tool/ax_gzip" -9 "$work/bl31.bin"
-    test -f "$work/bl31_axgzip.bin" || \
-      { echo "ERROR: ax_gzip produced no bl31_axgzip.bin" >&2; exit 1; }'';
-
   # The payload behind the header is the raw BL31, byte for byte, and every
   # header field recomputes -- asserted here as well as in the flake check, so
   # a bad packing cannot reach the .axp even if nobody runs the check. It also
   # checks the signed container against the `atf` PARTITION (1 MiB), which is
   # not the same number as the 256 KiB DRAM window checked above.
-  rawAssertion = lib.optionalString (!gzip) ''
+  rawAssertion = ''
 
     python3 ${./ax-sign-verify.py} \
       --image "$out/images/atf_bl31_mainline_signed.bin" \
@@ -188,8 +165,7 @@ let
   '';
 
   atf-mainline = pkgs.stdenv.mkDerivation {
-    pname = "atf-mainline" + pkgs.lib.optionalString debugMilestones "-debug"
-      + pkgs.lib.optionalString (!gzip) "-raw";
+    pname = "atf-mainline" + pkgs.lib.optionalString debugMilestones "-debug";
     version = "tfa-${tfaVersion}-ax630c";
 
     src = tfaSrc;
@@ -248,14 +224,13 @@ let
       cp "$rel/bl31/bl31.elf" "$out/debug/atf_bl31_mainline.elf"
       cp "$rel/bl31/bl31.map" "$out/debug/atf_bl31_mainline.map"
 
-      # --- axgzip + sign, exactly as the vendor ATF Makefile does ----------
-      # ax_gzip writes <stem>_axgzip.bin beside its input, so work on a copy.
+      # --- sign the RAW bl31.bin: the vendor ATF Makefile's FALSE arm ------
       work="$TMPDIR/sign"
       mkdir -p "$work"
-      cp "$rel/bl31.bin" "$work/bl31.bin"${axgzipStep}
+      cp "$rel/bl31.bin" "$work/bl31.bin"
 
       python3 "${maix_ax620e_sdk}/build/tools/imgsign/sec_boot_AX620E_sign.py" \
-        -i "${storedPath}" \
+        -i "$work/bl31.bin" \
         -pub "${maix_ax620e_sdk}/tools/imgsign/public.pem" \
         -prv "${maix_ax620e_sdk}/tools/imgsign/private.pem" \
         -o "$out/images/atf_bl31_mainline_signed.bin" \
@@ -285,19 +260,18 @@ let
     dontFixup = true;
 
     passthru = {
-      inherit tfaVersion bl31Base atfPartitionSize gzip atfPart;
+      inherit tfaVersion bl31Base atfPartitionSize atfPart;
       src = tfaSrc;
       verify = verify;
     };
 
     meta = {
       description =
-        "Mainline TF-A ${tfaVersion} BL31 for the Axera AX630C, signed ${
-          if gzip then "axgzip'd" else "raw (#95)"} for the atf partition";
+        "Mainline TF-A ${tfaVersion} BL31 for the Axera AX630C, signed and stored raw (#95) for the atf partition";
       license = pkgs.lib.licenses.bsd3;
-      # #95: only the `gzip = true` variant reaches for the prebuilt x86-64
-      # ax_gzip. The default is cross-compile + Python all the way down.
-      platforms = if gzip then [ "x86_64-linux" ] else lib.platforms.linux;
+      # #95: no prebuilt x86-64 host tool is reached for anywhere in this
+      # build -- it is cross-compile + Python all the way down.
+      platforms = lib.platforms.linux;
     };
   };
 
@@ -321,14 +295,12 @@ let
       img="${atf-mainline}/images/atf_bl31_mainline_signed.bin"
       vendor="${boot}/images/atf_bl31_signed.bin"
 
-      ${lib.optionalString (!gzip) ''
       # #95: the stored payload is the BL31 binary itself. Read back from the
       # two built files, so a packing regression fails the check even if the
       # in-build assertion is ever weakened.
       raw="${atf-mainline}/images/atf_bl31_mainline.bin"
       python3 ${./ax-sign-verify.py} --image "$img" --stored "$raw" \
         --raw-payload "$raw" --max-size ${toString atfPart.size}
-      ''}
 
       echo "== ELF entry / link address =="
       ${crossPrefix}readelf -h "$elf" > headers.txt

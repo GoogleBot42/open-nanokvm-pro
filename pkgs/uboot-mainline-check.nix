@@ -106,17 +106,15 @@ pkgs.runCommand "uboot-mainline-check"
     test "$sz" -le ${toString uboot-mainline.passthru.ubootPartSize} \
       || { echo "ERROR: signed image does not fit the uboot partition" >&2; exit 1; }
 
-    ${lib.optionalString (!uboot-mainline.passthru.gzip) ''
     # #95: the stored payload is u-boot.bin itself, and every header field
-    # recomputes over it. The SPL built with SUPPPORT_GZIPD=FALSE flash_read()s
-    # exactly these bytes to 0x5C000400 -- so if anything ever compressed the
-    # payload again while the SPL stayed raw, it would run axgzip data as code.
+    # recomputes over it. The SPL is built with SUPPPORT_GZIPD=FALSE and
+    # flash_read()s exactly these bytes to 0x5C000400 -- so if anything ever
+    # compressed the payload again, it would run axgzip data as code.
     ${pkgs.python3}/bin/python3 ${./ax-sign-verify.py} \
       --image "$img" \
       --stored "$ub/images/u-boot.bin" \
       --raw-payload "$ub/images/u-boot.bin" \
       --max-size ${toString uboot-mainline.passthru.ubootPartSize}
-    ''}
 
     echo "=== 3. device tree ==="
     ${pkgs.dtc}/bin/fdtdump "$ub/images/u-boot.dtb" > dt.txt 2>/dev/null

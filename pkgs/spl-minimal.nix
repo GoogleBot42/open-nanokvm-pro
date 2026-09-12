@@ -11,18 +11,6 @@
   # vendor-shaped container as `.#spl-minimal-eip`, kept as the fallback a
   # `dd` away should a unit ever refuse it.
   withEip ? false
-, # #95. `gzipd = false` compiles the SPL with SUPPPORT_GZIPD undefined, so
-  # every stage is read STRAIGHT from flash to its load address instead of
-  # through the gzipd hardware decompressor -- and `ax_gzip`, the last prebuilt
-  # x86-64 host tool in this build, is retired. THIS AND THE PACKING OF
-  # `atf`/`uboot` ARE ONE CHANGE; see item 6 below.
-  #
-  # `true` IS STILL THE DEFAULT and this build is byte-for-byte the pre-#95
-  # one, because the raw chain has not booted the board and
-  # `.#nixos-firmware-image-mainline` is the AXDL recovery image. The raw
-  # variant is `.#spl-minimal-raw`. The default flips, and the TRUE branches
-  # here go, once hardware says the raw chain boots.
-  gzipd ? true
 , ... }:
 
 # ===========================================================================
@@ -71,9 +59,9 @@
 #      FALSE for this project -- dead code. The minimal layout has no `dtb`
 #      or `kernel` partition because extlinux carries both per generation.
 #
-#   6. `SUPPPORT_GZIPD := FALSE` (#95, `.#spl-minimal-raw`; NOT the default
-#      yet). This is the one flag that changes the ON-DISK FORMAT of the
-#      stages behind the SPL, so read this before touching either side.
+#   6. `SUPPPORT_GZIPD := FALSE` (#95; the default, and on hardware since
+#      2026-09-12). This is the one flag that changes the ON-DISK FORMAT of
+#      the stages behind the SPL, so read this before touching either side.
 #
 #      What the macro gates, all of it in [SDK]/boot/bl1/:
 #        * `spl/Makefile:186-188` -- the only thing the flag does is define
@@ -106,11 +94,11 @@
 #      and then the checksum. With `support_ab` set neither retries
 #      (boot.c:649-652, 806-808) and the caller spins in `while(1)`. Both
 #      directions are a dark board with no console. So `spl`, `atf` and `uboot`
-#      MUST be written in one step -- which is also why the RAW chain is not
-#      the default: `.#nixos-firmware-image-mainline` is the AXDL recovery
-#      image, and a recovery that fails the way the candidate did is not a
-#      recovery. The raw trio is written from a running board
-#      (docs/flashing-and-recovery.md); the defaults flip when it boots.
+#      MUST always be written in one step, and this file, `pkgs/atf-mainline.nix`
+#      and `pkgs/uboot-mainline.nix` are ONE ARTEFACT. There is no compressed
+#      variant left to mismatch against: every packaging in the tree is raw,
+#      and `.#nixos-firmware-image-mainline` -- which is also the AXDL recovery
+#      image -- carries the same trio. (docs/flashing-and-recovery.md.)
 # ===========================================================================
 
 let
@@ -215,13 +203,10 @@ let
   partitionMakFile = pkgs.writeText "partition_ab.mak" partitionMak;
   layoutTableFile = pkgs.writeText "emmc-layout.txt" layout.table;
 
-  variant = lib.optionalString withEip "-eip" + lib.optionalString (!gzipd) "-raw";
+  variant = lib.optionalString withEip "-eip";
 
   # ---- #95: which load path is actually IN the binary ----------------------
-  # Asked of the ELF, not of project.mak. Spliced onto the END of the previous
-  # line of installPhase so that the `gzipd = true` build's script is BYTE-FOR-
-  # BYTE the pre-#95 one and keeps its store path; when the default flips, this
-  # becomes unconditional.
+  # Asked of the ELF, not of project.mak.
   #
   # THE ORACLE IS THE CALL SITES, NOT A SYMBOL. `gzip_pipeline_flash_read()` is
   # a file-static with one caller, and at -Os gcc inlines it -- it has no
@@ -232,12 +217,10 @@ let
   # `_get_fifo_level`. Every one of those calls is inside `#ifdef
   # SUPPPORT_GZIPD` (boot.c:297-455, 768-789, 1007-1009), and
   # `driver/gzipd/ax_gzipd_drv.o` is in the SPL's `OBJS` unconditionally -- so
-  # the driver's SYMBOLS are in both binaries and prove nothing, while the
-  # branches into it are 7 in the compressed build and 0 in the raw one --
-  # measured both ways on this tree. Only the raw build asserts it, because the
-  # default build's script has to stay byte-identical to the pre-#95 one; when
-  # the default flips, this becomes unconditional and should assert both sides.
-  gzipdOracle = lib.optionalString (!gzipd) ''
+  # the driver's SYMBOLS are in the binary and prove nothing, while the
+  # branches into it were 7 in the compressed build and are 0 here --
+  # measured both ways on this tree before the compressed build was deleted.
+  gzipdOracle = ''
 
     # The linked ELF and its disassembly, banked next to the image: the only
     # way to ask the ARTEFACT, rather than the makefile, which load path it
@@ -270,7 +253,7 @@ pkgs.stdenv.mkDerivation {
 
   dontUnpack = true;
 
-  passthru = { inherit layout partitionMak gzipd withEip variant; };
+  passthru = { inherit layout partitionMak withEip variant; };
 
   configurePhase = ''
     runHook preConfigure
@@ -294,7 +277,7 @@ pkgs.stdenv.mkDerivation {
     cat "$prj/partition_ab.mak"
 
     # ---- the three build flags this SPL turns off ------------------------
-    for kv in "SUPPORT_OPTEE:FALSE" "SUPPORT_DDRINIT_PART:FALSE"${lib.optionalString (!gzipd) " \"SUPPPORT_GZIPD:FALSE\""}; do
+    for kv in "SUPPORT_OPTEE:FALSE" "SUPPORT_DDRINIT_PART:FALSE" "SUPPPORT_GZIPD:FALSE"; do
       k=''${kv%%:*}; v=''${kv##*:}
       grep -q "^$k  *:= TRUE" "$prj/project.mak" \
         || { echo "ERROR: $k is not ':= TRUE' in project.mak (SDK moved?)" >&2; exit 1; }
@@ -306,11 +289,8 @@ pkgs.stdenv.mkDerivation {
     # A/B stays ON, with both slots pointing at the same partitions.
     grep -q '^AX_SUPPORT_AB_PART  *:= TRUE' "$prj/project.mak" \
       || { echo "ERROR: AX_SUPPORT_AB_PART is not TRUE (the generated makefile would not be included)" >&2; exit 1; }
-    ${if gzipd then ''
-    grep -q '^SUPPPORT_GZIPD  *:= TRUE' "$prj/project.mak" \
-      || { echo "ERROR: SUPPPORT_GZIPD is not TRUE (the stages are packed axgzip'd)" >&2; exit 1; }'' else ''
     grep -q '^SUPPPORT_GZIPD  *:= FALSE' "$prj/project.mak" \
-      || { echo "ERROR (#95): SUPPPORT_GZIPD is not FALSE (the stages would have to be axgzip'd)" >&2; exit 1; }''}
+      || { echo "ERROR (#95): SUPPPORT_GZIPD is not FALSE (the stages would have to be axgzip'd)" >&2; exit 1; }
 
     runHook postConfigure
   '';
@@ -329,7 +309,7 @@ pkgs.stdenv.mkDerivation {
     runHook preInstall
 
     imgs="$HOME_PATH/build/out/${project}/images"
-    mkdir -p "$out/images"${lib.optionalString (!gzipd) " \"$out/debug\""}
+    mkdir -p "$out/images" "$out/debug"
 
     raw="$imgs/spl_${project}.bin"${gzipdOracle}
     rawSz=$(stat -c %s "$raw")
@@ -399,7 +379,7 @@ pkgs.stdenv.mkDerivation {
     cp ${layoutTableFile} "$out/images/layout.txt"
     cp "$HOME_PATH/build/projects/${project}/partition_ab.mak" "$out/images/partition.mak"
 
-    echo "=== SPL (${layout.layoutName} layout, ${if withEip then "vendor container WITH the closed EIP-130 firmware" else "blob-free"}${lib.optionalString (!gzipd) ", stages RAW (#95)"}) ==="
+    echo "=== SPL (${layout.layoutName} layout, ${if withEip then "vendor container WITH the closed EIP-130 firmware" else "blob-free"}, stages RAW (#95)) ==="
     ls -l "$out/images"
 
     runHook postInstall
@@ -412,7 +392,7 @@ pkgs.stdenv.mkDerivation {
     description =
       "AX630C first-stage loader (bl1/spl) compiled for the ${layout.layoutName} eMMC layout"
       + (if withEip then ", signed with the vendor container's closed EIP-130 firmware (the #90 fallback)" else ", signed without the closed EIP-130 firmware (#90)")
-      + (if gzipd then ", reading axgzip'd stages" else ", reading RAW stages (#95)");
+      + ", reading RAW stages (#95)";
     # No prebuilt host tool anywhere in this build: the SPL is cross-compiled
     # and the sign step is the SDK's own Python (`spl_AX620E_sign.py` + `rsa`)
     # plus openssl. `ax_gzip` was never part of the SPL's own build -- it

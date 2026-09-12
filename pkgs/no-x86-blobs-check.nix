@@ -29,9 +29,8 @@
 # WHAT IT THEREFORE DOES NOT PROVE: that no x86-64 binary was RUN to make
 # them. A build-time tool leaves no trace in the output. That half is asserted
 # where it belongs -- `pkgs/boot.nix` deletes `tools/ax_gzip_tool` from its own
-# build tree, `pkgs/ax-sign.nix` stages it only under `gzip = true`, and
-# `pkgs/atf-mainline.nix` references it only under the same flag -- and
-# assertion 2 above is its proxy.
+# build tree, and no other file in this repo names it at all -- and assertion 2
+# above is its proxy.
 # ===========================================================================
 
 let

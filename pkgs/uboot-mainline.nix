@@ -26,13 +26,6 @@
 , splDrvCmds ? "splmmc regs; splmmc init; splmmc probe 0x4a000000 0x4ae00"
 , splDrvTag ? ""
 , hangTest ? false
-  # #95. `gzip = true` is STILL THE DEFAULT: the raw chain has not booted the
-  # board yet, and `.#nixos-firmware-image-mainline` is the AXDL recovery image
-  # -- a recovery image that fails the way the candidate did is not a recovery.
-  # `gzip = false` stores u-boot.bin RAW behind the signed header, for an SPL
-  # compiled with SUPPPORT_GZIPD=FALSE; that is `.#uboot-mainline-raw`, and it
-  # must be paired with `.#spl-minimal-raw`. The two are one artefact.
-, gzip ? true
 , ... }:
 
 # ===========================================================================
@@ -50,11 +43,13 @@
 # WHAT THIS PRODUCES
 #   images/u-boot.bin                    raw, DT appended, links at 0x5C000400
 #   images/u-boot.dtb                    the device tree that is inside it
-#   images/u-boot_mainline_signed.bin    axgzip'd + 1 KiB signed header,
-#                                        packaged exactly like the vendor's
-#                                        u-boot_signed.bin, `dd`-able into the
-#                                        `uboot` partition. `gzip = false`
-#                                        (#95) stores the RAW binary instead
+#   images/u-boot_mainline_signed.bin    the RAW binary behind a 1 KiB signed
+#                                        header (#95), packaged like the
+#                                        vendor's u-boot_signed.bin and
+#                                        `dd`-able into the `uboot` partition.
+#                                        Only an SPL built SUPPPORT_GZIPD=FALSE
+#                                        can read it: this and `.#spl-minimal`
+#                                        are one artefact
 #   src/part_cmdline.c                   the patched partition driver, so the
 #                                        host-side parser test in
 #                                        checks.uboot-mainline builds the
@@ -1348,8 +1343,7 @@ let
     + lib.optionalString (emmcMaxFreq != null) "-f${toString (emmcMaxFreq / 1000000)}m"
     + lib.optionalString (emmcPhyHsmmc != null) "-phy${toString emmcPhyHsmmc}"
     + lib.optionalString splDrv ("-spldrv" + splDrvTag)
-    + lib.optionalString hangTest "-hangtest"
-    + lib.optionalString (!gzip) "-raw";
+    + lib.optionalString hangTest "-hangtest";
 
   raw = pkgs.stdenv.mkDerivation {
     pname = "nanokvm-pro-uboot-mainline" + variant;
@@ -1497,10 +1491,9 @@ let
 
     meta = {
       description = "Mainline U-Boot ${version} with an AX630C / NanoKVM-Pro board port (#89)";
-      # #95: only the `gzip = true` variant reaches for the prebuilt x86-64
-      # ax_gzip. Keep the whole package on one platform so the two halves
-      # cannot diverge.
-      platforms = if gzip then [ "x86_64-linux" ] else lib.platforms.linux;
+      # #95: nothing in this build reaches for a prebuilt x86-64 host tool
+      # any more -- `ax_gzip` is gone and the payload is stored raw.
+      platforms = lib.platforms.linux;
       license = lib.licenses.gpl2Plus;
     };
   };
@@ -1510,7 +1503,6 @@ let
     name = "u-boot_mainline_signed.bin";
     payload = "${raw}/images/u-boot.bin";
     maxSize = ubootPart.size;
-    inherit gzip;
   };
 in
 
@@ -1518,7 +1510,7 @@ pkgs.runCommand "nanokvm-pro-uboot-mainline${variant}-${version}"
   {
     inherit version;
     passthru = {
-      inherit raw signed layout src patches gzip;
+      inherit raw signed layout src patches;
       textBase = textBase;
       ubootPartSize = ubootPart.size;
       patchList = map baseNameOf patches;
