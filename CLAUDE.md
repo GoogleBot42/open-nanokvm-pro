@@ -122,15 +122,42 @@ that is arbitration, not a bug.
   The only trace is two `deferred probe pending` lines 12 s into the boot and
   a missing entry in `/sys/class/mmc_host`. Make such a symbol `y` or unset it;
   never leave it `m`. Nothing offline catches it.
-- **A peripheral that is allowed to be absent must not be allowed to fail.**
+- **A peripheral that is allowed to be absent must still be allowed to FAIL.**
   A `Type=oneshot` unit that `exit 1`s when its hardware is missing makes
   `systemctl is-system-running` report `degraded`, which makes
   `nanokvm-mark-good` poll 240 s and give up, which leaves `bootcount`
   uncleared — so **every reboot counts as a failed boot attempt and the fourth
   rolls the board onto the fallback generation**. #85's WiFi unit did this and
-  #84's panel unit did it the same week; both now log and `exit 0`, and
-  `nanokvm.markGood.tolerateFailed` (wifi, panel, display) is the second line
-  of defence. Optional hardware gets a journal line, never a failed unit.
+  #84's panel unit did it the same week. The fix is
+  `nanokvm.markGood.tolerateFailed` (wifi, panel, display) and **only** that;
+  the `exit 0` both units also grew was withdrawn in #106, because a unit that
+  cannot fail cannot be seen — `systemctl --failed` is empty, the journal line
+  scrolls away, and a radio that stopped enumerating for a NEW reason looks
+  exactly like a board that never had one. `nanokvm-mark-good --check-system`
+  runs the real gate against a fake root, and `nanokvm-mark-good-fallback`
+  exercises eight cases through it.
+- **The DesignWare PWM cannot express either DC extreme, and `pwm-backlight`
+  ignores the error.** Each load count is "value + 1" input clock periods, so
+  duty 0 and duty == period are the two requests the timer cannot generate;
+  upstream returns `-ERANGE`, and `pwm_backlight_update_status()` — on a board
+  with neither `enable-gpios` nor `power-supply`, where it deliberately keeps
+  the PWM *enabled* at duty 0 to hold a constant inactive output — discards
+  it. So `bl_power=1` read back as 1 while `/sys/kernel/debug/pwm` showed
+  pwm-0 `enabled, 366702/462966 ns`: the mini-display's backlight stayed at
+  79.2 % through every inactivity blank (#106), and
+  `default-brightness-level = <100>` had never applied either. Patch 0004
+  stops the timer for the first and clamps to one tick for the second.
+  **Read the PWM registers, not `bl_power`** — #84 read only sysfs and called
+  the blank proven.
+- **`gpio-line-names` cannot carry polarity, and three comments said it
+  could.** It is a bare string array with no flags cell; only a `gpios =
+  <&gpioN x GPIO_ACTIVE_LOW>` phandle carries the flag, and lines that are
+  *named* for userspace have no such consumer. A libgpiod request that does
+  not ask for `active-low` gets the RAW pad — so the host's power-LED sense,
+  which the board pulls low while the host is on, read 0 and the web UI
+  reported every powered host as off (#105). The board fact lives in
+  `board_polarity[]` in `pkgs/nanokvm-gpio/nanokvm-gpio.c`; `nanokvm-gpio raw`
+  prints the pad when you need to measure rather than believe.
 - **A clock ID the binding header declares is not a clock the table
   registers**, and the difference is silent until something calls `clk_get()`.
   `ax630c_clk_probe()` fills every id up to `max_id` with `ERR_PTR(-ENOENT)`,
@@ -497,9 +524,16 @@ backlight's duty tracking `brightness`, the 180 s blank and the wake-on-press
 all measured. Read the panel without eyes on the board by dumping `/dev/fb0`
 and rendering it off-device (kvm-device skill) — **the dump contains the
 board's IP, so never commit one.** HDMI audio probes as the card
-`Lontium Lt6911UXC` but cannot be captured: the attached source sends no audio
-(`/proc/lt6911_info/asr` = 0), so the port has no bit clock and `arecord`
-EIOs.
+`Lontium Lt6911UXC` but cannot be captured, and #104 settled why with three
+independent in-band oracles: **`CER` (`0x605100c`) will not latch** — the
+driver writes 1, a hand `devmem` write of 1 reads back 0 — because that bit
+lives in the external bit-clock domain, the I2S SPI 145 count stands at 0, and
+sampling `I2S0_SCLK`/`I2S0_LRCK` (pads VI_D1 / VI_CLK0, GPIO0_A1 / GPIO0_A10)
+through the GPIO block's `EXT_PORT` after a temporary mux to GPIO gives a
+constant 0. **The bridge is not clocking the port, so the source is not
+sending HDMI audio** — `asr` = 0 with a 4-hour movie playing, and it is not a
+video-state dependency either (unchanged while MJPEG streams). Fix the source,
+not the driver.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

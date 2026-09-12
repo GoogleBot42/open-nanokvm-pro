@@ -6631,3 +6631,160 @@ The chainload slot cannot help here: it stages a **raw `u-boot.bin`** that
 `bootchain` `booti`s itself, so it exercises no header, no `img_size`, no
 checksum and no SPL load path. All it could prove is that the same U-Boot binary
 still runs — which is not in question, because the binary does not change.
+
+---
+
+## 12. #104, #105, #106 — the three residuals, on hardware 2026-09-12
+
+One generation (25), one boot, 53 s to SSH, `bootcount` `0xB0010000`,
+`systemctl is-system-running` = `running`.
+
+### #105 — the ATX power sense read the raw pad
+
+The web UI reported the host OFF while it was on and outputting HDMI at
+4096x2160. Control worked; only the sense was wrong.
+
+**Root cause: nothing inverted anything, and three comments said something
+did.** `gpio-line-names` is a bare string array. It has no flags cell, so
+`atx-power-led` could never have been declared `GPIO_ACTIVE_LOW` in the tree
+— only a `gpios = <&gpioN x GPIO_ACTIVE_LOW>` phandle carries that flag, and
+these lines are *named* rather than referenced precisely so that userspace can
+claim them. `nanokvm-gpio` never called
+`gpiod_line_settings_set_active_low()`, so libgpiod handed back the RAW pad,
+and `readGpio`'s `value == 1` — correct against a logical value — read a
+running host as off.
+
+Measured with the host on:
+
+| line | raw | samples |
+|---|---|---|
+| `atx-power-led` | 0 | 60/60 |
+| `atx-hdd-led` | 1 | 60/60 |
+
+Two different levels, so both pads carry real signal and neither is stuck —
+which is what separates "inverted sense" from "line not connected" without
+powering the host down.
+
+The board fact now lives in `board_polarity[]` in
+`pkgs/nanokvm-gpio/nanokvm-gpio.c`, applied to the chardev request, so `get`
+stays logical. `nanokvm-gpio raw` is new and prints the pad. After the switch:
+`get atx-power-led` = 1, `raw` = 0, and `GET /api/vm/gpio` answers
+`{"pwr":true,"hdd":false}`.
+
+**Not proven: the OFF direction.** The host is Jeremy's and was playing a
+four-hour movie for #104; powering it down to watch the line go to 1 would
+have ended the thing the other issue needed. The inversion is corroborated by
+upstream's own server, which returns `value == 0` for "on" against raw sysfs
+on the vendor image.
+
+### #106 — `bl_power` reached the backlight core and stopped there
+
+**Root cause: the DesignWare PWM cannot express either DC extreme, and
+`pwm-backlight` ignores the error.** Each load count is "value + 1" input
+clock periods, so duty 0 and duty == period are the two waveforms the timer
+cannot generate and `__dwc_pwm_configure_timer()` returned `-ERANGE` for both.
+`pwm_backlight_update_status()` discards the `pwm_apply` return value — and on
+a board with neither `enable-gpios` nor `power-supply` it deliberately keeps
+the PWM **enabled** at duty 0, to hold a constant inactive output. So the
+blank left the timer running at whatever duty it had:
+
+```
+bl_power 1, brightness 80
+pwm-0 actual configuration: enabled, 366702/462966 ns, normal polarity   (79.2 %)
+```
+
+`default-brightness-level = <100>` is the same bug at the other end and had
+never applied since #84.
+
+Patch `0004-pwm-dwc-express-the-dc-extremes.patch` gives each extreme the
+hardware state that expresses it: no high period stops the timer, no low
+period clamps to one tick. Measured after the switch:
+
+| request | `actual configuration` | `0x06060008` |
+|---|---|---|
+| boot, `default-brightness-level = <100>` | `enabled, 462966/463008 ns` (99.99 %) | — |
+| `bl_power=1` by hand | `disabled, 462966/463008 ns` | `0x1A` (EN clear) |
+| the daemon's 180 s inactivity blank | `disabled, 366702/462966 ns` | — |
+
+**What a stopped DesignWare timer drives is a synthesis parameter, not a
+register**, and no databook in the SDK states it. The evidence that it is low
+on this pad is the product: 4.19's `pwm_bl` called `pwm_disable()` on every
+blank and the shipped NanoKVM-Pro's screen goes dark. The pad cannot be read
+while it is muxed to PWM — `EXT_PORT` only samples GPIO-muxed pads, measured
+2026-09-12 — so eyes on the glass are the only remaining confirmation.
+
+**The lesson is the verification, not the patch.** #84 read `bl_power` out of
+sysfs, saw 1, and called the blank proven. Read the PWM registers.
+
+### #104 — the bridge is not clocking the I2S port
+
+Jeremy attached a source playing a four-hour unencrypted movie.
+`/proc/lt6911_info` reported `width` 4096, `height` 2160, `fps` 29,
+`hdmi_rx_status` `access`, `hdcp` `no hdcp` — and **`asr` still 0**.
+
+Three independent in-band oracles say the same thing, and none of them needs
+eyes on the host:
+
+1. **`CER` will not latch.** `0x605100c` reads 0 with the PCM in `RUNNING`
+   state, although `i2s_start()` writes 1 unconditionally; a hand
+   `devmem 0x605100c 32 0x1` also reads back 0. That bit lives in the external
+   bit-clock domain, so a slave with no `sclk` cannot set it.
+2. **No interrupts, ever.** SPI 145 (`6051000.i2s`) stands at 0 on both CPUs.
+   `RER1` = 1, `RCR1` = 2 (16-bit), `IMR1` = 0 (unmasked), `ISR1` = 0 (RXDA
+   never asserted) and `ROR1` = 0 (never overran) — so the block is
+   configured exactly as intended on RX channel **1** and is simply receiving
+   nothing. `RER0` = 0, as the crossbar word `0x00080620` implies.
+3. **The pads are dead.** Temporarily muxing `I2S0_SCLK` (VI_D1, GPIO0_A1,
+   pad word `0x02300018`) and `I2S0_LRCK` (VI_CLK0, GPIO0_A10, `0x02300084`)
+   from function 4 to function 6 and sampling the GPIO block's `EXT_PORT`
+   (`0x0480008c`) gave a constant 0 on 40 samples each. The method is
+   validated by the same word's other bits — `GPIO KEY ENTER` reads 1,
+   `rotary-encoder` reads 0 — and both pad words were restored.
+
+It is not a video-state dependency: `CER`, `asr` and the IRQ count are
+unchanged while `/api/stream/mjpeg` streams 7.8 MB in 8 s. `arecord -D hw:0,0
+-f S16_LE -r 48000 -c 2 -d 5` exits 1 leaving only the 44-byte WAV header.
+The driver writes nothing to the LT6911's audio bank and neither does the
+vendor's, so there is no enable we are missing; bank `0xb0` reads `a5` = 0x03
+(one of the "audio present" codes) with `ab` = 0x00, i.e. the chip has not
+locked an audio clock out of the stream.
+
+**So the source is not transmitting HDMI audio.** The EDID the bridge serves
+does advertise it — CTA flags byte `0xC1`, basic audio set, which is our own
+`mkedid.py` byte — but that same EDID declares only VIC 16 and a 1080p DTD
+while the host drives 4096x2160, so the host is not honouring it for video
+either. The host-side check is whether its HDMI output is the selected audio
+sink, not whether a movie is playing.
+
+**The rest of the audio path is complete and needs no work.**
+`libkvm.c:audio_open_capture()` opens the `Lt6911` PCM S16_LE / 48 kHz /
+stereo with a 960-frame period, `kvmv_read_audio()` Opus-encodes each 20 ms
+frame (`opus_encoder_create(48000, 2, AUDIO)`, 128 kbit/s), and
+`service/stream/webrtc/manager.go:sendAudioStream()` writes them to a
+`TrackLocalStaticSample{MimeTypeOpus}` on a 20 ms ticker. Two things to know
+before testing it with a real source: audio flows **only** in the
+`h264-webrtc` stream mode (`sendAudioStream` skips every tick otherwise), and
+the web UI's volume atom defaults to **0**, so the `<audio>` element stays
+muted until the slider is moved. There is no HTTP or WebSocket audio route to
+curl — the signalling socket carries JSON only and the media is SRTP — so the
+frame count comes from `pc.getStats()` in the browser or from `arecord` at the
+source.
+
+PIO's overrun count under a live encode is still unmeasured, because nothing
+has ever been captured. `dma_per` stays unstarted.
+
+### The health gate, folded in
+
+#84 and #85 each fixed "a peripheral must not arm the rollback" twice: the
+units log and `exit 0`, AND `nanokvm.markGood.tolerateFailed` names them. The
+first half is withdrawn. A unit that cannot fail cannot be seen — `systemctl
+--failed` is empty, `is-system-running` says `running`, and a radio that
+stopped enumerating for a NEW reason is indistinguishable from a board that
+never had one. `nanokvm-wifi` and `nanokvm-panel` `exit 1` again on every dead
+end they already diagnose; the tolerate list alone keeps the counter clearing.
+
+`nanokvm-mark-good --check-system` runs the real `system_ok` against a fake
+root, and `nix flake check`'s `nanokvm-mark-good-fallback` drives eight cases
+through it. The boot above cleared `bootcount` with both units healthy, so
+"a tolerated failure still clears the counter" is proven offline and not yet
+on hardware — it needs a boot with the radio or the panel actually absent.

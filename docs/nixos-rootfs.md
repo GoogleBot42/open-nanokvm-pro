@@ -387,15 +387,26 @@ default list is the three peripheral units — `nanokvm-wifi`, `nanokvm-panel`,
 which is what keeps the rollback meaningful for the things this appliance is
 for: the server, the network, the capture stack.
 
-It is the second of two fixes for the same failure, and the order matters. The
-**first** is that optional hardware must not produce a failed unit at all: a
-`Type=oneshot` over a radio or a panel that is not there logs its diagnosis and
-`exit 0`s. #85 and #84 each cost a hardware round to a unit that did not — a
-KVM whose HDMI, USB and ethernet all worked sat one attempt from rolling itself
-back over a missing WiFi card, and then over a dark status screen. The list is
-belt and braces on top of that: a peripheral unit that starts failing for a
-*new* reason, or one whose next author forgets the rule, still cannot arm the
-rollback. Neither fix relaxes the gate for anything else.
+**It is the ONLY fix for that failure** (#106, 2026-09-12). It used to be the
+second of two: optional hardware also logged its diagnosis and `exit 0`ed, so
+that a `Type=oneshot` over a radio or a panel that is not there never produced
+a failed unit. #85 and #84 each cost a hardware round to a unit that did not —
+a KVM whose HDMI, USB and ethernet all worked sat one attempt from rolling
+itself back over a missing WiFi card, and then over a dark status screen — and
+the `exit 0` looked like the obvious belt to add. It is the wrong one. **A
+unit that cannot fail cannot be seen**: `systemctl --failed` is empty,
+`is-system-running` says `running`, the journal line scrolls away, and a radio
+that stopped enumerating for a NEW reason is indistinguishable from a board
+that never had one. `nanokvm-wifi` and `nanokvm-panel` fail honestly again;
+this list, which is one readable place, is what keeps them off the rollback.
+
+The list itself is exercised offline. `nanokvm-mark-good --check-system` runs
+the real `system_ok` against the two answers in `<root>/test/`, and `nix flake
+check`'s `nanokvm-mark-good-fallback` drives eight cases through it: `running`,
+one tolerated failure, two, a tolerated one alongside `nanokvm.service`, an
+untolerated unit, `starting`, and no answer at all. Before #106 the list was a
+rule nothing offline could test, which is how it came to be the second belt
+rather than the trousers.
 
 **systemd's runtime watchdog is armed at 60 s** (`RuntimeWatchdogSec`), so a
 PID 1 that stops running resets the board into that count instead of leaving it

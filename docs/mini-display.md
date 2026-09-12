@@ -520,10 +520,58 @@ bit cited and then read back off the board; see `clk-ax630c-tables.c`.
 | the clocks | `clk_spi_m2_sel` 208 MHz, `clk_spi_m2_eb`/`pclk_spi_m2_eb` enabled with `6072000.spi` named, `clk_pwm00_eb` 24 MHz and `clk_timer_eb` pulled up with it, `pclk_pwm0_eb` with `6060000.pwm` named |
 | the daemon | `nanokvm-display` active, `input devices: ['rotary-encoder', 'gpio_keys']`, and the framebuffer dumped off the board renders as the status screen: hostname, IP, `host off`, `video idle (no viewer)`, `hdmi in 4096x2160`, firmware and uptime |
 | the backlight | `/sys/class/backlight/backlight`, `max_brightness` 100. Duty measured in the PWM's own registers (`0x06060000` low period, `0x060600b0` high period, 11021 ticks total ≈ 462963 ns at 24 MHz): brightness 1 → 0.98 % high, 10 → 9.9 %, 50 → 49.5 %, 80 → 79.2 %. **Monotonic in the right direction**, which is the polarity check, made without eyes on the panel |
-| the blank | after `NANOKVM_DISPLAY_SLEEP_S` (180 s): `bl_power` 1 and `/dev/fb0` all zeros (md5 equal to 110080 zero bytes) |
+| the blank | after `NANOKVM_DISPLAY_SLEEP_S` (180 s): `bl_power` 1 and `/dev/fb0` all zeros (md5 equal to 110080 zero bytes). **`bl_power` was not enough — see #106 below** |
 | the wake | a synthetic `KEY_ENTER` press written to the `gpio_keys` evdev node → `bl_power` 0, brightness 80, framebuffer non-zero |
 | the evdev nodes | `rotary-encoder` = `event0`, `EV=5` / `REL=1` (REL_X); `gpio_keys` = `event1`, `EV=100003` / `KEY=10000000` (bit 28 = `KEY_ENTER`) |
 | teardown | none. Nothing was unloaded. |
+
+### The backlight did not actually go out (#106, fixed 2026-09-12)
+
+The row above is what checking `bl_power` buys you, and it is not enough.
+Jeremy reported the panel content blanking with the backlight still lit;
+reading the PWM's own state said so plainly:
+
+```
+$ cat /sys/class/backlight/backlight/bl_power      # 1  -- "off"
+$ cat /sys/class/backlight/backlight/brightness    # 80
+$ cat /sys/kernel/debug/pwm
+ pwm-0   (backlight           ): requested
+  requested configuration:  enabled, 366703/462963 ns, normal polarity
+  actual configuration:     enabled, 366702/462966 ns, normal polarity
+```
+
+79.2 % duty on a backlight sysfs called off. The chain:
+
+1. the daemon writes `bl_power=1`; the backlight core sets `props.power`,
+   `backlight_is_blank()` becomes true and `backlight_get_brightness()`
+   returns 0;
+2. `pwm_backlight_update_status()` takes the `brightness == 0` branch. This
+   board has no `enable-gpios` and no `power-supply`, and upstream's comment
+   there is explicit: in that case it keeps the PWM **enabled** with
+   `duty_cycle = 0`, because a disabled PWM is not guaranteed to drive its
+   output to the inactive level;
+3. a DesignWare APB timer counts `value + 1` ticks out of each load count, so
+   duty 0 is unreachable. `__dwc_pwm_configure_timer()` returned `-ERANGE`;
+4. `pwm_backlight_update_status()` **ignores** the `pwm_apply` return value.
+   The timer kept running at its old counts, `bl_power` stayed 1, and nothing
+   anywhere logged.
+
+`default-brightness-level = <100>` is the same bug in the other direction:
+duty == period leaves no low period, and has never applied since #84.
+
+Fixed in `pkgs/kernel-mainline/patches/0004-pwm-dwc-express-the-dc-extremes.patch`:
+a request with no high period stops the timer — the only DC level this IP has
+— and one with no low period clamps to a single tick. **What a stopped
+DesignWare timer drives is a synthesis parameter, not a register**, and no
+databook in the SDK says which it is here; the evidence that it is low on this
+pad is the product, because 4.19's `pwm_bl` called `pwm_disable()` on every
+blank and the shipped NanoKVM-Pro's screen goes dark.
+
+**Verify the backlight in the PWM registers, never in `bl_power`.**
+`/sys/kernel/debug/pwm` is the one-line form; `0x06060000` (low period),
+`0x060600b0` (high period) and `0x06060008` bit 0 (enable) are the registers
+behind it. The pad itself (`EMAC_PTP_PPS0` = GPIO0_A8) cannot be read while it
+is muxed to PWM: `EXT_PORT` only samples GPIO-muxed pads, measured 2026-09-12.
 
 **One bug the hardware found that nothing offline could.** The status daemon
 read "no network" in amber on a board that was routed, serving and reachable:
