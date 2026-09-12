@@ -2781,14 +2781,105 @@ and the route went back to 200.
 - **MJPEG is 2.4 fps at 4096x2160.** The soft-JPEG path (#51) is a CPU encoder
   doing 8.85 Mpixel per frame on two A53s. Correct, and slow; H.264/H.265 are
   the 4K modes.
-- **Raw capture runs at ~21.5 fps from a 29 fps source**, identically at 3840
-  and 4096, so it is not a #98 regression — but nobody has explained it.
+- ~~**Raw capture runs at ~21.5 fps from a 29 fps source**~~ — **answered by
+  #107, and this row was mislabelled.** Raw capture runs at the source rate
+  and always did (29.97 fps, zero `sequence` gaps, measured 2026-09-12); the
+  21.5 was the ENCODED rate. See "What exists now (#107)".
 - The browser side of the -5 path (`VideoStatus.UnsupportedMode`, the toast,
   the MJPEG page's probe of the route) is wired and built but has not been put
   in front of a real browser.
 - The standalone prover `ewl_encode` now reaches 3840x2160, not 4096: its
   extra 4*W*H input region does not fit the 96 MiB encoder carveout above that.
   Pinned as a fact in `.#checks.open-venc-geometry` rather than left to rot.
+
+### What exists now (#107, 2026-09-12) — ON HARDWARE: THE SOURCE RATE, END TO END
+
+**The board now delivers 29.9 fps of 4096x2160 H.264 to a browser from a
+29.97 fps source** — 900 messages in 30.10 s on `/api/stream/h264/direct`,
+decoding to 900 frames with zero errors. It delivered 21-23 fps before, and
+the #98 table blamed "raw capture". That row was mislabelled.
+
+**Raw capture was never slow.** A 60 s zero-copy dequeue at 4096x2160
+(`capmeas … none`: `poll`/`DQBUF`/`QBUF`, no pixel ever read) returns 1799
+frames in 60.02 s — **29.97 fps, a `sequence` span of exactly 1799, zero
+gaps**, against 1801 frame-done interrupts. libkvm's own `kvm_cap_get` loop
+does the same: 29.95 fps, nothing lost. The 30.0 fps recorded on the 4.19
+harness in 2026-09-02 and the 21.5 fps recorded in #98 were never the same
+measurement — the first is `v4l2grab`'s bare dequeue loop, the second is the
+encoded rate — and repeating the first on mainline gives 29.97.
+
+`pipebench` (links the shipped `libkvm.so` and times the stages
+`kvmv_read_img` calls) put 99.9 % of the loop inside `kvm_venc_send`, 46.95 ms
+a frame. `OPENKVM_VENC_TIME` split that into two causes, both ours:
+
+**41.6 ms — the VC8000E ran at its power-on clock.** `clk_venc_eb`'s parent
+mux `clk_vpu_glb_sel` offers 208/312/375/416/500/533 MHz and comes out of
+reset on the **lowest**; nothing in a mainline boot moves a mux the DT does
+not name. The encoder is cycle-deterministic and compute-bound — 8 643 300
+cycles for a 4096x2160 H.264 frame, and **the count does not change at 208,
+312 or 416 MHz**, which is the measurement that says it is not waiting on DDR
+(`aclk_vpu_top_sel` was already at 533 MHz). 0.98 cycles per pixel. At 208 MHz
+that is 41.6 ms and a hard 24 fps ceiling under a 30 fps source, so the driver
+dropped every fourth frame — visible as `sequence` gaps in `pipebench`, 520 of
+1797 frames lost in a minute.
+
+The fix is two DT properties on `&venc`:
+
+```
+assigned-clocks = <&vpu_clk AX630C_CLK_VPU_GLB_SEL>;
+assigned-clock-parents = <&common_clk AX630C_CPLL_312M>;
+```
+
+312 MHz is the next tap up, not the highest: 27.8 ms a frame, 36 fps of
+encoder, which clears 4096x2400 (~30.8 ms) as well. `.#checks.mainline-dtb`
+asserts **both** cells, because losing them is invisible except as a frame
+rate.
+
+**5.0 ms — the bitstream read-back was a byte loop.** The encoder framebuf is
+mapped `pgprot_writecombine`, so every load is a bus transaction of its own
+width: `volatile uint8_t` at a time is one round trip per byte, 200 ns each,
+5.0 ms for a 25 kB frame — **11 % of the whole encode budget spent copying
+25 kB**. The same copy 8 bytes at a time is 0.65 ms (`memcpy` is 0.6; the
+64-bit loop shipped because it does not rest on glibc's behaviour over a
+non-cacheable mapping).
+
+For scale, from the same harness: `memcpy` of a whole 17.7 MB frame out of the
+capture pool runs at **125 MB/s** — 141.6 ms, 7 fps, with the driver dropping
+1370 frames to keep up. Nothing in the datapath may touch a frame with the
+CPU, and the dma-buf import is the only reason 4K works at all.
+
+#### What the board measured
+
+One generation switch (26), `0xB0010001` at the health gate and cleared.
+
+| Oracle | Before | After |
+|---|---|---|
+| Source, `/proc/lt6911_info` | 4096x2160@29 | unchanged |
+| Driver, `capmeas 60 none` | 29.97 fps, 0 `sequence` gaps | 29.97 fps, 0 gaps |
+| libkvm capture only, `pipebench cap` | 29.95 fps, 0 lost | — |
+| libkvm capture+H.264, `pipebench 60 h264` | **21.28 fps**, 520 frames lost | **29.96 fps, 0 lost, 0 misses** |
+| libkvm capture+H.265 | — | 29.93 fps, 0 lost (8 329 154 cycles) |
+| `/api/stream/h264/direct`, `wsgrab.py` | 23.0 fps (#98) | **29.90 fps**; 900 frames decoded, 0 errors |
+| `kvm_venc_send` split | wait 41.64 + copyout 5.02 ms | wait 27.78 + copyout 0.65 ms |
+| `clk_venc_eb` | 208 MHz | **312 MHz** (`clk_summary`; `0x04030000` reads `0x40`) |
+| 180 s soak at 4K | — | 5395 frames, 29.97 fps, **0 lost**, 174 MB decodes to 5395 frames, 0 errors |
+
+Almost all of it needed no reboot: the instrumented `libkvm.so` went into
+`/tmp/ilib` and was reached with `LD_LIBRARY_PATH`, and the clock mux was
+repointed with `devmem 0x04030000` while the encoder was idle. Only the last
+round was a generation switch.
+
+Harness and the full ladder: `docs/reference/vcenc-open/capture-rate-20260912/`.
+
+#### Residuals
+
+- **Nobody knows what the vendor firmware ran this mux at.** 208 MHz is the
+  reset value, not an inherited decision; no dump of `0x04030000` from a
+  vendor boot exists and the vendor stack is gone from the board. 312 MHz
+  rests on the mux's own parent list plus 5395 decoded frames.
+- MJPEG is still 2.4 fps at 4K — the software JPEG encoder (#51), untouched.
+- 4096x2400 has 2.5 ms of encoder margin at 312 MHz. It fits; cpll_416m is the
+  next tap if a faster source ever appears.
 
 ### What exists now (#95, 2026-09-12) — ON HARDWARE: THE BOOT CHAIN IS RAW
 

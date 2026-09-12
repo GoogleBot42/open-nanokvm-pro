@@ -172,6 +172,32 @@ that is arbitration, not a bug.
   gate bit by reading the live word: every registered-and-unconsumed gate reads
   0 (`clk_disable_unused` cleared it) while a gate the boot chain left on and
   nobody owns reads 1.
+- **A mux the DT does not name is a mux nobody sets, and its reset value is
+  usually the SLOWEST tap.** Mainline programs no clock a consumer does not
+  ask for, and the vendor's own software is not there to do it, so a block
+  whose `clocks =` names only a gate inherits whatever the silicon powers up
+  with. `clk_vpu_glb_sel` offers 208/312/375/416/500/533 MHz and comes out of
+  reset on 208; the VC8000E therefore spent 41.6 ms on a 4K H.264 frame and
+  capped the product at 24 fps under a 30 fps source, which read as "raw
+  capture is slow" for a day (#107, 2026-09-12). `assigned-clocks` /
+  `assigned-clock-parents` on the consumer node is the fix, and
+  `.#checks.mainline-dtb` asserts both cells because losing them is invisible
+  except as a frame rate. **Check `clk_summary` against the mux's parent list
+  for every block whose speed matters** — and corroborate with the hardware's
+  own cycle counter: a count that does not change with the clock says the
+  block is compute-bound and the clock is a pure multiplier, while a count
+  that rises says you have run into the bus instead.
+- **On a write-combining mapping, a byte loop costs a bus round trip PER
+  BYTE.** `pgprot_writecombine` memory (every carveout here: the capture pool,
+  the encoder framebuf) has no cache to coalesce into, so each `volatile
+  uint8_t` load is its own transaction — measured 200 ns each, 5 MB/s. Reading
+  a 25 kB bitstream out of the framebuf that way cost 5.0 ms, 11% of the whole
+  4K encode budget; the same copy 8 bytes at a time is 0.65 ms (#107). The
+  `/dev/mem` rule above ("use word loops, not `memcpy`") is about **Device**
+  memory and DC ZVA; it does not license a *byte* loop anywhere, and these
+  mappings are Normal non-cacheable, where `memcpy` is safe. For scale, a
+  `memcpy` of a whole 17.7 MB frame out of the capture pool runs at 125 MB/s —
+  7 fps — which is why nothing in the datapath may touch a frame with the CPU.
 - **A NixOS unit's `PATH` is not the system's.** It gets `coreutils`,
   `findutils`, `gnugrep`, `gnused` and `systemd` — nothing else — so every
   external tool a service shells out to must be in its own `path`.

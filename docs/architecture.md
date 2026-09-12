@@ -297,6 +297,34 @@ encoder register program consumes, so frames reach the encoder zero-copy. The
 same mmap is the CPU view for the software-JPEG MJPEG path and the mini-display
 preview.
 
+### What it runs at, and where a frame is copied
+
+Measured 2026-09-12 against a 4096x2160@29.97 source (#107):
+
+| stage | rate | cost per frame |
+|---|---|---|
+| capture, `DQBUF`/`QBUF`, no pixel read | **29.97 fps**, zero `sequence` gaps | ~0 |
+| + H.264 encode, delivered | **29.96 fps** | `kvm_venc_send` 28.45 ms |
+| + the web route `/api/stream/h264/direct` | **29.90 fps** | — |
+| H.265 | 29.93 fps | 27.84 ms |
+| MJPEG | 2.4 fps | the software JPEG encoder (#51) |
+
+**A frame of video is never copied.** The capture buffer's bus address goes
+into the encoder's register program through the dma-buf import, and that is
+load-bearing, not an optimisation: the carveouts are mapped
+`pgprot_writecombine`, and a `memcpy` of one 17.7 MB frame out of the capture
+pool runs at **125 MB/s** — 141.6 ms, 7 fps. The only per-frame CPU copy in
+the pipeline is the finished bitstream, tens of kB, read out of the encoder
+framebuf 8 bytes at a time (0.65 ms; it was a byte loop until #107, and that
+cost 5.0 ms — one bus round trip per byte).
+
+**The encoder's rate is a clock, and the clock is a DT fact.** The VC8000E is
+compute-bound and cycle-deterministic: 8.64 Mcycles for a 4096x2160 H.264
+frame, 0.98 cycles per pixel, the same count at every clock. `clk_venc_eb`'s
+parent mux comes out of reset on its lowest tap (208 MHz = 41.6 ms = a 24 fps
+ceiling), so `&venc` names `cpll_312m` explicitly — 27.8 ms, 36 fps, enough
+for 4096x2400. `.#checks.mainline-dtb` asserts both cells.
+
 ### The geometry envelope
 
 The pipeline captures whatever the attached host sends, so the envelope is a
@@ -321,11 +349,14 @@ What actually bounds it:
 | | 1920x1080 | 3840x2160 | 4096x2160 | 4096x2400 |
 |---|---|---|---|---|
 | YUYV frame | 3.96 MiB | 15.82 MiB | 16.88 MiB | 18.75 MiB |
-| buffers in the 56 MiB `capture-pool` | 4 (libkvm asks for 4) | 3 | 3 | 2 |
+| what one buffer COSTS (order-rounded, #98) | 4 MiB | 16 MiB | 32 MiB | 32 MiB |
+| buffers in the 96 MiB `capture-pool` | 4 (libkvm asks for 4) | 4 | 3 | 3 |
 | encoder floorplan (`vcenc_geom`, no prover input) | 14.97 MiB | 59.21 MiB | 63.14 MiB | 70.43 MiB |
 
-The 136 MiB `venc-framebuf` carveout covers every corner with room, including
-the standalone prover's larger floorplan (107.93 MiB at 4096x2400). The
+The 96 MiB `venc-framebuf` carveout covers every corner — production allocates
+one floorplan at a time and the largest is 70.43 MiB — but not the standalone
+prover's extra 4*W*H input region above 3840x2160, which is a fact pinned in
+`.#checks.open-venc-geometry` rather than a limit on the product. The
 capture pool is the binding constraint, and `ovc_queue_setup()` enforces it
 dynamically — it caps the buffer count from the carveout size and refuses only
 when two frames will not fit, which is the vb2 minimum for a queue to rotate.
