@@ -352,7 +352,8 @@ Can a mainline `Image` + our DT boot from the existing SPL/ATF/OP-TEE/U-Boot
 and slot layout? **Yes, with four traps.** Facts, all read from `[UB]` /
 `[SDK]` source (key ones spot-checked at the cited files):
 
-**How U-Boot boots today.** `bootcmd` is not compiled in; `board_late_init()`
+**How the vendor U-Boot boots** (the chain the mainline port replaced).
+`bootcmd` is not compiled in; `board_late_init()`
 → `setup_boot_mode()` sets `bootcmd=axera_boot` on *every* boot
 (`[UB]/cmd/axera/setup_boot/setup_boot.c`). `do_axera_boot()`
 (`[UB]/cmd/axera/boot/axera_boot.c`) raw-reads the `kernel`/`kernel_b` and
@@ -2789,6 +2790,23 @@ and the route went back to 200.
   extra 4*W*H input region does not fit the 96 MiB encoder carveout above that.
   Pinned as a fact in `.#checks.open-venc-geometry` rather than left to rot.
 
+### What exists now (#95, 2026-09-12) — ON HARDWARE: THE BOOT CHAIN IS RAW
+
+`ax_gzip`, the last prebuilt x86-64 host tool in this build, is retired. The
+SPL is compiled `SUPPPORT_GZIPD=FALSE` and reads `atf` and `uboot` straight
+from flash to their load addresses; both stages are stored raw behind their
+1 KiB signed headers. Written from the running appliance in the order
+atf → uboot → **spl last**, each verified from the medium after a cache drop,
+the board came back at **47 s of uptime on one U-Boot attempt** — `bootcount`
+`0xB0010001` at the mark-good gate, cleared to `0xB0010000`,
+`systemctl is-system-running` = `running`, nothing failed, web 200,
+`psci: PSCIv1.1 detected in firmware`. The new default builds are byte-identical
+to what was written and to what reads back off the eMMC, which is the whole
+acceptance for the flip; the `-raw` package variants and the gzip code paths are
+deleted. **§11.12** has the write, the md5s and the two lessons the change
+turned up (a blob check over compressed data is not a blob check; the SPL
+oracle must be a `bl` count, not a symbol `-Os` inlines).
+
 ---
 
 ## 9. Device reads wanted
@@ -3077,10 +3095,11 @@ by this block; so are ATF, OP-TEE and U-Boot, decompressed by the **SPL**. With
 a mainline U-Boot the kernel/dtb side simply goes away (the uncompressed `Image`
 fits the 64 MiB slot with room to spare, and extlinux replaces the raw read
 entirely), and **since #95 the U-Boot binary is not compressed either**: the SPL
-is rebuilt with `SUPPPORT_GZIPD=FALSE`, which removed the last prebuilt binary
-from the boot-chain build. `tools/ax_gzip_tool/ax_gzip` is a prebuilt x86-64
-host binary, and it is why `pkgs/boot.nix` used to declare
-`meta.platforms = ["x86_64-linux"]`. §11.12.
+is rebuilt with `SUPPPORT_GZIPD=FALSE` and reads `atf` and `uboot` straight to
+their load addresses, which removed the last prebuilt binary from the boot-chain
+build. `tools/ax_gzip_tool/ax_gzip` was a prebuilt x86-64 host binary, and it is
+why `pkgs/boot.nix` used to declare `meta.platforms = ["x86_64-linux"]`. On
+hardware 2026-09-12; §11.12.
 
 **FDL2.** Not a separate defconfig for this board: with `SUPPPORT_GZIPD=TRUE`,
 `Makefile.fdl2:120-133` signs the **raw** `u-boot.bin` as `fdl2_signed.bin` and
@@ -3171,8 +3190,8 @@ flow that walks that list; there is no `BL32_BASE` define anywhere in
 `platform_def.h`. **So a mainline TF-A BL31 needs no SPL change at all.**
 
 **BL33 can be a mainline U-Boot, wrapped in the same header**, subject to four
-constraints: link at `0x5C000400`; fit 1536 KiB *after* axgzip; be axgzip'd and
-signed (`pkgs/boot.nix` already does exactly this and asserts the magic); and
+constraints: link at `0x5C000400`; fit its partition; be signed (`pkgs/ax-sign.nix`
+does exactly this and asserts the magic, storing the binary raw since #95); and
 cope with being entered **at EL1h with `x0 = 0`** — no FDT pointer. `x0` is
 zeroed twice over: the SPL leaves `ep_info.args` zero, and
 `platform.mk:75`'s `ARM_LINUX_KERNEL_AS_BL33 := 1` makes BL31 overwrite `arg0`
@@ -3358,7 +3377,7 @@ in the 2026.07 tree.
 |---|---|---|---|---|
 | 1 | `spl` | 768 K | BootROM reads it at offset 0; the signed container is 256 K | keep |
 | 2 | `atf` | 256 K | BL31 window is `ATF_IMG_PKG_SIZE = 0x40000` and `BL31_LIMIT` is derived from it | keep, **no `_b`** |
-| 3 | `uboot` | 1536 K | mainline U-Boot with ext4 + bootstd is well under this even before axgzip | keep, **no `_b`** |
+| 3 | `uboot` | 1536 K | mainline U-Boot with ext4 + bootstd is well under this even stored raw | keep, **no `_b`** |
 | 4 | `env` | 256 K | `bootcount`, `bootsystem`-successor, `fw_setenv` from userspace; redundant pair of 64 K copies inside | shrink from 1 M |
 | 5 | `boot` | 512 M | ext4; `extlinux/extlinux.conf`, `nixos/<gen>` kernels + initrds + dtbs, `logo.bmp`, and the server's `usb.*` flag files | grow from 128 M, **vfat → ext4** |
 | 6 | `rootfs` | rest | `-(rootfs)` | keep |
@@ -3579,8 +3598,10 @@ one.
 
 Sources: `pkgs/atf-mainline.nix`, `pkgs/atf-mainline/patches/`,
 `pkgs/atf-mainline/verify.py`. `pkgs/boot.nix` is untouched — the mainline
-build calls the SDK's `ax_gzip` and `sec_boot_AX620E_sign.py` directly, with
-the same arguments the vendor ATF Makefile uses.
+build calls the SDK's `sec_boot_AX620E_sign.py` directly, with the same
+arguments the vendor ATF Makefile's `SUPPPORT_GZIPD != TRUE` arm uses. `ax_gzip`
+used to sit in front of it and is gone (#95, §11.12): BL31 is stored raw behind
+the signed header.
 
 **The patch series** (upstream-shaped, applied with `patch -p1`; the platform
 is 715 lines across ten files, and no upstream file is modified except the
@@ -5788,11 +5809,12 @@ artefact. `pkgs/spl-minimal.nix` replaces the vendor's hand-written
   turning `AX_SUPPORT_AB_PART` off and keeps the code path the board has always
   run. The SLOT bits of `0x02390024` now select between two identical
   addresses.
-- `SUPPPORT_GZIPD` stays **TRUE**, deliberately. Turning it off would retire
-  `ax_gzip`, the last prebuilt x86-64 host tool, but it swaps a code path the
-  board runs every boot for one the vendor never ships and changes the on-disk
-  format of BL31 and BL33 at the same time — on the rung that writes p1. One
-  variable at a time; `pkgs/ax-sign.nix` is ready for it when it is taken.
+- `SUPPPORT_GZIPD=FALSE` since #95, on hardware 2026-09-12. Rung 4 deliberately
+  left it TRUE: turning it off swaps a code path the board runs every boot for
+  one the vendor never ships and changes the on-disk format of BL31 and BL33 at
+  the same time, which is not a change to make on the rung that writes p1. One
+  variable at a time — it was taken separately, and it retired `ax_gzip`, the
+  last prebuilt x86-64 host tool in this build. §11.12.
 
 47816 B raw, inside the BootROM's 50 K slot; 262144 B signed.
 
@@ -6337,8 +6359,9 @@ the chain with `devmem` identifies a bad handler for zero boot cycles.
 `/root/rung5/evidence/` holds the captures.
 
 **Also open.** `mem=512M` is still unexplained and still not droppable.
-`SUPPPORT_GZIPD=FALSE` would retire `ax_gzip`, the last prebuilt x86-64 host
-tool, and is a clean follow-up now that the layout is settled.
+`SUPPPORT_GZIPD=FALSE` — retiring `ax_gzip`, the last prebuilt x86-64 host tool
+— was taken as its own change once the layout settled, and the raw chain booted
+the board on 2026-09-12 (#95, §11.12).
 
 **The kernel half of the rollback is closed, and #86's mechanism is gone with
 it (#99, hardware-proven 2026-09-11).** The kernel, the initrd and the device
@@ -6454,23 +6477,19 @@ then wedges resets with the load having *succeeded*, so it still counts.
 
 ---
 
-### 11.12 #95: the stages go raw, and `ax_gzip` is retired (offline, 2026-09-11)
+### 11.12 #95: the stages go raw, and `ax_gzip` is retired — ON HARDWARE 2026-09-12
 
-`ax_gzip` is the last prebuilt x86-64 binary in this build — an Axera static ELF
-with no source, packing every stage the SPL loads into the "axgzip" LZ77 that
-the SoC's gzipd block decompresses in hardware. #95 builds the chain that does
-without it: an SPL compiled `SUPPPORT_GZIPD=FALSE`, with `atf` and `uboot`
-stored raw behind their signed headers. `pkgs/boot.nix` (the FDL agents) drops
-the tool unconditionally.
-
-**The raw chain is NOT the default, and must not become one until it has booted
-the board.** `.#nixos-firmware-image-mainline` is the AXDL recovery image; if
-the raw SPL failed on hardware, a recovery image built the same way would fail
-identically — a bench trip with a broken recovery. So the defaults stay
-axgzip'd and byte-identical to what the board runs, the raw chain ships as
-`.#spl-minimal-raw` / `.#atf-mainline-raw` / `.#uboot-mainline-raw` /
-`.#nixos-firmware-image-mainline-raw`, and the write is done from a running
-board. **Not on hardware yet** — this section is the offline half.
+`ax_gzip` was the last prebuilt x86-64 binary in this build — an Axera static
+ELF with no source, packing every stage the SPL loads into the "axgzip" LZ77
+that the SoC's gzipd block decompresses in hardware. #95 retired it: the SPL is
+compiled `SUPPPORT_GZIPD=FALSE` and reads `atf` and `uboot` straight from flash
+to their load addresses, both stages are stored raw behind their 1 KiB signed
+headers, and `pkgs/boot.nix` (the FDL agents) deletes the tool from its own
+build tree. **That chain booted the board on 2026-09-12 and is the only chain
+the tree builds** — the `-raw` package variants, the frozen pre-#95 gzip
+branches in `pkgs/{ax-sign,atf-mainline,uboot-mainline,spl-minimal}.nix`, the
+second appliance evaluation and the `hostAgnostic` image parameter are all
+deleted.
 
 #### What the macro actually gates
 
@@ -6508,28 +6527,26 @@ image on its own terms and neither notices:
 
 With `support_ab` set neither failure retries (`boot.c:649-652`, `806-808`) and
 the caller spins in `while(1)`. Both directions are a dark board with no
-console. **So `spl`, `atf` and `uboot` are one set and must be written
-together** — which is what makes this an AXDL-risk change rather than a
-reversible one.
+console. **So `spl`, `atf` and `uboot` are one set and must always be written
+together**, which is why the hardware write below put the SPL last and why
+`.#spl-minimal`, `.#atf-mainline` and `.#uboot-mainline` are one artefact in
+the tree: a change to the packing of any of them is a change to all three.
 
 #### What is in the tree
 
-| Package | Packing | Platform |
-|---|---|---|
-| `.#spl-minimal` / `.#atf-mainline` / `.#uboot-mainline` / `.#nixos-firmware-image-mainline` | axgzip'd — **the default, and what the board runs** | `x86_64-linux` (`ax_gzip`) |
-| `.#spl-minimal-raw` | `SUPPPORT_GZIPD=FALSE` | any linux |
-| `.#atf-mainline-raw` | raw BL31 behind the header | any linux |
-| `.#uboot-mainline-raw` | raw `u-boot.bin` behind the header | any linux |
-| `.#nixos-firmware-image-mainline-raw` | the three above in an `.axp`; same rootfs, same `/boot`, same GPT | any linux |
+One chain, no variants, no prebuilt host tool anywhere in it:
 
-The default three are **byte-for-byte what `main` built before #95** — their
-store paths are unchanged (`5falfzc4…` spl, `g8q22xf8…` atf, `rnskha32…`
-uboot), which is asserted by construction: `gzip = true` selects the pre-#95
-script text verbatim, down to the `# --- axgzip + sign, exactly as the vendor
-ATF Makefile does ----------` comment, because **a comment inside a build string
-is a build input** and rewording it moved the hash on the first attempt. The
-flashable image's path does move, because `pkgs/boot.nix` changed; every member
-inside it is identical except FDL1, which is not reproducible anyway (below).
+| Package | What it stores | Platform |
+|---|---|---|
+| `.#spl-minimal` | `SUPPPORT_GZIPD=FALSE` — reads `atf` and `uboot` straight to their load addresses | any linux |
+| `.#atf-mainline` | raw BL31 behind the signed header | any linux |
+| `.#uboot-mainline` | raw `u-boot.bin` behind the signed header | any linux |
+| `.#nixos-firmware-image-mainline` | those three in the `.axp`, with the rootfs, `/boot` and the GPT | any linux |
+
+`supportedSystems` in `flake.nix` is still `[ "x86_64-linux" ]`, but no longer
+because of the boot chain: `pkgs/kernel-mainline.nix` declares that platform for
+its cross toolchain, and through the image that is what pins the list now.
+Widening it is separate work from #95.
 
 Sizes, measured from the built artefacts:
 
@@ -6540,17 +6557,16 @@ Sizes, measured from the built artefacts:
 
 (BL31 also has to fit the 256 KiB DRAM window at `0x40040000` —
 `ATF_IMG_PKG_SIZE` — which is a different limit from the partition, and both are
-asserted separately now.)
+asserted separately.)
 
 #### How each claim is checked, from the artefact
 
-- **The decompressor is gone from the SPL**: `.#spl-minimal-raw` counts `bl`
+- **The decompressor is gone from the SPL**: `.#spl-minimal` counts `bl`
   instructions targeting the gzipd driver in the SPL's own `objdump -S` output
-  and fails if there are any. It is differential by measurement: the same count
-  over a `SUPPPORT_GZIPD=TRUE` build of this tree is **seven**, over the raw one
-  **zero**. Only the raw build carries the assertion, because the default one's
-  script has to stay byte-identical to the pre-#95 script; when the default
-  flips, the assertion becomes unconditional.
+  and fails if there are any. The assertion is **unconditional** now that there
+  is one chain. It is differential by measurement: the same count over a
+  `SUPPPORT_GZIPD=TRUE` build of this tree was **seven**, over the shipped one
+  **zero**.
   *Do not use `gzip_pipeline_flash_read` as the oracle*: it is a file-static
   with one caller and `-Os` inlines it, so the symbol is absent from **both**
   builds. That version of the check looked like it passed and could never have
@@ -6564,15 +6580,67 @@ asserted separately now.)
   in `pkgs/atf-mainline.nix` and again in both flake checks.
 - **No x86-64 binary survives**: `.#checks.<sys>.no-x86-blobs` walks the outputs
   of `boot`, `spl-minimal`, `atf-mainline`, `uboot-mainline` and the flashable
-  image — 37 files, 3 ELFs, all `EM_AARCH64` — and fails on any ELF with
-  `e_machine == EM_X86_64` or any file named `ax_gzip`; and it refuses any of
-  those packages still declaring `meta.platforms = ["x86_64-linux"]`, which is
-  how this tree spells "needs a prebuilt host tool".
+  image — the DEFAULT chain and the DEFAULT image, now that there is no other —
+  and fails on any ELF with `e_machine == EM_X86_64` or any file named
+  `ax_gzip`; and it refuses any of those packages still declaring
+  `meta.platforms = ["x86_64-linux"]`, which is how this tree spells "needs a
+  prebuilt host tool". Measured: 5 roots, 37 regular files, 3 ELFs, every one
+  `e_machine` 183 (`EM_AARCH64`), no `ax_gzip`, and all five packages pass the
+  platform assertion.
   **Their outputs, not their closures.** Anything cross-compiled has the x86-64
   cross toolchain in its closure by construction — `atf-mainline` and
   `uboot-mainline` keep unstripped `.elf`/`.map` debug artefacts, which
   reference `aarch64-unknown-linux-gnu-gcc` — so the closure version of this
   check found 401 "failures" and could never have passed.
+
+#### On hardware, 2026-09-12
+
+The write was done from the running appliance, three regions in one step, with
+the SPL last. The rollback was prepared first: the three regions dumped to
+`/root/pre95/{spl,atf,uboot}.bin` and copied to the build host, and each dump
+shown **byte-identical to the then-default gzipd build** (`.#spl-minimal`
+`5falfzc4…`, `.#atf-mainline` `g8q22xf8…`, `.#uboot-mainline` `rnskha32…`) —
+which proved the rollback was reproducible from source and not merely a copy.
+
+The map was read off the board by PARTLABEL rather than from a table: `atf` =
+`/dev/loop0p1` (1 MiB), `uboot` = `/dev/loop0p2` (2 MiB), `spl` = the first
+768 KiB of `/dev/mmcblk0`. Each region was written with `dd … conv=fsync` and
+verified from the **medium** after `echo 3 > /proc/sys/vm/drop_caches`, in the
+order atf → uboot → spl:
+
+| Region | signed size | md5 |
+|---|---:|---|
+| `spl` | 262 144 B | `be037bf3e916871fdb1b7e252448da57` |
+| `atf` | 25 700 B | `8219c17b857536705da183c25370cb4e` |
+| `uboot` | 384 360 B | `345f46841139a25e96c27279ab141869` |
+
+**The board came back in 47 s of uptime on one U-Boot attempt.** `bootcount`
+was `0xB0010001` at the mark-good gate and was cleared to `0xB0010000`;
+`systemctl is-system-running` = `running`, `systemctl --failed` empty, web 200,
+`psci: PSCIv1.1 detected in firmware`, and all three regions still md5-correct
+read back off the eMMC after the boot.
+
+The slot register `0x02390024` read `0x30000008` before and `0x30000004` after.
+That is not a regression: bits 2-5 are the SPL's own A/B bookkeeping, rewritten
+by `select_slot_ab()` on every boot (both `_BAK` bases point at the A bases, so
+it selects between identical addresses), and the boot milestones are bits 28+29
+— `0x30000000`, set both times.
+
+**The acceptance for making it the default was measured, not argued:** the new
+default builds are byte-identical to the `-raw` builds that were written and to
+the bytes read back off the eMMC — the same three md5s above. `nix flake check`
+passes.
+
+The rollback dumps are still at `/root/pre95/` on the board and on the build
+host, and restoring them is three `dd`s (`atf.bin` → `/dev/loop0p1`,
+`uboot.bin` → `/dev/loop0p2`, `spl.bin` → `/dev/mmcblk0 bs=512`, all
+`conv=fsync`). The gzip chain is no longer buildable from the tree, so those
+dumps are the only copy of it — and the point is moot now that the raw chain is
+proven. The procedure is
+[flashing-and-recovery.md](flashing-and-recovery.md#95-the-raw-boot-chain); the
+recovery for a botched write is AXDL. The chainload slot could not have helped:
+it stages a **raw `u-boot.bin`** that `bootchain` `booti`s itself, so it
+exercises no header, no `img_size`, no checksum and no SPL load path.
 
 #### `pkgs/boot.nix`, and two vendor bugs in the FALSE path
 
@@ -6622,15 +6690,6 @@ pre-existing spread. What *can* be shown, and is asserted in-build, is that
 **FDL2 is byte-identical**: 1 KiB header + the 1 650 957 B raw `u-boot.bin`,
 matching the pre-#95 artefact exactly. FDL2 is the partition writer; FDL1 only
 fetches it. Worth its own issue.
-
-#### Ready for hardware
-
-The write is three partitions in one step, and the recovery is AXDL — see
-[flashing-and-recovery.md](flashing-and-recovery.md#95-the-raw-boot-chain).
-The chainload slot cannot help here: it stages a **raw `u-boot.bin`** that
-`bootchain` `booti`s itself, so it exercises no header, no `img_size`, no
-checksum and no SPL load path. All it could prove is that the same U-Boot binary
-still runs — which is not in question, because the binary does not change.
 
 ---
 

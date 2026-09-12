@@ -217,11 +217,12 @@ candidate goes through the chainload slot; a bad SPL is an AXDL trip.
 
 ---
 
-## #95: the raw boot chain — DONE, on hardware 2026-09-12
+## #95: the raw boot chain
 
-**The boot chain stores every stage uncompressed.** `.#spl-minimal` is compiled
-`SUPPPORT_GZIPD=FALSE`, so it reads `atf` and `uboot` straight from flash to
-their load addresses instead of through the SoC's gzipd hardware, and
+**DONE, on hardware 2026-09-12: the boot chain stores every stage
+uncompressed.** `.#spl-minimal` is compiled `SUPPPORT_GZIPD=FALSE`, so it reads
+`atf` and `uboot` straight from flash to their load addresses instead of
+through the SoC's gzipd hardware, and
 `.#atf-mainline` / `.#uboot-mainline` store their payloads raw behind the same
 1 KiB signed header. That retired `ax_gzip`, the last prebuilt x86-64 host tool
 in this build. `.#nixos-firmware-image-mainline` carries the same trio, so the
@@ -232,7 +233,7 @@ each SPL reads only the format it was compiled for and neither mismatch is
 detected: a raw SPL reading a gzipped image passes the checksum (it is taken
 over the stored bytes) and jumps into axgzip data; a gzipped SPL reading a raw
 image fails and spins. Both are a dark board.
-[mainline-port.md §11.12](mainline-port.md#1112-95-the-stages-go-raw-and-ax_gzip-is-retired-on-hardware-2026-09-12)
+[mainline-port.md §11.12](mainline-port.md#1112-95-the-stages-go-raw-and-ax_gzip-is-retired--on-hardware-2026-09-12)
 has the citations. **Never change one of `pkgs/spl-minimal.nix`,
 `pkgs/atf-mainline.nix` and `pkgs/uboot-mainline.nix` without the other two.**
 
