@@ -228,7 +228,7 @@ pkgs.stdenvNoCC.mkDerivation {
       || fail "the venc node's assigned-clocks names clock $vencmux, not clk_vpu_glb_sel (0)"
     vencpar=$(fdtget -t u ${board}.dtb /soc/video-encoder@4010000 assigned-clock-parents | awk '{print $2}')
     [ "$vencpar" = "15" ] \
-      || fail "the venc core clock's parent is id $vencpar, not cpll_312m (15); the encoder would run at 208 MHz and cap 4K at 24 fps"
+      || fail "the venc core clock's parent is id $vencpar, not cpll_312m (15); without 312 MHz the mux keeps its reset tap (208 MHz), which caps 4K at 24 fps"
 
     # The knob's button name is an ABI: nanokvm-display finds its wake sources
     # by EVIOCGNAME, and gpio_keys takes the input device's name from `label`.
