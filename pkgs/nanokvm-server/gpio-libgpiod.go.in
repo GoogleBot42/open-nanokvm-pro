@@ -19,11 +19,14 @@
 // of nanokvm-server.nix) is skipped in this build: there is nothing left for
 // it to fix.
 //
-// POLARITY -- the one thing here that is easy to get backwards. The power-LED
-// sense is inverted in HARDWARE, and dts/ax630c-nanokvm-pro.dts declares
-// atx-power-led as GPIO_ACTIVE_LOW. libgpiod hands back LOGICAL values, so the
-// kernel has already done the inversion and 1 means "host is on". Upstream's
-// `return value == 0` was the software half of that same inversion; keeping it
+// POLARITY -- the one thing here that is easy to get backwards, and the one
+// this build got backwards for a week (#105). The power-LED sense is inverted
+// in HARDWARE: the board pulls the line low while the host is on. The device
+// tree CANNOT say so -- `gpio-line-names` has no flags cell -- so the
+// inversion lives in nanokvm-gpio's own `board_polarity[]` table and is
+// applied to the chardev request. `nanokvm-gpio get` therefore prints a
+// LOGICAL value and 1 means "host is on". Upstream's `return value == 0` was
+// the software half of the same inversion against raw sysfs; keeping it here
 // would invert twice and report every powered host as off.
 
 // gpioTool runs nanokvm-gpio and returns its trimmed stdout.

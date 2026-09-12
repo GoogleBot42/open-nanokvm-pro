@@ -620,9 +620,14 @@
  * rule that keeps it that way: whatever declares the capture pin group in #83
  * must not list VI_D7.
  *
- * The power LED sense is inverted -- the host is ON when the line reads 0 --
- * which is a property of the board, not of the driver, so it is declared here
- * as GPIO_ACTIVE_LOW and every consumer sees "1 means on".
+ * THE POLARITY IS NOT HERE, AND CANNOT BE (#105). Both LED senses are
+ * inverted -- the host is ON when atx-power-led reads 0 -- but
+ * `gpio-line-names` is a bare string array with no flags cell, so there is
+ * nowhere in this node to write GPIO_ACTIVE_LOW and the kernel is never told.
+ * A chardev request that does not ask for it gets the raw pad, which is how
+ * the web UI came to report every powered host as off. The board fact lives
+ * in `board_polarity[]` in pkgs/nanokvm-gpio/nanokvm-gpio.c; if these names
+ * ever change, change it there too.
  */
 &gpio0 {
 	gpio-line-names =

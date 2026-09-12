@@ -27,10 +27,18 @@
  *      state stealing the pad while the line is held. Both vendor-era
  *      workarounds are deleted, not ported.
  *
- * POLARITY IS DECLARED, NOT CODED. atx-power-led is GPIO_ACTIVE_LOW in the
- * DT because the board pulls it low when the host is on. libgpiod returns
- * LOGICAL values, so `get atx-power-led` prints 1 for "host is on" with no
- * inversion anywhere in this file. Callers must not invert again.
+ * POLARITY LIVES HERE, BECAUSE THE DEVICE TREE CANNOT CARRY IT (#105).
+ * `gpio-line-names` is a bare string array: it has no flags cell, so there is
+ * no GPIO_ACTIVE_LOW to write next to a name and the kernel has nothing to
+ * invert with. A chardev request that does not say `active-low` gets the RAW
+ * pad level. The board pulls the host's power-LED sense LOW while the host is
+ * on, so the raw read of a running host is 0 -- and for a week the web UI
+ * reported every powered host as off, because three comments (this one
+ * included) asserted a declaration the device tree is not able to make.
+ *
+ * The board fact therefore lives in one table below, applied at request time,
+ * and `get` still prints LOGICAL values: 1 means "host is on". Callers must
+ * not invert again. `raw` prints the pad level for measurement.
  *
  * Built against libgpiod v2 (nixpkgs ships 2.2.4). The v2 API is the
  * request-object one: settings -> line config -> chip_request_lines.
@@ -41,6 +49,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,11 +73,47 @@ static void usage(void)
 	fprintf(stderr,
 		"usage: " CONSUMER " pulse <line-name> <milliseconds>\n"
 		"       " CONSUMER " get   <line-name>\n"
+		"       " CONSUMER " raw   <line-name>\n"
 		"       " CONSUMER " set   <line-name> <0|1>\n"
 		"\n"
 		"Lines are resolved by their device-tree gpio-line-names entry,\n"
-		"never by number. Values are logical: DT active-low lines are\n"
-		"already inverted by the kernel.\n");
+		"never by number. pulse/get/set are LOGICAL: the active-low lines\n"
+		"in the table below are inverted for you. raw prints the pad.\n");
+}
+
+/*
+ * The board's line polarities (#105).
+ *
+ * This cannot come from the device tree. `gpio-line-names` is a string array
+ * with no flags cell, and nothing else in the tree references these lines --
+ * they are named rather than hogged precisely so that userspace can claim
+ * them -- so the kernel is never told which way round they are and hands the
+ * chardev the raw pad level.
+ *
+ * Both sense inputs are wired to the host's front-panel LED header and pull
+ * LOW when their LED is lit, which is why upstream's server inverts every
+ * value it reads out of sysfs. The two ATX outputs are momentary shorts to
+ * ground driven through the board's switch, and are asserted HIGH here.
+ *
+ * A line that is not listed is active high.
+ */
+static const struct {
+	const char *name;
+	bool active_low;
+} board_polarity[] = {
+	{ "atx-power-led", true },
+	{ "atx-hdd-led",   true },
+};
+
+static bool line_is_active_low(const char *name)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(board_polarity) / sizeof(board_polarity[0]); i++)
+		if (strcmp(board_polarity[i].name, name) == 0)
+			return board_polarity[i].active_low;
+
+	return false;
 }
 
 /*
@@ -124,7 +169,8 @@ static struct gpiod_chip *find_line(const char *name, unsigned int *offset)
 static struct gpiod_line_request *request_line(struct gpiod_chip *chip,
 					       unsigned int offset,
 					       enum gpiod_line_direction dir,
-					       enum gpiod_line_value initial)
+					       enum gpiod_line_value initial,
+					       bool active_low)
 {
 	struct gpiod_request_config *rcfg = NULL;
 	struct gpiod_line_settings *settings;
@@ -137,6 +183,7 @@ static struct gpiod_line_request *request_line(struct gpiod_chip *chip,
 
 	if (gpiod_line_settings_set_direction(settings, dir))
 		goto out;
+	gpiod_line_settings_set_active_low(settings, active_low);
 	if (dir == GPIOD_LINE_DIRECTION_OUTPUT &&
 	    gpiod_line_settings_set_output_value(settings, initial))
 		goto out;
@@ -211,7 +258,8 @@ static int cmd_pulse(const char *name, const char *ms_arg)
 
 	/* Start low: the request drives 0, so the press begins where we say. */
 	req = request_line(chip, offset, GPIOD_LINE_DIRECTION_OUTPUT,
-			   GPIOD_LINE_VALUE_INACTIVE);
+			   GPIOD_LINE_VALUE_INACTIVE,
+			   line_is_active_low(name));
 	if (!req) {
 		fprintf(stderr, CONSUMER ": request '%s' failed: %s\n",
 			name, strerror(errno));
@@ -246,7 +294,12 @@ out_chip:
 	return ret;
 }
 
-static int cmd_get(const char *name)
+/*
+ * Read one line. `logical` applies the board's polarity, so 1 on
+ * atx-power-led means "the host is on"; without it the pad level is printed
+ * as it reads, which is what a measurement wants.
+ */
+static int cmd_get(const char *name, bool logical)
 {
 	struct gpiod_line_request *req;
 	struct gpiod_chip *chip;
@@ -261,7 +314,8 @@ static int cmd_get(const char *name)
 	}
 
 	req = request_line(chip, offset, GPIOD_LINE_DIRECTION_INPUT,
-			   GPIOD_LINE_VALUE_INACTIVE);
+			   GPIOD_LINE_VALUE_INACTIVE,
+			   logical && line_is_active_low(name));
 	if (!req) {
 		fprintf(stderr, CONSUMER ": request '%s' failed: %s\n",
 			name, strerror(errno));
@@ -275,7 +329,6 @@ static int cmd_get(const char *name)
 		goto out_req;
 	}
 
-	/* Logical value: the DT's active-low flag is already applied. */
 	printf("%d\n", value == GPIOD_LINE_VALUE_ACTIVE ? 1 : 0);
 	ret = 0;
 
@@ -317,7 +370,8 @@ static int cmd_set(const char *name, const char *value_arg)
 
 	req = request_line(chip, offset, GPIOD_LINE_DIRECTION_OUTPUT,
 			   value ? GPIOD_LINE_VALUE_ACTIVE
-				 : GPIOD_LINE_VALUE_INACTIVE);
+				 : GPIOD_LINE_VALUE_INACTIVE,
+			   line_is_active_low(name));
 	if (!req) {
 		fprintf(stderr, CONSUMER ": request '%s' failed: %s\n",
 			name, strerror(errno));
@@ -340,7 +394,9 @@ int main(int argc, char **argv)
 	if (strcmp(argv[1], "pulse") == 0 && argc == 4)
 		return cmd_pulse(argv[2], argv[3]);
 	if (strcmp(argv[1], "get") == 0 && argc == 3)
-		return cmd_get(argv[2]);
+		return cmd_get(argv[2], true);
+	if (strcmp(argv[1], "raw") == 0 && argc == 3)
+		return cmd_get(argv[2], false);
 	if (strcmp(argv[1], "set") == 0 && argc == 4)
 		return cmd_set(argv[2], argv[3]);
 
