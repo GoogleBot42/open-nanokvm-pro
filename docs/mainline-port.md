@@ -6959,6 +6959,16 @@ deliberately **not** shipped, because the pad's direction is unproven and
 driving a pin the bridge might also drive is a contention risk with no measured
 benefit.
 
+**There is no bridge-side audio enable, and #81 dropped nothing.** The vendor
+driver's complete set of UXC register writes is nine addresses: bank `0x80`
+`0x58`-`0x5e` (the SPI-flash bridge), `0xee` (register gate) and `0xff` (bank
+select); bank `0x81` `0x08` (flash handshake); bank `0x85` `0x40` (start a
+timing measurement); bank `0x86` `0xee`; bank `0x90` `0x10` (the bridge's own
+watchdog). Our port writes exactly that set and nothing else. Neither driver
+ever writes an audio register, so the bridge's audio output is configured by
+its own firmware in the SPI flash, or not at all — there is no enable bit in
+any source we hold.
+
 **One latent gap is waiting behind this one.** The vendor's fork carries an
 HDMI-specific override — `sound/soc/axera/dwc-i2s.c:345-350`, commented "*due to
 hdmi only support i2sclk = 64 \* fs*" — which forces `data_width = 32` and
