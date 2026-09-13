@@ -6931,9 +6931,15 @@ and diffing shows:
 - The bank-`0xb0` registers that *do* track the link are `0x80`, `0x9c`, `0x9e`,
   `0x9f`, `0xa0`, `0xa1`, `0xa2` and `0xa6`. None is named by any source we
   have.
-- `0x86:0xa5` sits two registers after the video one and reads `0x88` — the
-  vendor's "gone" code — with video locked. If that is the audio-presence
-  register, the bridge is reporting no audio in the stream.
+- `0x86:0xa5` sits two registers after the video one, in the vendor's own
+  `0x55`/`0x88`/`0xaa` code space — the space their audio switch expects and
+  bank `0xb0` never produces — and reads `0x88`, "gone", with video locked. It
+  is not the loop-out's status either: toggling `loopout_power` off and on
+  leaves the whole `0x86:0xa0`-`0xaf` row byte-identical. The best available
+  reading is that this is the audio-presence register the vendor meant, that
+  they put it in the wrong bank, and that the bridge is reporting no audio in
+  the stream. It is not proven: nothing here can make audio appear, so the
+  register has never been seen in its other state.
 
 **Two perturbations, both negative.** Quiescing every reader for 25 s
 (`systemctl stop nanokvm`) and then reading once changed nothing, so this is not

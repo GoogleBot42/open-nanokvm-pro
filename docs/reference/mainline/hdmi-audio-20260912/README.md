@@ -66,6 +66,55 @@ Stable under every perturbation tried:
   which drops the on-board LT86102UXE splitter's rail and makes the bridge
   re-acquire the TMDS link from scratch. Video came back at 4096x2160@29;
   `a5`/`ab` did not move at 8 s or at 18 s.
+- **Loop-out off and on.** The whole `0x86:0xa0`-`0xaf` row is byte-identical
+  across `loopout_power` off/on, which is how `0x86:0xa5` was shown not to be
+  the loop-out's status.
+
+## The register diff, link up versus link down
+
+Dumping all 36 banks again with `hdmi_power` off and diffing against the dump
+above is what turns a register into a reading. Bank `0x86`:
+
+```
+up    0x86 a0  01 01 04 55 00 88 00 00 00 03 00 00 00 01 00 00
+down  0x86 a0  00 00 04 88 00 88 00 00 00 03 00 00 00 04 00 00
+```
+
+`0xa3` is the video register the vendor's map names, and it behaves: `0x55`
+locked, `0x88` gone. `0xa0`/`0xa1` are link flags. **`0xa5` reads `0x88` in
+both** — the vendor's "gone" code, with video locked — and it does not move for
+the loop-out either.
+
+Bank `0xb0`, the vendor's audio bank:
+
+```
+up    0xb0 a0  00 38 0e 00 20 03 0f 00 00 00 00 00 00 00 14 40
+down  0xb0 a0  a3 28 00 00 20 03 00 00 00 00 00 00 00 00 14 40
+```
+
+**`0xb0:0xa5` = `0x03` and `0xb0:0xab` = `0x00` in both states.** The vendor's
+audio-presence register does not track the HDMI link at all, so `asr` = 0 is a
+constant, not a measurement — and the `0x55`/`0x88`/`0xaa` codes their switch
+is written against never appear in this bank, which is why v0.0.15 had to add
+a "case 0x01: case 0x03: unknown audio signal but stable" arm. The bank-`0xb0`
+registers that *do* track the link are `0x80`, `0x9c`, `0x9e`, `0x9f`, `0xa0`,
+`0xa1`, `0xa2` and `0xa6`; nothing we hold names any of them.
+
+The leading reading is that the audio-presence register is `0x86:0xa5`, two
+addresses after the video one and in the right code space, and that it says
+the bridge sees no audio. **It is not proven**: nothing on this bench can make
+audio appear at the bridge, so that register has never been observed in any
+other state.
+
+## No bridge-side audio enable exists
+
+The vendor driver's complete set of UXC register writes is nine addresses:
+bank `0x80` `0x58`-`0x5e` (SPI-flash bridge), `0xee` (register gate), `0xff`
+(bank select); bank `0x81` `0x08` (flash handshake); bank `0x85` `0x40` (start
+a timing measurement); bank `0x86` `0xee`; bank `0x90` `0x10` (the bridge's own
+watchdog). Our port writes exactly that set and nothing more. So #81 dropped no
+audio configuration — there was none to drop, and the bridge's audio output is
+set up by its own firmware or not at all.
 
 ## The pads: all three audio outputs are held low
 
