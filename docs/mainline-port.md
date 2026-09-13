@@ -6935,11 +6935,40 @@ and diffing shows:
   `0x55`/`0x88`/`0xaa` code space — the space their audio switch expects and
   bank `0xb0` never produces — and reads `0x88`, "gone", with video locked. It
   is not the loop-out's status either: toggling `loopout_power` off and on
-  leaves the whole `0x86:0xa0`-`0xaf` row byte-identical. The best available
-  reading is that this is the audio-presence register the vendor meant, that
-  they put it in the wrong bank, and that the bridge is reporting no audio in
-  the stream. It is not proven: nothing here can make audio appear, so the
-  register has never been seen in its other state.
+  leaves the whole `0x86:0xa0`-`0xaf` row byte-identical.
+
+**That last reading was an inference here and is now sourced.** Five
+independent GPL drivers name `0x86A5` as the audio interrupt register with
+exactly those three codes — the Rockchip BSP (`INT_STATUS_86A5`,
+`drivers/media/i2c/lt6911uxc.h`, identical in develop-4.19 through 6.12),
+the ZHAW Jetson driver (`INT_AUDIO` / `INT_AUDIO_DISCONNECT 0x88` /
+`INT_AUDIO_SR_HIGH 0x55` / `INT_AUDIO_SR_LOW 0xAA`), Intel's IPU6 driver
+(`REG_INT_AUDIO`), the starnet LT6911UXC driver and JakubVanek's register
+notes. All of them address the chip as `(bank << 8) | reg`, which is our
+scheme exactly. **`0xb0:0xa5` appears in no public register map at all.** So
+the vendor's audio oracle was a bank mix-up, and our port inherited it
+faithfully. Three more registers come with that:
+
+| register | public name | ours | meaning |
+|---|---|---|---|
+| `0xb0:0x81` bit 5 | `AUDIO_IN_STATUS` | `0x00` | **no audio detected** |
+| `0xb0:0xaa`/`0xab` | `AUDIO_SAMPLE_RATAE_H`/`_L`, big endian, biased +2 | `00 00` | rate invalid |
+| `0xb0:0x32` bit 7 | I2S output **mute** | `0xc4`, **bit set** | **output muted** |
+| `0x83:0xb6` / `0xb7` / `0xba` | WS + SCK / MCLK / DATA output gates | `0x77` / `0xd0` / `0x77` | WS, SCK, DATA open; MCLK field `0b101`, not `0b111` |
+
+`drivers/misc/lt6911-manage.c` now reads presence from `0xb0:0x81` bit 5, the
+rate from the `0xb0:0xaa` pair, and `0x86:0xa5` for the interrupt code, so
+`asr` says `disappear` instead of a constant `0`.
+
+**The mute bit is a consequence, not the cause — measured.** The starnet
+driver's `lt6911uxc_unmute()` was replayed by hand: `0xb0:0x32` `0xc4` →
+`0x44`, `0x83:0xb7` `0xd0` → `0xf0`, the other two gates already fully open.
+Both writes stuck and the bridge's firmware had **not** re-asserted them 60 s
+later — and `0x86:0xa5` was still `0x88`, `0xb0:0x81` still `0x00`, the rate
+pair still zero, all three pads still flat, `CER` still 0, SPI 145 still 0 and
+`arecord` still `EIO`. Unmuting an output that has nothing to carry changes
+nothing. Both registers were restored to `0xc4` / `0xd0`, and the unmute is
+**not** shipped: it is one `i2cset` away the moment a source is confirmed.
 
 **Two perturbations, both negative.** Quiescing every reader for 25 s
 (`systemctl stop nanokvm`) and then reading once changed nothing, so this is not
@@ -6964,6 +6993,15 @@ four words were restored. The delta is recorded so nobody re-derives it; it is
 deliberately **not** shipped, because the pad's direction is unproven and
 driving a pin the bridge might also drive is a contention risk with no measured
 benefit.
+
+**There is a bridge-side mute, but no driver anywhere writes it.** Of every
+public LT6911UXC driver, only the starnet one touches the audio path at all
+(`0xb0:0x32`, `0x83:0xb6`/`0xb7`/`0xba`); the Rockchip BSP, ZHAW, Intel IPU6,
+mainline's `lt6911uxe` and gl.inet's `lt6911c` write nothing audio-related,
+and gl.inet's is the one product where HDMI audio demonstrably works. Mainline's
+`lontium-lt9611uxc.c` says why, about the same MCU architecture: *"will
+automatically detect rate and sample size, so no need to setup anything here."*
+On a working board the firmware turns I2S on by itself.
 
 **There is no bridge-side audio enable, and #81 dropped nothing.** The vendor
 driver's complete set of UXC register writes is thirteen addresses: bank `0x80`

@@ -100,11 +100,58 @@ a "case 0x01: case 0x03: unknown audio signal but stable" arm. The bank-`0xb0`
 registers that *do* track the link are `0x80`, `0x9c`, `0x9e`, `0x9f`, `0xa0`,
 `0xa1`, `0xa2` and `0xa6`; nothing we hold names any of them.
 
-The leading reading is that the audio-presence register is `0x86:0xa5`, two
-addresses after the video one and in the right code space, and that it says
-the bridge sees no audio. **It is not proven**: nothing on this bench can make
-audio appear at the bridge, so that register has never been observed in any
-other state.
+## The public register map, and what it makes of all this
+
+That last reading started as an inference from the code space and is now
+sourced. Five independent GPL drivers name `0x86A5` as the audio interrupt
+register with exactly the `0x88`/`0x55`/`0xaa` codes the vendor's switch
+expects, and all of them address the chip as `(bank << 8) | reg` — our scheme:
+
+- Rockchip BSP, `drivers/media/i2c/lt6911uxc.h` (`INT_STATUS_86A5`,
+  `AUDIO_IN_STATUS 0xb081`, `AUDIO_SAMPLE_RATAE_H 0xb0aa` / `_L 0xb0ab`);
+  `.c` computes `is_audio_present = value & BIT(5)` and
+  `audio_sampling_rate = ((val_h << 8) | val_l) + 2`.
+- ZHAW/InES Jetson driver: `INT_AUDIO 0x86A5`, `INT_AUDIO_DISCONNECT 0x88`,
+  `INT_AUDIO_SR_HIGH 0x55`, `INT_AUDIO_SR_LOW 0xAA`.
+- Intel IPU6 `lt6911uxc.c`: `REG_INT_AUDIO CCI_REG8(0x86A5)`.
+- The starnet LT6911UXC driver and JakubVanek's RE notes.
+
+**`0xb0:0xa5` appears in no public map at all.** The vendor's audio oracle was
+a bank mix-up; our port inherited it faithfully, and its "undocumented, but
+present" `0x01`/`0x03` values were simply whatever that register holds.
+
+| register | public name | ours | reading |
+|---|---|---|---|
+| `0x86:0xa5` | audio interrupt state | `0x88` | `INT_AUDIO_DISCONNECT` |
+| `0xb0:0x81` bit 5 | `AUDIO_IN_STATUS` | `0x00` | **no audio detected** |
+| `0xb0:0xaa`/`0xab` | sample rate, BE, biased +2 | `00 00` | invalid |
+| `0xb0:0x32` bit 7 | **I2S output mute** | `0xc4`, set | **muted** |
+| `0x83:0xb6` | WS gate 6:4, SCK gate 2:0 | `0x77` | both open |
+| `0x83:0xb7` | MCLK gate 6:4 | `0xd0` | `0b101`, not fully open |
+| `0x83:0xba` | DATA gate 6:4 | `0x77` | open |
+
+The two public drivers disagree on the rate's unit and bias (Rockchip's
+`(pair)+2` kHz versus ZHAW's `0xab * 1000` Hz snapped to a table). Zero is
+zero under both; the first real capture settles it.
+
+## The mute is a consequence, not the cause
+
+The starnet driver's `lt6911uxc_unmute()` was replayed by hand — `0xb0:0x32`
+`0xc4` → `0x44`, `0x83:0xb7` `0xd0` → `0xf0`, the other two gates already at
+`0b111`. Both writes stuck, and the bridge's firmware had **not** re-asserted
+them 60 s later. Nothing else moved: `0x86:0xa5` still `0x88`, `0xb0:0x81`
+still `0x00`, the rate pair still zero, all three pads still flat, `CER` 0,
+SPI 145 at 0, `arecord` still `EIO`. Unmuting an output with nothing to carry
+changes nothing. Both registers were restored.
+
+The unmute is deliberately **not** shipped — it is one `i2cset` away once a
+source is confirmed — but note that our board's mute bit is *set* where the
+only public idle dump has it clear, so it is the first thing to clear after
+the host-side test below.
+
+**Still not proven:** nothing on this bench can make audio appear at the
+bridge, so `0x86:0xa5` and `0xb0:0x81` have never been observed in their other
+state on this board.
 
 ## No bridge-side audio enable exists
 

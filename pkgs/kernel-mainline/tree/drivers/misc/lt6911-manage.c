@@ -93,6 +93,24 @@
 #define LT6911_HDMI_SIGNAL_GONE		0x88
 #define LT6911_HDMI_HDCP		0xab
 
+/*
+ * The audio interrupt state, one register after the video one and in the same
+ * bank -- NOT in the audio bank, where the vendor put it. Its three codes are
+ * the ones the vendor's own switch is written against, and bank 0xb0 never
+ * produces them; `0xb0:0xa5` has no definition in any public register map and
+ * reads the same value with the HDMI link physically down, so the vendor was
+ * reading a constant and calling it audio presence (#104, 2026-09-12).
+ *
+ * Named identically by five independent GPL sources: the Rockchip BSP
+ * (`INT_STATUS_86A5`), the ZHAW Jetson driver (`INT_AUDIO`, with all three
+ * code values), Intel's IPU6 driver (`REG_INT_AUDIO`), the starnet LT6911UXC
+ * driver, and JakubVanek's register notes.
+ */
+#define LT6911_HDMI_AUDIO		0xa5
+#define LT6911_HDMI_AUDIO_GONE		0x88
+#define LT6911_HDMI_AUDIO_SR_HI		0x55
+#define LT6911_HDMI_AUDIO_SR_LO		0xaa
+
 /* Bank 0x85. */
 #define LT6911_CSI_MEASURE		0x40
 #define LT6911_CSI_MEASURE_START	0x21
@@ -103,14 +121,25 @@
 /* Bank 0x90. */
 #define LT6911_SYS2_WATCHDOG		0x10
 
-/* Bank 0xb0. */
-#define LT6911_AUDIO_SIGNAL		0xa5
-#define LT6911_AUDIO_SIGNAL_GONE	0x88
-#define LT6911_AUDIO_SIGNAL_HI		0x55
-#define LT6911_AUDIO_SIGNAL_LO		0xaa
-#define LT6911_AUDIO_SIGNAL_ALT1	0x01	/* undocumented, but present */
-#define LT6911_AUDIO_SIGNAL_ALT2	0x03
-#define LT6911_AUDIO_SAMPLE_RATE	0xab
+/*
+ * Bank 0xb0.
+ *
+ * `0x81` bit 5 is the bridge's own "audio packets are arriving" flag and is
+ * the authoritative presence bit; the sample rate is the big-endian pair at
+ * `0xaa`/`0xab`, biased by two, not the single byte at `0xab` the vendor read.
+ * Both are named by the Rockchip BSP (`AUDIO_IN_STATUS`,
+ * `AUDIO_SAMPLE_RATAE_H`/`_L`) and used the same way by the starnet driver.
+ *
+ * The bias and the unit are the one thing the public sources disagree on --
+ * Rockchip computes `((hi << 8) | lo) + 2` kHz, the ZHAW driver reads `0xab`
+ * alone and multiplies by 1000 -- and this board has never produced a nonzero
+ * value, so it cannot be settled here. Rockchip's is taken because five
+ * kernel trees carry it; the first real capture decides.
+ */
+#define LT6911_AUDIO_PRESENT		0x81
+#define LT6911_AUDIO_PRESENT_BIT	BIT(5)
+#define LT6911_AUDIO_SAMPLE_RATE	0xaa	/* 0xaa..0xab, big endian */
+#define LT6911_AUDIO_SAMPLE_RATE_BIAS	2
 
 /* Bank 0xd4. */
 #define LT6911_TOTAL_HTOTAL		0x26	/* 0x26..0x27, big endian */
@@ -692,28 +721,30 @@ static int lt6911_get_signal_state(struct lt6911 *lt, enum lt6911_video *video,
 		break;
 	}
 
-	ret = lt6911_read(lt, LT6911_BANK_AUDIO, LT6911_AUDIO_SIGNAL, &val);
+	/*
+	 * Presence comes from the bridge's own flag rather than from the
+	 * interrupt code, which only says that something *changed*. The code
+	 * is still read, because it distinguishes "the source stopped sending
+	 * audio" from "the rate moved" and that is worth a log line when the
+	 * flag is clear for a reason nobody expected.
+	 */
+	ret = lt6911_read(lt, LT6911_BANK_AUDIO, LT6911_AUDIO_PRESENT, &val);
+	if (ret)
+		return ret;
+
+	*audio = val & LT6911_AUDIO_PRESENT_BIT;
+
+	ret = lt6911_read(lt, LT6911_BANK_HDMI, LT6911_HDMI_AUDIO, &val);
 	if (ret)
 		return ret;
 
 	switch (val) {
-	case LT6911_AUDIO_SIGNAL_HI:
-	case LT6911_AUDIO_SIGNAL_LO:
-	case LT6911_AUDIO_SIGNAL_ALT1:
-	case LT6911_AUDIO_SIGNAL_ALT2:
-		/*
-		 * The vendor also derives a "sample rate went up or down"
-		 * hint from which of these it saw and then never reads it
-		 * back. Presence is the only thing that reaches /proc.
-		 */
-		*audio = true;
-		break;
-	case LT6911_AUDIO_SIGNAL_GONE:
-		*audio = false;
+	case LT6911_HDMI_AUDIO_GONE:
+	case LT6911_HDMI_AUDIO_SR_HI:
+	case LT6911_HDMI_AUDIO_SR_LO:
 		break;
 	default:
-		dev_dbg(lt->dev, "unknown audio signal state 0x%02x\n", val);
-		*audio = false;
+		dev_dbg(lt->dev, "unknown audio interrupt state 0x%02x\n", val);
 		break;
 	}
 
@@ -1284,7 +1315,7 @@ static void lt6911_video_lost(struct lt6911 *lt, bool known)
  */
 static void lt6911_audio_update(struct lt6911 *lt, bool present)
 {
-	u8 val;
+	u16 rate;
 
 	if (!present) {
 		mutex_lock(&lt->buf_lock);
@@ -1293,8 +1324,8 @@ static void lt6911_audio_update(struct lt6911 *lt, bool present)
 		return;
 	}
 
-	if (lt6911_read(lt, LT6911_BANK_AUDIO, LT6911_AUDIO_SAMPLE_RATE,
-			&val)) {
+	if (lt6911_read_be16(lt, LT6911_BANK_AUDIO, LT6911_AUDIO_SAMPLE_RATE,
+			     &rate)) {
 		mutex_lock(&lt->buf_lock);
 		lt6911_set_text(&lt->asr, "unknown\n");
 		mutex_unlock(&lt->buf_lock);
@@ -1302,7 +1333,7 @@ static void lt6911_audio_update(struct lt6911 *lt, bool present)
 	}
 
 	mutex_lock(&lt->buf_lock);
-	lt6911_set_text(&lt->asr, "%d\n", val);
+	lt6911_set_text(&lt->asr, "%u\n", rate + LT6911_AUDIO_SAMPLE_RATE_BIAS);
 	mutex_unlock(&lt->buf_lock);
 }
 

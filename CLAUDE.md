@@ -579,11 +579,21 @@ GPIO block's `EXT_PORT` after a temporary mux to function 6, while `I2S0_MCLK`
 the other three are driven low, not floating. Sample the **data** line too, not
 just the clocks: this chip can emit SPDIF, which is one self-clocked wire, and
 that case looks identical if you only watch `SCLK`/`LRCK`.
-**`/proc/lt6911_info/asr` is not an oracle**: `0xb0:0xa5` and `0xb0:0xab`, the
-vendor's audio registers, read `0x03` and `0x00` *whether or not the HDMI link
-is up*, so `asr` = 0 is a constant. The video register two addresses away
-(`0x86:0xa3`) does track the link, which is how that was proven — dump all the
-bridge's banks with `hdmi_power` on and off and diff. Reading the bridge by
+**The vendor's audio registers are in the wrong bank, and we inherited it.**
+`0xb0:0xa5` and `0xb0:0xab` read `0x03` and `0x00` *whether or not the HDMI
+link is up* — `asr` = 0 was a constant. The real ones, named identically by
+five GPL drivers (Rockchip BSP, ZHAW, Intel IPU6, starnet, JakubVanek's notes,
+all addressing the chip as `(bank << 8) | reg`): **`0x86:0xa5`** audio
+interrupt (`0x88` gone / `0x55` SR-hi / `0xaa` SR-lo — the codes the vendor's
+own switch expects, which bank `0xb0` never produces), **`0xb0:0x81` bit 5**
+audio present, **`0xb0:0xaa`/`0xab`** sample rate big-endian biased +2. Ours
+read `0x88`, clear and `0000`. `0xb0:0xa5` is in no public map at all. Also
+**`0xb0:0x32` bit 7 is the I2S output mute and ours is SET**, with the gates at
+`0x83:0xb6` (WS+SCK), `0x83:0xb7` (MCLK), `0x83:0xba` (DATA) — replaying the
+starnet unmute stuck for 60 s and changed nothing, so the mute is a
+consequence. The way any of this was proven: dump all the bridge's banks with
+`hdmi_power` on and off and **diff** — a register that does not move is not a
+reading. Reading the bridge by
 hand needs bank `0x80` register `0xee` = 1 first (until then **every** register
 in every bank reads 0, chip ID included) and a STOP between the bank select and
 the access (`i2cset` then `i2cget`; one `i2ctransfer` with a repeated START does
