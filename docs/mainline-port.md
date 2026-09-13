@@ -6959,6 +6959,17 @@ deliberately **not** shipped, because the pad's direction is unproven and
 driving a pin the bridge might also drive is a contention risk with no measured
 benefit.
 
+**One latent gap is waiting behind this one.** The vendor's fork carries an
+HDMI-specific override — `sound/soc/axera/dwc-i2s.c:345-350`, commented "*due to
+hdmi only support i2sclk = 64 \* fs*" — which forces `data_width = 32` and
+`ccr = 0x10` (WSS 32 clocks per channel) for the `hdmi-i2s` port while leaving
+`xfer_resolution` at the PCM format's value. Mainline writes `CCR`
+unconditionally from the format (`sound/soc/dwc/dwc-i2s.c:280-281,320`), so our
+`S16_LE` capture programs `CCR = 0x00`, WSS 16, against a bridge that sends
+64·fs frames. Patch `0003` does not touch `CCR`. Nothing can test it until a
+clock exists, so it is recorded rather than fixed — but it is the first thing
+to try if the port clocks and still captures garbage.
+
 **What is left is upstream of the bridge's I2S output**, and the cheapest
 discriminator needs hands: **connect the host directly to the KVM, bypassing
 the external splitter**, and re-read `0x86:0xa5` and the three pads. That
