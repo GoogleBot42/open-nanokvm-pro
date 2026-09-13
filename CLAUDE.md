@@ -358,6 +358,19 @@ that is arbitration, not a bug.
   `"rgmii"` clears them. The failure is a link that trains, reports 1Gbps/Full,
   and passes not one packet -- **that signature is always an RGMII delay
   problem** (#77, `docs/reference/mainline/ethernet-boot-20260906/`).
+- **A flat clock on a SLAVE port says nothing about the wire, and a status
+  register that never changes is not a measurement.** #104 read "no bit clock
+  on I2S0" as "the source sends no HDMI audio" and told the next reader to fix
+  the source. The SoC cannot make that clock, so a dead `sclk` only ever
+  localised the fault to the bridge or upstream of it -- and the host reaches
+  this board through a splitter, so every EDID argument in that round was about
+  a byte no host in the chain ever reads. The oracle it leaned on,
+  `/proc/lt6911_info/asr`, reads the same `0` **with the HDMI link physically
+  down**, which is how a constant was caught masquerading as a reading. Before
+  trusting any status register, perturb the thing it claims to describe and
+  check that it moves; before concluding about a peer, sample every pin it
+  might use (#104 watched two clocks and not the data line, and this bridge can
+  emit SPDIF on one self-clocked wire).
 
 ## History: the 4.19 product (removed 2026-09-11, #97)
 
@@ -557,16 +570,30 @@ backlight's duty tracking `brightness`, the 180 s blank and the wake-on-press
 all measured. Read the panel without eyes on the board by dumping `/dev/fb0`
 and rendering it off-device (kvm-device skill) — **the dump contains the
 board's IP, so never commit one.** HDMI audio probes as the card
-`Lontium Lt6911UXC` but cannot be captured, and #104 settled why with three
-independent in-band oracles: **`CER` (`0x605100c`) will not latch** — the
-driver writes 1, a hand `devmem` write of 1 reads back 0 — because that bit
-lives in the external bit-clock domain, the I2S SPI 145 count stands at 0, and
-sampling `I2S0_SCLK`/`I2S0_LRCK` (pads VI_D1 / VI_CLK0, GPIO0_A1 / GPIO0_A10)
-through the GPIO block's `EXT_PORT` after a temporary mux to GPIO gives a
-constant 0. **The bridge is not clocking the port, so the source is not
-sending HDMI audio** — `asr` = 0 with a 4-hour movie playing, and it is not a
-video-state dependency either (unchanged while MJPEG streams). Fix the source,
-not the driver.
+`Lontium Lt6911UXC` and **cannot be captured because the LT6911UXC drives none
+of its three I2S output pins** (#104, measured 2026-09-12 with the host playing
+audio): `I2S0_SCLK` / `I2S0_DIN1` / `I2S0_LRCK` (VI_D1 / VI_D4 / VI_CLK0, pad
+words `0x02300018` / `0x0230003c` / `0x02300084`) all sample **0** through the
+GPIO block's `EXT_PORT` after a temporary mux to function 6, while `I2S0_MCLK`
+(VI_D3, `0x02300030`) samples 1 — the control that proves the method and says
+the other three are driven low, not floating. Sample the **data** line too, not
+just the clocks: this chip can emit SPDIF, which is one self-clocked wire, and
+that case looks identical if you only watch `SCLK`/`LRCK`.
+**`/proc/lt6911_info/asr` is not an oracle**: `0xb0:0xa5` and `0xb0:0xab`, the
+vendor's audio registers, read `0x03` and `0x00` *whether or not the HDMI link
+is up*, so `asr` = 0 is a constant. The video register two addresses away
+(`0x86:0xa3`) does track the link, which is how that was proven — dump all the
+bridge's banks with `hdmi_power` on and off and diff. Reading the bridge by
+hand needs bank `0x80` register `0xee` = 1 first (until then **every** register
+in every bank reads 0, chip ID included) and a STOP between the bank select and
+the access (`i2cset` then `i2cget`; one `i2ctransfer` with a repeated START does
+not switch banks). The pads, crossbar word and RX channel are all the vendor's;
+the one real vendor-parity gap, `I2S0_MCLK` on VI_D3 at 12.288 MHz, was
+reproduced by hand and changed nothing. What is left is the bridge or the wire
+into it — the host reaches this board through an external HDMI **splitter**, so
+it never reads the KVM's EDID. **A flat clock on a slave port says nothing
+about what is on the wire.** Details: `docs/mainline-port.md` "#104"; evidence
+in `docs/reference/mainline/hdmi-audio-20260912/`.
 
 **The board's power is agent-controllable (since 2026-09-09):** it hangs off the
 zigbee plug named `nanokvm switch` — user-level `power-switch` skill,

@@ -238,7 +238,7 @@ have / can be dropped).
 | Knob / button / LED | `rotary-encoder`, `gpio-keys`, `gpio-leds` (heartbeat GPIO0_A23) | mainline | standard | **DONE (#84)** for the knob (both evdev nodes present on hardware with the right capability bits; a physical turn is untested) (the LED arrived with #81). DT only, built in, no pin states — all three pads are GPIOs and the claim programs the mux. `label = "gpio_keys"` is an ABI: the daemon finds its wake sources by `EVIOCGNAME` | S | opt |
 | Touch | `hyn,8xxt` @I2C7 `0x15` | `drivers/input/touchscreen/hyn/` ~800 LOC | Hynitron; mainline `hynitron_cstxxx` is a different family (I) | not used by our display daemon → drop | — | — |
 | SPI1 / SPI4 | `snps,dw-apb-ssi` @`0x6071000` (spidev), `snps,dwc-ssi-1.03a` @`0x1A00000` (`spi-nand`, unpopulated) | `spi-dw-mmio` | DW (V) | **dropped (#84)**: spi1 is a bare `spidev` the board never uses and spi4's NAND is unpopulated. Only spi2 has a node | S | — |
-| Audio | `simple-audio-card` "Lontium Lt6911UXC" ← `i2s_slv0` `axera,dwc-i2s-slv` @`0x6051000` (`hdmi-i2s`) + `dummy-codec` | `sound/soc/axera/dwc-i2s.c` 993 LOC (~85 % upstream verbatim) | Synopsys DW I2S — a fork of `sound/soc/dwc/dwc-i2s.c` (V); the 17 `i2s-*-sel` props pack into one 24-bit routing word written to `0x0487003C` | **THE CARD PROBES ON HARDWARE (#84, 2026-09-11); CAPTURE UNPROVEN** — `arecord -l` lists it, `COMP1_MODE_EN` = 0, FIFO 16 deep (6 000 IRQ/s), crossbar word `0x00080620` read back; but the attached source sends no audio (`asr: 0`) so there is no bit clock, the IRQ count is 0 and `arecord` EIOs. Stock `snps,designware-i2s` in **PIO** (the driver picks PIO from the presence of `interrupts`), `linux,spdif-dir` as the dummy codec — mainline's `snd-soc-dummy` is a `faux_device` with no `of_device_id` and cannot be named by `sound-dai`. Three optional DT properties added to the driver: the syscon routing word, the RX channel the crossbar lands the stream on (**1**, not 0), and the APB gate a slave-mode port still needs held. `dma_per` is NOT started; PIO is 6-12 k IRQ/s at 48 kHz stereo and the first hardware round measures it | M | KVM (audio; optional) |
+| Audio | `simple-audio-card` "Lontium Lt6911UXC" ← `i2s_slv0` `axera,dwc-i2s-slv` @`0x6051000` (`hdmi-i2s`) + `dummy-codec` | `sound/soc/axera/dwc-i2s.c` 993 LOC (~85 % upstream verbatim) | Synopsys DW I2S — a fork of `sound/soc/dwc/dwc-i2s.c` (V); the 17 `i2s-*-sel` props pack into one 24-bit routing word written to `0x0487003C` | **THE CARD PROBES ON HARDWARE (#84, 2026-09-11); CAPTURE UNPROVEN** — `arecord -l` lists it, `COMP1_MODE_EN` = 0, FIFO 16 deep (6 000 IRQ/s), crossbar word `0x00080620` read back; but the bridge drives none of its three I2S output pins, so there is no bit clock, the IRQ count is 0 and `arecord` EIOs (#104 — and `asr: 0` is a constant, not a measurement). Stock `snps,designware-i2s` in **PIO** (the driver picks PIO from the presence of `interrupts`), `linux,spdif-dir` as the dummy codec — mainline's `snd-soc-dummy` is a `faux_device` with no `of_device_id` and cannot be named by `sound-dai`. Three optional DT properties added to the driver: the syscon routing word, the RX channel the crossbar lands the stream on (**1**, not 0), and the APB gate a slave-mode port still needs held. `dma_per` is NOT started; PIO is 6-12 k IRQ/s at 48 kHz stereo and the first hardware round measures it | M | KVM (audio; optional) |
 | Extcon | `linux,extcon-usb-gpio` | mainline | standard | DT only | S | KVM (OTG) |
 
 ### Video path (ours)
@@ -2647,7 +2647,10 @@ would reject `BC_FC`), FIFO depth **16** → `fifo_th` 8 → **6 000 IRQ/s** at
 `snps,rx-channel = <1>` names exists. `0x0487003C` reads `0x00080620`, the
 crossbar word verbatim.
 
-**But `/proc/lt6911_info/asr` reads 0: the attached source sends no audio.**
+**But nothing is captured.** `asr` reads 0, which since #104 is known to mean
+nothing at all — `0xb0:0xa5` does not track the HDMI link, so the vendor's
+audio-presence register is a constant — and the bridge holds its three I2S
+output pins low. See "#104 — the bridge is not driving its audio pins".
 No bit clock, no frames — `/proc/interrupts` line 19 (`GIC 177`,
 `6051000.i2s`) stands at 0 on both CPUs and `arecord` returns `read error:
 Input/output error` immediately, for `S16_LE` and `S32_LE` alike. That is
@@ -6317,9 +6320,9 @@ skill and the dump contains the board's IP, so never commit one). The three
 peripheral units — `nanokvm-wifi`, `nanokvm-panel`, `nanokvm-display` — cannot
 fail any more, and `nanokvm.markGood.tolerateFailed` would let the boot count
 as healthy even if they did. **HDMI audio is the open half**: the card probes
-(`arecord -l` lists `Lontium Lt6911UXC`) but the attached source sends no audio
-(`/proc/lt6911_info/asr` = 0), so nothing can be captured until a host that
-does is plugged in.
+(`arecord -l` lists `Lontium Lt6911UXC`) but the LT6911UXC drives none of its
+three I2S output pins, so there is no bit clock and nothing can be captured
+(#104). `asr` = 0 is not the reason and never was: it reads a constant.
 
 **The board has nix, and its store is registered** (#100, 2026-09-11): 748
 paths, `nix (Nix) 2.34.8`, single-user, `nix-store --verify --check-contents`
@@ -6866,45 +6869,105 @@ while it is muxed to PWM — `EXT_PORT` only samples GPIO-muxed pads, measured
 **The lesson is the verification, not the patch.** #84 read `bl_power` out of
 sysfs, saw 1, and called the blank proven. Read the PWM registers.
 
-### #104 — the bridge is not clocking the I2S port
+### #104 — the bridge is not driving its audio pins
 
-Jeremy attached a source playing a four-hour unencrypted movie.
-`/proc/lt6911_info` reported `width` 4096, `height` 2160, `fps` 29,
-`hdmi_rx_status` `access`, `hdcp` `no hdcp` — and **`asr` still 0**.
+**Retraction, 2026-09-12.** The first round of this section concluded "**so the
+source is not transmitting HDMI audio**" and told the next reader to fix the
+source, not the driver. That conclusion was wrong, and the reasoning behind it
+was wrong twice over. Jeremy's host was playing an unencrypted movie through
+both rounds, and it reaches this board through an external HDMI **splitter**
+whose other leg was audibly playing that audio — so the host never reads the
+KVM's EDID at all, and the whole EDID argument ("the bridge advertises basic
+audio but the host is not honouring it for video either") was about a byte no
+host in the chain ever sees. A flat clock on a **slave** port says nothing
+about what is on the wire: the SoC cannot make that clock, so "no `sclk`" only
+ever localised the fault to the bridge or upstream of it. Round 1 read it as
+evidence about the source.
 
-Three independent in-band oracles say the same thing, and none of them needs
-eyes on the host:
+Round 2 asked the bridge. Full method, both register dumps and every
+perturbation: [reference/mainline/hdmi-audio-20260912/](reference/mainline/hdmi-audio-20260912/).
 
-1. **`CER` will not latch.** `0x605100c` reads 0 with the PCM in `RUNNING`
-   state, although `i2s_start()` writes 1 unconditionally; a hand
-   `devmem 0x605100c 32 0x1` also reads back 0. That bit lives in the external
-   bit-clock domain, so a slave with no `sclk` cannot set it.
-2. **No interrupts, ever.** SPI 145 (`6051000.i2s`) stands at 0 on both CPUs.
-   `RER1` = 1, `RCR1` = 2 (16-bit), `IMR1` = 0 (unmasked), `ISR1` = 0 (RXDA
-   never asserted) and `ROR1` = 0 (never overran) — so the block is
-   configured exactly as intended on RX channel **1** and is simply receiving
-   nothing. `RER0` = 0, as the crossbar word `0x00080620` implies.
-3. **The pads are dead.** Temporarily muxing `I2S0_SCLK` (VI_D1, GPIO0_A1,
-   pad word `0x02300018`) and `I2S0_LRCK` (VI_CLK0, GPIO0_A10, `0x02300084`)
-   from function 4 to function 6 and sampling the GPIO block's `EXT_PORT`
-   (`0x0480008c`) gave a constant 0 on 40 samples each. The method is
-   validated by the same word's other bits — `GPIO KEY ENTER` reads 1,
-   `rotary-encoder` reads 0 — and both pad words were restored.
+**What still stands from round 1.** `CER` (`0x605100c`) will not latch, SPI 145
+stands at 0 with `RER1` = 1 / `RCR1` = 2 / `IMR1` = 0 / `ISR1` = 0 / `ROR1` = 0,
+`arecord -D hw:0,0 -f S16_LE -r 48000 -c 2` exits 1 with a 44-byte header, and
+none of it moves while `/api/stream/mjpeg` streams. The SoC side is configured
+exactly as intended on RX channel 1 and receives nothing.
 
-It is not a video-state dependency: `CER`, `asr` and the IRQ count are
-unchanged while `/api/stream/mjpeg` streams 7.8 MB in 8 s. `arecord -D hw:0,0
--f S16_LE -r 48000 -c 2 -d 5` exits 1 leaving only the 44-byte WAV header.
-The driver writes nothing to the LT6911's audio bank and neither does the
-vendor's, so there is no enable we are missing; bank `0xb0` reads `a5` = 0x03
-(one of the "audio present" codes) with `ab` = 0x00, i.e. the chip has not
-locked an audio clock out of the stream.
+**All three of the bridge's audio outputs are held low, and the data line is
+the one that matters.** `EXT_PORT` (`0x0480008c`) samples only a pad that is
+muxed to the GPIO function, so each pad word was set to function 6, sampled 400
+times and restored:
 
-**So the source is not transmitting HDMI audio.** The EDID the bridge serves
-does advertise it — CTA flags byte `0xC1`, basic audio set, which is our own
-`mkedid.py` byte — but that same EDID declares only VIC 16 and a 1080p DTD
-while the host drives 4096x2160, so the host is not honouring it for video
-either. The host-side check is whether its HDMI output is the selected audio
-sink, not whether a movie is playing.
+| signal | pad | pad word | level |
+|---|---|---|---|
+| `I2S0_SCLK` | VI_D1 | `0x02300018` | **0** |
+| `I2S0_DIN1` | VI_D4 | `0x0230003c` | **0** |
+| `I2S0_LRCK` | VI_CLK0 | `0x02300084` | **0** |
+| `I2S0_MCLK` | VI_D3 | `0x02300030` | **1** |
+
+Round 1 sampled the two clocks and not the data line. That gap mattered: the
+LT6911UXC can emit **SPDIF** instead of I2S, and SPDIF is one self-clocked wire,
+so idle clocks with a live data pin would have looked identical. It is not
+SPDIF. VI_D3 reading **1** on the same sweep is the control round 1 lacked — it
+proves the GPIO input path works on a pad freshly switched to function 6, and
+it says the three audio pins are *driven* low rather than floating. The bridge's
+audio output block is powered down.
+
+**`asr` was never a valid oracle.** The vendor reads audio presence from bank
+`0xb0` register `0xa5` and the sample rate from `0xb0:0xab`
+(`lt6911_manage.h:48`, `lt6911_manage.c:1826,2050`), and our port mirrors it.
+Dumping all 36 banks with the HDMI link up and again with it down — `echo off >
+/proc/lt6911_info/hdmi_power` drops the on-board LT86102UXE splitter's rail —
+and diffing shows:
+
+- `0x86:0xa3`, the video register, does what the vendor's map says: `0x55`
+  locked, `0x88` link down.
+- **`0xb0:0xa5` reads `0x03` in both states.** It does not track the link at
+  all, so it is not an audio-presence register; the vendor's own `0x55`/`0x88`/
+  `0xaa` code space does not even appear in it, which is why their driver grew
+  a "case 0x01: case 0x03: unknown audio signal but stable" arm in v0.0.15.
+- `0xb0:0xab` reads `0x00` in both states. `asr` printing `0` is therefore not
+  a parser bug and not a measurement — it is a constant.
+- The bank-`0xb0` registers that *do* track the link are `0x80`, `0x9c`, `0x9e`,
+  `0x9f`, `0xa0`, `0xa1`, `0xa2` and `0xa6`. None is named by any source we
+  have.
+- `0x86:0xa5` sits two registers after the video one and reads `0x88` — the
+  vendor's "gone" code — with video locked. If that is the audio-presence
+  register, the bridge is reporting no audio in the stream.
+
+**Two perturbations, both negative.** Quiescing every reader for 25 s
+(`systemctl stop nanokvm`) and then reading once changed nothing, so this is not
+an artefact of the register gate holding the bridge's MCU. Power-cycling the
+on-board splitter, which makes the bridge re-acquire the TMDS link from
+scratch, brought video back at 4096x2160@29 and left `a5`/`ab` untouched at 8 s
+and at 18 s.
+
+**The MCLK gap is real and is not the cause.** The vendor's running 4.19 board
+had **four** pads on I2S0, not three — `pinmux-regs.txt` has `0x02300030`
+(VI_D3, `I2S0_MCLK`) at `0x00040003` — and
+`sound/soc/axera/dwc-i2s.c:876-892` does an unconditional
+`clk_set_rate(dev->i2s_mclk, 12288000)` at probe, which the live vendor
+`clk_summary` confirms. Our `i2s0_pins` names three pads (`dts/ax630c.dtsi:435`,
+"no DOUT and no MCLK") and `clk_i2s_ref0_eb` runs at **12 MHz**. Both halves
+were reproduced by hand — VI_D3 to function 4, `clk_i2s_ref0_sel` to
+`hpll_24p576m` and `clk_i2s_ref0_divn` to /2 through `0x04870000` / `0x04870014`
+— and `a5`, `ab`, `CER`, the IRQ count and `arecord` were identical before and
+after. An HDMI receiver recovers its audio clock from the stream's N/CTS; it
+does not need one from us, and it is not driving one back at us either. All
+four words were restored. The delta is recorded so nobody re-derives it; it is
+deliberately **not** shipped, because the pad's direction is unproven and
+driving a pin the bridge might also drive is a contention risk with no measured
+benefit.
+
+**What is left is upstream of the bridge's I2S output**, and the cheapest
+discriminator needs hands: **connect the host directly to the KVM, bypassing
+the external splitter**, and re-read `0x86:0xa5` and the three pads. That
+settles in one action whether the splitter is stripping audio from this leg and
+whether the host, reading the KVM's own EDID for once, sends 2-channel LPCM.
+The other host-side suspect is the audio **format**: the LT6911UXC's I2S path
+carries 2-ch LPCM only, so a host bitstreaming Dolby/DTS or sending
+multichannel through a splitter EDID that advertises it would leave exactly
+this signature.
 
 **The rest of the audio path is complete and needs no work.**
 `libkvm.c:audio_open_capture()` opens the `Lt6911` PCM S16_LE / 48 kHz /
@@ -6917,12 +6980,17 @@ before testing it with a real source: audio flows **only** in the
 the web UI's volume atom defaults to **0**, so the `<audio>` element stays
 muted until the slider is moved. There is no HTTP or WebSocket audio route to
 curl — the signalling socket carries JSON only and the media is SRTP — so the
-frame count comes from `pc.getStats()` in the browser or from `arecord` at the
-source.
+frame count comes from `pc.getStats()` in the browser.
+
+**Nobody has ever measured HDMI audio working on this board, on any stack.**
+The 2026-07-17 note on `9f54397` records the stock vendor `libkvm.so` blocking
+identically with `asr` = 0 on the 4.19 image, and the vendor's own 4.19 board
+shows `6051000.i2s_slv` at 0 interrupts in `device-reads-20260906/`. The code
+path has only ever been exercised with synthetic PCM. Treat "the shipped
+product does this" as unproven until a capture exists.
 
 PIO's overrun count under a live encode is still unmeasured, because nothing
 has ever been captured. `dma_per` stays unstarted.
-
 ### The health gate, folded in
 
 #84 and #85 each fixed "a peripheral must not arm the rollback" twice: the

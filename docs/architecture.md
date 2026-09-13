@@ -261,6 +261,8 @@ LT6911UXC HDMI→CSI-2   (drivers/misc/lt6911-manage.c, built in)
                           ├─► H.265 register program   → web stream
                           └─► from-source software JPEG (MJPEG) → web stream
         └─► ALSA capture (LT6911 audio card) ─► Opus encode → web audio
+              (never yet captured a sample: the bridge does not drive its
+               I2S pins — #104, docs/mainline-port.md)
 ```
 
 The host HDMI arrives as already-formed YUV — the LT6911 bridge does the

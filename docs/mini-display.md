@@ -23,7 +23,8 @@ the delta: which drivers replaced which, and what the hardware proved.
 **The mainline panel was proven on the board on 2026-09-11** — `/dev/fb0`, the
 daemon drawing the real status screen, the backlight's duty cycle read out of
 the PWM registers, the 3-minute blank and the wake. What is still open is
-audio, and only because the attached HDMI source sends none.
+audio: the LT6911UXC drives none of its three I2S output pins, so the SoC's
+slave port never sees a bit clock (#104).
 
 - [What the display is](#what-the-display-is)
 - [How it is blob-free](#how-it-is-blob-free)
@@ -464,7 +465,8 @@ Interrupt load at 48 kHz stereo is `48000 / fifo_th` per second. The block
 reports a **16-deep FIFO** (`I2S_COMP_PARAM_1` = `0x024C00EE`, read on the
 board), so `fifo_th` is 8 and the rate is **6 000/s** of roughly 28 MMIO
 accesses each — the low end of the estimate. What that costs under a live
-encode is still unmeasured, because the attached source sends no audio; if
+encode is still unmeasured, because the bridge has never clocked the port
+(#104); if
 `RX overrun` ever shows up in `dmesg` during real capture, the `axera,dma-per`
 dmaengine driver becomes a separate rung and **is not started without saying
 so first**.
@@ -475,9 +477,11 @@ Four of the five entries this section used to list were settled on the board on
 2026-09-11; the measurements are in the next section. What is left needs
 something SSH cannot supply:
 
-1. **A source that sends audio over HDMI.** `/proc/lt6911_info/asr` reads 0 on
-   the attached host, so the I2S port has no bit clock and nothing can be
-   captured. That one fact blocks three questions at once: whether the stream
+1. **A bridge that drives its I2S pins.** The LT6911UXC holds `I2S0_SCLK`,
+   `I2S0_DIN1` and `I2S0_LRCK` low with the host playing audio, so the port has
+   no bit clock and nothing can be captured (#104; `asr` reads 0 whether or not
+   the HDMI link is even up, so it is not the oracle it looks like). That one
+   fact blocks three questions at once: whether the stream
    really lands on RX channel **1** (the `snps,rx-channel` half of patch 0003),
    whether a pure slave needs `CLK_I2S_REF0_EB` at all, and what PIO's overrun
    count is under a live encode — the number that decides whether `dma_per`
@@ -608,15 +612,22 @@ register reads:
 | crossbar `0x0487003C` | `0x00080620` | exactly the word `snps,syscon` asks for |
 
 At 48 kHz stereo a 16-deep FIFO is **6 000 interrupts/s**, the low end of the
-estimate. The capture itself cannot be run here: `/proc/lt6911_info/asr` reads
-**0** — the attached source sends no audio at all — so there is no bit clock,
-`/proc/interrupts` line 19 (`GIC 177`, `6051000.i2s`) stands at **0** on both
-CPUs, and `arecord` returns `read error: Input/output error` immediately for
-both `S16_LE` and `S32_LE`. That is the correct behaviour for a slave port with
-no clock, and it is also why **the RX-channel question, `CLK_I2S_REF0_EB` and
-the PIO overrun count are all still open**: every one of them needs a source
-that sends audio. `dma_per` stays unstarted — there is no overrun number yet to
-justify it.
+estimate. The capture itself cannot be run here: **the LT6911UXC drives none of
+its three I2S output pins** — `SCLK`, `DIN1` and `LRCK` all sample 0 through
+`EXT_PORT`, measured with the host playing audio (#104) — so there is no bit
+clock, `/proc/interrupts` line 19 (`GIC 177`, `6051000.i2s`) stands at **0** on
+both CPUs, and `arecord` returns `read error: Input/output error` immediately
+for both `S16_LE` and `S32_LE`. That is the correct behaviour for a slave port
+with no clock, and it is also why **the RX-channel question,
+`CLK_I2S_REF0_EB` and the PIO overrun count are all still open**: every one of
+them needs the bridge to clock the port. `dma_per` stays unstarted — there is
+no overrun number yet to justify it.
+
+`/proc/lt6911_info/asr` is **not** the oracle it looks like: the vendor's audio
+registers `0xb0:0xa5` and `0xb0:0xab` read `0x03` and `0x00` whether or not the
+HDMI link is up, so `asr` = 0 is a constant. The bridge-side reading and the
+method for taking it are in
+[reference/mainline/hdmi-audio-20260912/](reference/mainline/hdmi-audio-20260912/).
 
 ---
 
