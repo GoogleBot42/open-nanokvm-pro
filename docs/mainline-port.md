@@ -1237,6 +1237,26 @@ the polarity wrong holds the rootfs device in reset.
 
 ### What exists now (#82, 2026-09-07) — USB GADGET ENUMERATED BY A HOST
 
+> **2026-10-03 — the product gadget is live.** `pkgs/nanokvm-usbdev.nix`
+> replaces the vendor's uncaptured `usbdev.sh`: boot keyboard (`hidg0`),
+> boot relative mouse (`hidg1`), absolute mouse (`hidg2`), `mass_storage.disk0`
+> behind `/boot/usb.disk0`, `hid-only` mode, the `/boot/usb.*` overrides;
+> `nixos/modules/usb.nix` runs it at boot and the server re-runs it from
+> `/kvmapp/scripts/usbdev.sh`. It enumerated `configured` at high speed on a
+> host sitting in its BIOS — but only after a second fix: **the bring-up below
+> ran under the vendor U-Boot, which set `clk_flash_glb_sel` (the flash-domain
+> AXI mux feeding `bus_clk_usb_eb`) to cpll_312m. Mainline U-Boot programs no
+> clock, so every appliance boot since #89 had the DWC3's bus on the reset tap,
+> cpll_24m**, where its DMA master cannot service DEPCMDs: `ep0 out start
+> transfer failed: -110` once per bind, the interrupt count frozen, DSTS link
+> state U3, gadget at `default` — the #42 cable signature exactly. Limiting the
+> gadget to full speed (`g0/max_speed`) showed the host's SOF counter advancing
+> for seconds with the device still silent, which cleared the wire; writing
+> `[8:6] = 0b101` into `0x10030000` took it to `configured` within a second.
+> The board dts assigns the mux's parent on the `&usb` glue node and
+> `pkgs/dtb-mainline.nix` asserts both cells. Still not implemented: NCM (needs
+> the udhcpd instance), UAC2, ACM, disk1 — each logs one line and is skipped.
+
 **A machine on the other end of the cable enumerated a mainline-kernel gadget
 from this board.** One slot-B run, milestone register `0x01FFF014` on return —
 every bit — and the board rebooted itself back to slot A. The gadget bound at

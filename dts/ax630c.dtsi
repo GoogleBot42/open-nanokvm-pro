@@ -157,11 +157,16 @@
 		 * second regmap and a second lock over registers the clock
 		 * driver read-modify-writes. pllc has no reset lines.
 		 *
-		 * No node carries assigned-clocks yet. The bootloader leaves
-		 * the tree in a working state -- CPUPLL locked at 1.2 GHz, the
-		 * UART fed from cpll_208m, the Ethernet refs already selected
-		 * -- and a first mainline boot should change nothing it does
-		 * not have to.
+		 * assigned-clocks are the exception, not the rule. The
+		 * bootloader leaves most of the tree in a working state --
+		 * CPUPLL locked at 1.2 GHz, the UART fed from cpll_208m, the
+		 * Ethernet refs already selected -- and a mainline boot should
+		 * change nothing it does not have to. But mainline U-Boot
+		 * programs NO clock, so a mux the vendor U-Boot used to set
+		 * sits on its reset tap, usually the slowest: the board dts
+		 * re-points clk_vpu_glb_sel (#107, the encoder) and
+		 * clk_flash_glb_sel (#82, the USB controller's AXI bus) for
+		 * exactly that reason, and pkgs/dtb-mainline.nix asserts both.
 		 */
 		/*
 		 * Pin controller (#80). 111 pads in two windows that form one

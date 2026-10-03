@@ -186,7 +186,20 @@ that is arbitration, not a bug.
   for every block whose speed matters** — and corroborate with the hardware's
   own cycle counter: a count that does not change with the clock says the
   block is compute-bound and the clock is a pure multiplier, while a count
-  that rises says you have run into the bus instead.
+  that rises says you have run into the bus instead. **The same trap took the
+  USB gadget (#82, 2026-10-03):** `clk_flash_glb_sel`, the flash-domain AXI
+  bus mux under `bus_clk_usb_eb`, resets to cpll_24m, and at 24 MHz the
+  DWC3's DMA master cannot service its own command engine -- every ep0
+  DEPCMD times out (`ep0 out start transfer failed: -110`), the host resets
+  the bus, gets no descriptor, and suspends the port with the gadget at state
+  `default`. That is byte-for-byte the #42 "bad cable" signature (`default` +
+  high-speed + link U3 + frozen interrupt count). What told them apart:
+  limited to full speed via `g0/max_speed`, the host's SOF counter (DSTS
+  `0x800c70c` bits 17:3) advanced for seconds -- the wire was fine -- and the
+  device STILL never answered. #82 had been proven under the vendor U-Boot,
+  which set the mux. **Before blaming a USB cable, read `0x10030000` bits
+  8:6** (must be 5); before blaming any link, find a counter the far end
+  drives and watch whether it moves.
 - **On a write-combining mapping, a byte loop costs a bus round trip PER
   BYTE.** `pgprot_writecombine` memory (every carveout here: the capture pool,
   the encoder framebuf) has no cache to coalesce into, so each `volatile
