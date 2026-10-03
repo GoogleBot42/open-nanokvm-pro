@@ -78,16 +78,25 @@ What each part tells you:
 
 # Targeted diagnostics (all validated on device 2026-08-15)
 
-**USB HID / gadget path** ("keyboard/mouse not reaching the host"). On the
-appliance the gadget is a STUB: #82 landed the dwc3 glue and the configfs
-function drivers, but the POLICY half — the script that builds the three HID
-report descriptors, the Microsoft OS descriptors and the NCM link — was vendor
-rootfs and is not reimplemented (`nanokvm-usb.service` says so in the journal).
-Everything below still decodes the CONTROLLER's state; the `usbdev.sh`
-escalations were the vendor image's and no longer exist.
+**USB HID / gadget path** ("keyboard/mouse not reaching the host"). Since
+2026-10-03 the gadget is real: `nanokvm-usb.service` runs `usbdev.sh start`
+(`pkgs/nanokvm-usbdev.nix`), which builds `g0` under configfs — `hid.GS0`
+boot keyboard, `hid.GS1` boot relative mouse, `hid.GS2` absolute mouse,
+`mass_storage.disk0` only when `/boot/usb.disk0` exists — and binds it to the
+UDC. First oracle, before anything below:
 
 ```
-cat /sys/class/udc/8000000.dwc3/state; cat /sys/class/usb_role/8000000.dwc3-role-switch/role
+usbdev.sh status        # gadget ids, mode, bound functions, UDC state, /dev/hidg*
+journalctl -u nanokvm-usb -b
+```
+
+`usbdev.sh restart` rebuilds it (the server does the same from the UI's
+"reset HID"); `usbdev.sh hid-only` drops every non-HID function for a host
+that chokes on the composite. There is no `/sys/class/usb_role` on this board
+(`dr_mode = "peripheral"`); the UDC is `8000000.usb`:
+
+```
+cat /sys/class/udc/8000000.usb/state
 ```
 
 `configured` + `device` = host enumerated us, gadget healthy — the problem is

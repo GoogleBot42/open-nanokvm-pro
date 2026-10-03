@@ -64,12 +64,13 @@ binfmt/qemu-user.
 | `atx` | `nanokvm-gpio` on `PATH`. No unit — that is the result, not a gap | the four lines are named in the device tree, and *requesting* one makes the pin controller program the pad (which retires the SW_PWR pinmux trap); global GPIO numbers are not stable on mainline |
 | `wifi` | the out-of-tree AIC8800 modules, the MD5-pinned radio firmware, wpa_supplicant on `wlan0`, and the `/kvmcomm/scripts/wifi.sh` the server execs | the radio is optional hardware: every dead end is a journal line and `exit 0`, never a failed unit |
 | `updates` | `nanokvm-update` + timer, the idle-gated reboot, `nanokvm-gc`, and nix configured single-user with `require-sigs` and `max-jobs = 0` | a 1.2 GHz A53 with eMMC never builds and never optimises the store; and a KVM is the machine you fix the machine with, so it reboots only into an empty room |
-| `server` | `nanokvm.service` (from a tmpfs copy of `/kvmapp`), `nanokvm-appdir`, `nanokvm-cert`, the USB-gadget stub, logrotate, the `ssh.service` alias, the interactive package set | the binary's contract: a store-free `DT_RUNPATH`, a dlopened `libkvm` that needs `DT_RPATH`, a dozen bare-name `exec.Command`s, and a `readlink` on `/etc/localtime` that expects `/usr/share/zoneinfo/` |
+| `usb` | `nanokvm-usb.service` — `usbdev.sh start` at boot: the HID boot keyboard, boot relative mouse and absolute mouse under configfs, `mass_storage.disk0` when `/boot/usb.disk0` asks for it, bound to the dwc3 UDC. The same script sits at `/kvmapp/scripts/usbdev.sh` for the server's `restart` / `hid-only` | the controller is a Synopsys DWC3 in a high-speed peripheral-only configuration with no VBUS comparator (the glue asserts VBUSVALID); a BIOS speaks boot protocol only, so the two boot interfaces come first and nothing optional is in the configuration unless asked |
+| `server` | `nanokvm.service` (from a tmpfs copy of `/kvmapp`), `nanokvm-appdir`, `nanokvm-cert`, logrotate, the `ssh.service` alias, the interactive package set | the binary's contract: a store-free `DT_RUNPATH`, a dlopened `libkvm` that needs `DT_RPATH`, a dozen bare-name `exec.Command`s, and a `readlink` on `/etc/localtime` that expects `/usr/share/zoneinfo/` |
 | `packages` | nothing by itself — it carries this flake's cross builds as the module argument `nanokvm` | — |
-| `nanokvm-pro` | all nine plus `packages`. **This is the entry point.** | |
+| `nanokvm-pro` | all ten plus `packages`. **This is the entry point.** | |
 | `default` | `nanokvm-pro` | |
 
-The nine areas are exported individually for anyone who wants only part of the
+The ten areas are exported individually for anyone who wants only part of the
 board. Each needs `nixosModules.packages` imported **exactly once** beside it:
 
 ```nix

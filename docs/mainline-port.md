@@ -1511,10 +1511,12 @@ libjpeg.so.8.
 
 Still absent, by design: there is no `/lib/modules` tree at all, because every
 driver this board has is built in — the first thing that needs one is #83.
-`nanokvm-video` (#83) and `nanokvm-usb` (#82) are stubs that succeed and name
-the issue owning what they cannot do, so the ordering edges stay real and a boot
-log explains the missing pipeline instead of leaving a silent black stream. Both
-sibling issues landed while this was being written, and each moved the line
+`nanokvm-video` (#83) and `nanokvm-usb` (#82) were stubs that succeeded and named
+the issue owning what they could not do, so the ordering edges stayed real and a
+boot log explained the missing pipeline instead of leaving a silent black stream.
+(#82's policy half — the gadget script itself, `pkgs/nanokvm-usbdev.nix` —
+landed 2026-10-03; `nanokvm-usb` builds the real gadget now.) Both sibling
+issues landed while this was being written, and each moved the line
 differently:
 
 - **#81 removed the GPIO stub outright.** There is no GPIO unit at all now.

@@ -3,7 +3,7 @@
 # ===========================================================================
 # THE NanoKVM-Pro HARDWARE MODULE SET (#87, epic #26 product 1).
 #
-# Nine modules, one area each, in the shape nixos-hardware uses: no
+# Ten modules, one area each, in the shape nixos-hardware uses: no
 # host-specific values, every knob an option under `nanokvm.<area>.*`, and a
 # header on each saying what it enables and which hardware fact it encodes.
 # `nixos/appliance.nix` is one consumer of them; docs/modules.md is how to be
@@ -32,6 +32,7 @@
     ./display.nix
     ./atx.nix
     ./wifi.nix
+    ./usb.nix
     ./updates.nix
     ./server.nix
   ];

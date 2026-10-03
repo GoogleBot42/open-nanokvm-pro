@@ -3,6 +3,7 @@
 , kvm-encoder
 , nanokvm-server # pkgs/nanokvm-server.nix -- ATX over nanokvm-gpio (#81)
 , nanokvm-gpio
+, nanokvm-usbdev # pkgs/nanokvm-usbdev.nix -- the USB gadget script (#82)
 , nanokvm-web
 , nanokvm-display
 , kernel # pkgs/kernel-mainline.nix, no embedded initramfs -- boot.kernelPackages
@@ -43,8 +44,8 @@ let
   # The value of the `nanokvm` module argument. Everything the hardware
   # modules read that is not an option lives here.
   packageSet = {
-    inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
-      kernel dtb video-modules display-modules version;
+    inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-usbdev nanokvm-web
+      nanokvm-display kernel dtb video-modules display-modules version;
     inherit aic8800 aic8800-firmware;
     # The three open libraries libkvm DT_NEEDEDs, taken from crossPkgs -- the
     # exact builds it was compiled and linked against (pkgs/kvm-encoder.nix),
@@ -77,6 +78,7 @@ let
     display = ./modules/display.nix;
     atx = ./modules/atx.nix;
     wifi = ./modules/wifi.nix;
+    usb = ./modules/usb.nix;
     updates = ./modules/updates.nix;
     server = ./modules/server.nix;
   };

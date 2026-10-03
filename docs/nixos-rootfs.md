@@ -696,12 +696,13 @@ What survives on the appliance:
   unimplemented — [gap 3](#known-gaps).
 
 The units the appliance actually declares: `nanokvm-appdir`, `nanokvm-cert`,
-`nanokvm`, `nanokvm-identity`, `nanokvm-checkboot`, `nanokvm-display`, and the
-two hardware stubs `nanokvm-video` (#83) and `nanokvm-usb` (#82), plus `sshd`,
-`avahi`, `systemd-networkd`, `timesyncd` and `logrotate`. The stubs succeed and
-name the issue that owns the hardware they cannot touch — so the ordering edges
-stay real and a boot log says which pipeline is missing instead of leaving a
-silent black stream.
+`nanokvm`, `nanokvm-identity`, `nanokvm-checkboot`, `nanokvm-display`,
+`nanokvm-video` (#83) and `nanokvm-usb` (#82, the gadget — real since
+2026-10-03), plus `sshd`, `avahi`, `systemd-networkd`, `timesyncd` and
+`logrotate`. While #83 and #82 were open those two were stubs that succeeded
+and named the issue owning the hardware they could not touch — so the ordering
+edges stayed real and a boot log said which pipeline was missing instead of
+leaving a silent black stream.
 
 **There is deliberately no GPIO unit** (#81, landed 2026-09-07). The 4.19 image
 had one: it poked the VI_D7 pad mux with `devmem` and exported gpio 7/35/74/75
@@ -1270,16 +1271,26 @@ number, so closed gaps keep their slot and new ones are appended.
    `/etc/kvm/server.crt` is absent, ordered after `nanokvm-identity` so the CN
    is the final hostname). Both were found by the first QEMU boot; see
    [what is built](#what-is-built).
-2. **`/kvmapp/scripts/usbdev.sh` is missing — no keyboard, no mouse.** Still
-   open, and it is **#82's**. The KERNEL half stopped being a gap while #78 was
+2. **`/kvmapp/scripts/usbdev.sh` — CLOSED for HID and the virtual disk
+   (2026-10-03), open for NCM / UAC2 / ACM (#82).** `pkgs/nanokvm-usbdev.nix`
+   is a from-source `usbdev.sh`: the three HID functions with the report
+   layouts the GPL server and web UI define (8-byte boot keyboard, 4-byte
+   relative mouse, 6-byte absolute mouse at 0..32767), the boot-keyboard
+   descriptor from the kernel's `gadget_hid.rst`, `mass_storage.disk0` behind
+   the `/boot/usb.disk0` flag, the `/boot/usb.{vid,pid,manufacturer,product,
+   serialnumber}` overrides, the `hid-only` mode and its
+   `/dev/shm/tmp/hid_only` flag, all under Linux Foundation `1d6b:0104`. The
+   `kvmapp` derivation stages it at `scripts/usbdev.sh`, so all three literal
+   paths below resolve, and `nixos/modules/usb.nix` runs it at boot. Nothing
+   vendor-derived: the vendor script was never captured and is not needed.
+   The KERNEL half had stopped being a gap while #78 was
    in flight: `pkgs/kernel-mainline/tree/drivers/usb/dwc3/dwc3-axera.c` is the
    glue, `pkgs/kernel-mainline/ax630c.config` builds `USB_CONFIGFS` in along
    with all five function drivers the script needs — HID, mass storage, NCM,
    UAC2 and ACM — and #82's bring-up initramfs got a host to enumerate each one
-   off this board. What is still missing is the script's *policy*: the report
-   descriptors, the flag files, the Microsoft OS descriptors and the `udhcpd`
-   instance. 21.6 KB of `#!/bin/bash`
-   that builds the entire USB gadget under `/sys/kernel/config/usb_gadget/g0`:
+   off this board. What the vendor's script did, for the record — 21.6 KB of
+   `#!/bin/bash` that built the entire USB gadget under
+   `/sys/kernel/config/usb_gadget/g0`:
    three HID functions (`hid.GS0` keyboard 8-byte, `hid.GS1` relative mouse
    4-byte, `hid.GS2` absolute mouse 6-byte, each with an inline report
    descriptor), NCM with Microsoft OS descriptors, mass storage, UAC2, and the
@@ -1291,17 +1302,11 @@ number, so closed gaps keep their slot and new ones are appended.
    on a flag file on `/boot` (`usb.ncm`, `usb.rndis`, `usb.disk0`,
    `usb.disk1.{sd,emmc}`, `usb.uac2`, `usb.acm`, `usb.udisp`, `ncm.dhcp`,
    `eth.nodhcp`), with every descriptor value overridable by
-   `/boot/usb.{vid,pid,serialnumber,…}`. Either vendor the script (small,
-   auditable, still vendor-derived text) or reimplement the configfs setup from
-   source.
-
-   > **TODO (device capture, HID-critical).** The whole `/kvmapp/scripts/`
-   > directory is vendor-only and absent from our `kvmapp` derivation. Capture
-   > it host-side once with `tools/kvmscp` from a board that still has it,
-   > review + license-note the text, then stage it into the `kvmapp` derivation
-   > at `server/../scripts` so all three literal paths resolve after the tmpfs
-   > copy. Cannot be done from the build host alone — and since #97 there is no
-   > vendor rootfs in this repo to take it from either.
+   `/boot/usb.{vid,pid,serialnumber,…}`. The reimplementation covers the
+   HID, disk0 and override parts of that; the flags it does not implement
+   (`usb.ncm`, `usb.rndis`, `usb.uac2`, `usb.acm`, `usb.udisp`,
+   `usb.disk1.*`) each log one line and are skipped, so the server's configfs
+   probes read those functions as absent.
 3. **The remaining `rc.local` items — the `fw_env` half is CLOSED.**
    `/etc/fw_env.config` ships, derived from the `blkdevparts=` clause, and
    `nanokvm-checkboot.service` is live
@@ -1370,13 +1375,11 @@ number, so closed gaps keep their slot and new ones are appended.
     the reason a modules tree could not simply be dropped into the filesystem.
     Anything that ever needs `modprobe` semantics — a second modular subsystem,
     or udev autoloading — reopens this.
-12. **The one hardware stub left, and what it costs the product.**
-    `nanokvm-usb` (**#82**) — no keyboard, no mouse, no mass storage, no NCM.
-    The controller and the configfs function drivers are here and a host has
-    enumerated a gadget off this board; what is missing is the POLICY, because
-    `usbdev.sh` — the script that builds the gadget, its three HID report
-    descriptors and the Microsoft OS descriptors — exists only in the vendor
-    rootfs and is uncaptured (gap 2). The stub exits 0 and prints that. The
+12. **The last hardware stub, retired 2026-10-03.** `nanokvm-usb` (**#82**)
+    was a stub — no keyboard, no mouse, no mass storage, no NCM — because the
+    gadget-building script existed only in the vendor rootfs, uncaptured. It
+    now runs `pkgs/nanokvm-usbdev.nix` (gap 2): HID keyboard + two mice and
+    the virtual disk are real; NCM, UAC2 and ACM are still absent. The
     mini-display (**#84**) is packaged but unproven: `.#display-modules` ships
     `fbtft` + `fb_jd9853` in the closure and `nanokvm-panel.service` insmods
     them, with the daemon behind `ConditionPathExists=/dev/fb0`; nothing has

@@ -293,6 +293,12 @@
         # poke and the server's per-press pinmux re-assert.
         nanokvm-gpio = callPkg ./pkgs/nanokvm-gpio.nix { };
 
+        # usbdev.sh (#82, policy half): assembles the HID keyboard + two mice
+        # (+ the virtual disk when asked) under configfs. Written from the
+        # server's and web UI's contract and the kernel's gadget docs -- the
+        # vendor script of the same name was never captured.
+        nanokvm-usbdev = callPkg ./pkgs/nanokvm-usbdev.nix { };
+
         # NanoKVM-Server (Go + cgo). ATX lines through nanokvm-gpio, and the
         # web UI's update button hands off to `nanokvm-update` -- one channel,
         # the device's own (#101).
@@ -334,8 +340,8 @@
           kernel = kernel-mainline-appliance;
           dtb = dtb-mainline;
           version = ver;
-          inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-web
-            nanokvm-display;
+          inherit kvm-encoder nanokvm-server nanokvm-gpio nanokvm-usbdev
+            nanokvm-web nanokvm-display;
           # The open capture/encode modules (#83), built against the kernel
           # the appliance boots and carried in the generation's closure.
           inherit video-modules;
@@ -666,7 +672,7 @@
             nixos-appliance-mainline-chain
             vcenc-ewl
             kvm-encoder kvm-encoder-geom-test vcenc-geom-test vcenc-rc-test
-            nanokvm-server nanokvm-gpio nanokvm-web nanokvm-display
+            nanokvm-server nanokvm-gpio nanokvm-usbdev nanokvm-web nanokvm-display
             uboot-env bootfs system-manifest appliance-toplevel
             appliance-toplevel-cachetest
             uboot-mainline uboot-mainline-debug uboot-mainline-console

@@ -463,7 +463,7 @@ three units.
 | `nanokvm-uboot-test-clear` | consumes the one-shot U-Boot chainload slot |
 | `nanokvm-update`, `nanokvm-update-reboot`, `nanokvm-gc` | the update path, each with its own timer — see [Updates](#updates) |
 | `nanokvm-wifi` | loads the two aic8800 modules (`nixos/modules/wifi.nix`, only with `nanokvm.wifi.enable`) |
-| `nanokvm-usb` | **stub**. The dwc3 glue and the configfs function drivers are in the kernel, but `usbdev.sh` — the script that builds the gadget — is vendor-only and not captured yet: no HID, no mass storage |
+| `nanokvm-usb` | builds the USB gadget under `/sys/kernel/config/usb_gadget/g0` and binds it to the dwc3 UDC: boot-protocol keyboard (`/dev/hidg0`), boot-protocol relative mouse (`hidg1`), absolute mouse (`hidg2`), plus `mass_storage.disk0` when `/boot/usb.disk0` exists. `pkgs/nanokvm-usbdev.nix` is the script, `nixos/modules/usb.nix` the unit; the server re-runs the same script (`restart`, `hid-only`) from `/kvmapp/scripts/usbdev.sh`. NCM / UAC2 / ACM are not implemented yet (#82) |
 
 **There is no ATX GPIO unit**, and that is a result rather than a gap. Consumers
 address lines by their device-tree name (`atx-power`, `atx-reset`,

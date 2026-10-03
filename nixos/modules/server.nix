@@ -7,8 +7,8 @@
 #
 # ENABLES: `nanokvm.service` (the Go server, run from a tmpfs copy of
 # /kvmapp exactly as the vendor service model does), `nanokvm-appdir`,
-# `nanokvm-cert`, the USB-gadget stub, logrotate over the server's redirected
-# stdout, the `ssh.service` alias the web UI's SSH toggle needs, and the
+# `nanokvm-cert`, the usbdev.sh the server execs (usb.nix runs it at boot),
+# logrotate over the server's redirected stdout, the `ssh.service` alias the web UI's SSH toggle needs, and the
 # interactive superset of the server's own unit PATH.
 #
 # HARDWARE FACTS IT ENCODES: none directly -- this is the application layer.
@@ -47,6 +47,12 @@ let
     cp ${nanokvm.kvm-encoder}/lib/libkvm.so   "$out/server/dl_lib/"
     cp ${nanokvm.kvm-encoder}/lib/libkvm.so.0 "$out/server/dl_lib/"
     printf '%s\n' "${nanokvm.version}" > "$out/version"
+    # The gadget script, at the path the Go source hard-codes
+    # (/kvmapp/scripts/usbdev.sh, and /dev/shm/kvmapp/scripts/usbdev.sh once
+    # nanokvm-appdir has copied the tree). pkgs/nanokvm-usbdev.nix; the unit
+    # that runs it at boot is nixos/modules/usb.nix.
+    mkdir -p "$out/scripts"
+    cp ${nanokvm.nanokvm-usbdev}/bin/usbdev.sh "$out/scripts/usbdev.sh"
     chmod -R u+w "$out"
 
     # --force-rpath: DT_RPATH, not DT_RUNPATH. libkvm is dlopen'd by the
@@ -187,31 +193,6 @@ in
     # closure is what removes the need for any mutable version stamp at all:
     # a rollback rolls the version back with everything else.
     environment.etc."nanokvm-version".text = "${nanokvm.version}\n";
-
-    # USB gadget -- STUB, but no longer for the reason it was written.
-    # #82 landed the dwc3 glue and the configfs function drivers, and a host has
-    # enumerated a gadget off this board on a mainline kernel. What is missing is
-    # the POLICY: `usbdev.sh` builds the whole gadget -- three HID report
-    # descriptors, the Microsoft OS descriptors, the flag files under /boot, the
-    # udhcpd instance -- and it exists only in the vendor rootfs, uncaptured
-    # (gap 2 in docs/nixos-rootfs.md). Until it is vendored or reimplemented
-    # there is nothing here to instantiate those functions.
-    systemd.services.nanokvm-usb = {
-      description = "NanoKVM-Pro USB HID/storage gadget (stub -- #82 policy half)";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "nanokvm.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        echo "nanokvm-usb: STUB. The controller and the configfs function"
-        echo "             drivers are here (#82), but usbdev.sh -- the script"
-        echo "             that builds the gadget -- is vendor-only and not"
-        echo "             captured yet: no keyboard, no mouse, no mass"
-        echo "             storage, no NCM."
-      '';
-    };
 
     # The KVM server. Mirrors the vendor service model: the app tree is
     # copied to tmpfs at boot and the binary runs from there
