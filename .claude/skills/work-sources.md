@@ -341,7 +341,9 @@ propose SG2002 work without flagging this gap up front.
   after a ws close -- upstream behaviour). Draft `CHANGELOG.md` v2.1.0-alpha.5 section
   written; release NOT cut. Open on #64: cold-boot proof once an image ships.
   **Nothing left needs the 4.19 vendor stack** -- the pre-mainline wishlist is consumed.
-  Bench: USB HID to the host DOWN again since 2026-09-05 (#42 pattern, physical link).
+  Bench: USB HID to the host DOWN again since 2026-09-05 (#42 pattern, physical link)
+  — **UP since 2026-10-03** (from-source gadget + the flash AXI mux fix; the
+  "physical link" reading of that signature was wrong, see kvm-device skill).
   **Later 2026-09-05:** **#68 FIXED** (Chromium white screen in H.264 Direct = upstream
   sent SPS/PPS as separate non-key messages; now folded into the IDR, device-proven,
   headless-Chromium 150/150 frames); H.265 Direct always selectable (probe advisory,
@@ -478,7 +480,14 @@ propose SG2002 work without flagging this gap up front.
   `docs/reference/mainline/gpio-lt6911-20260907/`). **The SW_PWR trap is fixed
   at the root on mainline**: `gpio_request_enable()` got its first exercise on
   silicon and four pad words measurably changed function because a driver
-  asked for the line. **#82 DONE, device-proven 2026-09-07** -- **a host
+  asked for the line. **#82 policy half LANDED 2026-10-03** — `pkgs/nanokvm-usbdev.nix`
+  + `nixos/modules/usb.nix` (from-source `usbdev.sh`: hidg0/1/2 + disk0), the
+  stub is gone, and the host's BIOS enumerated it `configured` from a clean
+  boot — after the flash AXI mux (`clk_flash_glb_sel`, reset tap cpll_24m
+  under mainline U-Boot) was assigned cpll_312m on `&usb`. **Still open on
+  #82: NCM (udhcpd), UAC2, ACM, disk1.** The 2026-09-07 bring-up below ran
+  under the vendor U-Boot, which is why it never saw the mux.
+  **#82 controller half DONE, device-proven 2026-09-07** -- **a host
   enumerated a mainline-kernel USB HID gadget from this board**
   (`0x01FFF014`, every bit; gadget bound at t=12.63 s, host had it configured
   1.0 s later at high speed; `docs/reference/mainline/usb-gadget-20260907/`).

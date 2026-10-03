@@ -109,15 +109,24 @@ while unattached; guard test writes with `timeout`.
 Deeper decode (worked out 2026-08-17, issue #42) when state is neither of
 those:
 
-- `state=default` + `current_speed=high-speed` + debugfs
-  `/sys/kernel/debug/8000000.dwc3/link_state` = `Suspend` = the host's bus
-  reset and HS chirp COMPLETED but no ep0 transfer ever succeeded, then the
-  host gave up. Confirm with `grep dwc3 /proc/interrupts` sampled twice
-  (frozen counter = no traffic) and the `SOFFN` field in DSTS via debugfs
-  `regdump` (safe to read once `link_state` reads instantly). This pattern
-  is a physical-link / host-port problem, not gadget config — chirp is
-  robust low-speed signaling; HS data at 400 mV fails first on a marginal
-  cable.
+- `state=default` + `current_speed=high-speed` + link state U3/Suspend =
+  the host's bus reset and HS chirp COMPLETED but no ep0 transfer ever
+  succeeded, then the host gave up. Confirm with `grep dwc3 /proc/interrupts`
+  sampled twice (frozen counter = no traffic). There is no dwc3 debugfs dir
+  on this kernel; read DSTS directly: `devmem 0x800c70c 32` — bits 21:18 are
+  the link state (3 = U3), bits 17:3 the SOF frame number, bits 2:0 the
+  speed (0 = HS, 1 = FS). **This pattern has TWO causes and they look
+  identical.** (a) The controller's AXI bus clock on its reset tap:
+  `devmem 0x10030000 32` bits 8:6 must read 5 (cpll_312m); 0 (cpll_24m)
+  means the DWC3 cannot service its own DEPCMDs and dmesg shows
+  `ep0 out start transfer failed: -110` once per bind (#82, 2026-10-03 —
+  the dts fixes it, so a reading of 0 means the running generation predates
+  3d1838f or the dtb check was lost). (b) A marginal cable/host port: chirp
+  is robust low-speed signaling and HS data at 400 mV fails first (#42).
+  The experiment that separates them: `echo "" > g0/UDC; echo full-speed >
+  g0/max_speed; echo 8000000.usb > g0/UDC` and watch the SOF counter in
+  DSTS — advancing frames with the device still at `default` = the wire is
+  fine and the controller is the problem (a); no frames = (b).
 - Enumeration history: `journalctl -k -b <N> | grep 'config #1'` — each
   line is one successful SET_CONFIGURATION. A cluster of them without
   matching gadget rebuilds = the HOST was re-enumerating (link flapping or
