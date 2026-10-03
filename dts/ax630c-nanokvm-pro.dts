@@ -475,6 +475,30 @@
 };
 
 /*
+ * The USB controller's AXI bus clock (#82, 2026-10-03). bus_clk_usb_eb is a
+ * gate on clk_flash_glb_sel, the flash-domain AXI bus mux, which comes out
+ * of reset on cpll_24m -- and mainline U-Boot programs no clock, so that is
+ * where the appliance's first boots left it. At 24 MHz the DWC3's DMA
+ * master cannot keep up with its own command engine: every ep0 DEPCMD times
+ * out (`ep0 out start transfer failed: -110`), the device never answers the
+ * first GET_DESCRIPTOR, and the host suspends the port with the gadget still
+ * at state `default`. The physical link was fine the whole time -- at full
+ * speed the host's SOF counter advanced for seconds -- which is what
+ * separated this from the #42-shaped cable fault it looked like.
+ *
+ * #82 was proven 2026-09-07 under the VENDOR U-Boot, which set this mux to
+ * cpll_312m before Linux ran; this is the same tap. Writing [8:6] = 0b101
+ * into 0x10030000 on the running board took the gadget from `default` to
+ * `configured` within a second (high-speed). aclk_emac_eb hangs off the
+ * same mux, so Ethernet's AXI side is on 312 MHz again too.
+ * pkgs/dtb-mainline.nix asserts both cells.
+ */
+&usb {
+	assigned-clocks = <&flash_clk AX630C_CLK_FLASH_GLB_SEL>;
+	assigned-clock-parents = <&common_clk AX630C_CPLL_312M>;
+};
+
+/*
  * The mini-display (#84). A Jadard JD9853 on SPI2, chip select 1.
  *
  * CS0 IS A HOLE, deliberately. The controller has two chip selects; the

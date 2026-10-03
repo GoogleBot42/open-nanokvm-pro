@@ -67,15 +67,17 @@ crossPkgs.writeShellApplication {
     }
 
     # A hex string to bytes, in ONE write: f_hid takes the whole descriptor
-    # from a single write() to report_desc.
+    # from a single write() to report_desc. Verified by reading it BACK --
+    # `stat` on a configfs attribute reports the page size, not the content
+    # (4096 for a 63-byte descriptor, measured 2026-10-03).
     write_hex() {
-      local target=$1 hex=$2 want esc="" i
-      want=$(( ''${#hex} / 2 ))
+      local target=$1 hex=''${2,,} esc="" got i
       for (( i = 0; i < ''${#hex}; i += 2 )); do esc+="\\x''${hex:i:2}"; done
       # shellcheck disable=SC2059
       printf "$esc" > "$target"
-      [ "$(stat -c %s "$target")" = "$want" ] \
-        || die "$target: wrote $(stat -c %s "$target") bytes, wanted $want"
+      got=$(od -An -v -tx1 "$target" | tr -d ' \n')
+      [ "$got" = "$hex" ] \
+        || die "$target: read back ''${#got} hex digits, wanted ''${#hex}"
     }
 
     udc_name() {

@@ -230,6 +230,20 @@ pkgs.stdenvNoCC.mkDerivation {
     [ "$vencpar" = "15" ] \
       || fail "the venc core clock's parent is id $vencpar, not cpll_312m (15); without 312 MHz the mux keeps its reset tap (208 MHz), which caps 4K at 24 fps"
 
+    # --- #82: the USB controller's AXI bus clock ---------------------------
+    # clk_flash_glb_sel comes out of reset on cpll_24m and mainline U-Boot
+    # leaves it there; at 24 MHz the DWC3's DMA master cannot service its own
+    # command engine, every ep0 command times out and the gadget never gets
+    # past `default` -- a keyboard the host never sees, which looks exactly
+    # like a bad cable. Assert the mux id (7 = AX630C_CLK_FLASH_GLB_SEL) and
+    # the parent id (15 = AX630C_CPLL_312M) on the glue node.
+    usbmux=$(fdtget -t u ${board}.dtb /soc/usb@8000000 assigned-clocks | awk '{print $2}')
+    [ "$usbmux" = "7" ] \
+      || fail "the usb node's assigned-clocks names clock $usbmux, not clk_flash_glb_sel (7)"
+    usbpar=$(fdtget -t u ${board}.dtb /soc/usb@8000000 assigned-clock-parents | awk '{print $2}')
+    [ "$usbpar" = "15" ] \
+      || fail "the usb bus clock's parent is id $usbpar, not cpll_312m (15); on the reset tap (24 MHz) the gadget never enumerates"
+
     # The knob's button name is an ABI: nanokvm-display finds its wake sources
     # by EVIOCGNAME, and gpio_keys takes the input device's name from `label`.
     lbl=$(fdtget -t s ${board}.dtb /gpio-keys label)
