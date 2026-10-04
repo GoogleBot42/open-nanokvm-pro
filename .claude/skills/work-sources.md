@@ -485,7 +485,7 @@ propose SG2002 work without flagging this gap up front.
   stub is gone, and the host's BIOS enumerated it `configured` from a clean
   boot — after the flash AXI mux (`clk_flash_glb_sel`, reset tap cpll_24m
   under mainline U-Boot) was assigned cpll_312m on `&usb`. **Still open on
-  #82: NCM (udhcpd), UAC2, ACM, disk1.** The 2026-09-07 bring-up below ran
+  #82: NCM (udhcpd), UAC2, ACM, disk1.** disk0 is proven to the LUN (2026-10-04: `/data` created, unit ordered after `/boot`, a 1.75 GB ISO loaded; host enumeration of the CD unobserved, host was off). The 2026-09-07 bring-up below ran
   under the vendor U-Boot, which is why it never saw the mux.
   **#82 controller half DONE, device-proven 2026-09-07** -- **a host
   enumerated a mainline-kernel USB HID gadget from this board**

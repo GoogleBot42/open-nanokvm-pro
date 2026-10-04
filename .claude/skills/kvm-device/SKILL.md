@@ -43,7 +43,8 @@ public:
 - **Almost nothing on the appliance is writable.** It is NixOS: `/etc`, `/bin`
   and the whole system are read-only store symlinks, and `/nix/store` is a
   read-only bind mount (`boot.readOnlyNixStore`). `/root`, `/tmp`, `/var` and
-  `/boot` are writable; everything else is a configuration change
+  `/boot` are writable, and so is `/data` (the virtual-media image store, a
+  directory on the root filesystem); everything else is a configuration change
   (nixos/appliance.nix) and a generation switch, not an edit.
 
 Both scripts read credentials from `~/.config/nanokvm/device.env` (chmod
