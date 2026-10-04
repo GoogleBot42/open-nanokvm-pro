@@ -1405,9 +1405,19 @@ machinery in #97), with the mask at
   host is attached and bit 24 coming back clear is a real failure rather than
   an unplugged cable.
 
-Not proven, and not attempted: mass storage, NCM, UAC2 and ACM as *running*
-functions (only their drivers' presence is checked, 5 of 5), any transfer over
-the HID endpoint, suspend and resume, and host mode.
+Not proven, and not attempted: NCM, UAC2 and ACM as *running* functions (only
+their drivers' presence is checked, 5 of 5), any transfer over the HID
+endpoint, suspend and resume, and host mode. Mass storage got as far as the
+LUN on 2026-10-04: the server's own sequence (`/boot/usb.disk0`, `usbdev.sh
+restart`, `cdrom`/`ro`/`file` into `lun.0`) loaded a 1.75 GB ISO from `/data`
+and the gadget bound with `mass_storage.disk0` in the configuration; the host
+was powered off, so enumeration of the CD is still unobserved. Two things that
+round fixed: `/data` did not exist on the appliance (the server's image store
+is a literal path -- an upload failed on chunk 0 and the UI called the
+directory "read only"; `nixos/modules/server.nix` creates it), and
+`nanokvm-usb` started 3.5 s before `/boot` mounted, so every flag file it
+reads was invisible at boot and the virtual disk vanished on every reboot
+(`RequiresMountsFor=/boot`).
 
 ### What exists now (#78, 2026-09-07) — APPLIANCE BUILDS AND BOOTS, IN QEMU
 

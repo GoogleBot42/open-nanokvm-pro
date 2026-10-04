@@ -45,6 +45,11 @@ in
       after = [ "sys-kernel-config.mount" ];
       requires = [ "sys-kernel-config.mount" ];
       before = [ "nanokvm.service" ];
+      # Every optional function is a flag file on /boot (usb.disk0 and the
+      # usb.* overrides). Without this the unit started at 14.9 s and /boot
+      # mounted at 18.4 s (measured 2026-10-04), so the virtual disk the
+      # server had enabled was gone after every reboot.
+      unitConfig.RequiresMountsFor = [ "/boot" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

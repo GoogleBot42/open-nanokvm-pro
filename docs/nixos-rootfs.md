@@ -1380,6 +1380,10 @@ number, so closed gaps keep their slot and new ones are appended.
     gadget-building script existed only in the vendor rootfs, uncaptured. It
     now runs `pkgs/nanokvm-usbdev.nix` (gap 2): HID keyboard + two mice and
     the virtual disk are real; NCM, UAC2 and ACM are still absent. The
+    virtual disk's image store is the literal `/data` in the Go server, a
+    plain directory on the root filesystem here (`server.nix` tmpfiles; the
+    vendor image had a partition), and the unit orders itself after the
+    `/boot` mount because its flag files live there (both 2026-10-04). The
     mini-display (**#84**) is packaged but unproven: `.#display-modules` ships
     `fbtft` + `fb_jd9853` in the closure and `nanokvm-panel.service` insmods
     them, with the daemon behind `ConditionPathExists=/dev/fb0`; nothing has

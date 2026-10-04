@@ -183,6 +183,14 @@ in
       # Writable server state: server.yaml plus the HTTPS cert+key.
       "d /etc/kvm 0700 root root - -"
       "d /var/log/nanokvm 0755 root root - -"
+      # Virtual-media image store. service/storage/image.go uploads into the
+      # literal "/data", download.go probes it by creating a test file, and
+      # the web UI reports any probe failure as "read only" -- so a missing
+      # directory read as a read-only one (2026-10-04). It must be a real
+      # directory, not a symlink: GetImages walks it with filepath.Walk, which
+      # does not follow a symlinked root. The vendor image had a partition
+      # here; on the appliance it is a directory on the 29 GB root.
+      "d /data 0755 root root - -"
     ];
 
     # THE VERSION THIS GENERATION IS, as a file INSIDE the closure (#86). The

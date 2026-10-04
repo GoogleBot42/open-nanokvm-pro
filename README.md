@@ -50,13 +50,13 @@ bricked, so recovery is always another AXDL flash — a bench trip, never a bric
 - **Rollback.** U-Boot counts boot attempts in a reset-surviving register; the
   fourth runs `altbootcmd` and boots the previous generation. Proven unattended.
 
-**Built, not yet proven on hardware**: the mini-display and HDMI audio (#84),
-WiFi (#85), the ATX power/reset pulse (#81 — the code is live, the GPIO has
-never been pulsed).
+**Built, not yet proven on hardware**: the ATX power/reset pulse (#81 — the
+code is live, the GPIO has never been pulsed). HDMI audio probes as a sound
+card but the bridge drives no I2S pins (#104).
 
-**Not there yet**: USB HID — no keyboard, no mouse, no mass storage (#82). The
-controller and every configfs function driver are in the kernel and a host has
-enumerated a gadget off this board; what is missing is the gadget *policy*.
+**USB (#82)**: the HID keyboard and both mice are live, and the virtual disk
+loads an image from `/data` into the gadget's LUN; a host has yet to be seen
+enumerating the CD. NCM networking, UAC2 audio and ACM serial are not there yet.
 
 ---
 
