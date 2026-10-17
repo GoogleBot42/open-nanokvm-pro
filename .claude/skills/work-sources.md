@@ -484,8 +484,11 @@ propose SG2002 work without flagging this gap up front.
   + `nixos/modules/usb.nix` (from-source `usbdev.sh`: hidg0/1/2 + disk0), the
   stub is gone, and the host's BIOS enumerated it `configured` from a clean
   boot — after the flash AXI mux (`clk_flash_glb_sel`, reset tap cpll_24m
-  under mainline U-Boot) was assigned cpll_312m on `&usb`. **Still open on
-  #82: NCM (udhcpd), UAC2, ACM, disk1.** disk0 is proven to the LUN (2026-10-04: `/data` created, unit ordered after `/boot`, a 1.75 GB ISO loaded; host enumeration of the CD unobserved, host was off). The 2026-09-07 bring-up below ran
+  under mainline U-Boot) was assigned cpll_312m on `&usb`. **2026-10-17: NCM (networkd DHCPServer on usb0), UAC2 and ACM
+  (getty on ttyGS0) landed and are board-proven; only 7 IN endpoints, so
+  HID+disk0+ncm+acm does not fit. Still open on #82: host-side proof
+  (lease/ping, ACM login, mic capture), the server's aplay not restarting
+  after an I/O error, disk1 (needs a mount_emmc.py + /data decision).** disk0 is proven to the LUN (2026-10-04: `/data` created, unit ordered after `/boot`, a 1.75 GB ISO loaded; host enumeration of the CD unobserved, host was off). The 2026-09-07 bring-up below ran
   under the vendor U-Boot, which is why it never saw the mux.
   **#82 controller half DONE, device-proven 2026-09-07** -- **a host
   enumerated a mainline-kernel USB HID gadget from this board**
