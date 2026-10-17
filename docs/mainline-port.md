@@ -1446,6 +1446,28 @@ or beside ncm with disk0 off, never beside disk0 + ncm. The vendor hit the
 same wall: "enabling the Virtual Mic will disable the USB Secondary Screen"
 (`web/src/i18n/locales/en.ts`).
 
+**OUT is counted too (2026-10-17, second round).** The same register gives 8
+OUT, 7 usable. Per function, from each driver's `usb_ep_autoconfig()` calls in
+the 7.1 tree: HID 3 (f_hid gives every instance an interrupt OUT unless
+`no_out_endpoint`), mass storage 1, ncm 1, acm 1, uac2 1 — the speaker's iso
+OUT. That last one is **adaptive**, not f_uac2's default async: async adds a
+feedback IN (`EPOUT_FBACK_IN_EN`), which would make HID + disk0 + ncm + uac2 8
+IN and drop the uac2 function from the board's current flag set. So the full
+table is hid 3/3, disk0 1/1, ncm 2/1, uac2 1/1, acm 2/1 (IN/OUT); OUT peaks at
+6 and cannot run out with these five, IN still decides. `admit()` charges
+both, `plan()` is the one place that decides, and `usbdev.sh plan` prints the
+answer from the flags alone (`USBDEV_BOOT_DIR` points it elsewhere).
+`.#checks.<sys>.usb-gadget-budget` runs all sixteen flag combinations plus
+hid-only through it against a written-out table:
+
+| flags | bound | left (IN/OUT) |
+|---|---|---|
+| disk0 ncm uac2 (acm) | disk0 ncm uac2 | 0 / 1 |
+| disk0 ncm acm | disk0 ncm | 1 / 2 |
+| disk0 uac2 acm | disk0 uac2 acm | 0 / 1 |
+| ncm uac2 acm | ncm uac2 | 1 / 2 |
+| ncm acm | ncm acm | 0 / 2 |
+
 **NCM.** Stable MACs from the board serial (`02:` device, `06:` host, the
 same SHA-256 bytes), the `WINNCM` Microsoft OS descriptor Sipeed's SG2002
 script sets, and a DHCP server: systemd-networkd's own (`DHCPServer=yes` in
@@ -1464,7 +1486,8 @@ stand-in was not possible (the kernel has no `CONFIG_VETH`). Host-side proof
 needs someone at the host: `ip link set <if> up` + a DHCP client, then a
 `ping 10.82.0.1`.
 
-**UAC2.** The server's virtual mic is `aplay -D plughw:UAC2Gadget,0 -r 48000
+**UAC2 (first round; the second round below supersedes the stream set and
+the player).** The server's virtual mic is `aplay -D plughw:UAC2Gadget,0 -r 48000
 -f S16_LE -c 2` (`service/stream/opus/player.go`); u_audio names the card
 `UAC2_Gadget` and ALSA's id is `UAC2Gadget` — measured, `/proc/asound/cards`
 card 1. So the function is one 48 kHz stereo S16 playback stream, `c_chmask`
@@ -1476,6 +1499,81 @@ recording fails `pcm_write: write error: Input/output error` after its buffer
 fills (measured), and the server's player then stays inactive until the WebRTC
 session restarts. The server should restart `aplay` on exit (or open the PCM
 non-blocking); not done here. Host-side capture is unobserved.
+
+**UAC2, second round (2026-10-17): the mic survives, and the host gets a
+speaker.** Jeremy's report: the host saw the mic, browser audio never reached
+it, and no speaker existed. Both halves, from the kernel source and then on
+hardware:
+
+- *When a gadget PCM moves.* u_audio advances a substream's `hw_ptr` only in
+  `u_audio_iso_complete()`, which runs only while the endpoint is enabled —
+  `u_audio_start_playback()` / `u_audio_start_capture()`, called when the host
+  puts that streaming interface on alt 1, i.e. while a host program has the
+  device open. `trigger` never fails, so open, `hw_params` and the first
+  buffer-full of writes all succeed with no host; the next wait is ALSA's
+  `wait_for_avail()` timeout, `max(100 ms, buffer_size x 1.1 / rate)`, and then
+  `-EIO`. Measured with no host: `aplay --buffer-size=4096` into the playback
+  side fails at 0.17 s, `arecord --buffer-size=3840` on the capture side at
+  0.155 s, both `Input/output error`. It needs the host *continuously*: alt 0
+  disables the endpoint, the pointer stops and the next write or read times
+  out the same way. The oracle is the card's read-only **"Playback Rate" /
+  "Capture Rate"** controls (`set_active()`): the sample rate while the host
+  streams, 0 otherwise — `amixer -c UAC2Gadget cget iface=PCM,name='Capture
+  Rate'`.
+- *The mic* (`pkgs/nanokvm-server/audio-input-player.go.in`, replacing
+  upstream's `player.go`, step 14 of `pkgs/nanokvm-server.nix`). Upstream
+  started one `aplay` per mic session and dropped every sample once it
+  exited — so a mic switched on before the host started recording was dead,
+  and one the host stopped recording from stayed dead, both logged at Debug.
+  Now a supervisor restarts `aplay` 1 s after every exit for as long as the
+  track is live; samples meanwhile are decoded and dropped. One failed attempt
+  costs ~0.17 s, so 1 s is ~one spawn a second while the host is not
+  recording and at most ~1 s from the host opening the mic to audio arriving.
+  Info lines, once per transition: `virtual mic: started`, `aplay exited ...
+  nothing on the host is recording ... retrying every 1s`, `aplay running
+  again, the host is recording` (a run that survives 2 s), `stopped`. The
+  shared player is also refcounted, so a second browser's mic ending no longer
+  kills the first's. A host-side polling alternative (read "Playback Rate"
+  before spawning) was rejected: it needs a cgo ALSA binding or an `amixer`
+  spawn per poll, which costs as much as the `aplay` it would save.
+- *The speaker.* `uac2.usb0` gets `c_chmask 3`, `c_srate 48000`, `c_ssize 2`,
+  `c_sync adaptive` (one iso OUT, nothing else). libkvm's `kvmv_read_audio()`
+  now picks a source per call: the gadget's capture PCM while "Capture Rate"
+  reads 48000, the LT6911 card otherwise. A host only streams into the gadget
+  when it has chosen the KVM as its output and is playing, so a non-zero rate
+  is an explicit choice and wins; the HDMI path stays for when #104 is solved.
+  Rejected: "HDMI first, fall back to USB" (HDMI blocks 1.2 s per failed read,
+  so the USB stream would have stalled behind it, and HDMI would win the day
+  #104 is fixed even for a host that picked the USB speaker) and "USB whenever
+  the card exists" (a gadget nobody plays into would then shadow a working
+  HDMI path). The control node is held open and closed on the first failed
+  read, which is how a torn-down gadget looks; the rebuilt card is found by
+  name a second later (`usbdev.sh restart` mid-session: the card came back as
+  `UAC2Gadget` card 1 and the server's fd was the new node, not a deleted
+  one). The gadget PCM's buffer is four 960-frame periods, so a host that stops
+  mid-read costs the 100 ms floor of the timeout. A source with nothing to say
+  returns 0 bytes, not `-1`, and a failed HDMI read backs that source off 5 s;
+  the server's `failed to read audio: -1` once per ~1.2 s HDMI timeout while
+  anyone watched (55 709 of them in the board's log file) is one
+  `OPEN-KVM: audio: no source is playing` line, and the Go side rate-limits
+  any real `-1` to one line a minute.
+
+**On hardware** (generation below, flags disk0 + ncm + uac2; the host was
+**powered off** for the whole round — `nanokvm-gpio get atx-power-led` 0, UDC
+`not attached`, DSTS link U3 with no SOFs — so everything host-side is
+Jeremy's): the gadget binds `hid.GS0 hid.GS1 hid.GS2 mass_storage.disk0
+ncm.usb0 uac2.usb0` with `c_sync adaptive`, and the card grows `Capture Rate`
+beside `Playback Rate`. Headless Chromium through the real UI
+(`reference/mainline/usb-audio-20261017/`): the fake mic's track leaves the
+browser at 50 packets/s, the server logs `virtual mic: started` and one
+`aplay exited` line, and the board watcher catches six successive `aplay`
+PIDs in 30 s of mic, each `RUNNING` with `appl_ptr 4096` — the decoded mic filling
+the gadget's buffer — and `hw_ptr 0`, the host not reading. The KVM-to-browser
+half was measured with a `KVM_AUDIO_SELFTEST` libkvm hot-swapped into
+`/dev/shm/kvmapp`: 50 packets/s, 48 000 samples/s, no concealment,
+`audioLevel` 0.27. Not measured: a host recording the mic, a host playing into
+the speaker, and whether every host OS accepts an adaptive OUT (Linux and
+macOS do by spec; Windows' `usbaudio2.sys` is the one to watch).
 
 **ACM.** `/dev/ttyGS0`, and `serial-getty@ttyGS0` started by a udev
 `SYSTEMD_WANTS` on the node. Two wrong turns, both on hardware: an instance
@@ -1511,7 +1609,9 @@ no mainline function driver).
 
 **Board end state:** generation system-36 (this branch), flags as found —
 `/boot/usb.disk0` only — `running`, `bootcount` `0xB0010000`, UDC
-`configured`, web UI 200.
+`configured`, web UI 200. After the second UAC2 round: generation 37
+(`r6npbx9p…`), flags `usb.disk0` + `usb.ncm` + `usb.uac2`, `running`,
+`bootcount` `0xB0010000`, UDC `not attached` only because the host was off.
 
 ### What exists now (#78, 2026-09-07) — APPLIANCE BUILDS AND BOOTS, IN QEMU
 
@@ -7182,6 +7282,20 @@ product does this" as unproven until a capture exists.
 
 PIO's overrun count under a live encode is still unmeasured, because nothing
 has ever been captured. `dma_per` stays unstarted.
+
+**A way around #104 since 2026-10-17 (#82): the host's USB speaker.** With
+`/boot/usb.uac2` the gadget carries a host-to-KVM stream as well as the mic,
+and libkvm reads it whenever the host is playing into it ("Capture Rate"
+non-zero), the HDMI card otherwise — so a host that selects the KVM as its
+output device reaches the browser no matter what the bridge does. The HDMI
+path is unchanged except that a failed read now backs off for 5 s and returns
+"no data" instead of `-1`: the server's "failed to read audio: -1" every
+~1.2 s is gone (one `OPEN-KVM: audio: no source is playing` line instead).
+Section 8's "#82 residuals" (UAC2) has the mechanism and the
+evidence. The selftest build (`KVM_AUDIO_SELFTEST`, a 440/660 Hz tone) put
+through the real UI in headless Chromium: 50 packets/s, 48 000 samples/s,
+zero concealment, `audioLevel` 0.27 (= 9000/32768) — the encode, track and
+playout half of the path, measured for the first time.
 ### The health gate, folded in
 
 #84 and #85 each fixed "a peripheral must not arm the rollback" twice: the

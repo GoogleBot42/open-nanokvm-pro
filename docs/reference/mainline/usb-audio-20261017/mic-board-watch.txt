@@ -1,0 +1,72 @@
+22:30:11.622 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:12.340 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:13.077 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:13.800 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:14.485 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:15.202 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:15.895 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:16.583 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:17.269 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:17.959 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:18.672 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:19.357 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:20.045 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:20.726 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:21.414 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:22.117 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:22.902 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:23.598 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:24.297 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:24.992 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:25.701 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:26.389 aplay=[] p=[state: RUNNING owner_pid : 5028 trigger_time: 1208.058010659 tstamp : 0.000000000 delay : 4096 avail : 0 avail_max : 3072 ----- hw_ptr : 0 appl_ptr : 4096 ] c=[closed ] rates=0,0
+22:30:27.094 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:27.788 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:28.485 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:29.196 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:29.894 aplay=[] p=[state: PREPARED owner_pid : 5139 trigger_time: 0.000000000 tstamp : 0.000000000 delay : 0 avail : 3072 avail_max : 3072 ----- hw_ptr : 0 appl_ptr : 1024 ] c=[closed ] rates=0,0
+22:30:30.608 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:31.323 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:32.022 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:32.713 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:33.420 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:34.121 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:34.826 aplay=[] p=[state: RUNNING owner_pid : 5284 trigger_time: 1216.597373612 tstamp : 0.000000000 delay : 4096 avail : 0 avail_max : 3072 ----- hw_ptr : 0 appl_ptr : 4096 ] c=[closed ] rates=0,0
+22:30:35.550 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:36.254 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:36.952 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:37.649 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:38.366 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:39.064 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:39.789 aplay=[] p=[state: RUNNING owner_pid : 5428 trigger_time: 1221.477953310 tstamp : 0.000000000 delay : 4096 avail : 0 avail_max : 3072 ----- hw_ptr : 0 appl_ptr : 4096 ] c=[closed ] rates=0,0
+22:30:40.511 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:41.207 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:41.901 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:42.594 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:43.335 aplay=[] p=[state: PREPARED owner_pid : 5545 trigger_time: 0.000000000 tstamp : 0.000000000 delay : 0 avail : 2048 avail_max : 3072 ----- hw_ptr : 0 appl_ptr : 2048 ] c=[closed ] rates=0,0
+22:30:44.052 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:44.744 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:45.436 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:46.132 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:46.822 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:47.515 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:48.229 aplay=[] p=[state: PREPARED owner_pid : 5687 trigger_time: 0.000000000 tstamp : 0.000000000 delay : 0 avail : 1024 avail_max : 3072 ----- hw_ptr : 0 appl_ptr : 3072 ] c=[closed ] rates=0,0
+22:30:48.950 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:49.648 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:50.352 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:51.042 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:51.736 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:52.461 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:53.141 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:53.842 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:54.513 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:55.186 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:55.858 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:56.530 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:57.202 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:57.874 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:58.546 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:59.218 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:30:59.890 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:31:00.562 aplay=[] p=[closed ] c=[closed ] rates=0,0
+22:31:01.234 aplay=[] p=[closed ] c=[closed ] rates=0,0

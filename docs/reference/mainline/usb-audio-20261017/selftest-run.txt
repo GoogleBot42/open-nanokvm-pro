@@ -1,0 +1,13 @@
+navigate at 16:27:34
+--- t=5s wall=16:27:39 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":1996,"framesDecoded":269}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv"],"inAudio":{"packetsReceived":229,"bytesReceived":73508,"totalSamplesReceived":219840,"concealedSamples":0,"silentConcealedSamples":0,"audioLevel":0,"totalAudioEnergy":0,"jitterBufferEmittedCount":218880},"outAudio":{"packetsSent":0,"bytesSent":0}}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=10s wall=16:27:44 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":3911,"framesDecoded":564}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv"],"inAudio":{"packetsReceived":480,"bytesReceived":154079,"totalSamplesReceived":460320,"concealedSamples":0,"silentConcealedSamples":0,"audioLevel":0.2681661427655873,"totalAudioEnergy":0.3565101512081537,"jitterBufferEmittedCount":458880},"outAudio":{"packetsSent":0,"bytesSent":0}}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=15s wall=16:27:49 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":5826,"framesDecoded":859}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv"],"inAudio":{"packetsReceived":731,"bytesReceived":234650,"totalSamplesReceived":700800,"concealedSamples":0,"silentConcealedSamples":0,"audioLevel":0.26773888363292336,"totalAudioEnergy":0.717465363752663,"jitterBufferEmittedCount":699840},"outAudio":{"packetsSent":0,"bytesSent":0}}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=20s wall=16:27:54 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":7736,"framesDecoded":1150}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv"],"inAudio":{"packetsReceived":981,"bytesReceived":314900,"totalSamplesReceived":941760,"concealedSamples":0,"silentConcealedSamples":0,"audioLevel":0.27051606799523914,"totalAudioEnergy":1.0809311482801975,"jitterBufferEmittedCount":940800},"outAudio":{"packetsSent":0,"bytesSent":0}}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- console (dedup)
+  [mse] isTypeSupported avc1.4D002A: true
+  [mse] isTypeSupported avc1.42E01F: true
+  [mse] isTypeSupported hvc1.1.2.L123.80: false
+  [mse] isTypeSupported hvc1.1.2.L153.80: false
+  [mse] isTypeSupported hev1.1.2.L123.80: false
+  [mse] isTypeSupported hev1.1.2.L153.80: false
+  [video-paint] h264-webrtc: video frames are readable; paint check done

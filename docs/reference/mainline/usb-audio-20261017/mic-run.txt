@@ -1,0 +1,18 @@
+navigate at 16:30:12
+--- t=5s wall=16:30:17 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":1998,"framesDecoded":271}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=10s wall=16:30:22 MIC: mic track added: Fake Default Audio Input
+--- t=10s wall=16:30:22 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":3918,"framesDecoded":571}},{"conn":"connected","sig":"have-local-offer","kinds":["audio:sendrecv","audio:sendrecv"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=15s wall=16:30:27 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":5802,"framesDecoded":850}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv","audio:sendonly"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0},{"mid":"1","packetsSent":237,"bytesSent":13531}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=20s wall=16:30:32 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":7467,"framesDecoded":1150}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv","audio:sendonly"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0},{"mid":"1","packetsSent":491,"bytesSent":29216}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=25s wall=16:30:37 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":9384,"framesDecoded":1447}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv","audio:sendonly"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0},{"mid":"1","packetsSent":745,"bytesSent":44959}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=30s wall=16:30:42 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":11301,"framesDecoded":1744}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv","audio:sendonly"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0},{"mid":"1","packetsSent":999,"bytesSent":60595}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=35s wall=16:30:47 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":13218,"framesDecoded":2041}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv","audio:sendonly"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0},{"mid":"1","packetsSent":1254,"bytesSent":76318}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- t=40s wall=16:30:52 {"pcs":[{"conn":"connected","sig":"stable","kinds":["video:recvonly"],"inVideo":{"packetsReceived":15135,"framesDecoded":2338}},{"conn":"connected","sig":"stable","kinds":["audio:sendrecv","audio:sendonly"],"outAudio":[{"mid":"0","packetsSent":0,"bytesSent":0},{"mid":"1","packetsSent":1508,"bytesSent":92026}]}],"audioEl":{"hasSrc":true,"paused":false,"muted":false,"volume":1}}
+--- console (dedup)
+  [mse] isTypeSupported avc1.4D002A: true
+  [mse] isTypeSupported avc1.42E01F: true
+  [mse] isTypeSupported hvc1.1.2.L123.80: false
+  [mse] isTypeSupported hvc1.1.2.L153.80: false
+  [mse] isTypeSupported hev1.1.2.L123.80: false
+  [mse] isTypeSupported hev1.1.2.L153.80: false
+  [video-paint] h264-webrtc: video frames are readable; paint check done

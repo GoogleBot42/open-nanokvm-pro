@@ -486,9 +486,12 @@ propose SG2002 work without flagging this gap up front.
   boot — after the flash AXI mux (`clk_flash_glb_sel`, reset tap cpll_24m
   under mainline U-Boot) was assigned cpll_312m on `&usb`. **2026-10-17: NCM (networkd DHCPServer on usb0), UAC2 and ACM
   (getty on ttyGS0) landed and are board-proven; only 7 IN endpoints, so
-  HID+disk0+ncm+acm does not fit. Still open on #82: host-side proof
-  (lease/ping, ACM login, mic capture), the server's aplay not restarting
-  after an I/O error, disk1 (needs a mount_emmc.py + /data decision).** disk0 is proven to the LUN (2026-10-04: `/data` created, unit ordered after `/boot`, a 1.75 GB ISO loaded; host enumeration of the CD unobserved, host was off). The 2026-09-07 bring-up below ran
+  HID+disk0+ncm+acm does not fit. Later 2026-10-17: the mic's aplay is
+  supervised (restarts every 1 s), uac2 carries the host's speaker (adaptive
+  OUT, no extra IN) and libkvm streams it whenever the host plays into it;
+  `.#checks.<sys>.usb-gadget-budget`. Still open on #82: host-side proof
+  (lease/ping, ACM login, mic capture, speaker playback, Windows accepting an
+  adaptive OUT), disk1 (needs a mount_emmc.py + /data decision).** disk0 is proven to the LUN (2026-10-04: `/data` created, unit ordered after `/boot`, a 1.75 GB ISO loaded; host enumeration of the CD unobserved, host was off). The 2026-09-07 bring-up below ran
   under the vendor U-Boot, which is why it never saw the mux.
   **#82 controller half DONE, device-proven 2026-09-07** -- **a host
   enumerated a mainline-kernel USB HID gadget from this board**
