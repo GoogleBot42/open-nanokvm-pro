@@ -13,7 +13,9 @@
 #     ExecStart), and an `asDropin` override lands in overrides.conf, the
 #     same name as the template's own ExecStart override, which it then
 #     replaces: the getty ran `/usr/bin/agetty` and looped on hardware. Both
-#     builds of this module did one of the two;
+#     builds of this module did one of the two; and the template carries
+#     ConditionPathExists=/dev/%I, without which a gadget teardown
+#     start-limits the getty into a failed unit;
 #   * the udev rule that starts it when acm.usb0 binds is in the image;
 #   * usb0's .network sorts ahead of nixpkgs' default DHCP-client files and
 #     offers no router, so a host that plugs in never routes through the KVM.
@@ -34,6 +36,8 @@ pkgs.runCommand "usb-gadget-units-check" { } ''
     || fail "no udev rule starts serial-getty@ttyGS0"
   grep -q '^ExecStart=.*agetty' "$sys/serial-getty@.service.d/"*.conf \
     || fail "the serial-getty@ template lost its agetty ExecStart"
+  grep -qx 'ConditionPathExists=/dev/%I' "$sys/serial-getty@.service.d/"*.conf \
+    || fail "serial-getty@ has no ConditionPathExists=/dev/%I: a gadget teardown start-limits it into failed"
 
   f=$net/40-usb-gadget-ncm.network
   [ -f "$f" ] || fail "no 40-usb-gadget-ncm.network"

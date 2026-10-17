@@ -93,12 +93,12 @@ in
     # ---- The serial console (acm.usb0) -------------------------------------
     # A getty on /dev/ttyGS0 for as long as the node exists: a udev
     # SYSTEMD_WANTS on the tty starts serial-getty@ttyGS0 when usbdev.sh binds
-    # acm.usb0, and the template's BindsTo=dev-%i.device stops it when the
-    # node goes, so the server's stop/start cycle takes the getty down and
-    # back with the function (measured 2026-10-17). Without /boot/usb.acm the
-    # node never appears and the unit is never started -- inactive, not
-    # failed, so it needs no `markGood.tolerateFailed` entry -- while a getty
-    # that cannot run shows as a restart loop in its own journal.
+    # acm.usb0, and the condition below ends it when the node goes, so the
+    # server's stop/start cycle takes the getty down and back with the
+    # function. Without /boot/usb.acm the node never appears and the unit is
+    # never started -- inactive, not failed, so it needs no
+    # `markGood.tolerateFailed` entry -- while a getty that cannot run with
+    # its node present still fails, visibly.
     #
     # A udev rule, NOT `systemd.services."serial-getty@ttyGS0"`. NixOS writes
     # any instance attrset as a unit (which shadows the template outright and
@@ -112,6 +112,20 @@ in
     services.udev.extraRules = ''
       ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="serial-getty@ttyGS0.service"
     '';
+
+    # BindsTo= alone does not survive the node going away. The kernel removes
+    # ttyGS0, agetty takes the hangup and exits at once, and the template's
+    # Restart=always (RestartSec=100ms) respawns it five times -- 208/STDIN,
+    # "Failed to set up standard input" -- before udev's remove event reaches
+    # systemd: start-limit-hit, a FAILED unit, `degraded`, and the re-added
+    # node's start request refused for being "repeated too quickly". One
+    # `usbdev.sh stop` did that on hardware (2026-10-17). A start whose
+    # condition fails leaves the unit inactive and is checked before the start
+    # limit, so with the node gone the respawn simply stops, and a getty that
+    # dies with its node present still trips the limit and shows as failed.
+    # On the template, so it merges into NixOS's own drop-in for it; every
+    # other serial getty's node exists, so it is a no-op for them.
+    systemd.services."serial-getty@".unitConfig.ConditionPathExists = "/dev/%I";
 
     systemd.services.nanokvm-usb = {
       description = "NanoKVM-Pro USB gadget (HID keyboard, mice, virtual disk)";
