@@ -35,10 +35,13 @@
 # it. `hid-only` is the fallback for hosts that still choke on the composite:
 # the three HID interfaces and nothing else, flags or no flags.
 #
-# Implemented: hid.GS0/GS1/GS2 always; mass_storage.disk0 when /boot/usb.disk0
-# exists (the server then drives lun.0/{file,cdrom,ro} itself). Not yet:
-# ncm.usb0 (needs the udhcpd instance), uac2, acm, disk1 -- each logs one line
-# and is skipped, so the server's probes read them as absent.
+# Implemented: hid.GS0/GS1/GS2 always; then, each behind its /boot flag and
+# admitted against the controller's IN-endpoint budget in this order,
+# mass_storage.disk0 (usb.disk0; the server drives lun.0/{file,cdrom,ro}
+# itself), ncm.usb0 (usb.ncm; networkd serves DHCP on usb0), uac2.usb0
+# (usb.uac2; the server's virtual mic plays into it) and acm.usb0 (usb.acm; a
+# getty on ttyGS0). rndis, udisp and disk1 log one line and are skipped, so
+# the server's probes read them as absent.
 # ---------------------------------------------------------------------------
 
 crossPkgs.writeShellApplication {
@@ -131,6 +134,9 @@ crossPkgs.writeShellApplication {
       for f in "$G"/configs/c.1/*.*; do
         [ -L "$f" ] && rm -f "$f"
       done
+      # ncm's Microsoft OS descriptor links the configuration; c.1 cannot be
+      # removed while that link exists.
+      [ -L "$G/os_desc/c.1" ] && rm -f "$G/os_desc/c.1"
       rmdir "$G/configs/c.1/$LANG_DIR" 2>/dev/null || true
       rmdir "$G/configs/c.1" 2>/dev/null || true
       for f in "$G"/functions/*; do
@@ -138,6 +144,118 @@ crossPkgs.writeShellApplication {
       done
       rmdir "$G/$LANG_DIR" 2>/dev/null || true
       rmdir "$G"
+    }
+
+    # --- optional functions ------------------------------------------------
+    # The endpoint budget. GHWPARAMS3 (0x0800c14c) reads 0x08210084 on this
+    # DWC3: 16 physical endpoints, 8 of them IN, so 7 IN and 7 OUT once ep0
+    # has its pair (measured 2026-10-17). IN is the one that runs out:
+    #
+    #   hid x3 3 IN 3 OUT   mass_storage 1 IN 1 OUT   ncm  2 IN 1 OUT
+    #   acm    2 IN 1 OUT   uac2 (mic)   1 IN 0 OUT
+    #
+    # so HID + disk0 + ncm + acm is 8 IN, and a configuration that asks for one
+    # more endpoint than the controller has does not lose that function -- the
+    # whole UDC bind fails with it, keyboard included. Every function below
+    # is therefore admitted against the budget in priority order (the ones the
+    # web UI toggles first, the flag-only console last), and one that does not
+    # fit is logged and skipped, never bound.
+    IN_FREE=7
+    admit() {  # admit <name> <in-endpoints>
+      if [ "$2" -gt "$IN_FREE" ]; then
+        log "$1: needs $2 IN endpoints, $IN_FREE left after the functions above -- skipped"
+        return 1
+      fi
+      IN_FREE=$(( IN_FREE - $2 ))
+    }
+
+    # Two locally administered unicast MACs (02:, 06:) from the same hash, so
+    # the host sees ONE stable NIC across boots and rebuilds instead of a new
+    # interface each time (Windows keeps a registry entry per MAC). Same
+    # stable input as the serial number.
+    ncm_mac() {  # ncm_mac <first-octet> <serial>
+      local h
+      h=$(printf 'ncm:%s' "$2" | sha256sum)
+      printf '%s:%s:%s:%s:%s:%s\n' "$1" "''${h:0:2}" "''${h:2:2}" "''${h:4:2}" "''${h:6:2}" "''${h:8:2}"
+    }
+
+    optional_functions() {
+      local serial=$1 d flag
+      admit hid 3
+
+      if [ -e /boot/usb.disk0 ] && admit mass_storage.disk0 1; then
+        # The virtual CD/USB disk. lun.0 exists on creation; the server
+        # writes file/cdrom/ro through configs/c.1/mass_storage.disk0/lun.0
+        # when an image is mounted (service/storage/image.go).
+        d="$G/functions/mass_storage.disk0"
+        mkdir -p "$d"
+        echo 1 > "$d/stall"
+        echo 1 > "$d/lun.0/removable"
+        ln -s "$d" "$G/configs/c.1/"
+        log "mass_storage.disk0 added (/boot/usb.disk0)"
+      fi
+
+      if [ -e /boot/usb.ncm ] && admit ncm.usb0 2; then
+        # CDC-NCM: Linux (cdc_ncm), macOS and Windows 11 bind it by class.
+        # The device end is usb0, served by networkd (nixos/modules/usb.nix).
+        d="$G/functions/ncm.usb0"
+        mkdir -p "$d"
+        ncm_mac 02 "$serial" > "$d/dev_addr"
+        ncm_mac 06 "$serial" > "$d/host_addr"
+        # Windows 10 binds UsbNcm.sys only through the Microsoft OS
+        # descriptor; Sipeed's SG2002 S03usbdev sets the same WINNCM id.
+        echo WINNCM > "$d/os_desc/interface.ncm/compatible_id"
+        echo 1       > "$G/os_desc/use"
+        echo 0xcd    > "$G/os_desc/b_vendor_code"
+        echo MSFT100 > "$G/os_desc/qw_sign"
+        ln -s "$G/configs/c.1" "$G/os_desc/"
+        ln -s "$d" "$G/configs/c.1/"
+        log "ncm.usb0 added (/boot/usb.ncm): dev $(cat "$d/dev_addr") host $(cat "$d/host_addr")"
+      fi
+
+      if [ -e /boot/usb.uac2 ] && admit uac2.usb0 1; then
+        # The virtual microphone: host CAPTURES what the KVM plays. The
+        # server pipes the browser's decoded Opus into
+        # `aplay -D plughw:UAC2Gadget,0 -r 48000 -f S16_LE -c 2`
+        # (service/stream/opus/player.go); u_audio names the card
+        # "UAC2_Gadget", which ALSA turns into the id UAC2Gadget. So: one
+        # 48 kHz stereo 16-bit playback stream and NO host-to-KVM one
+        # (c_chmask 0, which also saves the feedback endpoint), and no
+        # mute/volume feature units, whose interrupt endpoint would be one
+        # more IN than the budget above counts.
+        d="$G/functions/uac2.usb0"
+        mkdir -p "$d"
+        echo 3     > "$d/p_chmask"
+        echo 48000 > "$d/p_srate"
+        echo 2     > "$d/p_ssize"
+        echo 0     > "$d/c_chmask"
+        local fu
+        for fu in p_mute_present p_volume_present c_mute_present c_volume_present; do
+          [ -e "$d/$fu" ] && echo 0 > "$d/$fu"
+        done
+        ln -s "$d" "$G/configs/c.1/"
+        log "uac2.usb0 added (/boot/usb.uac2)"
+      fi
+
+      if [ -e /boot/usb.acm ] && admit acm.usb0 2; then
+        # A CDC-ACM serial port, /dev/ttyGS0 here, cdc_acm / usbser.sys on
+        # the host: the only console this board has that needs neither the
+        # network nor the hidden UART pads. serial-getty@ttyGS0 follows the
+        # device node (nixos/modules/usb.nix).
+        d="$G/functions/acm.usb0"
+        mkdir -p "$d"
+        ln -s "$d" "$G/configs/c.1/"
+        log "acm.usb0 added (/boot/usb.acm): /dev/ttyGS$(cat "$d/port_num")"
+      fi
+
+      # rndis is Windows-only and superseded by ncm; udisp is the vendor's
+      # USB display function, which has no mainline driver; disk1 needs the
+      # vendor's mount_emmc.py exFAT-over-/data scheme (docs/mainline-port.md
+      # "#82 residuals").
+      for flag in usb.rndis usb.udisp usb.disk1.sd usb.disk1.emmc; do
+        [ -e "/boot/$flag" ] && log "/boot/$flag: function not implemented on this image, skipped"
+      done
+      return 0
     }
 
     # --- build -------------------------------------------------------------
@@ -177,21 +295,7 @@ crossPkgs.writeShellApplication {
       hid_function GS2 0 0 6 "$DESC_MOUSE_ABS"  # plain HID: no boot equivalent
 
       if [ "$mode" = normal ]; then
-        if [ -e /boot/usb.disk0 ]; then
-          # The virtual CD/USB disk. lun.0 exists on creation; the server
-          # writes file/cdrom/ro through configs/c.1/mass_storage.disk0/lun.0
-          # when an image is mounted (service/storage/image.go).
-          local d="$G/functions/mass_storage.disk0"
-          mkdir -p "$d"
-          echo 1 > "$d/stall"
-          echo 1 > "$d/lun.0/removable"
-          ln -s "$d" "$G/configs/c.1/"
-          log "mass_storage.disk0 added (/boot/usb.disk0)"
-        fi
-        local flag
-        for flag in usb.ncm usb.rndis usb.uac2 usb.acm usb.udisp usb.disk1.sd usb.disk1.emmc; do
-          [ -e "/boot/$flag" ] && log "/boot/$flag: function not implemented on this image, skipped"
-        done
+        optional_functions "$serial"
       fi
 
       udc_name > "$G/UDC"
