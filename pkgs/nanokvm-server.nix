@@ -605,6 +605,64 @@ EOF
 
 	auth := r.Group("/api").Use(middleware.CheckToken())
 	auth.GET("/application/pending", ui.GetUpdateStatus) // the same answer, for the UI'
+
+    # 14. The virtual mic survives aplay exiting (#82). Upstream starts one
+    #     `aplay -D plughw:UAC2Gadget,0` per mic session and drops every
+    #     sample once it exits -- which it does within 0.17 s whenever nothing
+    #     on the host is recording, because a UAC2 gadget's playback stream
+    #     only drains while the host has it open. audio-input-player.go.in
+    #     replaces player.go wholesale: aplay is restarted every second for as
+    #     long as the mic track is live, with one Info line per transition.
+    #     The anchors pin the five declarations manager.go relies on, so an
+    #     upstream rewrite of player.go fails here instead of losing behaviour.
+    for f in 'func GetAudioInputPlayer() \*AudioInputPlayer {' \
+             'func (p \*AudioInputPlayer) Start() error {' \
+             'func (p \*AudioInputPlayer) DecodeAndWrite(opusData \[\]byte) error {' \
+             'func (p \*AudioInputPlayer) Stop() {' \
+             'func (p \*AudioInputPlayer) IsActive() bool {'; do
+      grep -q "^$f" service/stream/opus/player.go \
+        || { echo "ERROR: player.go does not declare '$f' -- upstream restructured it" >&2; exit 1; }
+    done
+    [ "$(grep -c '^func ' service/stream/opus/player.go)" = 5 ] \
+      || { echo "ERROR: player.go is no longer exactly five functions -- the replacement would drop what upstream added" >&2; exit 1; }
+    cp ${./nanokvm-server/audio-input-player.go.in} service/stream/opus/player.go
+
+    #     ReadAudio logs every negative result at Error, and the audio loop
+    #     calls it every 20 ms. libkvm no longer returns one for "no source is
+    #     playing" (pkgs/kvm-encoder), but a real failure must not become 50
+    #     log lines a second either: one line, then one per minute with the
+    #     count of what was swallowed.
+    substituteInPlace common/kvm_vision.go \
+      --replace-fail '		log.Errorf("failed to read audio: %d", result)' \
+'		audioErrLog(result)'
+    cat >> common/kvm_vision.go <<'EOF'
+
+var (
+	audioErrMu     sync.Mutex
+	audioErrLast   time.Time
+	audioErrQuiet  int
+)
+
+// audioErrLog rate-limits ReadAudio's failure log to one line a minute.
+func audioErrLog(result int) {
+	audioErrMu.Lock()
+	defer audioErrMu.Unlock()
+	if !audioErrLast.IsZero() && time.Since(audioErrLast) < time.Minute {
+		audioErrQuiet++
+		return
+	}
+	if audioErrQuiet > 0 {
+		log.Errorf("failed to read audio: %d (%d more in the last minute)", result, audioErrQuiet)
+	} else {
+		log.Errorf("failed to read audio: %d", result)
+	}
+	audioErrLast = time.Now()
+	audioErrQuiet = 0
+}
+EOF
+    sed -i 's|^\t"sync"$|\t"sync"\n\t"time"|' common/kvm_vision.go
+    grep -q '^	"time"$' common/kvm_vision.go \
+      || { echo "ERROR: the time import did not apply to common/kvm_vision.go" >&2; exit 1; }
   '';
 
   # cgo on for the kvm_vision + opus bindings.

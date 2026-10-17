@@ -1,0 +1,237 @@
+package opus
+
+// The browser's microphone, played into the USB gadget's UAC2 playback
+// stream -- the host's "NanoKVM" microphone (#82). Replaces upstream's
+// player.go wholesale (pkgs/nanokvm-server.nix).
+//
+// Upstream ran ONE `aplay` per mic session and, once it exited, dropped every
+// sample for the rest of the session. It exits all the time: u_audio only
+// advances a playback stream while the host has its streaming interface on
+// alt setting 1, i.e. while some program on the host is recording from the
+// microphone. With no recorder the PCM never drains, ALSA's write wait times
+// out (max(100 ms, 1.1 x buffer); 100 ms for aplay's 4096 frames) and aplay
+// dies with `pcm_write: write error: Input/output error` -- measured at 0.17 s.
+// So a mic switched on before the host started recording was dead, and one
+// the host stopped recording from stayed dead. Both were silent: the exit was
+// logged at Debug.
+//
+// Here aplay is supervised for as long as a mic track is live: when it exits
+// it is restarted after restartBackoff, samples arriving meanwhile are
+// dropped (decoded, so the decoder's state stays continuous), and the log
+// says so once per transition at Info, not once per attempt.
+
+import (
+	"io"
+	"os/exec"
+	"sync"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+)
+
+const (
+	// One failed attempt costs ~0.17 s (aplay's 85 ms buffer fills, then the
+	// 100 ms write timeout), so a 1 s backoff is ~one aplay spawn a second
+	// while nothing on the host records, and at most ~1 s from the host
+	// opening the microphone to the browser's audio reaching it.
+	restartBackoff = time.Second
+	// A run that lasts this long reached the host: the next exit is a new
+	// event worth a log line, and the run itself is reported as recovered.
+	healthyRun = 2 * time.Second
+)
+
+type AudioInputPlayer struct {
+	mutex   sync.Mutex
+	users   int           // live mic tracks (Start without Stop)
+	stop    chan struct{} // closed by the last Stop; ends the supervisor
+	stdin   io.WriteCloser
+	cmd     *exec.Cmd
+	decoder *Decoder
+}
+
+var (
+	audioInputPlayer     *AudioInputPlayer
+	audioInputPlayerOnce sync.Once
+)
+
+func GetAudioInputPlayer() *AudioInputPlayer {
+	audioInputPlayerOnce.Do(func() {
+		audioInputPlayer = &AudioInputPlayer{
+			decoder: NewDecoder(),
+		}
+	})
+	return audioInputPlayer
+}
+
+// Start begins (or joins) the mic pipeline: the Opus decoder and a
+// supervised aplay into the gadget.
+func (p *AudioInputPlayer) Start() error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.users > 0 {
+		p.users++
+		return nil
+	}
+
+	if err := p.decoder.Init(); err != nil {
+		log.Errorf("Opus decoder init failed: %s", err)
+		return err
+	}
+
+	p.users = 1
+	p.stop = make(chan struct{})
+	go p.supervise(p.stop)
+	log.Infof("virtual mic: started (aplay -D plughw:UAC2Gadget,0)")
+	return nil
+}
+
+func newAplay() *exec.Cmd {
+	return exec.Command("aplay",
+		"-D", "plughw:UAC2Gadget,0",
+		"-r", "48000",
+		"-f", "S16_LE",
+		"-c", "2",
+		"-t", "raw",
+		"--buffer-size=4096",
+	)
+}
+
+// supervise keeps one aplay running until stop is closed.
+func (p *AudioInputPlayer) supervise(stop chan struct{}) {
+	down := false // the last run failed and that has been logged
+	for {
+		cmd := newAplay()
+		stdin, err := cmd.StdinPipe()
+		if err == nil {
+			err = cmd.Start()
+		}
+		if err != nil {
+			if !down {
+				log.Errorf("virtual mic: cannot start aplay: %s; retrying every %s", err, restartBackoff)
+				down = true
+			}
+		} else {
+			p.mutex.Lock()
+			if p.stop != stop { // stopped while we were starting
+				p.mutex.Unlock()
+				_ = stdin.Close()
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				return
+			}
+			p.cmd, p.stdin = cmd, stdin
+			p.mutex.Unlock()
+
+			started := time.Now()
+			exited := make(chan error, 1)
+			go func() { exited <- cmd.Wait() }()
+
+			var werr error
+			select {
+			case werr = <-exited:
+			case <-time.After(healthyRun):
+				if down {
+					log.Infof("virtual mic: aplay running again, the host is recording")
+					down = false
+				}
+				werr = <-exited
+			}
+
+			p.mutex.Lock()
+			if p.cmd == cmd {
+				p.cmd, p.stdin = nil, nil
+			}
+			stopped := p.stop != stop
+			p.mutex.Unlock()
+			if stopped {
+				return
+			}
+
+			if time.Since(started) >= healthyRun {
+				down = false
+			}
+			if !down {
+				log.Infof("virtual mic: aplay exited (%v) -- nothing on the host is recording "+
+					"from the NanoKVM microphone; retrying every %s, samples dropped until then",
+					werr, restartBackoff)
+				down = true
+			}
+		}
+
+		select {
+		case <-stop:
+			return
+		case <-time.After(restartBackoff):
+		}
+	}
+}
+
+// DecodeAndWrite decodes one Opus packet and hands the PCM to aplay, or drops
+// it while aplay is down.
+func (p *AudioInputPlayer) DecodeAndWrite(opusData []byte) error {
+	p.mutex.Lock()
+	if p.users == 0 || !p.decoder.IsInited() {
+		p.mutex.Unlock()
+		return nil
+	}
+
+	pcmBytes, err := p.decoder.Decode(opusData)
+	// Decode returns a view of the decoder's own buffer; copy it before
+	// the lock goes.
+	pcmBytes = append([]byte(nil), pcmBytes...)
+	w := p.stdin
+	p.mutex.Unlock()
+
+	if err != nil {
+		log.Debugf("Opus decode failed: %s", err)
+		return nil
+	}
+	if len(pcmBytes) == 0 || w == nil {
+		return nil
+	}
+
+	// Outside the lock: while the host is not recording, aplay blocks until
+	// its write times out, and nothing else should wait behind that. The
+	// error (EPIPE once aplay has gone) is expected and the supervisor
+	// already reports it.
+	if _, err := w.Write(pcmBytes); err != nil {
+		log.Debugf("virtual mic: write to aplay: %s", err)
+	}
+	return nil
+}
+
+// Stop leaves the mic pipeline; the last user tears it down.
+func (p *AudioInputPlayer) Stop() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.users == 0 {
+		return
+	}
+	p.users--
+	if p.users > 0 {
+		return
+	}
+
+	close(p.stop)
+	p.stop = nil
+	if p.stdin != nil {
+		_ = p.stdin.Close()
+		p.stdin = nil
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	p.cmd = nil
+
+	p.decoder.Cleanup()
+	log.Infof("virtual mic: stopped")
+}
+
+// IsActive returns whether a mic track is live.
+func (p *AudioInputPlayer) IsActive() bool {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	return p.users > 0
+}
