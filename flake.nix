@@ -766,6 +766,12 @@
           # promote, and check that exactly the DEFAULT line moved -- then that
           # it REFUSES when the booted generation has no LABEL in the file.
           nanokvm-mark-good-fallback = callPkg ./nixos/lib/mark-good-test.nix { };
+          # The USB gadget's host-facing units (#82), read out of the built
+          # toplevel: the ttyGS0 getty is a drop-in its device wants, and
+          # usb0's DHCP server sorts first and offers no route.
+          usb-gadget-units = callPkg ./pkgs/usb-gadget-units-check.nix {
+            toplevel = "${appliance-toplevel}";
+          };
           # A STRANGER'S CONFIGURATION (#87): a minimal NixOS system built from
           # `nixosModules.nanokvm-pro` and nothing else of ours -- none of
           # nixos/appliance.nix's policy. It is the proof that the module set

@@ -56,11 +56,13 @@ in
     # unit ordering. The file only matters while usb0 exists, so a board
     # without /boot/usb.ncm carries an inert config.
     #
-    # The NAME is load-bearing. nixpkgs' `useDHCP` puts a DHCP CLIENT on every
-    # `Type=ether` link through 99-ethernet-default-dhcp.network, and the
-    # gadget's usb0 is Type=ether with no Kind -- it matches. networkd uses the
-    # first file in lexical order, so 40- wins; without it the KVM would ask
-    # the host for an address on the link it is supposed to be serving.
+    # Matched by name. networkd reports u_ether's netdev as `Type: gadget`
+    # (driver g_ether, path platform-8000000.usb; measured 2026-10-17), so
+    # nixpkgs' 99-ethernet-default-dhcp.network, which matches `Type=ether`,
+    # leaves it alone and without this file usb0 stays `unmanaged` and DOWN.
+    # The 40- prefix keeps it ahead of that file anyway: networkd applies the
+    # first match in lexical order, and a DHCP client on the link this board
+    # is meant to serve is the one wrong answer.
     #
     # Nothing a host learns here may change how it reaches anything else: no
     # router, no DNS, no NTP in the offer, and no RA accepted from the host, so
@@ -89,23 +91,27 @@ in
       lib.mkIf config.networking.firewall.enable [ 67 ];
 
     # ---- The serial console (acm.usb0) -------------------------------------
-    # A getty on /dev/ttyGS0 for as long as the node exists. systemd's tty
-    # rules tag every tty[a-zA-Z]* node, so ttyGS0 is a device unit, and a
-    # .wants on it starts the getty when usbdev.sh binds acm.usb0. The
-    # serial-getty@ template BindsTo= its device, so the server's
-    # stop/start cycle stops and restarts it with the function. Without
-    # /boot/usb.acm the device never appears and the unit is never started:
-    # inactive, not failed, so it needs no `markGood.tolerateFailed` entry --
-    # and an agetty that genuinely dies still shows as failed.
+    # A getty on /dev/ttyGS0 for as long as the node exists: a udev
+    # SYSTEMD_WANTS on the tty starts serial-getty@ttyGS0 when usbdev.sh binds
+    # acm.usb0, and the template's BindsTo=dev-%i.device stops it when the
+    # node goes, so the server's stop/start cycle takes the getty down and
+    # back with the function (measured 2026-10-17). Without /boot/usb.acm the
+    # node never appears and the unit is never started -- inactive, not
+    # failed, so it needs no `markGood.tolerateFailed` entry -- while a getty
+    # that cannot run shows as a restart loop in its own journal.
     #
-    # `asDropin`, or NixOS writes serial-getty@ttyGS0.service as a full unit
-    # file -- an [Install] and an environment, no ExecStart -- and an instance
-    # file shadows its template, so the getty would be a unit systemd refuses
-    # to load (seen in the first build, 2026-10-17).
-    systemd.services."serial-getty@ttyGS0" = {
-      overrideStrategy = "asDropin";
-      wantedBy = [ "dev-ttyGS0.device" ];
-    };
+    # A udev rule, NOT `systemd.services."serial-getty@ttyGS0"`. NixOS writes
+    # any instance attrset as a unit (which shadows the template outright and
+    # has no ExecStart) or, with `asDropin`, as serial-getty@ttyGS0.service.d/
+    # overrides.conf -- the SAME file name NixOS uses for the template's own
+    # ExecStart override, and a more specific drop-in of the same name
+    # replaces the less specific one. The getty then ran upstream's
+    # `/usr/bin/agetty` and looped on "Unable to locate executable" (the
+    # second build, on hardware, 2026-10-17). The rule leaves the template
+    # exactly as NixOS ships it.
+    services.udev.extraRules = ''
+      ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="serial-getty@ttyGS0.service"
+    '';
 
     systemd.services.nanokvm-usb = {
       description = "NanoKVM-Pro USB gadget (HID keyboard, mice, virtual disk)";

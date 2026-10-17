@@ -200,8 +200,13 @@ crossPkgs.writeShellApplication {
         # The device end is usb0, served by networkd (nixos/modules/usb.nix).
         d="$G/functions/ncm.usb0"
         mkdir -p "$d"
-        ncm_mac 02 "$serial" > "$d/dev_addr"
-        ncm_mac 06 "$serial" > "$d/host_addr"
+        # Logged from the computed values: reading dev_addr back returns a
+        # trailing NUL, which bash warns about on every bind.
+        local dev host
+        dev=$(ncm_mac 02 "$serial")
+        host=$(ncm_mac 06 "$serial")
+        echo "$dev"  > "$d/dev_addr"
+        echo "$host" > "$d/host_addr"
         # Windows 10 binds UsbNcm.sys only through the Microsoft OS
         # descriptor; Sipeed's SG2002 S03usbdev sets the same WINNCM id.
         echo WINNCM > "$d/os_desc/interface.ncm/compatible_id"
@@ -210,7 +215,7 @@ crossPkgs.writeShellApplication {
         echo MSFT100 > "$G/os_desc/qw_sign"
         ln -s "$G/configs/c.1" "$G/os_desc/"
         ln -s "$d" "$G/configs/c.1/"
-        log "ncm.usb0 added (/boot/usb.ncm): dev $(cat "$d/dev_addr") host $(cat "$d/host_addr")"
+        log "ncm.usb0 added (/boot/usb.ncm): dev $dev host $host"
       fi
 
       if [ -e /boot/usb.uac2 ] && admit uac2.usb0 1; then
