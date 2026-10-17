@@ -772,6 +772,12 @@
           usb-gadget-units = callPkg ./pkgs/usb-gadget-units-check.nix {
             toplevel = "${appliance-toplevel}";
           };
+          # Its endpoint budget: every /boot/usb.* flag combination through
+          # usbdev.sh's own plan(), against a written-out table -- an
+          # over-budget gadget fails to bind at all, keyboard included.
+          usb-gadget-budget = callPkg ./pkgs/usb-gadget-budget-check.nix {
+            inherit nanokvm-usbdev;
+          };
           # A STRANGER'S CONFIGURATION (#87): a minimal NixOS system built from
           # `nixosModules.nanokvm-pro` and nothing else of ours -- none of
           # nixos/appliance.nix's policy. It is the proof that the module set
