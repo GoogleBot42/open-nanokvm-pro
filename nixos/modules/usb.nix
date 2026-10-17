@@ -16,7 +16,10 @@
 # `restart` from "reset HID". That is why the script lives inside /kvmapp
 # (server.nix's `kvmapp` derivation copies it to scripts/usbdev.sh) -- both
 # literal paths the Go source uses, /kvmapp/scripts/usbdev.sh and its tmpfs
-# copy /dev/shm/kvmapp/scripts/usbdev.sh, resolve to the same file.
+# copy /dev/shm/kvmapp/scripts/usbdev.sh, resolve to the same file. It also
+# runs `usbdev.sh stop; touch|rm /boot/usb.{ncm,uac2}; usbdev.sh start` from
+# the virtual-devices settings page, which is what the host-facing halves
+# below -- usb0's DHCP server and the ttyGS0 getty -- have to survive.
 #
 # A failure here IS a failed unit. Unlike the radio or the panel, the gadget
 # is the product: a board that cannot build one should say so in

@@ -218,6 +218,20 @@ that is arbitration, not a bug.
   turned into an empty address list: the panel read "no network" on a board
   that was routed and serving (#84, 2026-09-11). The 4.19 image ran the same
   daemon with an Ubuntu `PATH`, so nothing offline could have caught it.
+- **A NixOS attrset for one INSTANCE of a template unit breaks the template.**
+  `systemd.services."serial-getty@ttyGS0"` is written as a whole unit (no
+  ExecStart, shadows the template), and with `overrideStrategy = "asDropin"`
+  as `…@ttyGS0.service.d/overrides.conf` — the same name as NixOS's own
+  drop-in for the template, which it then replaces: the getty ran upstream's
+  `/usr/bin/agetty` and looped (#82, 2026-10-17). Start instances from udev
+  (`ENV{SYSTEMD_WANTS}`) and put shared settings on the template. And a getty
+  on a node that can vanish needs `ConditionPathExists=/dev/%I`, or
+  `Restart=always` respawns it into `start-limit-hit` before udev's remove
+  event lands. `.#checks.<sys>.usb-gadget-units` asserts both.
+- **The DWC3 has 7 usable IN endpoints, and one too many fails the whole
+  gadget** (`failed to start g0: -19`, keyboard included), not just the extra
+  function. `usbdev.sh` admits functions against that budget; HID + disk0 +
+  ncm + acm does not fit (#82, `docs/mainline-port.md` "#82 residuals").
 - **Measure a binary's compiled-in paths; do not reason about its upstream
   defaults.** nixpkgs' `wpa_cli` is built with `/run/wpa_supplicant/control`
   and `/run/wpa_supplicant/client` patched in, NOT upstream's

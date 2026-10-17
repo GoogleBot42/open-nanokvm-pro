@@ -1254,8 +1254,9 @@ the polarity wrong holds the rootfs device in reset.
 > for seconds with the device still silent, which cleared the wire; writing
 > `[8:6] = 0b101` into `0x10030000` took it to `configured` within a second.
 > The board dts assigns the mux's parent on the `&usb` glue node and
-> `pkgs/dtb-mainline.nix` asserts both cells. Still not implemented: NCM (needs
-> the udhcpd instance), UAC2, ACM, disk1 — each logs one line and is skipped.
+> `pkgs/dtb-mainline.nix` asserts both cells. NCM, UAC2 and ACM followed on
+> 2026-10-17 ([below](#82-residuals-2026-10-17--ncm-uac2-acm)); disk1, rndis
+> and udisp still log one line and are skipped.
 
 **A machine on the other end of the cable enumerated a mainline-kernel gadget
 from this board.** One slot-B run, milestone register `0x01FFF014` on return —
@@ -1418,6 +1419,99 @@ directory "read only"; `nixos/modules/server.nix` creates it), and
 `nanokvm-usb` started 3.5 s before `/boot` mounted, so every flag file it
 reads was invisible at boot and the virtual disk vanished on every reboot
 (`RequiresMountsFor=/boot`).
+
+### #82 residuals (2026-10-17) — NCM, UAC2, ACM
+
+`usbdev.sh` now builds `ncm.usb0`, `uac2.usb0` and `acm.usb0` behind
+`/boot/usb.{ncm,uac2,acm}`, the paths the server probes
+(`service/vm/virtual_devices.go`). Three generations went over on hardware
+(system-34..36), each through `nanokvm-update install-toplevel` and a reboot,
+each booted in one attempt with `bootcount` cleared.
+
+**The endpoint budget is the design constraint.** `GHWPARAMS3`
+(`0x0800c14c`) reads `0x08210084`: 16 physical endpoints, 8 IN, so 7 usable
+IN once ep0 has its pair. HID takes 3, disk0 1, ncm 2 (notify + bulk), acm 2,
+uac2 1 (playback only, no feature units). HID + disk0 + ncm + acm is 8, and an
+over-budget configuration does not lose a function — it loses the gadget:
+adding `acm.usb0` by hand to HID + disk0 + ncm + uac2 made the UDC write fail
+with `udc 8000000.usb: failed to start g0: -19` and the state go to
+`not attached`, keyboard included. So `usbdev.sh` admits functions in order
+(disk0, ncm, uac2, acm) and skips the one that does not fit:
+
+    usbdev: acm.usb0: needs 2 IN endpoints, 0 left after the functions above -- skipped
+    usbdev: gadget bound to 8000000.usb (normal): hid.GS0 hid.GS1 hid.GS2 mass_storage.disk0 ncm.usb0 uac2.usb0
+
+HID + disk0 + ncm + uac2 is exactly 7 and fits; ACM fits beside disk0 + uac2
+or beside ncm with disk0 off, never beside disk0 + ncm. The vendor hit the
+same wall: "enabling the Virtual Mic will disable the USB Secondary Screen"
+(`web/src/i18n/locales/en.ts`).
+
+**NCM.** Stable MACs from the board serial (`02:` device, `06:` host, the
+same SHA-256 bytes), the `WINNCM` Microsoft OS descriptor Sipeed's SG2002
+script sets, and a DHCP server: systemd-networkd's own (`DHCPServer=yes` in
+`40-usb-gadget-ncm.network`, `10.82.0.1/24`, pool `.100`-`.149`, no router,
+DNS or NTP in the offer, `IPv6AcceptRA=no`), not a udhcpd instance —
+networkd already owns every link, it starts and stops the server with the
+carrier, and it is one file instead of a daemon. networkd reports u_ether's
+netdev as `Type: gadget`, so nixpkgs' `99-ethernet-default-dhcp`
+(`Type=ether`) never matched it: without the file usb0 sat `unmanaged` and
+DOWN. On hardware: `usb0 gadget routable configured`, carrier 1, the server
+bound (`systemd-network` on `:67`), `end0`'s DHCP lease and default route
+untouched. **Not proven: a lease handed to the host.** The host bound the NCM
+data interface (carrier comes from its SET_INTERFACE) but sent nothing —
+`rx_packets` 0 after minutes — so its OS never brought its end up. A veth
+stand-in was not possible (the kernel has no `CONFIG_VETH`). Host-side proof
+needs someone at the host: `ip link set <if> up` + a DHCP client, then a
+`ping 10.82.0.1`.
+
+**UAC2.** The server's virtual mic is `aplay -D plughw:UAC2Gadget,0 -r 48000
+-f S16_LE -c 2` (`service/stream/opus/player.go`); u_audio names the card
+`UAC2_Gadget` and ALSA's id is `UAC2Gadget` — measured, `/proc/asound/cards`
+card 1. So the function is one 48 kHz stereo S16 playback stream, `c_chmask`
+0 (no host-to-KVM path, no feedback endpoint) and no mute/volume units (whose
+interrupt endpoint the budget does not have). **No new server work is needed
+for the path to exist**, but one behaviour is left: a gadget playback stream
+only advances while the host is capturing, so `aplay` into it with no host
+recording fails `pcm_write: write error: Input/output error` after its buffer
+fills (measured), and the server's player then stays inactive until the WebRTC
+session restarts. The server should restart `aplay` on exit (or open the PCM
+non-blocking); not done here. Host-side capture is unobserved.
+
+**ACM.** `/dev/ttyGS0`, and `serial-getty@ttyGS0` started by a udev
+`SYSTEMD_WANTS` on the node. Two wrong turns, both on hardware: an instance
+attrset (`systemd.services."serial-getty@ttyGS0"`) is written as a unit that
+shadows the template; with `overrideStrategy = "asDropin"` it is
+`serial-getty@ttyGS0.service.d/overrides.conf`, the same file name as NixOS's
+own drop-in for the template, which it replaces — the getty ran upstream's
+`/usr/bin/agetty` and looped on "Unable to locate executable". Then, on the
+first `usbdev.sh stop`, agetty took the hangup and `Restart=always`
+(100 ms) respawned it into `208/STDIN` five times before udev's remove event
+reached systemd: `start-limit-hit`, a failed unit, `degraded`, and the
+re-added node's start refused. `ConditionPathExists=/dev/%I` on the template
+ends the respawn when the node is gone; three stop/start cycles afterwards
+read `after stop=inactive after start=active`, a new agetty each time,
+`running` throughout. `.#checks.<sys>.usb-gadget-units` asserts all three
+facts in the built toplevel. A login over it is unobserved — that needs the
+host.
+
+**disk1 — not implemented.** `/boot/usb.disk1.sd` wants `/dev/mmcblk1`, and
+this board has no SD card. `usb.disk1.emmc` is a different feature than its
+name: the server first runs `/kvmcomm/scripts/mount_emmc.py start` to create
+`/exfat.img`, and the web UI warns that this "will wipe all data in the
+NanoKVM's /data directory" — the vendor turns `/data` (the virtual-media image
+store) into an exFAT image that the KVM loop-mounts and the host sees as a
+disk, with `mount_emmc.py restart` ("refresh") remounting it to pick up the
+host's writes. Doing that needs the script (exfatprogs, a size policy, the
+remount and its consistency rules — a filesystem mounted on both ends of a
+USB cable is only safe one writer at a time) and a decision about `/data`.
+The gadget half is two lines (`lun.0/file = /exfat.img`) once that exists.
+
+**Left skipped:** rndis (superseded by ncm), udisp (vendor USB display,
+no mainline function driver).
+
+**Board end state:** generation system-36 (this branch), flags as found —
+`/boot/usb.disk0` only — `running`, `bootcount` `0xB0010000`, UDC
+`configured`, web UI 200.
 
 ### What exists now (#78, 2026-09-07) — APPLIANCE BUILDS AND BOOTS, IN QEMU
 

@@ -1272,7 +1272,7 @@ number, so closed gaps keep their slot and new ones are appended.
    is the final hostname). Both were found by the first QEMU boot; see
    [what is built](#what-is-built).
 2. **`/kvmapp/scripts/usbdev.sh` — CLOSED for HID and the virtual disk
-   (2026-10-03), open for NCM / UAC2 / ACM (#82).** `pkgs/nanokvm-usbdev.nix`
+   (2026-10-03) and for NCM / UAC2 / ACM (2026-10-17, #82); disk1 open.** `pkgs/nanokvm-usbdev.nix`
    is a from-source `usbdev.sh`: the three HID functions with the report
    layouts the GPL server and web UI define (8-byte boot keyboard, 4-byte
    relative mouse, 6-byte absolute mouse at 0..32767), the boot-keyboard
@@ -1303,10 +1303,13 @@ number, so closed gaps keep their slot and new ones are appended.
    `usb.disk1.{sd,emmc}`, `usb.uac2`, `usb.acm`, `usb.udisp`, `ncm.dhcp`,
    `eth.nodhcp`), with every descriptor value overridable by
    `/boot/usb.{vid,pid,serialnumber,…}`. The reimplementation covers the
-   HID, disk0 and override parts of that; the flags it does not implement
-   (`usb.ncm`, `usb.rndis`, `usb.uac2`, `usb.acm`, `usb.udisp`,
-   `usb.disk1.*`) each log one line and are skipped, so the server's configfs
-   probes read those functions as absent.
+   HID, disk0, ncm (networkd's DHCP server on `usb0` replaces the udhcpd
+   instance, so there is no `ncm.dhcp` flag — the server is always on), uac2,
+   acm and override parts of that, within the controller's 7 IN endpoints
+   ([mainline-port.md "#82 residuals"](mainline-port.md#82-residuals-2026-10-17--ncm-uac2-acm));
+   the flags it does not implement (`usb.rndis`, `usb.udisp`, `usb.disk1.*`)
+   each log one line and are skipped, so the server's configfs probes read
+   those functions as absent.
 3. **The remaining `rc.local` items — the `fw_env` half is CLOSED.**
    `/etc/fw_env.config` ships, derived from the `blkdevparts=` clause, and
    `nanokvm-checkboot.service` is live
@@ -1379,7 +1382,7 @@ number, so closed gaps keep their slot and new ones are appended.
     was a stub — no keyboard, no mouse, no mass storage, no NCM — because the
     gadget-building script existed only in the vendor rootfs, uncaptured. It
     now runs `pkgs/nanokvm-usbdev.nix` (gap 2): HID keyboard + two mice and
-    the virtual disk are real; NCM, UAC2 and ACM are still absent. The
+    the virtual disk are real, and since 2026-10-17 so are NCM, UAC2 and ACM. The
     virtual disk's image store is the literal `/data` in the Go server, a
     plain directory on the root filesystem here (`server.nix` tmpfiles; the
     vendor image had a partition), and the unit orders itself after the
