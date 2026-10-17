@@ -14,9 +14,10 @@
  * no-op for the library-owned buffer. Pipeline auto-inits on first read_img
  * at the requested WxH; type 0 -> MJPEG, else H.264.
  *
- * Audio: REAL HDMI-audio capture+encode. The LT6911UXC HDMI-RX de-embeds the
- * HDMI audio onto an I2S link exposed as ALSA capture card "Lt6911UXC". We
- * open it (S16_LE / 48kHz / stereo / 960-frame period), Opus-encode each 20ms
+ * Audio: ALSA capture + Opus encode, from the host's USB speaker (the UAC2
+ * gadget's capture stream) while the host plays into it, from the LT6911UXC's
+ * de-embedded HDMI audio (card "Lt6911UXC") otherwise -- see the audio
+ * section. S16_LE / 48kHz / stereo / 960-frame period, Opus-encoded each 20ms
  * period (matching the stock libkvm's params, reverse-engineered from its
  * AudioCapturer: opus_encoder_create(48000,2,AUDIO) + bitrate 128k, complexity
  * 4, FULLBAND, SIGNAL_MUSIC), and return the encoded packet. Ownership: the Go
@@ -504,37 +505,119 @@ int kvmv_hdmi_control(uint8_t _en)
     return 0;
 }
 
-/* ---- HDMI audio: ALSA(LT6911UXC) capture + Opus encode --------------------
- * All params below are the stock libkvm's, recovered from its AudioCapturer. */
+/* ---- audio: ALSA capture + Opus encode -------------------------------------
+ *
+ * TWO SOURCES, chosen per call (#82):
+ *
+ *   USB  the host's speaker -- the capture side of the gadget's uac2.usb0
+ *        function (card "UAC2Gadget", present when /boot/usb.uac2 is set).
+ *        Used whenever the host is streaming into it, which u_audio reports
+ *        through the card's read-only "Capture Rate" control: the sample
+ *        rate while the host has the OUT streaming interface on alt 1, 0
+ *        otherwise. A host only does that when it has chosen the KVM as its
+ *        output device and something is playing, so a non-zero rate is an
+ *        explicit choice and wins.
+ *   HDMI the LT6911UXC's de-embedded audio (card "Lt6911UXC"), otherwise.
+ *        Kept for when #104 is solved; today the bridge drives none of its
+ *        I2S pins, every read times out (~1.2 s) and the PCM is reopened.
+ *
+ * A source that produces nothing is NOT an error: the call returns 0 with no
+ * data, which the Go loop skips silently (it logs every negative result, and
+ * it calls this every 20 ms). A gadget capture PCM is just as silent as the
+ * HDMI one while the host is not playing -- its hw_ptr only moves in the iso
+ * OUT completion, so a read waits out ALSA's max(100 ms, 1.1 x buffer)
+ * timeout and fails -EIO -- which is why the control is consulted before the
+ * PCM is touched, and why a failed HDMI read backs that source off for
+ * KVM_AUD_HDMI_RETRY_US instead of blocking every call for 1.2 s.
+ *
+ * Encoder params are the stock libkvm's, recovered from its AudioCapturer;
+ * one 960-frame (20 ms) S16 stereo period per Opus packet either way. */
 #define KVM_AUD_RATE     48000
 #define KVM_AUD_CH       2
 #define KVM_AUD_FRAME    960      /* samples/ch per Opus frame == 20ms @48k */
 #define KVM_AUD_BITRATE  128000
 #define KVM_AUD_MAXPKT   1500     /* stock caps the encoded packet at 1500 B */
+#define KVM_AUD_UAC2_CARD  "UAC2Gadget"
+#define KVM_AUD_UAC2_RATE  "Capture Rate"
+#define KVM_AUD_HDMI_RETRY_US   (5 * 1000000LL)
+#define KVM_AUD_UAC2_PROBE_US   (1 * 1000000LL)
+
+enum { AUD_SRC_NONE = 0, AUD_SRC_HDMI, AUD_SRC_USB };
+static const char *const s_src_name[] = { "none", "HDMI", "USB (UAC2 gadget)" };
 
 static pthread_mutex_t s_alock = PTHREAD_MUTEX_INITIALIZER;
 static OpusEncoder *s_opus = NULL;
 static snd_pcm_t   *s_pcm  = NULL;
-static int          s_audio_ready = 0;
-static int          s_audio_fail_logged = 0;
+static int          s_src  = AUD_SRC_NONE;     /* what s_pcm is */
+static int          s_last_src = AUD_SRC_NONE; /* last source that delivered */
+static int          s_quiet_logged = 0;        /* "no source" said this streak */
+static int64_t      s_hdmi_retry_us = 0;       /* no HDMI open before this */
+static snd_ctl_t   *s_uac_ctl = NULL;          /* UAC2Gadget's control node */
+static snd_ctl_elem_value_t *s_uac_rate = NULL;
+static int64_t      s_uac_probe_us = 0;        /* no card lookup before this */
 static opus_int16   s_apcm[KVM_AUD_FRAME * KVM_AUD_CH];  /* interleaved S16 */
 static uint8_t      s_aout[KVM_AUD_MAXPKT];              /* library-owned */
 
+static void audio_close_pcm_locked(void)
+{
+    if (s_pcm) { snd_pcm_close(s_pcm); s_pcm = NULL; }
+    s_src = AUD_SRC_NONE;
+}
+
+static void audio_close_uac_ctl_locked(void)
+{
+    if (s_uac_ctl) { snd_ctl_close(s_uac_ctl); s_uac_ctl = NULL; }
+}
+
 static void audio_teardown_locked(void)
 {
-    if (s_pcm)  { snd_pcm_close(s_pcm); s_pcm = NULL; }
+    audio_close_pcm_locked();
+    audio_close_uac_ctl_locked();
     if (s_opus) { opus_encoder_destroy(s_opus); s_opus = NULL; }
-    s_audio_ready = 0;
+    s_hdmi_retry_us = 0;
+    s_uac_probe_us = 0;
+}
+
+/* Is the host streaming into the gadget's capture side right now? One
+ * control read per call once the node is open. The node is closed the moment
+ * a read fails, because that is how a torn-down gadget (usbdev.sh restart)
+ * looks from here, and a stale handle would only keep the dead card's
+ * memory around; the rebuilt card is found by name on a later probe. */
+static int audio_usb_host_playing_locked(int64_t now)
+{
+    if (!s_uac_ctl) {
+        if (now < s_uac_probe_us) return 0;
+        s_uac_probe_us = now + KVM_AUD_UAC2_PROBE_US;
+        int idx = snd_card_get_index(KVM_AUD_UAC2_CARD);
+        if (idx < 0) return 0;
+        char name[16];
+        snprintf(name, sizeof name, "hw:%d", idx);
+        if (snd_ctl_open(&s_uac_ctl, name, SND_CTL_NONBLOCK) < 0) { s_uac_ctl = NULL; return 0; }
+        if (!s_uac_rate && snd_ctl_elem_value_malloc(&s_uac_rate) < 0) {
+            s_uac_rate = NULL; audio_close_uac_ctl_locked(); return 0;
+        }
+        snd_ctl_elem_value_clear(s_uac_rate);
+        snd_ctl_elem_value_set_interface(s_uac_rate, SND_CTL_ELEM_IFACE_PCM);
+        snd_ctl_elem_value_set_name(s_uac_rate, KVM_AUD_UAC2_RATE);
+    }
+    if (snd_ctl_elem_read(s_uac_ctl, s_uac_rate) < 0) {
+        /* Gone (card disconnected) or no capture stream on this gadget
+         * (c_chmask 0 has no "Capture Rate"): either way, look again later. */
+        audio_close_uac_ctl_locked();
+        return 0;
+    }
+    return snd_ctl_elem_value_get_integer(s_uac_rate, 0) == KVM_AUD_RATE;
 }
 
 /* Open the HDMI-audio capture PCM. Prefer the exact device the stock lib picks
  * (enumerate hints, match the "Lontium Lt6911UXC" DESC, open its NAME); fall
- * back to well-known names for the same card. */
-static snd_pcm_t *audio_open_capture(void)
+ * back to the card's own names. The old index-based fallbacks (hw:0,0,
+ * "default") are gone: card 0 is whichever registered first, and with
+ * /boot/usb.uac2 set that can be the gadget. */
+static snd_pcm_t *audio_open_hdmi(void)
 {
     static const char *cands[] = {
-        "hw:CARD=Lt6911UXC,DEV=0", "plughw:CARD=Lt6911UXC,DEV=0",
-        "hw:0,0", "plughw:0,0", "default", NULL
+        "hw:CARD=Lt6911UXC,DEV=0", "plughw:CARD=Lt6911UXC,DEV=0", NULL
     };
     snd_pcm_t *pcm = NULL;
     void **hints = NULL;
@@ -555,8 +638,50 @@ static snd_pcm_t *audio_open_capture(void)
     return pcm;
 }
 
-/* Bring up the Opus encoder + ALSA capture once. Caller holds s_alock. */
-static int audio_init_locked(void)
+static snd_pcm_t *audio_open_usb(void)
+{
+    snd_pcm_t *pcm = NULL;
+    if (snd_pcm_open(&pcm, "hw:CARD=" KVM_AUD_UAC2_CARD ",DEV=0", SND_PCM_STREAM_CAPTURE, 0) < 0)
+        return NULL;
+    return pcm;
+}
+
+/* hw_params for either source: S16_LE / 48 kHz exact / stereo / 960-frame
+ * periods. The gadget's buffer is held to four periods so that a host which
+ * stops playing mid-read costs the 100 ms floor of ALSA's timeout, not
+ * 1.1 x a default 64 KiB buffer. */
+static int audio_config_pcm(snd_pcm_t *pcm, int src)
+{
+    snd_pcm_hw_params_t *hw = NULL;
+    snd_pcm_hw_params_alloca(&hw);
+    unsigned int rate = KVM_AUD_RATE;
+    snd_pcm_uframes_t period = KVM_AUD_FRAME;
+    snd_pcm_uframes_t buffer = 4 * KVM_AUD_FRAME;
+    if (snd_pcm_hw_params_any(pcm, hw) < 0) return -1;
+    if (snd_pcm_hw_params_set_access(pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED) < 0) return -1;
+    if (snd_pcm_hw_params_set_format(pcm, hw, SND_PCM_FORMAT_S16_LE) < 0) return -1;
+    if (snd_pcm_hw_params_set_channels(pcm, hw, KVM_AUD_CH) < 0) return -1;
+    if (snd_pcm_hw_params_set_rate_near(pcm, hw, &rate, 0) < 0) return -1;
+    if (rate != KVM_AUD_RATE) return -1;   /* Opus needs an exact 48k source */
+    if (snd_pcm_hw_params_set_period_size_near(pcm, hw, &period, 0) < 0) return -1;
+    if (src == AUD_SRC_USB &&
+        snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buffer) < 0) return -1;
+    if (snd_pcm_hw_params(pcm, hw) < 0) return -1;
+    if (snd_pcm_prepare(pcm) < 0) return -1;
+    return 0;
+}
+
+static int audio_open_src_locked(int src)
+{
+    snd_pcm_t *pcm = (src == AUD_SRC_USB) ? audio_open_usb() : audio_open_hdmi();
+    if (!pcm) return -1;
+    if (audio_config_pcm(pcm, src) != 0) { snd_pcm_close(pcm); return -1; }
+    s_pcm = pcm;
+    s_src = src;
+    return 0;
+}
+
+static int audio_init_encoder_locked(void)
 {
     int err = 0;
     s_opus = opus_encoder_create(KVM_AUD_RATE, KVM_AUD_CH, OPUS_APPLICATION_AUDIO, &err);
@@ -565,37 +690,27 @@ static int audio_init_locked(void)
     opus_encoder_ctl(s_opus, OPUS_SET_COMPLEXITY(4));
     opus_encoder_ctl(s_opus, OPUS_SET_MAX_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND));
     opus_encoder_ctl(s_opus, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
-
-#ifdef KVM_AUDIO_SELFTEST
-    /* Test-only build: skip the ALSA capture open and synthesize PCM in the
-     * read loop, so the real encode+ownership path can be validated when the
-     * HDMI input carries no audio. NEVER defined in the shipped library. */
-    s_audio_ready = 1;
     return 0;
-#endif
+}
 
-    s_pcm = audio_open_capture();
-    if (!s_pcm) { opus_encoder_destroy(s_opus); s_opus = NULL; return -1; }
+/* One line when the stream stops having a source, one when it gets one. */
+static void audio_note_quiet_locked(const char *why)
+{
+    if (s_quiet_logged) return;
+    fprintf(stderr, "OPEN-KVM: audio: no source is playing (%s); the host's "
+            "speaker is used whenever it streams into %s, HDMI is retried "
+            "every %d s\n", why, KVM_AUD_UAC2_CARD,
+            (int)(KVM_AUD_HDMI_RETRY_US / 1000000));
+    fflush(stderr);
+    s_quiet_logged = 1;
+    s_last_src = AUD_SRC_NONE;
+}
 
-    snd_pcm_hw_params_t *hw = NULL;
-    snd_pcm_hw_params_alloca(&hw);
-    unsigned int rate = KVM_AUD_RATE;
-    snd_pcm_uframes_t period = KVM_AUD_FRAME;
-    if (snd_pcm_hw_params_any(s_pcm, hw) < 0) goto fail;
-    if (snd_pcm_hw_params_set_access(s_pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED) < 0) goto fail;
-    if (snd_pcm_hw_params_set_format(s_pcm, hw, SND_PCM_FORMAT_S16_LE) < 0) goto fail;
-    if (snd_pcm_hw_params_set_channels(s_pcm, hw, KVM_AUD_CH) < 0) goto fail;
-    if (snd_pcm_hw_params_set_rate_near(s_pcm, hw, &rate, 0) < 0) goto fail;
-    if (rate != KVM_AUD_RATE) goto fail;   /* Opus needs an exact 48k source */
-    if (snd_pcm_hw_params_set_period_size_near(s_pcm, hw, &period, 0) < 0) goto fail;
-    if (snd_pcm_hw_params(s_pcm, hw) < 0) goto fail;
-    if (snd_pcm_prepare(s_pcm) < 0) goto fail;
-
-    s_audio_ready = 1;
+static int audio_no_data_locked(const char *why)
+{
+    audio_note_quiet_locked(why);
+    pthread_mutex_unlock(&s_alock);
     return 0;
-fail:
-    audio_teardown_locked();
-    return -1;
 }
 
 int kvmv_read_audio(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
@@ -605,21 +720,15 @@ int kvmv_read_audio(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
 
     pthread_mutex_lock(&s_alock);
 
-    if (!s_audio_ready && audio_init_locked() != 0) {
-        if (!s_audio_fail_logged) {
-            fprintf(stderr, "OPEN-KVM: audio capture init failed "
-                    "(no LT6911 HDMI-audio PCM available yet)\n");
-            fflush(stderr);
-            s_audio_fail_logged = 1;
-        }
+    if (!s_opus && audio_init_encoder_locked() != 0) {
         pthread_mutex_unlock(&s_alock);
-        return IMG_NOT_EXIST;
+        return IMG_NOT_EXIST;      /* a real failure: the Go side logs it */
     }
-    s_audio_fail_logged = 0;
 
 #ifdef KVM_AUDIO_SELFTEST
-    /* Synthesize a 440Hz + 660Hz stereo tone so we can validate the encode +
-     * ownership path without a live HDMI audio source. */
+    /* Test-only build: no ALSA at all. Synthesize a 440Hz + 660Hz stereo tone
+     * so the encode + ownership path can be validated without a live source.
+     * NEVER defined in the shipped library. */
     {
         static double ph = 0.0;
         for (int i = 0; i < KVM_AUD_FRAME; i++) {
@@ -637,15 +746,48 @@ int kvmv_read_audio(uint8_t **_pp_kvm_data, uint32_t *_p_kvmv_data_size)
     }
 #endif
 
-    /* Read exactly one 960-frame stereo period; recover from xruns like stock. */
+    int64_t now = kvm_mono_us();
+    int want = audio_usb_host_playing_locked(now) ? AUD_SRC_USB : AUD_SRC_HDMI;
+
+    if (s_pcm && s_src != want) audio_close_pcm_locked();
+    if (!s_pcm) {
+        if (want == AUD_SRC_HDMI && now < s_hdmi_retry_us)
+            return audio_no_data_locked("HDMI backed off");
+        if (audio_open_src_locked(want) != 0) {
+            if (want == AUD_SRC_HDMI) {
+                s_hdmi_retry_us = now + KVM_AUD_HDMI_RETRY_US;
+                return audio_no_data_locked("no LT6911 HDMI-audio PCM");
+            }
+            return audio_no_data_locked("cannot open the UAC2 gadget's capture PCM");
+        }
+    }
+
+    /* Read exactly one 960-frame stereo period; recover from xruns like stock.
+     * Anything else -- the HDMI bridge's silent I2S, the host closing its
+     * output mid-read -- ends this source until the next call decides again. */
     snd_pcm_uframes_t got = 0;
     while (got < KVM_AUD_FRAME) {
         snd_pcm_sframes_t n = snd_pcm_readi(s_pcm, s_apcm + got * KVM_AUD_CH,
                                             KVM_AUD_FRAME - got);
         if (n == -EPIPE) { snd_pcm_prepare(s_pcm); continue; }
-        if (n < 0) { audio_teardown_locked(); pthread_mutex_unlock(&s_alock); return IMG_NOT_EXIST; }
+        if (n < 0) {
+            int src = s_src;
+            audio_close_pcm_locked();
+            if (src == AUD_SRC_HDMI) {
+                s_hdmi_retry_us = kvm_mono_us() + KVM_AUD_HDMI_RETRY_US;
+                return audio_no_data_locked("the HDMI bridge delivers no samples (#104)");
+            }
+            return audio_no_data_locked("the host stopped playing into the UAC2 gadget");
+        }
         got += (snd_pcm_uframes_t)n;
     }
+
+    if (s_last_src != s_src) {
+        fprintf(stderr, "OPEN-KVM: audio: source is %s\n", s_src_name[s_src]);
+        fflush(stderr);
+        s_last_src = s_src;
+    }
+    s_quiet_logged = 0;
 
     int enc = opus_encode(s_opus, s_apcm, KVM_AUD_FRAME, s_aout, KVM_AUD_MAXPKT);
     if (enc < 0) { pthread_mutex_unlock(&s_alock); return IMG_NOT_EXIST; }
